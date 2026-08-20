@@ -5,7 +5,7 @@ EDGE 2.0 is a small operational MRZ state engine. For each observed symbol its o
 - **SOURCE** — the route that owns the active MRZ: `BTD` or `STR`.
 - **ACTIVE MRZ** — the frozen authoritative core MRZ bounds.
 - **MRZ LOCATION** — where the active MRZ midpoint sits inside its activation IPDA frame.
-- **CURRENT PRICE LOCATION** — where the latest observation price sits inside its current IPDA frame.
+- **CURRENT LOCATION** — where the latest observation price sits inside its current IPDA frame.
 
 It is a clean project, database, runtime, and Git repository. It does not import the EDGE 4.2 application or migrate 4.2 records.
 
@@ -133,12 +133,18 @@ GET  /api/symbols/{symbol}/mrz
 GET  /
 ```
 
-MRZ Monitor fetches the symbol list once and fetches detail only after selection.
-It renders SOURCE, ACTIVE MRZ, MRZ LOCATION, CURRENT PRICE LOCATION, confirming
-evidence, latest observation, and MRZ status. Detail responses derive
-`current_price_location` from the latest accepted observation price and that
-observation's IPDA 20W frame. The monitor contains no chronology, lifecycle,
-research, recommendation, readiness, approval, or handover interface.
+MRZ Monitor fetches one latest-row overview and fetches detail only after
+selection. Its Location Heatmap groups every symbol by `current_price_location`
+into the four primary IPDA locations, with visually secondary below-range,
+above-range, and unavailable groups. Symbols remain visible without an active
+MRZ, and their chips reuse the existing selected-symbol detail loader.
+
+The selected detail renders SOURCE, ACTIVE MRZ, MRZ LOCATION, CURRENT LOCATION,
+confirming evidence, latest observation, and MRZ status. Both overview and
+detail derive `current_price_location` through the same backend classifier using
+the latest accepted observation price and that observation's IPDA 20W frame.
+The monitor contains no chronology, lifecycle, research, recommendation,
+readiness, approval, or handover interface.
 
 ## Clean database
 

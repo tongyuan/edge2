@@ -306,7 +306,8 @@ class EdgeRepository:
                 cursor.execute(
                     """
                     SELECT DISTINCT ON (o.symbol)
-                        o.symbol, o.observation_price, o.observed_at,
+                        o.symbol, o.observation_price,
+                        o.ipda_20w_high, o.ipda_20w_low, o.observed_at,
                         a.route_owner, a.core_mrz_lower, a.core_mrz_upper,
                         a.core_mrz_midpoint, a.structural_location,
                         a.confirming_observation_count
@@ -327,6 +328,7 @@ class EdgeRepository:
                         "confirming_observation_count": row["confirming_observation_count"],
                         "latest_observation_price": number(row["observation_price"]),
                         "latest_observed_at": iso(row["observed_at"]),
+                        "current_price_location": current_price_location_value(row),
                     }
                     for row in cursor.fetchall()
                 ]
@@ -383,16 +385,11 @@ def iso(value: datetime | None) -> str | None:
 
 
 def detail_payload(symbol: str, latest: Mapping[str, Any], active: ActiveMRZ | None) -> dict[str, Any]:
-    current_price_location = classify_ipda_location(
-        Decimal(latest["observation_price"]),
-        Decimal(latest["ipda_20w_high"]),
-        Decimal(latest["ipda_20w_low"]),
-    )
     base = {
         "symbol": symbol,
         "latest_observation_price": number(latest["observation_price"]),
         "latest_observed_at": iso(latest["observed_at"]),
-        "current_price_location": current_price_location.value if current_price_location else None,
+        "current_price_location": current_price_location_value(latest),
     }
     if active is None:
         return {
@@ -425,6 +422,15 @@ def detail_payload(symbol: str, latest: Mapping[str, Any], active: ActiveMRZ | N
         "lower_migration_boundary": number(active.lower_migration_boundary),
         "upper_migration_boundary": number(active.upper_migration_boundary),
     }
+
+
+def current_price_location_value(latest: Mapping[str, Any]) -> str | None:
+    location = classify_ipda_location(
+        Decimal(latest["observation_price"]),
+        Decimal(latest["ipda_20w_high"]),
+        Decimal(latest["ipda_20w_low"]),
+    )
+    return location.value if location else None
 
 
 def sanitize_payload(value: Any) -> Any:

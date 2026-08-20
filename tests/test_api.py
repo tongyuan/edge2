@@ -65,6 +65,8 @@ class APIIntegrationTests(unittest.TestCase):
         detail = self.client.get("/api/symbols/SPXUSDT").json()
         self.assertEqual(detail["mrz_status"], "unestablished")
         self.assertEqual(detail["current_price_location"], "deep_discount")
+        overview = self.client.get("/api/symbols").json()["symbols"]
+        self.assertEqual(overview[0]["current_price_location"], "deep_discount")
         str_packet = webhook_payload(
             2,
             "180",
@@ -116,9 +118,12 @@ class APIIntegrationTests(unittest.TestCase):
         response = self.client.post("/webhook/tradingview", json=price_shift)
         self.assertEqual(response.status_code, 201)
         after = self.client.get("/api/symbols/SPXUSDT/mrz").json()
+        overview_after = self.client.get("/api/symbols").json()["symbols"][0]
         events_after = self.client.app.state.repository.audit_events("SPXUSDT")
 
         self.assertEqual(after["current_price_location"], "shallow_premium")
+        self.assertEqual(overview_after["current_price_location"], "shallow_premium")
+        self.assertEqual(overview_after["structural_location"], "deep_discount_core_mrz")
         self.assertEqual(after["route_owner"], before["route_owner"])
         self.assertEqual(after["core_mrz_lower"], before["core_mrz_lower"])
         self.assertEqual(after["core_mrz_upper"], before["core_mrz_upper"])
@@ -141,6 +146,45 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         detail = self.client.get("/api/symbols/SPXUSDT").json()
         self.assertIsNone(detail["current_price_location"])
+
+    def test_symbols_overview_classifies_every_current_location_without_an_active_mrz(self) -> None:
+        cases = (
+            ("DD", "110", "deep_discount"),
+            ("SD", "130", "shallow_discount"),
+            ("SP", "160", "shallow_premium"),
+            ("DP", "180", "deep_premium"),
+            ("BELOW", "90", "below_ipda_range"),
+            ("ABOVE", "210", "above_ipda_range"),
+            ("EQM", "150", None),
+        )
+        for index, (symbol, price, _) in enumerate(cases, 1):
+            packet = webhook_payload(
+                index,
+                price,
+                event_id=f"overview-{index}",
+                symbol=symbol,
+            )
+            self.assertEqual(self.client.post("/webhook/tradingview", json=packet).status_code, 201)
+
+        symbols = self.client.get("/api/symbols").json()["symbols"]
+        by_symbol = {item["symbol"]: item for item in symbols}
+        self.assertEqual([item["symbol"] for item in symbols], sorted(by_symbol))
+        for symbol, _, expected in cases:
+            with self.subTest(symbol=symbol):
+                self.assertEqual(by_symbol[symbol]["current_price_location"], expected)
+                self.assertEqual(by_symbol[symbol]["mrz_status"], "unestablished")
+
+        update = webhook_payload(
+            8,
+            "160",
+            event_id="overview-location-update",
+            symbol="DD",
+        )
+        self.assertEqual(self.client.post("/webhook/tradingview", json=update).status_code, 201)
+        updated = {
+            item["symbol"]: item for item in self.client.get("/api/symbols").json()["symbols"]
+        }
+        self.assertEqual(updated["DD"]["current_price_location"], "shallow_premium")
 
     def test_authentication_is_required_and_secret_is_redacted(self) -> None:
         packet = webhook_payload()

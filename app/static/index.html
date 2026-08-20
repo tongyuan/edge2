@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="EDGE 2.0 operational MRZ Monitor" />
     <title>EDGE 2.0 · MRZ Monitor</title>
-    <link rel="stylesheet" href="/static/styles.css?v=mrz-monitor-20260821" />
+    <link rel="stylesheet" href="/static/styles.css?v=location-heatmap-20260821" />
   </head>
   <body>
     <main class="shell">
@@ -17,65 +17,81 @@
         <span class="status-dot" id="healthState">Checking system</span>
       </header>
 
-      <section class="selector" aria-labelledby="symbol-selector-title">
-        <label id="symbol-selector-title" for="symbolSelect">Symbol</label>
-        <select id="symbolSelect" disabled>
-          <option value="">Loading symbols…</option>
-        </select>
+      <section class="heatmap-panel" aria-labelledby="location-heatmap-title">
+        <div class="section-heading">
+          <p class="eyebrow" id="location-heatmap-title">LOCATION HEATMAP</p>
+          <p class="section-support">Latest TradingView observation within the current IPDA 20W range</p>
+        </div>
+        <div id="locationHeatmap" hidden>
+          <div class="heatmap-grid" id="primaryLocationGroups"></div>
+          <div class="heatmap-secondary" id="secondaryLocationGroups"></div>
+        </div>
+        <p class="heatmap-empty" id="heatmapEmpty">Loading locations…</p>
       </section>
 
-      <section class="empty-state" id="emptyState">
-        <p>Select a symbol to view its current MRZ authority.</p>
-      </section>
+      <section class="selected-detail" aria-labelledby="selected-symbol-title">
+        <p class="eyebrow" id="selected-symbol-title">SELECTED SYMBOL DETAIL</p>
 
-      <section class="state-card" id="stateCard" hidden aria-live="polite">
-        <div class="symbol-row">
-          <h2 id="symbolName">—</h2>
-          <span class="pill" id="mrzStatus">—</span>
+        <div class="selector">
+          <label for="symbolSelect">Symbol</label>
+          <select id="symbolSelect" disabled>
+            <option value="">Loading symbols…</option>
+          </select>
         </div>
 
-        <div class="answer-grid">
-          <article>
-            <p class="label">SOURCE</p>
-            <p class="answer route unestablished" id="routeOwner">—</p>
-            <p class="support">Route owner of the active MRZ</p>
-          </article>
-          <article>
-            <p class="label">ACTIVE MRZ</p>
-            <p class="answer" id="mrzBounds">—</p>
-            <p class="support">Authoritative frozen price zone</p>
-          </article>
-        </div>
+        <section class="empty-state" id="emptyState">
+          <p>Select a symbol to view its current MRZ authority.</p>
+        </section>
 
-        <div class="context-grid">
-          <article>
-            <p class="label">MRZ LOCATION</p>
-            <p class="context-answer" id="structuralLocation">—</p>
-            <p class="support">Active MRZ midpoint inside IPDA 20W</p>
-          </article>
-          <article>
-            <p class="label">CURRENT PRICE LOCATION</p>
-            <p class="context-answer" id="currentPriceLocation">—</p>
-            <p class="support">Latest observation inside current IPDA 20W</p>
-          </article>
-        </div>
+        <section class="state-card" id="stateCard" hidden aria-live="polite">
+          <div class="symbol-row">
+            <h2 id="symbolName">—</h2>
+            <span class="pill" id="mrzStatus">—</span>
+          </div>
 
-        <dl class="facts">
-          <div>
-            <dt>Evidence</dt>
-            <dd id="evidence">—</dd>
+          <div class="answer-grid">
+            <article>
+              <p class="label">SOURCE</p>
+              <p class="answer route unestablished" id="routeOwner">—</p>
+              <p class="support">Route owner of the active MRZ</p>
+            </article>
+            <article>
+              <p class="label">ACTIVE MRZ</p>
+              <p class="answer" id="mrzBounds">—</p>
+              <p class="support">Authoritative frozen price zone</p>
+            </article>
           </div>
-          <div>
-            <dt>Latest observation</dt>
-            <dd id="latestObservation">—</dd>
+
+          <div class="context-grid">
+            <article>
+              <p class="label">MRZ LOCATION</p>
+              <p class="context-answer" id="structuralLocation">—</p>
+              <p class="support">Active MRZ midpoint inside IPDA 20W</p>
+            </article>
+            <article>
+              <p class="label">CURRENT LOCATION</p>
+              <p class="context-answer" id="currentPriceLocation">—</p>
+              <p class="support">Latest observation inside current IPDA 20W</p>
+            </article>
           </div>
-          <div>
-            <dt>MRZ midpoint</dt>
-            <dd id="mrzMidpoint">—</dd>
-          </div>
-        </dl>
+
+          <dl class="facts">
+            <div>
+              <dt>Evidence</dt>
+              <dd id="evidence">—</dd>
+            </div>
+            <div>
+              <dt>Latest observation</dt>
+              <dd id="latestObservation">—</dd>
+            </div>
+            <div>
+              <dt>MRZ midpoint</dt>
+              <dd id="mrzMidpoint">—</dd>
+            </div>
+          </dl>
+        </section>
       </section>
     </main>
-    <script src="/static/app.js?v=mrz-monitor-20260821" defer></script>
+    <script src="/static/app.js?v=location-heatmap-20260821" defer></script>
   </body>
 </html>

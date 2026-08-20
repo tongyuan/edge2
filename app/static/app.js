@@ -2,6 +2,10 @@ const select = document.querySelector("#symbolSelect");
 const emptyState = document.querySelector("#emptyState");
 const stateCard = document.querySelector("#stateCard");
 const healthState = document.querySelector("#healthState");
+const locationHeatmap = document.querySelector("#locationHeatmap");
+const heatmapEmpty = document.querySelector("#heatmapEmpty");
+const primaryLocationGroups = document.querySelector("#primaryLocationGroups");
+const secondaryLocationGroups = document.querySelector("#secondaryLocationGroups");
 
 const fields = {
   symbol: document.querySelector("#symbolName"),
@@ -34,6 +38,92 @@ const locationLabels = {
 
 const formatLocation = (value) => value == null ? "—" : locationLabels[value] || "—";
 
+const primaryLocationKeys = [
+  "deep_discount",
+  "shallow_discount",
+  "shallow_premium",
+  "deep_premium",
+];
+
+const secondaryLocationKeys = [
+  "below_ipda_range",
+  "above_ipda_range",
+  "unavailable",
+];
+
+const allLocationKeys = new Set([...primaryLocationKeys, ...secondaryLocationKeys]);
+
+function groupSymbolsByLocation(symbols) {
+  const groups = Object.fromEntries([...allLocationKeys].map((key) => [key, []]));
+  symbols.forEach(({ symbol, current_price_location: currentLocation }) => {
+    const key = allLocationKeys.has(currentLocation) ? currentLocation : "unavailable";
+    groups[key].push(symbol);
+  });
+  Object.values(groups).forEach((symbolsInGroup) => symbolsInGroup.sort((left, right) => left.localeCompare(right)));
+  return groups;
+}
+
+function createLocationGroup(key, symbols, secondary = false) {
+  const group = document.createElement("section");
+  group.className = secondary ? "location-group secondary" : "location-group";
+
+  const heading = document.createElement("h3");
+  heading.textContent = key === "unavailable" ? "Unavailable" : locationLabels[key];
+  group.append(heading);
+
+  const symbolList = document.createElement("div");
+  symbolList.className = "symbol-chips";
+  if (symbols.length === 0) {
+    const empty = document.createElement("span");
+    empty.className = "group-empty";
+    empty.textContent = "No symbols";
+    symbolList.append(empty);
+  } else {
+    symbols.forEach((symbol) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "symbol-chip";
+      button.dataset.symbol = symbol;
+      button.setAttribute("aria-pressed", "false");
+      button.setAttribute("aria-label", `Select ${symbol}`);
+      button.textContent = symbol;
+      button.addEventListener("click", () => selectSymbol(symbol).catch(showError));
+      symbolList.append(button);
+    });
+  }
+  group.append(symbolList);
+  return group;
+}
+
+function renderLocationHeatmap(symbols) {
+  if (symbols.length === 0) {
+    locationHeatmap.hidden = true;
+    heatmapEmpty.hidden = false;
+    heatmapEmpty.textContent = "No symbols yet";
+    return;
+  }
+
+  const groups = groupSymbolsByLocation(symbols);
+  primaryLocationGroups.replaceChildren(
+    ...primaryLocationKeys.map((key) => createLocationGroup(key, groups[key])),
+  );
+  const populatedSecondaryKeys = secondaryLocationKeys.filter((key) => groups[key].length > 0);
+  secondaryLocationGroups.replaceChildren(
+    ...populatedSecondaryKeys.map((key) => createLocationGroup(key, groups[key], true)),
+  );
+  secondaryLocationGroups.hidden = populatedSecondaryKeys.length === 0;
+  heatmapEmpty.hidden = true;
+  locationHeatmap.hidden = false;
+}
+
+function updateSelectedChip(symbol) {
+  document.querySelectorAll(".symbol-chip").forEach((chip) => {
+    const selected = chip.dataset.symbol === symbol;
+    chip.classList.toggle("selected", selected);
+    chip.setAttribute("aria-pressed", String(selected));
+  });
+}
+
 async function loadHealth() {
   try {
     const response = await fetch("/health");
@@ -51,11 +141,14 @@ async function loadSymbols() {
   const payload = await response.json();
   select.replaceChildren(new Option("Select a symbol", ""));
   payload.symbols.forEach(({ symbol }) => select.add(new Option(symbol, symbol)));
-  select.disabled = false;
-  if (payload.symbols.length === 1) {
-    select.value = payload.symbols[0].symbol;
-    await loadSymbol(select.value);
-  }
+  select.disabled = payload.symbols.length === 0;
+  renderLocationHeatmap(payload.symbols);
+}
+
+async function selectSymbol(symbol) {
+  select.value = symbol;
+  updateSelectedChip(symbol);
+  await loadSymbol(symbol);
 }
 
 async function loadSymbol(symbol) {
@@ -92,12 +185,15 @@ function renderSymbol(state) {
   stateCard.hidden = false;
 }
 
-select.addEventListener("change", () => loadSymbol(select.value).catch(showError));
+select.addEventListener("change", () => selectSymbol(select.value).catch(showError));
 
 function showError(error) {
   emptyState.hidden = false;
   stateCard.hidden = true;
   emptyState.querySelector("p").textContent = error.message;
+  if (heatmapEmpty.textContent === "Loading locations…") {
+    heatmapEmpty.textContent = "Locations unavailable";
+  }
 }
 
 loadHealth();

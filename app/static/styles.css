@@ -64,7 +64,73 @@ h2 { margin-bottom: 0; font-size: 1.55rem; letter-spacing: -0.02em; }
 }
 .status-dot.ok { color: var(--accent); }
 
-.selector { margin: 40px 0 20px; }
+.heatmap-panel { margin-top: 42px; }
+.section-heading { margin-bottom: 18px; }
+.section-heading .eyebrow { margin-bottom: 7px; }
+.section-support { margin-bottom: 0; color: var(--muted); font-size: 0.86rem; }
+.heatmap-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.location-group {
+  min-height: 126px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+.location-group h3 {
+  margin: 0 0 14px;
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 680;
+  letter-spacing: -0.01em;
+}
+.symbol-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+.symbol-chip {
+  appearance: none;
+  padding: 6px 9px;
+  border: 1px solid #344154;
+  border-radius: 8px;
+  background: transparent;
+  color: #c9d1dd;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 650;
+}
+.symbol-chip:hover, .symbol-chip.selected {
+  border-color: #74839a;
+  background: var(--surface-strong);
+  color: var(--text);
+}
+.symbol-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.group-empty { color: #657186; font-size: 0.78rem; }
+.heatmap-secondary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+.heatmap-secondary[hidden] { display: none; }
+.location-group.secondary {
+  min-height: 0;
+  padding: 13px 15px;
+  background: transparent;
+}
+.location-group.secondary h3 { margin-bottom: 10px; color: var(--muted); font-size: 0.78rem; }
+.heatmap-empty {
+  margin: 0;
+  padding: 30px;
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.selected-detail { margin-top: 42px; }
+.selector { margin: 14px 0 20px; }
 .selector label { display: block; margin-bottom: 10px; color: var(--muted); font-size: 0.8rem; }
 select {
   width: 100%;
@@ -131,6 +197,7 @@ dd { margin: 0; font-size: 0.95rem; font-weight: 620; }
 @media (max-width: 680px) {
   .shell { padding-top: 28px; }
   .masthead { align-items: flex-end; }
+  .heatmap-grid, .heatmap-secondary { grid-template-columns: 1fr; }
   .answer-grid, .context-grid, .facts { grid-template-columns: 1fr; }
   .answer-grid article + article, .context-grid article + article, .facts div + div { border-left: 0; border-top: 1px solid var(--line); }
 }
