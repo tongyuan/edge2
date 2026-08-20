@@ -15,6 +15,10 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn("MRZ Monitor", HTML)
         self.assertNotIn("Symbol Lab", HTML)
 
+    def test_monitor_assets_are_versioned_together(self) -> None:
+        self.assertIn('/static/styles.css?v=mrz-monitor-20260821', HTML)
+        self.assertIn('/static/app.js?v=mrz-monitor-20260821', HTML)
+
     def test_source_and_active_mrz_replace_who_and_where(self) -> None:
         self.assertIn(">SOURCE<", HTML)
         self.assertIn(">ACTIVE MRZ<", HTML)
