@@ -156,11 +156,14 @@ The Mac is a development/Git workstation, not an operational EDGE 2.0 runtime. T
 
 ```text
 edge2-app  -> 127.0.0.1:8792
+edge2-ingress -> 127.0.0.1:8793 -> edge2-app
 edge2-db   -> 127.0.0.1:5435
 volume     -> edge2_pgdata
 ```
 
-The existing EDGE 4.2 ports, containers, data, Tailscale routes, and TradingView alerts remain unchanged. See [Remote operations](docs/operations.md), [Backup and restore](docs/backup-restore.md), and [TradingView cutover](docs/tradingview-cutover.md).
+The existing ngrok hostname is routed to `edge2-ingress` after the operator
+confirmed that 4.2 alerts were defunct. The preserved EDGE 4.2 application,
+containers, Redis, and data remain unchanged. See [Remote operations](docs/operations.md), [Backup and restore](docs/backup-restore.md), and [TradingView cutover](docs/tradingview-cutover.md).
 
 ## Deliberately removed 4.2 features
 
