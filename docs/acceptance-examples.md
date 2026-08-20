@@ -18,7 +18,7 @@ Canonical reclaim observations:
 The incoming event participates in the sorted price-space seed `110.00, 110.30, 110.70, 111.00`. Span is `1.00 / 100 = 0.01`, so the active MRZ is:
 
 ```text
-WHO: BTD
+SOURCE: BTD
 lower: 110.00
 upper: 111.00
 midpoint: 110.50

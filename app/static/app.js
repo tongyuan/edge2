@@ -9,6 +9,7 @@ const fields = {
   owner: document.querySelector("#routeOwner"),
   bounds: document.querySelector("#mrzBounds"),
   location: document.querySelector("#structuralLocation"),
+  currentLocation: document.querySelector("#currentPriceLocation"),
   evidence: document.querySelector("#evidence"),
   latest: document.querySelector("#latestObservation"),
   midpoint: document.querySelector("#mrzMidpoint"),
@@ -17,6 +18,21 @@ const fields = {
 const formatPrice = (value) => value == null ? "—" : new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 12,
 }).format(value);
+
+const locationLabels = {
+  deep_discount_core_mrz: "Deep Discount",
+  shallow_discount_core_mrz: "Shallow Discount",
+  shallow_premium_core_mrz: "Shallow Premium",
+  deep_premium_core_mrz: "Deep Premium",
+  deep_discount: "Deep Discount",
+  shallow_discount: "Shallow Discount",
+  shallow_premium: "Shallow Premium",
+  deep_premium: "Deep Premium",
+  below_ipda_range: "Below IPDA Range",
+  above_ipda_range: "Above IPDA Range",
+};
+
+const formatLocation = (value) => value == null ? "—" : locationLabels[value] || "—";
 
 async function loadHealth() {
   try {
@@ -59,10 +75,14 @@ function renderSymbol(state) {
   fields.status.textContent = active ? "ACTIVE" : "UNESTABLISHED";
   fields.status.classList.toggle("unestablished", !active);
   fields.owner.textContent = active ? state.route_owner : "—";
+  fields.owner.classList.toggle("unestablished", !active);
+  fields.owner.classList.toggle("btd", active && state.route_owner === "BTD");
+  fields.owner.classList.toggle("str", active && state.route_owner === "STR");
   fields.bounds.textContent = active
     ? `${formatPrice(state.core_mrz_lower)} – ${formatPrice(state.core_mrz_upper)}`
-    : "No confirmed MRZ";
-  fields.location.textContent = active ? state.structural_location : "—";
+    : "—";
+  fields.location.textContent = active ? formatLocation(state.structural_location) : "—";
+  fields.currentLocation.textContent = formatLocation(state.current_price_location);
   fields.evidence.textContent = active
     ? `${state.confirming_observation_count} qualifying ${state.route_owner === "BTD" ? "reclaim" : "rejection"} observations`
     : "Concentration not established";

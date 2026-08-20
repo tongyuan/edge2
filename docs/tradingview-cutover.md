@@ -70,7 +70,7 @@ and IPDA values at minimum-tick precision.
    loopback-only ingress on port `8793`; never point it directly at port `8792`.
 7. Observe the first real BTD reclaim and STR rejection. Confirm that each alert
    posts one nine-field schema 4.3 JSON object and receives a successful response.
-8. Verify accepted counts and the symbol in EDGE 2.0 Symbol Lab/API. Confirm the
+8. Verify accepted counts and the symbol in EDGE 2.0 MRZ Monitor/API. Confirm the
    stored observation price, IPDA high/low, and observed time match TradingView.
 9. Confirm the old 4.2 alerts remain disabled/retired after both routes pass
    validation and EDGE 2.0 state survives a service restart.
@@ -85,7 +85,7 @@ and IPDA values at minimum-tick precision.
    backup so verification leaves no synthetic operational state.
 5. Create separate BTD and STR TradingView alerts using the exact public URL.
 6. Confirm accepted/rejected/duplicate counts, timestamps, symbol normalization,
-   and deterministic WHO/WHERE state with real observations.
+   and deterministic SOURCE/ACTIVE MRZ state with real observations.
 
 ## Rollback
 

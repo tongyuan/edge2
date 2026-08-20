@@ -1,9 +1,11 @@
 # EDGE 2.0
 
-EDGE 2.0 is a small operational MRZ state engine. For each observed symbol it answers only:
+EDGE 2.0 is a small operational MRZ state engine. For each observed symbol its operator monitor answers:
 
-- **WHO** — the route that owns the active MRZ: `BTD` or `STR`.
-- **WHERE** — the frozen active core MRZ bounds, midpoint, and IPDA 20-week structural location.
+- **SOURCE** — the route that owns the active MRZ: `BTD` or `STR`.
+- **ACTIVE MRZ** — the frozen authoritative core MRZ bounds.
+- **MRZ LOCATION** — where the active MRZ midpoint sits inside its activation IPDA frame.
+- **CURRENT PRICE LOCATION** — where the latest observation price sits inside its current IPDA frame.
 
 It is a clean project, database, runtime, and Git repository. It does not import the EDGE 4.2 application or migrate 4.2 records.
 
@@ -12,7 +14,7 @@ It is a clean project, database, runtime, and Git repository. It does not import
 Every symbol begins as `NO_ACTIVE_MRZ`. A route becomes authoritative only when an incoming schema 4.3 observation completes a valid four-observation price concentration. The authority is singular:
 
 ```text
-WHO = active_mrz.route_owner
+SOURCE = active_mrz.route_owner
 ```
 
 The active bounds are frozen. Later observations cannot resize them. Only a confirmed same-route successor concentration can atomically replace them.
@@ -75,6 +77,11 @@ STR midpoint boundaries:
 
 EQM itself belongs to neither route. BTD concentrations in premium and STR concentrations in discount are invalid.
 
+The same geometry classifies the latest observation independently of MRZ
+authority. It returns deep/shallow discount or premium within the current IPDA
+range, `below_ipda_range` or `above_ipda_range` outside it, and `null` at exact
+EQM rather than inventing another location bucket.
+
 ## Concentration engine
 
 Each symbol maintains independent canonical rolling windows of the latest 20 BTD reclaims and latest 20 STR rejections. There is no elapsed-time expiry. Outliers can sit between qualifying observations.
@@ -115,7 +122,7 @@ The tick comes from an authoritative `EDGE2_SYMBOL_TICKS_JSON` override when con
 
 Observations are immutable and ordered by `observed_at`, then `received_at`, then database insertion ID. Event ID text is never used as chronology. After every accepted event, the affected symbol is replayed from durable observations and its derived active row plus transition audit are atomically reconciled. Late delivery, process restart, and deterministic replay therefore converge to the same state.
 
-## API and Symbol Lab
+## API and MRZ Monitor
 
 ```text
 GET  /health
@@ -126,7 +133,12 @@ GET  /api/symbols/{symbol}/mrz
 GET  /
 ```
 
-Symbol Lab fetches the symbol list once and fetches detail only after selection. It renders WHO, WHERE, structural location, confirming evidence, latest observation, and MRZ status. It contains no chronology, lifecycle, research, recommendation, readiness, approval, or handover interface.
+MRZ Monitor fetches the symbol list once and fetches detail only after selection.
+It renders SOURCE, ACTIVE MRZ, MRZ LOCATION, CURRENT PRICE LOCATION, confirming
+evidence, latest observation, and MRZ status. Detail responses derive
+`current_price_location` from the latest accepted observation price and that
+observation's IPDA 20W frame. The monitor contains no chronology, lifecycle,
+research, recommendation, readiness, approval, or handover interface.
 
 ## Clean database
 
