@@ -1,0 +1,43 @@
+name: edge2
+
+services:
+  edge2-db:
+    image: postgres:16-alpine
+    container_name: edge2-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${EDGE2_DB_NAME:-edge2}
+      POSTGRES_USER: ${EDGE2_DB_USER:-edge2}
+      POSTGRES_PASSWORD: ${EDGE2_DB_PASSWORD:?EDGE2_DB_PASSWORD is required}
+    ports:
+      - "127.0.0.1:${EDGE2_DB_PORT:-5435}:5432"
+    volumes:
+      - edge2_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${EDGE2_DB_USER:-edge2} -d ${EDGE2_DB_NAME:-edge2}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  edge2-app:
+    container_name: edge2-app
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: base
+    restart: unless-stopped
+    env_file:
+      - ${EDGE2_ENV_FILE:-.env}
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      DATABASE_URL: postgresql://${EDGE2_DB_USER:-edge2}:${EDGE2_DB_PASSWORD}@edge2-db:5432/${EDGE2_DB_NAME:-edge2}
+      PORT: "8790"
+    ports:
+      - "127.0.0.1:${EDGE2_APP_PORT:-8792}:8790"
+    depends_on:
+      edge2-db:
+        condition: service_healthy
+
+volumes:
+  edge2_pgdata:
+    name: edge2_pgdata

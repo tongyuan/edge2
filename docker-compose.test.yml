@@ -1,0 +1,31 @@
+name: edge2-test
+
+services:
+  edge2-test-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: edge2_test
+      POSTGRES_USER: edge2_test
+      POSTGRES_PASSWORD: edge2_test_only
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U edge2_test -d edge2_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  edge2-test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: test
+    environment:
+      TEST_DATABASE_URL: postgresql://edge2_test:edge2_test_only@edge2-test-db:5432/edge2_test
+      DATABASE_URL: postgresql://edge2_test:edge2_test_only@edge2-test-db:5432/edge2_test
+      APP_ENV: test
+      REQUIRE_WEBHOOK_SECRET: "true"
+      WEBHOOK_SECRET: test-webhook-secret
+    depends_on:
+      edge2-test-db:
+        condition: service_healthy
