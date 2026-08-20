@@ -1,0 +1,429 @@
+//@version=6
+indicator("EDGE 2.0 Route", "EDGE_2_ROUTE", overlay=true, max_lines_count=500, max_labels_count=500)
+max_bars_back(high, 5000)
+
+// EDGE 2.0 observes route events only. The backend owns MRZ concentration,
+// activation, migration, route ownership, and operator reporting.
+
+string EDGE_SCHEMA_VERSION = "4.3"
+
+string GROUP_ROUTE_TIMING = "Route Timing / Guardrails"
+int armCooldownBars = input.int(240, "Arm Cooldown Bars", minval=0, group=GROUP_ROUTE_TIMING)
+int firstStructureWindowBars = input.int(60, "Arm -> First Dip/Rip Max Bars", minval=1, group=GROUP_ROUTE_TIMING)
+
+string GROUP_ALERT_ROUTING = "Alert Routing"
+bool emitBTDObservations = input.bool(true, "Emit BTD Reclaim Observations", group=GROUP_ALERT_ROUTING)
+bool emitSTRObservations = input.bool(true, "Emit STR Rejection Observations", group=GROUP_ALERT_ROUTING)
+
+string GROUP_CHART_DISPLAY = "Chart Display"
+bool showArmLabels = input.bool(true, "Show Arm Labels", group=GROUP_CHART_DISPLAY)
+bool showFirstStructureLabels = input.bool(true, "Show First Dip/Rip Labels", group=GROUP_CHART_DISPLAY)
+bool showReclaimRejectLevel = input.bool(true, "Show Reclaim/Reject Level", group=GROUP_CHART_DISPLAY)
+
+// Operational constants retained from the canonical EDGE 4.2 route emitter.
+int len20 = 100
+int sdLen20 = 100
+int regLookback = 10
+bool useSmoothedEQM20 = true
+int eqm20TrendSmoothLen = 20
+string eqm20TrendSmoothType = "EMA"
+int eqm20DeltaLen = 5
+int eqm20SmoothLen = 5
+float eqm20FlatFrac = 0.60
+int retestHoldBars = 10
+int retestMaxBars = 10
+int retestMaxAttempts = 2
+bool useIPDAGate = true
+
+// The old 240-bar post-trigger window also blocked a new route arm. Preserve
+// that eligibility rule with a single timestamp-free bar gate.
+int routeRearmBars = 240
+
+int chartTfSec = timeframe.in_seconds(timeframe.period)
+bool profileTfMismatch = na(chartTfSec) or chartTfSec != 60
+bool routeTfOk = not profileTfMismatch
+string chartTickerId = str.length(syminfo.prefix) > 0 ? syminfo.prefix + ":" + syminfo.ticker : syminfo.ticker
+
+f_event_id(string _route, string _observationType, int _observedAt) =>
+    chartTickerId + "|" + EDGE_SCHEMA_VERSION + "|" + _route + "|" + _observationType + "|" + str.tostring(_observedAt)
+
+f_observed_at(int _observedAt) =>
+    str.format_time(_observedAt, "yyyy-MM-dd'T'HH:mm:ss'Z'", "UTC")
+
+f_json_number(float _value) =>
+    na(_value) ? "null" : str.tostring(_value, format.mintick)
+
+f_edge2_payload(string _route, string _observationType, float _observationPrice, float _ipdaHigh, float _ipdaLow, int _observedAt) =>
+    "{" +
+      '"schema_version":"' + EDGE_SCHEMA_VERSION + '",' +
+      '"event_id":"' + f_event_id(_route, _observationType, _observedAt) + '",' +
+      '"symbol":"' + syminfo.ticker + '",' +
+      '"route":"' + _route + '",' +
+      '"observation_type":"' + _observationType + '",' +
+      '"observation_price":' + f_json_number(_observationPrice) + ',' +
+      '"ipda_20w_high":' + f_json_number(_ipdaHigh) + ',' +
+      '"ipda_20w_low":' + f_json_number(_ipdaLow) + ',' +
+      '"observed_at":"' + f_observed_at(_observedAt) + '"}'
+
+// Core EQM calculations used by the proven route source and trigger mechanics.
+float eqm20 = (ta.highest(high, len20) + ta.lowest(low, len20)) / 2.0
+float eqm20TrendSm = eqm20TrendSmoothType == "EMA" ? ta.ema(eqm20, eqm20TrendSmoothLen) : eqm20TrendSmoothType == "RMA" ? ta.rma(eqm20, eqm20TrendSmoothLen) : ta.sma(eqm20, eqm20TrendSmoothLen)
+float eqm20Trend = useSmoothedEQM20 ? eqm20TrendSm : eqm20
+float eqm20DeltaRaw = eqm20Trend - eqm20Trend[eqm20DeltaLen]
+float eqm20Delta = ta.ema(eqm20DeltaRaw, eqm20SmoothLen)
+float eqm20SlopeSd = ta.stdev(eqm20DeltaRaw, regLookback)
+float eqm20FlatThr = not na(eqm20SlopeSd) ? eqm20SlopeSd * eqm20FlatFrac : 0.0
+bool eqm20IsFlat = math.abs(eqm20Delta) <= eqm20FlatThr
+string eqm20SlopeState = eqm20IsFlat ? "FLAT" : eqm20Delta > 0 ? "UP" : "DOWN"
+float eqm20DnCount = ta.sma(eqm20SlopeState == "DOWN" ? 1.0 : 0.0, regLookback) * regLookback
+float eqm20UpCount = ta.sma(eqm20SlopeState == "UP" ? 1.0 : 0.0, regLookback) * regLookback
+float eqm20Need = math.ceil(regLookback * 0.7)
+string eqm20Bias = eqm20UpCount >= eqm20Need ? "UP" : eqm20DnCount >= eqm20Need ? "DOWN" : "FLAT"
+color eqm20Color = eqm20Bias == "UP" ? color.green : eqm20Bias == "DOWN" ? color.red : color.gray
+
+float eqm20BandMid = useSmoothedEQM20 ? eqm20TrendSm : eqm20
+float d20 = close - eqm20BandMid
+float sd20 = ta.stdev(d20, sdLen20)
+float z20High = not na(sd20) and sd20 != 0 ? (high - eqm20BandMid) / sd20 : na
+float z20Low = not na(sd20) and sd20 != 0 ? (low - eqm20BandMid) / sd20 : na
+float eqm20Upper1 = eqm20BandMid + sd20
+float eqm20Lower1 = eqm20BandMid - sd20
+
+// Bull retest detector retained without functional changes.
+var int rStage = 0
+var int rBars = 0
+var int rHold = 0
+var int rAtt = 0
+var bool dipSeen = false
+var bool hadMeaningfulBounce = false
+var int accCool = 0
+var int rMeanCrossBar = na
+
+bool dipTag = not na(z20Low) and z20Low <= -1 and z20Low >= -2
+bool lostBelowL1 = not na(eqm20Lower1) and close < eqm20Lower1
+bool meanAbove = close > eqm20BandMid
+bool meanBelow = close < eqm20BandMid
+bool dipRetestTouch = low <= eqm20BandMid
+int holdBarsEff = math.max(retestHoldBars, 1)
+
+if rStage == 5
+    rBars += 1
+else
+    rBars := 0
+
+if rStage == 7
+    if meanAbove and not dipTag
+        accCool += 1
+        if accCool >= 3
+            rStage := 0
+            dipSeen := false
+            hadMeaningfulBounce := false
+            rBars := 0
+            rHold := 0
+            rAtt := 0
+            accCool := 0
+            rMeanCrossBar := na
+    else
+        accCool := 0
+else
+    accCool := 0
+
+if (rStage == 0 or rStage == 8) and dipTag
+    dipSeen := true
+    hadMeaningfulBounce := false
+    rAtt := 0
+    rHold := 0
+    rStage := 1
+    rMeanCrossBar := na
+
+if rStage >= 1 and rStage >= 2 and lostBelowL1
+    rStage := 1
+    rHold := 0
+    rBars := 0
+
+if rStage == 1 and meanAbove and not na(eqm20Lower1)
+    rStage := 2
+
+if rStage == 1 and dipSeen and not na(eqm20Lower1) and close > eqm20Lower1
+    rStage := 2
+
+if rStage == 2 and meanAbove
+    if not hadMeaningfulBounce
+        rStage := 3
+        hadMeaningfulBounce := true
+        rMeanCrossBar := bar_index
+    else
+        rStage := 6
+        rHold := 0
+
+if rStage == 3 and dipRetestTouch and bar_index > nz(rMeanCrossBar, -1)
+    rStage := 4
+    rAtt := 0
+    rHold := 0
+
+if rStage == 4
+    rStage := 5
+    rBars := 0
+    rAtt += 1
+
+if rStage == 5
+    if meanAbove
+        rStage := 6
+        rHold := 0
+    else
+        bool failTime = rBars >= retestMaxBars
+        bool failDrop = lostBelowL1
+        if failTime or failDrop
+            if rAtt >= retestMaxAttempts
+                rStage := 8
+                dipSeen := false
+            else
+                rStage := 2
+
+if rStage == 6
+    if meanAbove
+        rHold += 1
+        if rHold >= holdBarsEff
+            rStage := 7
+    else
+        rStage := 5
+
+if rStage == 7 and meanBelow
+    rStage := 5
+    rBars := 0
+    rHold := 0
+    rAtt := math.min(rAtt + 1, retestMaxAttempts)
+
+// Bear retest detector retained without functional changes.
+var int sStage = 0
+var int sBars = 0
+var int sHold = 0
+var int sAtt = 0
+var bool ripSeen = false
+var bool hadMeaningfulDrop = false
+var int sAccCool = 0
+var int sMeanCrossBar = na
+
+bool ripTag = not na(z20High) and z20High >= 1 and z20High <= 2
+bool lostAboveU1 = not na(eqm20Upper1) and close > eqm20Upper1
+bool ripRetestTouch = high >= eqm20BandMid
+
+if sStage == 5
+    sBars += 1
+else
+    sBars := 0
+
+if sStage == 7
+    if meanBelow and not ripTag
+        sAccCool += 1
+        if sAccCool >= 3
+            sStage := 0
+            ripSeen := false
+            hadMeaningfulDrop := false
+            sBars := 0
+            sHold := 0
+            sAtt := 0
+            sAccCool := 0
+            sMeanCrossBar := na
+    else
+        sAccCool := 0
+else
+    sAccCool := 0
+
+if (sStage == 0 or sStage == 8) and ripTag
+    ripSeen := true
+    hadMeaningfulDrop := false
+    sAtt := 0
+    sHold := 0
+    sStage := 1
+    sMeanCrossBar := na
+
+if sStage >= 1 and sStage >= 2 and lostAboveU1
+    sStage := 1
+    sHold := 0
+    sBars := 0
+
+if sStage == 1 and meanBelow and not na(eqm20Upper1)
+    sStage := 2
+
+if sStage == 1 and ripSeen and not na(eqm20Upper1) and close < eqm20Upper1
+    sStage := 2
+
+if sStage == 2 and meanBelow
+    if not hadMeaningfulDrop
+        sStage := 3
+        hadMeaningfulDrop := true
+        sMeanCrossBar := bar_index
+    else
+        sStage := 6
+        sHold := 0
+
+if sStage == 3 and ripRetestTouch and bar_index > nz(sMeanCrossBar, -1)
+    sStage := 4
+    sAtt := 0
+    sHold := 0
+
+if sStage == 4
+    sStage := 5
+    sBars := 0
+    sAtt += 1
+
+if sStage == 5
+    if meanBelow
+        sStage := 6
+        sHold := 0
+    else
+        bool sFailTime = sBars >= retestMaxBars
+        bool sFailPop = lostAboveU1
+        if sFailTime or sFailPop
+            if sAtt >= retestMaxAttempts
+                sStage := 8
+                ripSeen := false
+            else
+                sStage := 2
+
+if sStage == 6
+    if meanBelow
+        sHold += 1
+        if sHold >= holdBarsEff
+            sStage := 7
+    else
+        sStage := 5
+
+if sStage == 7 and meanAbove
+    sStage := 5
+    sBars := 0
+    sHold := 0
+    sAtt := math.min(sAtt + 1, retestMaxAttempts)
+
+bool bullMeaningfulBounce = rStage == 3 and rStage[1] != 3
+bool bearMeaningfulDrop = sStage == 3 and sStage[1] != 3
+
+// Current IPDA 20-week structure retained exactly from EDGE 4.2.
+float ipda20wLow = request.security(syminfo.tickerid, "W", ta.lowest(low, 20))
+float ipda20wHigh = request.security(syminfo.tickerid, "W", ta.highest(high, 20))
+float ipda20wEqm = (ipda20wLow + ipda20wHigh) / 2.0
+
+bool ipdaInDiscount = not na(ipda20wEqm) and close < ipda20wEqm
+bool ipdaInPremium = not na(ipda20wEqm) and close > ipda20wEqm
+bool btdLocationOk = not useIPDAGate or ipdaInDiscount
+bool strLocationOk = not useIPDAGate or ipdaInPremium
+
+// BTD route workflow.
+var int lastBtdArmBar = na
+var int lastBtdObservationBar = na
+var bool btdArmed = false
+var int btdArmBar = na
+var bool btdDipConfirmed = false
+var float btdReclaimPrice = na
+var int btdReclaimTimestamp = na
+var line btdReclaimLine = na
+
+float btdEntryRef = eqm20Lower1
+bool btdEntryRefReady = not na(btdEntryRef)
+bool btdArmCooldownOk = na(lastBtdArmBar) or bar_index - lastBtdArmBar >= armCooldownBars
+bool btdRouteReady = na(lastBtdObservationBar) or bar_index - lastBtdObservationBar > routeRearmBars
+bool btdArmCandidate = routeTfOk and btdLocationOk and bearMeaningfulDrop and btdArmCooldownOk and btdRouteReady and not btdArmed
+
+if btdArmCandidate
+    btdArmed := true
+    btdArmBar := bar_index
+    lastBtdArmBar := bar_index
+    btdDipConfirmed := false
+    if btdEntryRefReady and close < btdEntryRef
+        btdDipConfirmed := true
+    if showArmLabels
+        label.new(bar_index, low, "BTD ARM", style=label.style_label_up, textcolor=color.white, color=color.new(color.orange, 0), size=size.tiny)
+    if showFirstStructureLabels and btdDipConfirmed
+        label.new(bar_index, low, "1st DIP", style=label.style_label_up, textcolor=color.white, color=color.new(color.blue, 20), size=size.tiny)
+
+bool btdArmExpired = btdArmed and not btdDipConfirmed and not na(btdArmBar) and bar_index - btdArmBar > firstStructureWindowBars
+if btdArmExpired
+    btdArmed := false
+    btdArmBar := na
+    btdDipConfirmed := false
+
+bool btdFirstDipEvent = btdArmed and not btdDipConfirmed and btdEntryRefReady and close < btdEntryRef and not na(btdArmBar) and bar_index - btdArmBar <= firstStructureWindowBars
+if btdFirstDipEvent
+    btdDipConfirmed := true
+    if showFirstStructureLabels
+        label.new(bar_index, low, "1st DIP", style=label.style_label_up, textcolor=color.white, color=color.new(color.blue, 20), size=size.tiny)
+
+bool btdCloseBackAboveL1 = btdArmed and btdDipConfirmed and btdEntryRefReady and close > btdEntryRef and close[1] <= btdEntryRef
+bool btdReclaimConfirmed = btdCloseBackAboveL1 and close > close[1] and btdLocationOk
+if btdReclaimConfirmed
+    btdReclaimPrice := close
+    btdReclaimTimestamp := time_close
+    lastBtdObservationBar := bar_index
+    btdArmed := false
+    if showReclaimRejectLevel
+        if not na(btdReclaimLine)
+            line.set_x2(btdReclaimLine, bar_index)
+            line.set_extend(btdReclaimLine, extend.right)
+        btdReclaimLine := line.new(bar_index, btdReclaimPrice, bar_index + 1, btdReclaimPrice, xloc=xloc.bar_index, extend=extend.right, color=color.new(color.blue, 0), width=3, style=line.style_dotted)
+        label.new(bar_index, low, "RECLAIM", style=label.style_label_up, textcolor=color.white, color=color.new(color.blue, 15), size=size.tiny)
+    if emitBTDObservations
+        string edge2BtdObservation = f_edge2_payload("BTD", "reclaim", btdReclaimPrice, ipda20wHigh, ipda20wLow, btdReclaimTimestamp)
+        alert(edge2BtdObservation, alert.freq_once_per_bar_close)
+
+// STR route workflow.
+var int lastStrArmBar = na
+var int lastStrObservationBar = na
+var bool strArmed = false
+var int strArmBar = na
+var bool strRipConfirmed = false
+var float strRejectionPrice = na
+var int strRejectionTimestamp = na
+var line strRejectionLine = na
+
+float strEntryRef = eqm20Upper1
+bool strEntryRefReady = not na(strEntryRef)
+bool strArmCooldownOk = na(lastStrArmBar) or bar_index - lastStrArmBar >= armCooldownBars
+bool strRouteReady = na(lastStrObservationBar) or bar_index - lastStrObservationBar > routeRearmBars
+bool strArmCandidate = routeTfOk and strLocationOk and bullMeaningfulBounce and strArmCooldownOk and strRouteReady and not strArmed
+
+if strArmCandidate
+    strArmed := true
+    strArmBar := bar_index
+    lastStrArmBar := bar_index
+    strRipConfirmed := false
+    if strEntryRefReady and close > strEntryRef
+        strRipConfirmed := true
+    if showArmLabels
+        label.new(bar_index, high, "STR ARM", style=label.style_label_down, textcolor=color.white, color=color.new(color.orange, 0), size=size.tiny)
+    if showFirstStructureLabels and strRipConfirmed
+        label.new(bar_index, high, "1st RIP", style=label.style_label_down, textcolor=color.white, color=color.new(color.maroon, 20), size=size.tiny)
+
+bool strArmExpired = strArmed and not strRipConfirmed and not na(strArmBar) and bar_index - strArmBar > firstStructureWindowBars
+if strArmExpired
+    strArmed := false
+    strArmBar := na
+    strRipConfirmed := false
+
+bool strFirstRipEvent = strArmed and not strRipConfirmed and strEntryRefReady and close > strEntryRef and not na(strArmBar) and bar_index - strArmBar <= firstStructureWindowBars
+if strFirstRipEvent
+    strRipConfirmed := true
+    if showFirstStructureLabels
+        label.new(bar_index, high, "1st RIP", style=label.style_label_down, textcolor=color.white, color=color.new(color.maroon, 20), size=size.tiny)
+
+bool strCloseBackBelowU1 = strArmed and strRipConfirmed and strEntryRefReady and close < strEntryRef and close[1] >= strEntryRef
+bool strRejectionConfirmed = strCloseBackBelowU1 and close < close[1] and strLocationOk
+if strRejectionConfirmed
+    strRejectionPrice := close
+    strRejectionTimestamp := time_close
+    lastStrObservationBar := bar_index
+    strArmed := false
+    if showReclaimRejectLevel
+        if not na(strRejectionLine)
+            line.set_x2(strRejectionLine, bar_index)
+            line.set_extend(strRejectionLine, extend.right)
+        strRejectionLine := line.new(bar_index, strRejectionPrice, bar_index + 1, strRejectionPrice, xloc=xloc.bar_index, extend=extend.right, color=color.new(color.maroon, 0), width=3, style=line.style_dotted)
+        label.new(bar_index, high, "REJECT", style=label.style_label_down, textcolor=color.white, color=color.new(color.maroon, 15), size=size.tiny)
+    if emitSTRObservations
+        string edge2StrObservation = f_edge2_payload("STR", "rejection", strRejectionPrice, ipda20wHigh, ipda20wLow, strRejectionTimestamp)
+        alert(edge2StrObservation, alert.freq_once_per_bar_close)
+
+// Retained chart context required to verify the original trigger mechanics.
+plot(eqm20BandMid, "EQM20", color=eqm20Color, linewidth=2)
+plot(eqm20Upper1, "EQM20 +1", color=color.new(color.blue, 35), linewidth=1)
+plot(eqm20Lower1, "EQM20 -1", color=color.new(color.blue, 35), linewidth=1)
