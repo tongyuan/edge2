@@ -6,6 +6,7 @@ REMOTE_HOST="${EDGE2_REMOTE_HOST:-tony@100.95.242.17}"
 REMOTE_DIR="${EDGE2_REMOTE_DIR:-/home/tony/edge2}"
 SSH_KEY="${EDGE2_SSH_KEY:-${HOME}/.ssh/edge_server}"
 REMOTE_HEALTH_URL="http://127.0.0.1:${EDGE2_APP_PORT:-8792}/health"
+REMOTE_INGRESS_HEALTH_URL="http://127.0.0.1:${EDGE2_INGRESS_PORT:-8793}/health"
 
 if [[ ! -r "${SSH_KEY}" ]]; then
   echo "SSH key is not readable: ${SSH_KEY}" >&2
@@ -38,9 +39,9 @@ ssh "${ssh_options[@]}" "${REMOTE_HOST}" \
 
 for attempt in {1..30}; do
   if ssh "${ssh_options[@]}" "${REMOTE_HOST}" \
-    "curl --fail --silent --show-error --max-time 5 '${REMOTE_HEALTH_URL}'"; then
+    "curl --fail --silent --show-error --max-time 5 '${REMOTE_HEALTH_URL}' >/dev/null && curl --fail --silent --show-error --max-time 5 '${REMOTE_INGRESS_HEALTH_URL}'"; then
     echo
-    echo "EDGE 2.0 deployment healthy on ${REMOTE_HEALTH_URL}"
+    echo "EDGE 2.0 app and ingress healthy"
     exit 0
   fi
   sleep 2

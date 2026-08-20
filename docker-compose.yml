@@ -38,6 +38,26 @@ services:
       edge2-db:
         condition: service_healthy
 
+  edge2-ingress:
+    image: nginx:stable-alpine
+    container_name: edge2-ingress
+    restart: unless-stopped
+    environment:
+      EDGE2_UPSTREAM_WEBHOOK_SECRET: ${WEBHOOK_SECRET:?WEBHOOK_SECRET is required}
+      NGINX_ENVSUBST_FILTER: ^EDGE2_UPSTREAM_WEBHOOK_SECRET$
+    ports:
+      - "127.0.0.1:${EDGE2_INGRESS_PORT:-8793}:8080"
+    volumes:
+      - ./infra/nginx/edge2-ngrok.conf.template:/etc/nginx/templates/default.conf.template:ro
+    depends_on:
+      edge2-app:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --output-document=/dev/null http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
 volumes:
   edge2_pgdata:
     name: edge2_pgdata

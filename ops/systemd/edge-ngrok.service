@@ -1,0 +1,13 @@
+[Unit]
+Description=EDGE 2.0 TradingView ngrok tunnel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/ngrok http http://127.0.0.1:8793 --url=https://unretroactively-latticed-fidela.ngrok-free.dev --config=/home/tony/.config/ngrok/ngrok.yml --log=stdout
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

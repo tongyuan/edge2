@@ -30,6 +30,9 @@ COPY requirements-dev.txt .
 RUN pip install --no-cache-dir -r requirements-dev.txt
 COPY tests ./tests
 COPY pine ./pine
+COPY docker-compose.yml .env.example ./
+COPY infra ./infra
+COPY ops ./ops
 RUN chown -R edge2:edge2 /app
 USER edge2
 CMD ["python3", "-m", "unittest", "discover", "-s", "tests", "-v"]

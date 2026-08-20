@@ -1,4 +1,4 @@
-.PHONY: test up down logs health migrate backup
+.PHONY: test up down logs health ingress-health migrate backup
 
 test:
 	docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from edge2-test
@@ -15,6 +15,9 @@ logs:
 
 health:
 	curl --fail --silent --show-error http://127.0.0.1:$${EDGE2_APP_PORT:-8792}/health
+
+ingress-health:
+	curl --fail --silent --show-error http://127.0.0.1:$${EDGE2_INGRESS_PORT:-8793}/health
 
 migrate:
 	docker compose run --rm edge2-app python3 scripts/migrate.py
