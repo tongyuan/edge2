@@ -42,6 +42,14 @@ Cross-route replacement has no unambiguous trigger in the frozen first-build doc
 
 Validation is exact: supported schema, required unique event ID, normalized symbol, route/type match, finite positive observation price, finite valid IPDA range, and timezone-aware timestamp. PostgreSQL's unique `event_id` constraint is the durable idempotency boundary. A retry returns HTTP 200 as a duplicate no-op.
 
+The isolated Pine v6 route emitter is
+[`pine/EDGE_2_ROUTE.pine`](pine/EDGE_2_ROUTE.pine). It retains the proven 4.2
+IPDA/BTD/STR trigger mechanics but emits only the exact schema 4.3 structural
+observation at trigger close. See
+[`docs/pinescript-route-emitter.md`](docs/pinescript-route-emitter.md) for the
+source audit and [`docs/tradingview-cutover.md`](docs/tradingview-cutover.md) for
+the manual, non-destructive alert cutover.
+
 ## IPDA 20-week geometry
 
 ```text
