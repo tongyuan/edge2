@@ -27,9 +27,14 @@ class IngressContractTests(unittest.TestCase):
 
     def test_only_exact_webhook_path_is_proxied(self) -> None:
         self.assertIn("location = /webhook/tradingview", NGINX)
-        self.assertIn("proxy_pass http://edge2-app:8790/webhook/tradingview;", NGINX)
+        self.assertIn("set $edge2_app http://edge2-app:8790;", NGINX)
+        self.assertIn("proxy_pass $edge2_app/webhook/tradingview;", NGINX)
         self.assertIn("limit_except POST", NGINX)
         self.assertRegex(NGINX, re.compile(r"location / \{\s+return 404;", re.MULTILINE))
+
+    def test_ingress_rediscovers_app_after_container_replacement(self) -> None:
+        self.assertIn("resolver 127.0.0.11", NGINX)
+        self.assertIn("proxy_pass $edge2_app/health;", NGINX)
 
     def test_ngrok_hostname_is_retained_and_targets_ingress(self) -> None:
         self.assertIn("http://127.0.0.1:8793", NGROK_UNIT)

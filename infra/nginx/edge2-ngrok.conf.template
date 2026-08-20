@@ -3,9 +3,11 @@ server {
     server_name _;
     server_tokens off;
     client_max_body_size 32k;
+    resolver 127.0.0.11 ipv6=off valid=10s;
+    set $edge2_app http://edge2-app:8790;
 
     location = /health {
-        proxy_pass http://edge2-app:8790/health;
+        proxy_pass $edge2_app/health;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_connect_timeout 5s;
@@ -17,7 +19,7 @@ server {
             deny all;
         }
 
-        proxy_pass http://edge2-app:8790/webhook/tradingview;
+        proxy_pass $edge2_app/webhook/tradingview;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
