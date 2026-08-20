@@ -1,0 +1,137 @@
+from __future__ import annotations
+
+import unittest
+
+from fastapi.testclient import TestClient
+
+from app.api import create_app
+from app.config import Settings
+from tests.db_support import clean, migrate_and_clean, require_test_database
+
+
+def webhook_payload(index: int = 1, price: str = "110", **overrides):
+    value = {
+        "schema_version": "4.3",
+        "event_id": f"api-event-{index}",
+        "symbol": "SPXUSDT",
+        "route": "BTD",
+        "observation_type": "reclaim",
+        "observation_price": price,
+        "ipda_20w_high": "200",
+        "ipda_20w_low": "100",
+        "observed_at": f"2026-08-20T12:00:{index:02d}Z",
+        "webhook_secret": "test-webhook-secret",
+    }
+    value.update(overrides)
+    return value
+
+
+class APIIntegrationTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.database_url = require_test_database(cls)
+        migrate_and_clean(cls.database_url)
+        settings = Settings(
+            app_env="test",
+            database_url=cls.database_url,
+            webhook_secret="test-webhook-secret",
+            require_webhook_secret=True,
+            symbol_ticks={},
+            max_request_bytes=32768,
+            log_level="CRITICAL",
+        )
+        cls.client = TestClient(create_app(settings))
+
+    def setUp(self) -> None:
+        clean(self.database_url)
+
+    def test_health_and_empty_symbol_collection(self) -> None:
+        health = self.client.get("/health")
+        self.assertEqual(health.status_code, 200)
+        self.assertEqual(health.json()["database"], "ok")
+        self.assertEqual(self.client.get("/api/symbols").json(), {"symbols": []})
+
+    def test_valid_btd_valid_str_and_unestablished_responses(self) -> None:
+        btd = self.client.post("/webhook/tradingview", json=webhook_payload())
+        self.assertEqual(btd.status_code, 201)
+        self.assertTrue(btd.json()["accepted"])
+        detail = self.client.get("/api/symbols/SPXUSDT").json()
+        self.assertEqual(detail["mrz_status"], "unestablished")
+        str_packet = webhook_payload(
+            2,
+            "180",
+            event_id="api-str-2",
+            symbol="NASDAQ:NDX",
+            route="STR",
+            observation_type="rejection",
+        )
+        self.assertEqual(self.client.post("/webhook/tradingview", json=str_packet).status_code, 201)
+
+    def test_duplicate_event_is_successful_no_op(self) -> None:
+        packet = webhook_payload()
+        self.assertEqual(self.client.post("/webhook/tradingview", json=packet).status_code, 201)
+        duplicate = self.client.post("/webhook/tradingview", json=packet)
+        self.assertEqual(duplicate.status_code, 200)
+        self.assertTrue(duplicate.json()["duplicate"])
+        health = self.client.get("/health").json()
+        self.assertEqual(health["accepted_payload_count"], 1)
+        self.assertEqual(health["duplicate_payload_count"], 1)
+
+    def test_activation_response_prioritizes_who_and_where(self) -> None:
+        for index, price in enumerate(("110", "110.2", "110.4", "110.6"), 1):
+            response = self.client.post("/webhook/tradingview", json=webhook_payload(index, price))
+            self.assertEqual(response.status_code, 201)
+        detail = self.client.get("/api/symbols/SPXUSDT/mrz").json()
+        self.assertEqual(detail["mrz_status"], "active")
+        self.assertEqual(detail["route_owner"], "BTD")
+        self.assertEqual(detail["core_mrz_lower"], 110.0)
+        self.assertEqual(detail["core_mrz_upper"], 110.6)
+        self.assertEqual(detail["structural_location"], "deep_discount_core_mrz")
+        self.assertNotIn("recommendation", detail)
+        self.assertNotIn("readiness", detail)
+
+    def test_authentication_is_required_and_secret_is_redacted(self) -> None:
+        packet = webhook_payload()
+        packet.pop("webhook_secret")
+        response = self.client.post("/webhook/tradingview", json=packet)
+        self.assertEqual(response.status_code, 401)
+        health = self.client.get("/health").json()
+        self.assertEqual(health["rejected_payload_count"], 1)
+
+    def test_header_authentication_is_supported(self) -> None:
+        packet = webhook_payload()
+        packet.pop("webhook_secret")
+        response = self.client.post(
+            "/webhook/tradingview",
+            json=packet,
+            headers={"X-EDGE2-Webhook-Secret": "test-webhook-secret"},
+        )
+        self.assertEqual(response.status_code, 201)
+
+    def test_invalid_json_is_rejected_and_counted(self) -> None:
+        response = self.client.post(
+            "/webhook/tradingview",
+            content=b"{not-json",
+            headers={"content-type": "application/json"},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.client.get("/health").json()["rejected_payload_count"], 1)
+
+    def test_schema_validation_matrix(self) -> None:
+        invalid_cases = (
+            {"observation_price": "not-a-number"},
+            {"ipda_20w_high": "100", "ipda_20w_low": "100"},
+            {"schema_version": "4.2"},
+            {"route": "BTD", "observation_type": "rejection"},
+            {"route": "STR", "observation_type": "reclaim"},
+            {"observed_at": "2026-08-20T12:00:00"},
+        )
+        for index, overrides in enumerate(invalid_cases, 1):
+            packet = webhook_payload(index, event_id=f"invalid-{index}", **overrides)
+            with self.subTest(overrides=overrides):
+                response = self.client.post("/webhook/tradingview", json=packet)
+                self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.client.get("/health").json()["rejected_payload_count"], len(invalid_cases))
+
+    def test_unknown_symbol_returns_404(self) -> None:
+        self.assertEqual(self.client.get("/api/symbols/UNKNOWN").status_code, 404)

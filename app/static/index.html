@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="EDGE 2.0 operational Symbol Lab" />
+    <title>EDGE 2.0 · Symbol Lab</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="masthead">
+        <div>
+          <p class="eyebrow">EDGE 2.0</p>
+          <h1>Symbol Lab</h1>
+        </div>
+        <span class="status-dot" id="healthState">Checking system</span>
+      </header>
+
+      <section class="selector" aria-labelledby="symbol-selector-title">
+        <label id="symbol-selector-title" for="symbolSelect">Symbol</label>
+        <select id="symbolSelect" disabled>
+          <option value="">Loading symbols…</option>
+        </select>
+      </section>
+
+      <section class="empty-state" id="emptyState">
+        <p>Select a symbol to view its current MRZ authority.</p>
+      </section>
+
+      <section class="state-card" id="stateCard" hidden aria-live="polite">
+        <div class="symbol-row">
+          <h2 id="symbolName">—</h2>
+          <span class="pill" id="mrzStatus">—</span>
+        </div>
+
+        <div class="answer-grid">
+          <article>
+            <p class="label">WHO</p>
+            <p class="answer route" id="routeOwner">—</p>
+            <p class="support">Current route owner</p>
+          </article>
+          <article>
+            <p class="label">WHERE</p>
+            <p class="answer" id="mrzBounds">No confirmed MRZ</p>
+            <p class="support" id="structuralLocation">—</p>
+          </article>
+        </div>
+
+        <dl class="facts">
+          <div>
+            <dt>Evidence</dt>
+            <dd id="evidence">—</dd>
+          </div>
+          <div>
+            <dt>Latest observation</dt>
+            <dd id="latestObservation">—</dd>
+          </div>
+          <div>
+            <dt>MRZ midpoint</dt>
+            <dd id="mrzMidpoint">—</dd>
+          </div>
+        </dl>
+      </section>
+    </main>
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>
