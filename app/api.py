@@ -70,7 +70,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     application = FastAPI(
         title="EDGE 2.0",
-        description="Operational WHO / WHERE MRZ state engine",
+        description="Operational SOURCE / ACTIVE MRZ state engine",
         version="2.0.0",
         lifespan=lifespan,
         docs_url="/docs",

@@ -24,6 +24,15 @@ class StructuralLocation(StrEnum):
     DEEP_PREMIUM = "deep_premium_core_mrz"
 
 
+class PriceLocation(StrEnum):
+    DEEP_DISCOUNT = "deep_discount"
+    SHALLOW_DISCOUNT = "shallow_discount"
+    SHALLOW_PREMIUM = "shallow_premium"
+    DEEP_PREMIUM = "deep_premium"
+    BELOW_IPDA_RANGE = "below_ipda_range"
+    ABOVE_IPDA_RANGE = "above_ipda_range"
+
+
 class MRZEventType(StrEnum):
     ACTIVATED = "MRZ_ACTIVATED"
     MIGRATED = "MRZ_MIGRATED"

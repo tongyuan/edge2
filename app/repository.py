@@ -20,6 +20,7 @@ from app.domain import (
     StructuralLocation,
 )
 from app.state_engine import replay_symbol
+from app.structure import classify_ipda_location
 from app.validation import ObservationPayload, normalize_symbol
 
 
@@ -382,10 +383,16 @@ def iso(value: datetime | None) -> str | None:
 
 
 def detail_payload(symbol: str, latest: Mapping[str, Any], active: ActiveMRZ | None) -> dict[str, Any]:
+    current_price_location = classify_ipda_location(
+        Decimal(latest["observation_price"]),
+        Decimal(latest["ipda_20w_high"]),
+        Decimal(latest["ipda_20w_low"]),
+    )
     base = {
         "symbol": symbol,
         "latest_observation_price": number(latest["observation_price"]),
         "latest_observed_at": iso(latest["observed_at"]),
+        "current_price_location": current_price_location.value if current_price_location else None,
     }
     if active is None:
         return {

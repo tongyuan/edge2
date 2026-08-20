@@ -57,6 +57,7 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertTrue(btd.json()["accepted"])
         detail = self.client.get("/api/symbols/SPXUSDT").json()
         self.assertEqual(detail["mrz_status"], "unestablished")
+        self.assertEqual(detail["current_price_location"], "deep_discount")
         str_packet = webhook_payload(
             2,
             "180",
@@ -77,7 +78,7 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(health["accepted_payload_count"], 1)
         self.assertEqual(health["duplicate_payload_count"], 1)
 
-    def test_activation_response_prioritizes_who_and_where(self) -> None:
+    def test_activation_response_prioritizes_source_and_active_mrz(self) -> None:
         for index, price in enumerate(("110", "110.2", "110.4", "110.6"), 1):
             response = self.client.post("/webhook/tradingview", json=webhook_payload(index, price))
             self.assertEqual(response.status_code, 201)
@@ -87,8 +88,52 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(detail["core_mrz_lower"], 110.0)
         self.assertEqual(detail["core_mrz_upper"], 110.6)
         self.assertEqual(detail["structural_location"], "deep_discount_core_mrz")
+        self.assertEqual(detail["current_price_location"], "deep_discount")
         self.assertNotIn("recommendation", detail)
         self.assertNotIn("readiness", detail)
+
+    def test_current_price_location_is_independent_from_active_mrz_state(self) -> None:
+        for index, price in enumerate(("110", "110.2", "110.4", "110.6"), 1):
+            response = self.client.post("/webhook/tradingview", json=webhook_payload(index, price))
+            self.assertEqual(response.status_code, 201)
+        before = self.client.get("/api/symbols/SPXUSDT/mrz").json()
+        events_before = self.client.app.state.repository.audit_events("SPXUSDT")
+
+        price_shift = webhook_payload(
+            5,
+            "160",
+            event_id="current-price-shift",
+            route="STR",
+            observation_type="rejection",
+        )
+        response = self.client.post("/webhook/tradingview", json=price_shift)
+        self.assertEqual(response.status_code, 201)
+        after = self.client.get("/api/symbols/SPXUSDT/mrz").json()
+        events_after = self.client.app.state.repository.audit_events("SPXUSDT")
+
+        self.assertEqual(after["current_price_location"], "shallow_premium")
+        self.assertEqual(after["route_owner"], before["route_owner"])
+        self.assertEqual(after["core_mrz_lower"], before["core_mrz_lower"])
+        self.assertEqual(after["core_mrz_upper"], before["core_mrz_upper"])
+        transition_fields = (
+            "event_key",
+            "sequence",
+            "event_type",
+            "route_owner",
+            "trigger_event_id",
+            "new_core_mrz_lower",
+            "new_core_mrz_upper",
+        )
+        self.assertEqual(
+            [tuple(event[field] for field in transition_fields) for event in events_after],
+            [tuple(event[field] for field in transition_fields) for event in events_before],
+        )
+
+    def test_current_price_at_exact_eqm_is_explicitly_unclassified(self) -> None:
+        response = self.client.post("/webhook/tradingview", json=webhook_payload(price="150"))
+        self.assertEqual(response.status_code, 201)
+        detail = self.client.get("/api/symbols/SPXUSDT").json()
+        self.assertIsNone(detail["current_price_location"])
 
     def test_authentication_is_required_and_secret_is_redacted(self) -> None:
         packet = webhook_payload()
