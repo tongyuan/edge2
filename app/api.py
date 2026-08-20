@@ -82,7 +82,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @application.get("/", include_in_schema=False)
     def symbol_lab() -> FileResponse:
-        return FileResponse(STATIC_DIR / "index.html")
+        return FileResponse(
+            STATIC_DIR / "index.html",
+            headers={
+                "Cache-Control": "no-store, max-age=0",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
 
     @application.get("/health")
     def health() -> JSONResponse:

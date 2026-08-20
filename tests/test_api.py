@@ -51,6 +51,13 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(health.json()["database"], "ok")
         self.assertEqual(self.client.get("/api/symbols").json(), {"symbols": []})
 
+    def test_monitor_shell_uses_current_terminology_and_is_not_cached(self) -> None:
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["cache-control"], "no-store, max-age=0")
+        self.assertIn("MRZ Monitor", response.text)
+        self.assertNotIn("Symbol Lab", response.text)
+
     def test_valid_btd_valid_str_and_unestablished_responses(self) -> None:
         btd = self.client.post("/webhook/tradingview", json=webhook_payload())
         self.assertEqual(btd.status_code, 201)
