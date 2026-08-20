@@ -47,6 +47,7 @@ class IngressContractTests(unittest.TestCase):
     def test_remote_deploy_verifies_the_ingress(self) -> None:
         self.assertIn("REMOTE_INGRESS_HEALTH_URL", DEPLOY_SCRIPT)
         self.assertIn("EDGE 2.0 app and ingress healthy", DEPLOY_SCRIPT)
+        self.assertIn("--force-recreate --no-deps edge2-ingress", DEPLOY_SCRIPT)
 
     def test_no_literal_webhook_secret_is_committed(self) -> None:
         combined = COMPOSE + NGINX + NGROK_UNIT

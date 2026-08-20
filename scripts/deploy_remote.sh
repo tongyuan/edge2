@@ -36,6 +36,8 @@ rsync -az --checksum --delete \
 ssh "${ssh_options[@]}" "${REMOTE_HOST}" "test -s '${REMOTE_DIR}/.env'"
 ssh "${ssh_options[@]}" "${REMOTE_HOST}" \
   "cd '${REMOTE_DIR}' && docker compose --project-name edge2 up -d --build"
+ssh "${ssh_options[@]}" "${REMOTE_HOST}" \
+  "cd '${REMOTE_DIR}' && docker compose --project-name edge2 up -d --force-recreate --no-deps edge2-ingress"
 
 for attempt in {1..30}; do
   if ssh "${ssh_options[@]}" "${REMOTE_HOST}" \
