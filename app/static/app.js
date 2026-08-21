@@ -202,7 +202,7 @@ function renderSymbol(state) {
   fields.currentObservationTime.textContent = formatObservationTimestamp(state.latest_observed_at);
   fields.evidence.textContent = active
     ? `${state.supporting_observation_count} qualifying observation${state.supporting_observation_count === 1 ? "" : "s"}`
-    : "—";
+    : "Concentration not established";
   fields.latest.textContent = formatPrice(state.latest_observation_price);
   fields.midpoint.textContent = formatPrice(state.core_mrz_midpoint);
   emptyState.hidden = true;

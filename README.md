@@ -158,6 +158,8 @@ and fall inside the frozen core bounds. Observations elsewhere in the migration
 envelope, successor candidates, and opposite-route observations do not count.
 The count is cumulative rather than rolling-window progress, and a migrated MRZ
 starts from its own confirming cluster without inheriting the old count.
+Before activation, the selected detail reports `Concentration not established`
+rather than showing partial formation progress or implying missing data.
 
 ## Clean database
 

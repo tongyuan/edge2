@@ -21,8 +21,8 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("Symbol Lab", HTML)
 
     def test_monitor_assets_are_versioned_together(self) -> None:
-        self.assertIn('/static/styles.css?v=observation-time-20260821', HTML)
-        self.assertIn('/static/app.js?v=observation-time-20260821', HTML)
+        self.assertIn('/static/styles.css?v=unestablished-evidence-20260821', HTML)
+        self.assertIn('/static/app.js?v=unestablished-evidence-20260821', HTML)
 
     def test_source_and_active_mrz_replace_who_and_where(self) -> None:
         self.assertIn(">SOURCE<", HTML)
@@ -127,10 +127,12 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("reclaim", evidence_render)
         self.assertNotIn("rejection", evidence_render)
 
-    def test_unestablished_state_shows_no_partial_formation_progress(self) -> None:
-        self.assertIn(': "—";', JAVASCRIPT)
+    def test_unestablished_state_is_explicit_without_partial_formation_progress(self) -> None:
+        evidence_render = JAVASCRIPT.split("fields.evidence.textContent", 1)[1].split(
+            "fields.latest.textContent", 1
+        )[0]
+        self.assertIn(': "Concentration not established";', evidence_render)
         self.assertNotIn("3 / 4", HTML + JAVASCRIPT)
-        self.assertNotIn("Concentration not established", HTML + JAVASCRIPT)
 
     def test_heatmap_chips_do_not_include_evidence_counts(self) -> None:
         heatmap_group = JAVASCRIPT.split("function createLocationGroup", 1)[1].split(
