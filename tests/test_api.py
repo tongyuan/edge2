@@ -69,6 +69,7 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertIsNone(detail["supporting_observation_count"])
         overview = self.client.get("/api/symbols").json()["symbols"]
         self.assertEqual(overview[0]["current_price_location"], "deep_discount")
+        self.assertEqual(overview[0]["mrz_status"], "unestablished")
         str_packet = webhook_payload(
             2,
             "180",
@@ -104,6 +105,8 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(detail["supporting_observation_count"], 4)
         self.assertNotIn("recommendation", detail)
         self.assertNotIn("readiness", detail)
+        overview = self.client.get("/api/symbols").json()["symbols"][0]
+        self.assertEqual(overview["mrz_status"], "active")
 
     def test_active_mrz_support_count_accepts_only_valid_frozen_core_evidence(self) -> None:
         for index, price in enumerate(("110", "110.2", "110.4", "110.6"), 1):

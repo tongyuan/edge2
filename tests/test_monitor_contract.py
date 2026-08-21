@@ -7,6 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 HTML = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
 JAVASCRIPT = (ROOT / "app/static/app.js").read_text(encoding="utf-8")
+HEATMAP_STATE = (ROOT / "app/static/heatmap-state.js").read_text(encoding="utf-8")
 OPERATOR_TIME = (ROOT / "app/static/operator-time.js").read_text(encoding="utf-8")
 CSS = (ROOT / "app/static/styles.css").read_text(encoding="utf-8")
 REPOSITORY = (ROOT / "app/repository.py").read_text(encoding="utf-8")
@@ -22,9 +23,11 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("Symbol Lab", HTML)
 
     def test_monitor_assets_are_versioned_together(self) -> None:
-        self.assertIn('/static/styles.css?v=utc-minus-4-20260821', HTML)
-        self.assertIn('/static/operator-time.js?v=utc-minus-4-20260821', HTML)
-        self.assertIn('/static/app.js?v=utc-minus-4-20260821', HTML)
+        self.assertIn('/static/styles.css?v=active-mrz-indicator-20260821', HTML)
+        self.assertIn('/static/heatmap-state.js?v=active-mrz-indicator-20260821', HTML)
+        self.assertIn('/static/operator-time.js?v=active-mrz-indicator-20260821', HTML)
+        self.assertIn('/static/app.js?v=active-mrz-indicator-20260821', HTML)
+        self.assertLess(HTML.index("heatmap-state.js"), HTML.index("app.js"))
 
     def test_source_and_active_mrz_replace_who_and_where(self) -> None:
         self.assertIn(">SOURCE<", HTML)
@@ -71,8 +74,8 @@ class MonitorContractTests(unittest.TestCase):
         self.assertLess(HTML.index(">LOCATION HEATMAP<"), HTML.index(">SELECTED SYMBOL DETAIL<"))
 
     def test_heatmap_has_exactly_four_primary_and_three_fallback_keys(self) -> None:
-        primary = JAVASCRIPT.split("const primaryLocationKeys = [", 1)[1].split("];", 1)[0]
-        secondary = JAVASCRIPT.split("const secondaryLocationKeys = [", 1)[1].split("];", 1)[0]
+        primary = HEATMAP_STATE.split("const primaryLocationKeys = [", 1)[1].split("];", 1)[0]
+        secondary = HEATMAP_STATE.split("const secondaryLocationKeys = [", 1)[1].split("];", 1)[0]
         self.assertEqual(
             [line.strip(' ,\"') for line in primary.splitlines() if '"' in line],
             ["deep_discount", "shallow_discount", "shallow_premium", "deep_premium"],
@@ -84,10 +87,32 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn('key === "unavailable" ? "Unavailable"', JAVASCRIPT)
 
     def test_heatmap_groups_each_symbol_once_and_sorts_alphabetically(self) -> None:
-        self.assertIn('const key = allLocationKeys.has(currentLocation) ? currentLocation : "unavailable";', JAVASCRIPT)
-        self.assertEqual(JAVASCRIPT.count("groups[key].push(symbol);"), 1)
-        self.assertIn("symbolsInGroup.sort((left, right) => left.localeCompare(right))", JAVASCRIPT)
+        self.assertIn('const key = allLocationKeys.has(currentLocation) ? currentLocation : "unavailable";', HEATMAP_STATE)
+        self.assertEqual(HEATMAP_STATE.count("groups[key].push(symbolState);"), 1)
+        self.assertIn("left.symbol.localeCompare(right.symbol)", HEATMAP_STATE)
         self.assertIn('heatmapEmpty.textContent = "No symbols yet";', JAVASCRIPT)
+
+    def test_heatmap_active_indicator_uses_authoritative_status_and_is_accessible(self) -> None:
+        self.assertIn('return symbolState.mrz_status === "active";', HEATMAP_STATE)
+        self.assertNotIn("confirming_observation_count", HEATMAP_STATE)
+        self.assertNotIn("route_owner", HEATMAP_STATE)
+        heatmap_group = JAVASCRIPT.split("function createLocationGroup", 1)[1].split(
+            "function renderLocationHeatmap", 1
+        )[0]
+        self.assertIn("const active = hasActiveMrz(symbolState);", heatmap_group)
+        self.assertIn('indicator.className = "active-mrz-dot";', heatmap_group)
+        self.assertIn('indicator.setAttribute("aria-hidden", "true");', heatmap_group)
+        self.assertIn('active ? `${symbol} — Active MRZ` : `Select ${symbol}`', heatmap_group)
+        self.assertNotIn("BTD", heatmap_group)
+        self.assertNotIn("STR", heatmap_group)
+
+    def test_heatmap_has_one_quiet_active_legend_without_animation(self) -> None:
+        self.assertEqual(HTML.count(">Active MRZ<"), 1)
+        self.assertIn('class="heatmap-legend"', HTML)
+        self.assertIn('class="active-mrz-dot" aria-hidden="true"', HTML)
+        active_style = CSS.split(".active-mrz-dot", 1)[1].split(".heatmap-grid", 1)[0]
+        self.assertNotIn("animation", active_style)
+        self.assertNotIn("pulse", active_style)
 
     def test_heatmap_click_reuses_selector_and_lazy_detail_loader(self) -> None:
         self.assertIn('button.addEventListener("click", () => selectSymbol(symbol).catch(showError));', JAVASCRIPT)
@@ -177,7 +202,7 @@ class MonitorContractTests(unittest.TestCase):
 
     def test_observation_timestamp_has_neutral_fallback_and_is_not_mrz_gated(self) -> None:
         timestamp_formatter = JAVASCRIPT.split("function formatObservationTimestamp", 1)[1].split(
-            "const primaryLocationKeys", 1
+            "function createLocationGroup", 1
         )[0]
         self.assertIn(': "Latest observation · —";', timestamp_formatter)
         self.assertIn("if (!value) return null;", OPERATOR_TIME)

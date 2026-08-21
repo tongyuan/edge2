@@ -6,6 +6,12 @@ const locationHeatmap = document.querySelector("#locationHeatmap");
 const heatmapEmpty = document.querySelector("#heatmapEmpty");
 const primaryLocationGroups = document.querySelector("#primaryLocationGroups");
 const secondaryLocationGroups = document.querySelector("#secondaryLocationGroups");
+const {
+  primaryLocationKeys,
+  secondaryLocationKeys,
+  hasActiveMrz,
+  groupSymbolsByLocation,
+} = globalThis.edgeHeatmapState;
 
 const fields = {
   symbol: document.querySelector("#symbolName"),
@@ -46,31 +52,6 @@ function formatObservationTimestamp(value) {
     : "Latest observation · —";
 }
 
-const primaryLocationKeys = [
-  "deep_discount",
-  "shallow_discount",
-  "shallow_premium",
-  "deep_premium",
-];
-
-const secondaryLocationKeys = [
-  "below_ipda_range",
-  "above_ipda_range",
-  "unavailable",
-];
-
-const allLocationKeys = new Set([...primaryLocationKeys, ...secondaryLocationKeys]);
-
-function groupSymbolsByLocation(symbols) {
-  const groups = Object.fromEntries([...allLocationKeys].map((key) => [key, []]));
-  symbols.forEach(({ symbol, current_price_location: currentLocation }) => {
-    const key = allLocationKeys.has(currentLocation) ? currentLocation : "unavailable";
-    groups[key].push(symbol);
-  });
-  Object.values(groups).forEach((symbolsInGroup) => symbolsInGroup.sort((left, right) => left.localeCompare(right)));
-  return groups;
-}
-
 function createLocationGroup(key, symbols, secondary = false) {
   const group = document.createElement("section");
   group.className = secondary ? "location-group secondary" : "location-group";
@@ -87,14 +68,25 @@ function createLocationGroup(key, symbols, secondary = false) {
     empty.textContent = "No symbols";
     symbolList.append(empty);
   } else {
-    symbols.forEach((symbol) => {
+    symbols.forEach((symbolState) => {
+      const active = hasActiveMrz(symbolState);
+      const { symbol } = symbolState;
       const button = document.createElement("button");
       button.type = "button";
       button.className = "symbol-chip";
+      button.classList.toggle("active-mrz", active);
       button.dataset.symbol = symbol;
       button.setAttribute("aria-pressed", "false");
-      button.setAttribute("aria-label", `Select ${symbol}`);
-      button.textContent = symbol;
+      button.setAttribute("aria-label", active ? `${symbol} — Active MRZ` : `Select ${symbol}`);
+      if (active) {
+        const indicator = document.createElement("span");
+        indicator.className = "active-mrz-dot";
+        indicator.setAttribute("aria-hidden", "true");
+        button.append(indicator);
+      }
+      const label = document.createElement("span");
+      label.textContent = symbol;
+      button.append(label);
       button.addEventListener("click", () => selectSymbol(symbol).catch(showError));
       symbolList.append(button);
     });

@@ -137,7 +137,9 @@ MRZ Monitor fetches one latest-row overview and fetches detail only after
 selection. Its Location Heatmap groups every symbol by `current_price_location`
 into the four primary IPDA locations, with visually secondary below-range,
 above-range, and unavailable groups. Symbols remain visible without an active
-MRZ, and their chips reuse the existing selected-symbol detail loader.
+MRZ, and their chips reuse the existing selected-symbol detail loader. A small
+filled dot marks only overview rows whose authoritative `mrz_status` is
+`active`; it never changes bucket placement or exposes route ownership.
 
 The selected detail renders SOURCE, ACTIVE MRZ, MRZ LOCATION, CURRENT LOCATION,
 active-core supporting evidence, latest observation, and MRZ status. Both

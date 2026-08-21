@@ -68,6 +68,22 @@ h2 { margin-bottom: 0; font-size: 1.55rem; letter-spacing: -0.02em; }
 .section-heading { margin-bottom: 18px; }
 .section-heading .eyebrow { margin-bottom: 7px; }
 .section-support { margin-bottom: 0; color: var(--muted); font-size: 0.86rem; }
+.heatmap-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+.active-mrz-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
 .heatmap-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -89,6 +105,9 @@ h2 { margin-bottom: 0; font-size: 1.55rem; letter-spacing: -0.02em; }
 }
 .symbol-chips { display: flex; flex-wrap: wrap; gap: 7px; }
 .symbol-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   appearance: none;
   padding: 6px 9px;
   border: 1px solid #344154;
@@ -99,6 +118,10 @@ h2 { margin-bottom: 0; font-size: 1.55rem; letter-spacing: -0.02em; }
   font: inherit;
   font-size: 0.76rem;
   font-weight: 650;
+}
+.symbol-chip.active-mrz {
+  border-color: #4c665f;
+  color: var(--text);
 }
 .symbol-chip:hover, .symbol-chip.selected {
   border-color: #74839a;
