@@ -21,8 +21,8 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("Symbol Lab", HTML)
 
     def test_monitor_assets_are_versioned_together(self) -> None:
-        self.assertIn('/static/styles.css?v=active-evidence-20260821', HTML)
-        self.assertIn('/static/app.js?v=active-evidence-20260821', HTML)
+        self.assertIn('/static/styles.css?v=observation-time-20260821', HTML)
+        self.assertIn('/static/app.js?v=observation-time-20260821', HTML)
 
     def test_source_and_active_mrz_replace_who_and_where(self) -> None:
         self.assertIn(">SOURCE<", HTML)
@@ -144,6 +144,53 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn("old_supporting_observation_count", EVIDENCE_MIGRATION)
         self.assertIn("new_supporting_observation_count", EVIDENCE_MIGRATION)
         self.assertIn("SET supporting_observation_count = confirming_observation_count", EVIDENCE_MIGRATION)
+
+    def test_current_location_uses_latest_observation_timestamp_support_text(self) -> None:
+        self.assertIn('id="currentObservationTime">Latest observation · —<', HTML)
+        self.assertNotIn("Latest observation inside current IPDA 20W", HTML + JAVASCRIPT)
+        self.assertIn(
+            "fields.currentObservationTime.textContent = formatObservationTimestamp(state.latest_observed_at);",
+            JAVASCRIPT,
+        )
+
+    def test_observation_timestamp_uses_canonical_observed_at_not_delivery_time(self) -> None:
+        detail_payload = REPOSITORY.split("def detail_payload", 1)[1].split(
+            "def current_price_location_value", 1
+        )[0]
+        self.assertIn('"latest_observed_at": iso(latest["observed_at"])', detail_payload)
+        self.assertNotIn('iso(latest["received_at"])', detail_payload)
+
+    def test_observation_timestamp_uses_operator_timezone_and_compact_format(self) -> None:
+        formatter = JAVASCRIPT.split("const observationTimestampFormatter", 1)[1].split(
+            "const primaryLocationKeys", 1
+        )[0]
+        self.assertIn('new Intl.DateTimeFormat("en-GB"', formatter)
+        self.assertIn('timeZone: "Asia/Singapore"', formatter)
+        self.assertIn('hourCycle: "h23"', formatter)
+        self.assertNotIn("second:", formatter)
+        self.assertNotIn("timeZoneName:", formatter)
+        self.assertIn(
+            "Latest observation · ${parts.day} ${parts.month} ${parts.year} · ${parts.hour}:${parts.minute}",
+            formatter,
+        )
+
+    def test_observation_timestamp_has_neutral_fallback_and_is_not_mrz_gated(self) -> None:
+        self.assertEqual(JAVASCRIPT.count('return "Latest observation · —";'), 2)
+        render_symbol = JAVASCRIPT.split("function renderSymbol", 1)[1].split(
+            "select.addEventListener", 1
+        )[0]
+        timestamp_line = next(
+            line for line in render_symbol.splitlines() if "currentObservationTime.textContent" in line
+        )
+        self.assertNotIn("active ?", timestamp_line)
+
+    def test_selected_timestamp_adds_no_observation_history_request(self) -> None:
+        load_symbol = JAVASCRIPT.split("async function loadSymbol(symbol)", 1)[1].split(
+            "function renderSymbol", 1
+        )[0]
+        self.assertEqual(load_symbol.count("fetch("), 1)
+        self.assertNotIn("observations", load_symbol)
+        self.assertNotIn("history", load_symbol)
 
 
 if __name__ == "__main__":

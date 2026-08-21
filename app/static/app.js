@@ -14,6 +14,7 @@ const fields = {
   bounds: document.querySelector("#mrzBounds"),
   location: document.querySelector("#structuralLocation"),
   currentLocation: document.querySelector("#currentPriceLocation"),
+  currentObservationTime: document.querySelector("#currentObservationTime"),
   evidence: document.querySelector("#evidence"),
   latest: document.querySelector("#latestObservation"),
   midpoint: document.querySelector("#mrzMidpoint"),
@@ -37,6 +38,28 @@ const locationLabels = {
 };
 
 const formatLocation = (value) => value == null ? "—" : locationLabels[value] || "—";
+
+const observationTimestampFormatter = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Singapore",
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+function formatObservationTimestamp(value) {
+  if (!value) return "Latest observation · —";
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.getTime())) return "Latest observation · —";
+  const parts = Object.fromEntries(
+    observationTimestampFormatter.formatToParts(timestamp)
+      .filter(({ type }) => type !== "literal")
+      .map(({ type, value: partValue }) => [type, partValue]),
+  );
+  return `Latest observation · ${parts.day} ${parts.month} ${parts.year} · ${parts.hour}:${parts.minute}`;
+}
 
 const primaryLocationKeys = [
   "deep_discount",
@@ -176,6 +199,7 @@ function renderSymbol(state) {
     : "—";
   fields.location.textContent = active ? formatLocation(state.structural_location) : "—";
   fields.currentLocation.textContent = formatLocation(state.current_price_location);
+  fields.currentObservationTime.textContent = formatObservationTimestamp(state.latest_observed_at);
   fields.evidence.textContent = active
     ? `${state.supporting_observation_count} qualifying observation${state.supporting_observation_count === 1 ? "" : "s"}`
     : "—";

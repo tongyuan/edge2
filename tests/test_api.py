@@ -65,6 +65,7 @@ class APIIntegrationTests(unittest.TestCase):
         detail = self.client.get("/api/symbols/SPXUSDT").json()
         self.assertEqual(detail["mrz_status"], "unestablished")
         self.assertEqual(detail["current_price_location"], "deep_discount")
+        self.assertEqual(detail["latest_observed_at"], "2026-08-20T12:00:01Z")
         self.assertIsNone(detail["supporting_observation_count"])
         overview = self.client.get("/api/symbols").json()["symbols"]
         self.assertEqual(overview[0]["current_price_location"], "deep_discount")
@@ -99,6 +100,7 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(detail["core_mrz_upper"], 110.6)
         self.assertEqual(detail["structural_location"], "deep_discount_core_mrz")
         self.assertEqual(detail["current_price_location"], "deep_discount")
+        self.assertEqual(detail["latest_observed_at"], "2026-08-20T12:00:04Z")
         self.assertEqual(detail["supporting_observation_count"], 4)
         self.assertNotIn("recommendation", detail)
         self.assertNotIn("readiness", detail)
@@ -165,6 +167,8 @@ class APIIntegrationTests(unittest.TestCase):
         events_after = self.client.app.state.repository.audit_events("SPXUSDT")
 
         self.assertEqual(after["current_price_location"], "shallow_premium")
+        self.assertEqual(after["latest_observed_at"], "2026-08-20T12:00:05Z")
+        self.assertNotEqual(after["latest_observed_at"], after["activated_at"])
         self.assertEqual(overview_after["current_price_location"], "shallow_premium")
         self.assertEqual(overview_after["structural_location"], "deep_discount_core_mrz")
         self.assertEqual(after["route_owner"], before["route_owner"])
