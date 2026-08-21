@@ -1,7 +1,8 @@
 .git
 .gitignore
 .env
-.env.local
+.env.*
+!.env.example
 .venv
 __pycache__
 *.pyc
@@ -9,6 +10,8 @@ __pycache__
 .coverage
 htmlcov
 node_modules
+data
+pgdata
 logs
 backups
 *.dump

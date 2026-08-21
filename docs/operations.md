@@ -1,76 +1,169 @@
-# Remote operations
+# Development and deployment operations
 
-## Isolation contract
+## Canonical architecture
 
 ```text
-local source:  /Users/tonywong/edge2
-remote source: /home/tony/edge2
-Compose name:  edge2
-app:           edge2-app, loopback 8792 -> container 8790
-ingress:       edge2-ingress, loopback 8793 -> container 8080
-database:      edge2-db, loopback 5435 -> container 5432
-volume:        edge2_pgdata
-backups:       /home/tony/edge2-backups
+Mac: /Users/tonywong/edge2
+development, tests, commits, and pushes
+                |
+                v
+GitHub: https://github.com/tongyuan/edge2
+public canonical source-code history
+                |
+                v
+Remote: /home/tony/edge2
+read-only Git consumer and operational runtime
 ```
 
-EDGE 4.2 remains at `/home/tony/edge` with its independent containers, Redis, database volume, ports, and Tailscale routes.
+The Mac is the only normal development checkout. The remote server does not
+author or push code. It pulls public `main` over HTTPS and therefore needs no
+GitHub write token or stored GitHub credential.
 
-## Initial remote environment
+Git is authoritative for source code, migrations, configuration templates,
+deployment scripts, PineScript, and documentation. The remote server remains
+authoritative for observations, active MRZ records, MRZ events, the production
+database, backups, and production secrets.
 
-Create `/home/tony/edge2/.env` with mode `600`, based on `.env.example`. Use independent random values for `EDGE2_DB_PASSWORD` and `WEBHOOK_SECRET`. Do not reuse a 4.2 credential or public path token.
+## Runtime isolation and persistence
 
-## Deploy
+```text
+remote source:       /home/tony/edge2
+production env:      /home/tony/edge2/.env (mode 600, never tracked)
+Compose project:     edge2
+app service:         edge2-app, loopback 8792 -> container 8790
+ingress service:     edge2-ingress, loopback 8793 -> container 8080
+database service:    edge2-db, loopback 5435 -> container 5432
+database volume:     edge2_pgdata
+Docker volume data:  /var/lib/docker/volumes/edge2_pgdata/_data
+host backups:        /home/tony/edge2-backups
+```
 
-From a clean local EDGE 2.0 Git repository:
+EDGE 4.2 remains at `/home/tony/edge` with independent containers, Redis,
+database volume, ports, and Tailscale routes.
+
+## Initial remote clone
+
+For a fresh server, clone the public repository, then create the environment
+file locally on that server:
 
 ```bash
-./scripts/deploy_remote.sh
+git clone https://github.com/tongyuan/edge2.git /home/tony/edge2
+cd /home/tony/edge2
+cp .env.example .env
+chmod 600 .env
 ```
 
-The script syncs source while protecting `.env` and backups, builds with Compose
-project `edge2`, and checks both the application and ingress health endpoints.
-It makes no TradingView alert changes.
+Fill `.env` with independent production values for `EDGE2_DB_PASSWORD` and
+`WEBHOOK_SECRET`. Do not copy a 4.2 credential. The current pre-Git deployment
+can be adopted in place only after its non-secret files have been verified
+against the intended Git commit:
 
-## Health and logs
+```bash
+cd /home/tony/edge2
+git init -b main
+git remote add origin https://github.com/tongyuan/edge2.git
+git fetch origin main
+git reset origin/main
+git branch --set-upstream-to=origin/main main
+git status --short
+```
+
+`git reset` above updates Git metadata and the index without replacing the
+verified working files. The ignored `.env`, external backup directory, and
+named database volume remain outside Git.
+
+## Normal development and deployment
+
+The normal local workflow is:
+
+```text
+edit -> test -> review git diff -> commit -> deploy
+```
+
+Deploy from clean local `main`:
+
+```bash
+./scripts/deploy-remote.sh
+```
+
+The helper runs `make test`, pushes `main`, captures the intended SHA, verifies
+`origin/main`, checks that the remote checkout is clean, and pulls with:
+
+```bash
+git pull --ff-only origin main
+```
+
+It refuses to overwrite a dirty remote tree. It then rebuilds/restarts the
+actual Compose services, checks both health endpoints, and fails unless local
+HEAD, `origin/main`, and remote HEAD are identical.
+
+Do not deploy source with `rsync`, `scp`, tar archives, or SSH file heredocs.
+Remote file inspection is reserved for actual deployment discrepancies.
+
+## Docker restart and health verification
+
+The deploy helper runs these service commands remotely:
+
+```bash
+docker compose --project-name edge2 up -d --build
+docker compose --project-name edge2 up -d --force-recreate --no-deps edge2-ingress
+```
+
+The second command reloads the ingress template without touching the database
+volume. Verify the runtime independently with:
 
 ```bash
 ssh edge-server 'curl --fail http://127.0.0.1:8792/health'
 ssh edge-server 'curl --fail http://127.0.0.1:8793/health'
-ssh edge-server 'docker logs --tail 200 edge2-app'
-ssh edge-server 'docker logs --tail 200 edge2-ingress'
 ssh edge-server 'docker ps --filter name=edge2'
 ```
 
-Health reports application/database state, latest accepted webhook time, durable accepted/rejected/duplicate counters, observed symbol count, and active MRZ count.
+Verify the deployed commit with:
+
+```bash
+git rev-parse HEAD
+git rev-parse origin/main
+ssh edge-server 'cd /home/tony/edge2 && git rev-parse HEAD'
+```
+
+## Rollback
+
+For a normal source rollback, identify the known-good commit, create a revert
+commit locally, push `main`, and run the normal deploy helper. This preserves a
+clear public history and returns the remote to a clean, tracked `main` state.
+
+For an emergency source-only rollback, the remote may temporarily fetch and
+check out a specific known-good commit in detached-HEAD state, then rebuild the
+same Compose project. Immediately reconcile by making and pushing a local
+rollback commit and deploying normally so the server returns to `main`.
+
+Database rollback is separate. Never remove `edge2_pgdata` or automatically
+reverse a migration unless the migration tooling explicitly supports it. Use
+the reviewed backup/restore process in [backup-restore.md](backup-restore.md).
+
+## Secret policy
+
+- Commit `.env.example` with names and public-safe defaults only.
+- Keep `/home/tony/edge2/.env`, SSH private keys, tokens, TLS keys, database
+  files, dumps, and backup archives out of Git.
+- Audit tracked files, untracked files, and reachable history before any public
+  push. Removing a secret in a later commit is insufficient; clean history and
+  rotate any credential that may have been exposed.
+- The remote uses anonymous read-only HTTPS Git access and does not push.
 
 ## TradingView ingress
 
 The stable ngrok hostname is managed by the user service
 `~/.config/systemd/user/edge-ngrok.service`. Its committed definition is
 `ops/systemd/edge-ngrok.service` and targets loopback port `8793`. The ingress
-then injects the protected webhook-secret header and proxies the exact webhook
+injects the protected webhook-secret header and proxies only the exact webhook
 path to `edge2-app`.
 
-Before replacing the old unit, preserve it as:
-
-```text
-/home/tony/.config/systemd/user/edge-ngrok.service.pre-edge2-20260820T0845Z
-```
-
-The stable public endpoint is:
+The stable public endpoint remains:
 
 ```text
 https://unretroactively-latticed-fidela.ngrok-free.dev/webhook/tradingview
 ```
 
-Do not expose the application port directly through ngrok. Doing so would
-bypass header injection and cause exact nine-field TradingView payloads to fail
-authentication.
-
-## Optional private preview
-
-After loopback verification, a separate Tailscale HTTPS listener can proxy to `127.0.0.1:8792`. Use an unused port such as `8444` and verify the existing `443` and `8443` mappings before and after. This is a preview route only; do not enable Funnel for it.
-
-## Rollback
-
-Application rollback means redeploying a known local Git commit to `/home/tony/edge2` and rebuilding only Compose project `edge2`. Database rollback requires the explicit restore process. Ngrok rollback restores the preserved pre-EDGE-2 unit and restarts only the user-level ngrok service. No rollback command should stop, recreate, or remove an EDGE 4.2 container or volume.
+Do not expose the application port directly through ngrok. The Git migration
+does not change PineScript logic or live TradingView alerts.

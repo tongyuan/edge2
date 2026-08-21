@@ -1,6 +1,6 @@
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 *.pem
 *.key
 *.secret
@@ -23,6 +23,7 @@ build/
 *.db
 *.sqlite
 *.sqlite3
+data/
 pgdata/
 backups/
 *.dump

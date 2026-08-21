@@ -1,4 +1,4 @@
-.PHONY: test up down logs health ingress-health migrate backup
+.PHONY: test up down logs health ingress-health migrate backup deploy
 
 test:
 	docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from edge2-test
@@ -24,3 +24,6 @@ migrate:
 
 backup:
 	./scripts/backup.sh
+
+deploy:
+	./scripts/deploy-remote.sh

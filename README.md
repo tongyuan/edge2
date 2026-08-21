@@ -168,9 +168,27 @@ make test
 
 The suite covers ingestion, validation, durable duplicate handling, price-space concentration, route windows, IPDA boundaries, activation, frozen bounds, migration, zero-width tick safety, late replay, atomic audit preservation, API output, and restart persistence.
 
-## Remote-only operation
+## Git development and remote operation
 
-The Mac is a development/Git workstation, not an operational EDGE 2.0 runtime. The deployed source of truth is `/home/tony/edge2` on the remote server.
+The Mac is the only normal development and Git-authoring workspace. The public
+repository at `https://github.com/tongyuan/edge2` is the canonical source-code
+history. The remote server is a read-only Git consumer and the sole operational
+runtime:
+
+```text
+/Users/tonywong/edge2 -> GitHub public main -> /home/tony/edge2
+```
+
+From clean local `main`, test, push, pull the exact commit, restart the runtime,
+and verify health plus SHA equality with:
+
+```bash
+./scripts/deploy-remote.sh
+```
+
+Source is never normally copied to the server with `rsync`, `scp`, or archives.
+The remote production `.env`, database volume, observations, MRZ state, and
+backups never travel through Git.
 
 ```text
 edge2-app  -> 127.0.0.1:8792

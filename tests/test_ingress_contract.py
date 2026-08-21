@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 COMPOSE = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
 NGINX = (ROOT / "infra/nginx/edge2-ngrok.conf.template").read_text(encoding="utf-8")
 NGROK_UNIT = (ROOT / "ops/systemd/edge-ngrok.service").read_text(encoding="utf-8")
-DEPLOY_SCRIPT = (ROOT / "scripts/deploy_remote.sh").read_text(encoding="utf-8")
+DEPLOY_SCRIPT = (ROOT / "scripts/deploy-remote.sh").read_text(encoding="utf-8")
 
 
 class IngressContractTests(unittest.TestCase):
@@ -48,6 +48,14 @@ class IngressContractTests(unittest.TestCase):
         self.assertIn("REMOTE_INGRESS_HEALTH_URL", DEPLOY_SCRIPT)
         self.assertIn("EDGE 2.0 app and ingress healthy", DEPLOY_SCRIPT)
         self.assertIn("--force-recreate --no-deps edge2-ingress", DEPLOY_SCRIPT)
+
+    def test_remote_deploy_uses_git_as_code_transport(self) -> None:
+        self.assertNotIn("rsync ", DEPLOY_SCRIPT)
+        self.assertNotIn("scp ", DEPLOY_SCRIPT)
+        self.assertIn('push origin "${BRANCH}"', DEPLOY_SCRIPT)
+        self.assertIn('git pull --ff-only origin "${branch}"', DEPLOY_SCRIPT)
+        self.assertIn("git status --porcelain", DEPLOY_SCRIPT)
+        self.assertIn("EDGE2_REMOTE_SHA", DEPLOY_SCRIPT)
 
     def test_no_literal_webhook_secret_is_committed(self) -> None:
         combined = COMPOSE + NGINX + NGROK_UNIT
