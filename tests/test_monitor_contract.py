@@ -10,6 +10,9 @@ JAVASCRIPT = (ROOT / "app/static/app.js").read_text(encoding="utf-8")
 CSS = (ROOT / "app/static/styles.css").read_text(encoding="utf-8")
 REPOSITORY = (ROOT / "app/repository.py").read_text(encoding="utf-8")
 LATEST_INDEX = (ROOT / "migrations/002_latest_symbol_overview.sql").read_text(encoding="utf-8")
+EVIDENCE_MIGRATION = (ROOT / "migrations/003_active_mrz_supporting_evidence.sql").read_text(
+    encoding="utf-8"
+)
 
 
 class MonitorContractTests(unittest.TestCase):
@@ -18,8 +21,8 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("Symbol Lab", HTML)
 
     def test_monitor_assets_are_versioned_together(self) -> None:
-        self.assertIn('/static/styles.css?v=location-heatmap-20260821', HTML)
-        self.assertIn('/static/app.js?v=location-heatmap-20260821', HTML)
+        self.assertIn('/static/styles.css?v=active-evidence-20260821', HTML)
+        self.assertIn('/static/app.js?v=active-evidence-20260821', HTML)
 
     def test_source_and_active_mrz_replace_who_and_where(self) -> None:
         self.assertIn(">SOURCE<", HTML)
@@ -112,6 +115,35 @@ class MonitorContractTests(unittest.TestCase):
     def test_heatmap_is_two_columns_and_stacks_on_narrow_screens(self) -> None:
         self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr));", CSS)
         self.assertIn(".heatmap-grid, .heatmap-secondary { grid-template-columns: 1fr; }", CSS)
+
+    def test_active_evidence_uses_supporting_count_with_correct_pluralization(self) -> None:
+        self.assertIn(">EVIDENCE<", HTML)
+        self.assertIn("state.supporting_observation_count", JAVASCRIPT)
+        self.assertIn('qualifying observation${state.supporting_observation_count === 1 ? "" : "s"}', JAVASCRIPT)
+        evidence_render = JAVASCRIPT.split("fields.evidence.textContent", 1)[1].split(
+            "fields.latest.textContent", 1
+        )[0]
+        self.assertNotIn("confirming_observation_count", evidence_render)
+        self.assertNotIn("reclaim", evidence_render)
+        self.assertNotIn("rejection", evidence_render)
+
+    def test_unestablished_state_shows_no_partial_formation_progress(self) -> None:
+        self.assertIn(': "—";', JAVASCRIPT)
+        self.assertNotIn("3 / 4", HTML + JAVASCRIPT)
+        self.assertNotIn("Concentration not established", HTML + JAVASCRIPT)
+
+    def test_heatmap_chips_do_not_include_evidence_counts(self) -> None:
+        heatmap_group = JAVASCRIPT.split("function createLocationGroup", 1)[1].split(
+            "function renderLocationHeatmap", 1
+        )[0]
+        self.assertNotIn("supporting_observation_count", heatmap_group)
+        self.assertNotIn("confirming_observation_count", heatmap_group)
+
+    def test_evidence_migration_preserves_confirmation_and_audit_counts(self) -> None:
+        self.assertIn("supporting_observation_count", EVIDENCE_MIGRATION)
+        self.assertIn("old_supporting_observation_count", EVIDENCE_MIGRATION)
+        self.assertIn("new_supporting_observation_count", EVIDENCE_MIGRATION)
+        self.assertIn("SET supporting_observation_count = confirming_observation_count", EVIDENCE_MIGRATION)
 
 
 if __name__ == "__main__":

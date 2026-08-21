@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import deque
+from dataclasses import replace
 from decimal import Decimal
 from typing import Iterable, Sequence
 
@@ -41,6 +42,7 @@ def build_active_mrz(observation: Observation, cluster: Cluster) -> ActiveMRZ | 
         core_mrz_midpoint=cluster.midpoint,
         structural_location=location,
         confirming_observation_count=cluster.observation_count,
+        supporting_observation_count=cluster.observation_count,
         activated_at=observation.observed_at,
         activation_event_id=observation.event_id,
         ipda_20w_high_at_activation=observation.ipda_20w_high,
@@ -57,6 +59,22 @@ def successor_eligible(active: ActiveMRZ, observation: Observation) -> bool:
     if active.route_owner is Route.BTD:
         return observation.observation_price > active.upper_migration_boundary
     return observation.observation_price < active.lower_migration_boundary
+
+
+def supports_active_core_mrz(active: ActiveMRZ, observation: Observation) -> bool:
+    if observation.symbol != active.symbol or observation.route is not active.route_owner:
+        return False
+    if not active.core_mrz_lower <= observation.observation_price <= active.core_mrz_upper:
+        return False
+    return (
+        classify_structural_location(
+            observation.route,
+            observation.observation_price,
+            observation.ipda_20w_high,
+            observation.ipda_20w_low,
+        )
+        is not None
+    )
 
 
 def evaluate_cross_route_replacement(
@@ -133,6 +151,13 @@ def replay_symbol(observations: Iterable[Observation]) -> ReplayResult:
                         details={"reason": "cross_route_replacement"},
                     )
                 )
+            continue
+
+        if supports_active_core_mrz(active, incoming):
+            active = replace(
+                active,
+                supporting_observation_count=active.supporting_observation_count + 1,
+            )
             continue
 
         if not successor_eligible(active, incoming):

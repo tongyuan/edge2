@@ -61,6 +61,7 @@ class RepositoryIntegrationTests(unittest.TestCase):
         after = restarted.symbol_detail("SPXUSDT")
         self.assertEqual(before, after)
         self.assertEqual(after["activation_event_id"], "db-event-4")
+        self.assertEqual(after["supporting_observation_count"], 4)
 
     def test_late_event_replays_in_canonical_timestamp_order(self) -> None:
         self.ingest(1, "110", observed_offset=1)
@@ -73,7 +74,11 @@ class RepositoryIntegrationTests(unittest.TestCase):
         self.assertEqual(detail["core_mrz_upper"], 110.6)
 
     def test_migration_and_old_state_audit_are_committed_together(self) -> None:
-        prices = ("110", "110.2", "110.4", "110.6", "120", "120.2", "120.4", "120.6")
+        prices = (
+            "110", "110.2", "110.4", "110.6",
+            "110.3", "110.5",
+            "120", "120.2", "120.4", "120.6",
+        )
         for index, price in enumerate(prices, 1):
             self.ingest(index, price)
         detail = self.repository.symbol_detail("SPXUSDT")
@@ -82,6 +87,23 @@ class RepositoryIntegrationTests(unittest.TestCase):
         self.assertEqual([event["event_type"] for event in events], ["MRZ_ACTIVATED", "MRZ_MIGRATED"])
         self.assertEqual(Decimal(events[-1]["old_core_mrz_lower"]), Decimal("110"))
         self.assertEqual(Decimal(events[-1]["new_core_mrz_lower"]), Decimal("120"))
+        self.assertEqual(events[-1]["old_supporting_observation_count"], 6)
+        self.assertEqual(events[-1]["new_supporting_observation_count"], 4)
+        self.assertEqual(detail["supporting_observation_count"], 4)
+
+    def test_active_core_support_persists_without_resizing_bounds(self) -> None:
+        for index, price in enumerate(("110", "110.2", "110.4", "110.6"), 1):
+            self.ingest(index, price)
+        activated = self.repository.symbol_detail("SPXUSDT")
+
+        self.ingest(5, "110.3")
+        self.ingest(6, "110.5")
+        supported = EdgeRepository(self.database_url).symbol_detail("SPXUSDT")
+
+        self.assertEqual(supported["supporting_observation_count"], 6)
+        self.assertEqual(supported["confirming_observation_count"], 4)
+        self.assertEqual(supported["core_mrz_lower"], activated["core_mrz_lower"])
+        self.assertEqual(supported["core_mrz_upper"], activated["core_mrz_upper"])
 
     def test_duplicate_packet_cannot_increment_evidence(self) -> None:
         for index, price in enumerate(("110", "110.2", "110.4", "110.6"), 1):
@@ -91,6 +113,7 @@ class RepositoryIntegrationTests(unittest.TestCase):
         self.repository.ingest(payload, Decimal("0.01"))
         after = self.repository.symbol_detail("SPXUSDT")
         self.assertEqual(after["confirming_observation_count"], original["confirming_observation_count"])
+        self.assertEqual(after["supporting_observation_count"], original["supporting_observation_count"])
 
     def test_one_active_row_per_symbol_enforces_singular_owner(self) -> None:
         for index, price in enumerate(("110", "110.2", "110.4", "110.6"), 1):

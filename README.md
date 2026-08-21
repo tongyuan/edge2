@@ -140,11 +140,19 @@ above-range, and unavailable groups. Symbols remain visible without an active
 MRZ, and their chips reuse the existing selected-symbol detail loader.
 
 The selected detail renders SOURCE, ACTIVE MRZ, MRZ LOCATION, CURRENT LOCATION,
-confirming evidence, latest observation, and MRZ status. Both overview and
-detail derive `current_price_location` through the same backend classifier using
-the latest accepted observation price and that observation's IPDA 20W frame.
-The monitor contains no chronology, lifecycle, research, recommendation,
-readiness, approval, or handover interface.
+active-core supporting evidence, latest observation, and MRZ status. Both
+overview and detail derive `current_price_location` through the same backend
+classifier using the latest accepted observation price and that observation's
+IPDA 20W frame. The monitor contains no chronology, lifecycle, research,
+recommendation, readiness, approval, or handover interface.
+
+`supporting_observation_count` starts with the observations in the confirming
+cluster. During that active MRZ's lifetime it increases only for accepted,
+deduplicated observations on the owning route that remain structurally eligible
+and fall inside the frozen core bounds. Observations elsewhere in the migration
+envelope, successor candidates, and opposite-route observations do not count.
+The count is cumulative rather than rolling-window progress, and a migrated MRZ
+starts from its own confirming cluster without inheriting the old count.
 
 ## Clean database
 

@@ -16,7 +16,46 @@ class ActiveMRZStateTests(unittest.TestCase):
         result = replay_symbol(rows)
         self.assertEqual(result.active_mrz.route_owner, Route.BTD)
         self.assertEqual(result.active_mrz.activation_event_id, "event-4")
+        self.assertEqual(result.active_mrz.confirming_observation_count, 4)
+        self.assertEqual(result.active_mrz.supporting_observation_count, 4)
         self.assertEqual(result.transitions[0].event_type, MRZEventType.ACTIVATED)
+
+    def test_same_route_structural_observations_inside_frozen_core_accumulate_support(self) -> None:
+        rows = [observation(i, price) for i, price in enumerate(("110", "110.2", "110.4", "110.6"), 1)]
+        activated = replay_symbol(rows).active_mrz
+        rows.extend((observation(5, "110.3"), observation(6, "110.5")))
+        supported = replay_symbol(rows).active_mrz
+
+        self.assertEqual(supported.supporting_observation_count, 6)
+        self.assertEqual(supported.confirming_observation_count, 4)
+        self.assertEqual(
+            (supported.core_mrz_lower, supported.core_mrz_upper),
+            (activated.core_mrz_lower, activated.core_mrz_upper),
+        )
+
+    def test_outside_core_envelope_and_successor_observations_do_not_support_active_mrz(self) -> None:
+        rows = [observation(i, price) for i, price in enumerate(("110", "110.2", "110.4", "110.6"), 1)]
+        rows.extend(
+            (
+                observation(5, "111"),
+                observation(6, "111.7"),
+                observation(7, "120"),
+            )
+        )
+        active = replay_symbol(rows).active_mrz
+
+        self.assertEqual(active.upper_migration_boundary, Decimal("111.8"))
+        self.assertEqual(active.supporting_observation_count, 4)
+
+    def test_opposite_route_observation_does_not_support_active_mrz(self) -> None:
+        rows = [observation(i, price) for i, price in enumerate(("110", "110.2", "110.4", "110.6"), 1)]
+        rows.append(observation(5, "180", route=Route.STR))
+        self.assertEqual(replay_symbol(rows).active_mrz.supporting_observation_count, 4)
+
+    def test_inside_core_observation_must_remain_structurally_eligible(self) -> None:
+        rows = [observation(i, price) for i, price in enumerate(("110", "110.2", "110.4", "110.6"), 1)]
+        rows.append(observation(5, "110.3", ipda_low="0", ipda_high="120"))
+        self.assertEqual(replay_symbol(rows).active_mrz.supporting_observation_count, 4)
 
     def test_bounds_freeze_after_activation_and_inside_envelope_observation(self) -> None:
         rows = [observation(i, price) for i, price in enumerate(("110", "110.2", "110.4", "110.6"), 1)]
@@ -35,6 +74,21 @@ class ActiveMRZStateTests(unittest.TestCase):
         self.assertEqual(migrated.active_mrz.core_mrz_upper, Decimal("120.6"))
         self.assertEqual(migrated.transitions[-1].event_type, MRZEventType.MIGRATED)
         self.assertEqual(migrated.transitions[-1].old_mrz.core_mrz_lower, Decimal("110"))
+
+    def test_migration_resets_support_to_successor_confirming_cluster(self) -> None:
+        rows = [observation(i, price) for i, price in enumerate(("110", "110.2", "110.4", "110.6"), 1)]
+        rows.extend((observation(5, "110.3"), observation(6, "110.5")))
+        before = replay_symbol(rows).active_mrz
+        rows.extend(
+            observation(i, price)
+            for i, price in enumerate(("120", "120.2", "120.4", "120.6"), 7)
+        )
+        migrated = replay_symbol(rows)
+
+        self.assertEqual(before.supporting_observation_count, 6)
+        self.assertEqual(migrated.transitions[-1].old_mrz.supporting_observation_count, 6)
+        self.assertEqual(migrated.active_mrz.supporting_observation_count, 4)
+        self.assertEqual(migrated.active_mrz.confirming_observation_count, 4)
 
     def test_str_mirror_migrates_below_lower_envelope(self) -> None:
         prices = ("180", "180.2", "180.4", "180.6", "170.6", "170.4", "170.2", "170")
@@ -60,6 +114,14 @@ class ActiveMRZStateTests(unittest.TestCase):
         result = replay_symbol(rows)
         self.assertEqual(len(result.transitions), 1)
         self.assertEqual(result.active_mrz.core_mrz_lower, Decimal("110"))
+
+    def test_rolling_window_aging_does_not_reduce_cumulative_active_support(self) -> None:
+        rows = [observation(i, price) for i, price in enumerate(("110", "110.2", "110.4", "110.6"), 1)]
+        rows.extend(observation(index, "110.3") for index in range(5, 30))
+        active = replay_symbol(rows).active_mrz
+
+        self.assertEqual(active.supporting_observation_count, 29)
+        self.assertEqual(active.confirming_observation_count, 4)
 
     def test_zero_width_mrz_uses_tick_safeguard(self) -> None:
         rows = [observation(i, "110", tick="0.01") for i in range(1, 5)]

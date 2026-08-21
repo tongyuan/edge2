@@ -177,8 +177,8 @@ function renderSymbol(state) {
   fields.location.textContent = active ? formatLocation(state.structural_location) : "—";
   fields.currentLocation.textContent = formatLocation(state.current_price_location);
   fields.evidence.textContent = active
-    ? `${state.confirming_observation_count} qualifying ${state.route_owner === "BTD" ? "reclaim" : "rejection"} observations`
-    : "Concentration not established";
+    ? `${state.supporting_observation_count} qualifying observation${state.supporting_observation_count === 1 ? "" : "s"}`
+    : "—";
   fields.latest.textContent = formatPrice(state.latest_observation_price);
   fields.midpoint.textContent = formatPrice(state.core_mrz_midpoint);
   emptyState.hidden = true;

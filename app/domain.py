@@ -85,6 +85,7 @@ class ActiveMRZ:
     core_mrz_midpoint: Decimal
     structural_location: StructuralLocation
     confirming_observation_count: int
+    supporting_observation_count: int
     activated_at: datetime
     activation_event_id: str
     ipda_20w_high_at_activation: Decimal

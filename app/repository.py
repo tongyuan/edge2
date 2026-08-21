@@ -62,6 +62,7 @@ def active_from_row(row: Mapping[str, Any] | None) -> ActiveMRZ | None:
         core_mrz_midpoint=Decimal(row["core_mrz_midpoint"]),
         structural_location=StructuralLocation(str(row["structural_location"])),
         confirming_observation_count=int(row["confirming_observation_count"]),
+        supporting_observation_count=int(row["supporting_observation_count"]),
         activated_at=row["activated_at"],
         activation_event_id=str(row["activation_event_id"]),
         ipda_20w_high_at_activation=Decimal(row["ipda_20w_high_at_activation"]),
@@ -169,9 +170,14 @@ class EdgeRepository:
                     previous_route_owner, occurred_at, trigger_event_id,
                     old_core_mrz_lower, old_core_mrz_upper,
                     new_core_mrz_lower, new_core_mrz_upper, new_core_mrz_midpoint,
-                    structural_location, confirming_observation_count, details
+                    structural_location, confirming_observation_count,
+                    old_supporting_observation_count, new_supporting_observation_count,
+                    details
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s
+                )
                 """,
                 (
                     transition.event_key,
@@ -189,6 +195,8 @@ class EdgeRepository:
                     new.core_mrz_midpoint,
                     new.structural_location.value,
                     new.confirming_observation_count,
+                    old.supporting_observation_count if old else None,
+                    new.supporting_observation_count,
                     Json(transition.details),
                 ),
             )
@@ -202,12 +210,16 @@ class EdgeRepository:
             INSERT INTO active_mrz (
                 symbol, route_owner, core_mrz_lower, core_mrz_upper,
                 core_mrz_midpoint, structural_location, confirming_observation_count,
+                supporting_observation_count,
                 activated_at, activation_event_id,
                 ipda_20w_high_at_activation, ipda_20w_low_at_activation,
                 ipda_width_at_activation, normalized_span_at_activation,
                 instrument_tick, updated_at
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, clock_timestamp())
+            VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s, clock_timestamp()
+            )
             ON CONFLICT (symbol) DO UPDATE SET
                 route_owner = EXCLUDED.route_owner,
                 core_mrz_lower = EXCLUDED.core_mrz_lower,
@@ -215,6 +227,7 @@ class EdgeRepository:
                 core_mrz_midpoint = EXCLUDED.core_mrz_midpoint,
                 structural_location = EXCLUDED.structural_location,
                 confirming_observation_count = EXCLUDED.confirming_observation_count,
+                supporting_observation_count = EXCLUDED.supporting_observation_count,
                 activated_at = EXCLUDED.activated_at,
                 activation_event_id = EXCLUDED.activation_event_id,
                 ipda_20w_high_at_activation = EXCLUDED.ipda_20w_high_at_activation,
@@ -232,6 +245,7 @@ class EdgeRepository:
                 active.core_mrz_midpoint,
                 active.structural_location.value,
                 active.confirming_observation_count,
+                active.supporting_observation_count,
                 active.activated_at,
                 active.activation_event_id,
                 active.ipda_20w_high_at_activation,
@@ -401,6 +415,7 @@ def detail_payload(symbol: str, latest: Mapping[str, Any], active: ActiveMRZ | N
             "core_mrz_midpoint": None,
             "structural_location": None,
             "confirming_observation_count": None,
+            "supporting_observation_count": None,
             "activated_at": None,
             "activation_event_id": None,
         }
@@ -413,6 +428,7 @@ def detail_payload(symbol: str, latest: Mapping[str, Any], active: ActiveMRZ | N
         "core_mrz_midpoint": number(active.core_mrz_midpoint),
         "structural_location": active.structural_location.value,
         "confirming_observation_count": active.confirming_observation_count,
+        "supporting_observation_count": active.supporting_observation_count,
         "activated_at": iso(active.activated_at),
         "activation_event_id": active.activation_event_id,
         "ipda_20w_high_at_activation": number(active.ipda_20w_high_at_activation),
