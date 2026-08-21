@@ -26,6 +26,9 @@ CMD ["./scripts/start.sh"]
 
 FROM base AS test
 USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
 COPY requirements-dev.txt .
 RUN pip install --no-cache-dir -r requirements-dev.txt
 COPY tests ./tests
@@ -35,4 +38,4 @@ COPY infra ./infra
 COPY ops ./ops
 RUN chown -R edge2:edge2 /app
 USER edge2
-CMD ["python3", "-m", "unittest", "discover", "-s", "tests", "-v"]
+CMD ["sh", "-c", "node tests/test_operator_time.js && python3 -m unittest discover -s tests -v"]

@@ -7,6 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 HTML = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
 JAVASCRIPT = (ROOT / "app/static/app.js").read_text(encoding="utf-8")
+OPERATOR_TIME = (ROOT / "app/static/operator-time.js").read_text(encoding="utf-8")
 CSS = (ROOT / "app/static/styles.css").read_text(encoding="utf-8")
 REPOSITORY = (ROOT / "app/repository.py").read_text(encoding="utf-8")
 LATEST_INDEX = (ROOT / "migrations/002_latest_symbol_overview.sql").read_text(encoding="utf-8")
@@ -21,8 +22,9 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("Symbol Lab", HTML)
 
     def test_monitor_assets_are_versioned_together(self) -> None:
-        self.assertIn('/static/styles.css?v=unestablished-evidence-20260821', HTML)
-        self.assertIn('/static/app.js?v=unestablished-evidence-20260821', HTML)
+        self.assertIn('/static/styles.css?v=utc-minus-4-20260821', HTML)
+        self.assertIn('/static/operator-time.js?v=utc-minus-4-20260821', HTML)
+        self.assertIn('/static/app.js?v=utc-minus-4-20260821', HTML)
 
     def test_source_and_active_mrz_replace_who_and_where(self) -> None:
         self.assertIn(">SOURCE<", HTML)
@@ -162,22 +164,23 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn('"latest_observed_at": iso(latest["observed_at"])', detail_payload)
         self.assertNotIn('iso(latest["received_at"])', detail_payload)
 
-    def test_observation_timestamp_uses_operator_timezone_and_compact_format(self) -> None:
-        formatter = JAVASCRIPT.split("const observationTimestampFormatter", 1)[1].split(
-            "const primaryLocationKeys", 1
-        )[0]
-        self.assertIn('new Intl.DateTimeFormat("en-GB"', formatter)
-        self.assertIn('timeZone: "Asia/Singapore"', formatter)
-        self.assertIn('hourCycle: "h23"', formatter)
-        self.assertNotIn("second:", formatter)
-        self.assertNotIn("timeZoneName:", formatter)
-        self.assertIn(
-            "Latest observation · ${parts.day} ${parts.month} ${parts.year} · ${parts.hour}:${parts.minute}",
-            formatter,
-        )
+    def test_observation_timestamp_uses_shared_fixed_utc_minus_4_formatter(self) -> None:
+        self.assertIn("function formatOperatorTimestampUtcMinus4(value)", OPERATOR_TIME)
+        self.assertIn("UTC_MINUS_4_OFFSET_MILLISECONDS = 4 * 60 * 60 * 1000", OPERATOR_TIME)
+        self.assertIn('timeZone: "UTC"', OPERATOR_TIME)
+        self.assertIn('hourCycle: "h23"', OPERATOR_TIME)
+        self.assertNotIn("Asia/Singapore", OPERATOR_TIME + JAVASCRIPT)
+        self.assertNotIn("second:", OPERATOR_TIME)
+        self.assertNotIn("timeZoneName:", OPERATOR_TIME)
+        self.assertIn("UTC−4`", OPERATOR_TIME)
+        self.assertIn("formatOperatorTimestampUtcMinus4(value)", JAVASCRIPT)
 
     def test_observation_timestamp_has_neutral_fallback_and_is_not_mrz_gated(self) -> None:
-        self.assertEqual(JAVASCRIPT.count('return "Latest observation · —";'), 2)
+        timestamp_formatter = JAVASCRIPT.split("function formatObservationTimestamp", 1)[1].split(
+            "const primaryLocationKeys", 1
+        )[0]
+        self.assertIn(': "Latest observation · —";', timestamp_formatter)
+        self.assertIn("if (!value) return null;", OPERATOR_TIME)
         render_symbol = JAVASCRIPT.split("function renderSymbol", 1)[1].split(
             "select.addEventListener", 1
         )[0]

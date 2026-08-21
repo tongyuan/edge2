@@ -146,10 +146,12 @@ classifier using the latest accepted observation price and that observation's
 IPDA 20W frame. The monitor contains no chronology, lifecycle, research,
 recommendation, readiness, approval, or handover interface.
 
-The CURRENT LOCATION support line formats the selected symbol's canonical
-`latest_observed_at` in the operator's `Asia/Singapore` timezone as
-`Latest observation · DD Mon YYYY · HH:MM`. It never substitutes delivery,
-database-write, refresh, activation, or migration time.
+The CURRENT LOCATION support line formats the selected symbol's canonical UTC
+`latest_observed_at` in the operator's fixed TradingView timezone as
+`Latest observation · DD Mon YYYY · HH:MM UTC−4`. The display offset never
+varies for daylight saving time or the browser, Mac, and server timezones. It
+never substitutes delivery, database-write, refresh, activation, or migration
+time.
 
 `supporting_observation_count` starts with the observations in the confirming
 cluster. During that active MRZ's lifetime it increases only for accepted,

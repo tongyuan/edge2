@@ -39,26 +39,11 @@ const locationLabels = {
 
 const formatLocation = (value) => value == null ? "—" : locationLabels[value] || "—";
 
-const observationTimestampFormatter = new Intl.DateTimeFormat("en-GB", {
-  timeZone: "Asia/Singapore",
-  day: "2-digit",
-  month: "short",
-  year: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-  hourCycle: "h23",
-});
-
 function formatObservationTimestamp(value) {
-  if (!value) return "Latest observation · —";
-  const timestamp = new Date(value);
-  if (Number.isNaN(timestamp.getTime())) return "Latest observation · —";
-  const parts = Object.fromEntries(
-    observationTimestampFormatter.formatToParts(timestamp)
-      .filter(({ type }) => type !== "literal")
-      .map(({ type, value: partValue }) => [type, partValue]),
-  );
-  return `Latest observation · ${parts.day} ${parts.month} ${parts.year} · ${parts.hour}:${parts.minute}`;
+  const formattedTimestamp = formatOperatorTimestampUtcMinus4(value);
+  return formattedTimestamp
+    ? `Latest observation · ${formattedTimestamp}`
+    : "Latest observation · —";
 }
 
 const primaryLocationKeys = [
