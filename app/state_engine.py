@@ -5,7 +5,11 @@ from dataclasses import replace
 from decimal import Decimal
 from typing import Iterable, Sequence
 
-from app.concentration import ROUTE_OBSERVATION_WINDOW, select_cluster
+from app.concentration import (
+    ROUTE_OBSERVATION_WINDOW,
+    ConcentrationResult,
+    evaluate_concentration,
+)
 from app.domain import (
     ActiveMRZ,
     Cluster,
@@ -114,8 +118,12 @@ def replay_symbol(observations: Iterable[Observation]) -> ReplayResult:
         route_window.append(incoming)
 
         if active is None:
-            cluster = select_cluster(tuple(route_window), incoming.event_id, incoming.ipda_width)
-            candidate = build_active_mrz(incoming, cluster) if cluster else None
+            evaluation = evaluate_concentration(tuple(route_window), incoming.route)
+            candidate = (
+                build_active_mrz(incoming, evaluation.cluster)
+                if evaluation.result is ConcentrationResult.QUALIFIES and evaluation.cluster
+                else None
+            )
             if candidate is None:
                 continue
             active = candidate
@@ -166,8 +174,12 @@ def replay_symbol(observations: Iterable[Observation]) -> ReplayResult:
         if not successor_eligible(active, incoming):
             continue
         eligible_pool = tuple(item for item in route_window if successor_eligible(active, item))
-        cluster = select_cluster(eligible_pool, incoming.event_id, incoming.ipda_width)
-        successor = build_active_mrz(incoming, cluster) if cluster else None
+        evaluation = evaluate_concentration(eligible_pool, incoming.route)
+        successor = (
+            build_active_mrz(incoming, evaluation.cluster)
+            if evaluation.result is ConcentrationResult.QUALIFIES and evaluation.cluster
+            else None
+        )
         if successor is None:
             continue
         previous = active

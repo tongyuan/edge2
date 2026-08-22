@@ -55,7 +55,7 @@ const locationLabels = {
 
 const formatLocation = (value) => value == null ? "—" : locationLabels[value] || "—";
 
-function renderFact(field, primary, secondary = []) {
+function renderFact(field, primary, secondary = [], sections = []) {
   const primaryLine = document.createElement("span");
   primaryLine.className = "fact-primary";
   primaryLine.textContent = primary;
@@ -65,7 +65,19 @@ function renderFact(field, primary, secondary = []) {
     line.textContent = text;
     return line;
   });
-  field.replaceChildren(primaryLine, ...secondaryLines);
+  const sectionLines = sections.flatMap((section) => {
+    const label = document.createElement("span");
+    label.className = "fact-section-label";
+    label.textContent = section.label;
+    const lines = section.lines.filter(Boolean).map((text) => {
+      const line = document.createElement("span");
+      line.className = "fact-diagnostic";
+      line.textContent = text;
+      return line;
+    });
+    return [label, ...lines];
+  });
+  field.replaceChildren(primaryLine, ...secondaryLines, ...sectionLines);
 }
 
 function positionActivityTooltip(button) {
@@ -246,8 +258,13 @@ function renderSymbol(state) {
   fields.location.textContent = active ? formatLocation(state.structural_location) : "—";
   fields.currentLocation.textContent = formatLocation(state.current_price_location);
   fields.currentLocationContext.textContent = state.current_location_context || "—";
-  const evidence = buildEvidencePresentation(state, formatOperatorTimestampUtcMinus4);
-  renderFact(fields.evidence, evidence.primary, evidence.secondary);
+  const evidence = buildEvidencePresentation(
+    state,
+    formatOperatorTimestampUtcMinus4,
+    formatPrice,
+    formatLocation,
+  );
+  renderFact(fields.evidence, evidence.primary, evidence.secondary, evidence.checks);
   renderFact(
     fields.latest,
     formatPrice(state.latest_observation_price),

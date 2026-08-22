@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -9,7 +10,12 @@ from typing import Any, Mapping, Sequence
 
 from psycopg2.extras import Json, RealDictCursor
 
-from app.concentration import ROUTE_OBSERVATION_WINDOW
+from app.concentration import (
+    ROUTE_OBSERVATION_WINDOW,
+    ConcentrationDiagnostic,
+    ConcentrationResult,
+    evaluate_concentration,
+)
 from app.db import connect, transaction
 from app.domain import (
     ActiveMRZ,
@@ -23,6 +29,9 @@ from app.domain import (
 from app.state_engine import replay_symbol
 from app.structure import classify_ipda_location, ipda_directional_context
 from app.validation import ObservationPayload, normalize_symbol
+
+
+LOGGER = logging.getLogger("edge2.repository")
 
 
 @dataclass(frozen=True, slots=True)
@@ -325,37 +334,25 @@ class EdgeRepository:
             with connection.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute(
                     """
-                    SELECT * FROM observations
-                    WHERE symbol = %s
-                    ORDER BY observed_at DESC, received_at DESC, id DESC
-                    LIMIT 1
-                    """,
-                    (normalized,),
-                )
-                latest = cursor.fetchone()
-                if latest is None:
-                    return None
-                cursor.execute(
-                    """
-                    WITH btd_window AS (
-                        SELECT observed_at
-                        FROM observations
-                        WHERE symbol = %s AND route = 'BTD'
-                        ORDER BY observed_at DESC, received_at DESC, id DESC
-                        LIMIT %s
-                    ),
-                    str_window AS (
-                        SELECT observed_at
-                        FROM observations
-                        WHERE symbol = %s AND route = 'STR'
-                        ORDER BY observed_at DESC, received_at DESC, id DESC
-                        LIMIT %s
-                    )
-                    SELECT
-                        (SELECT COUNT(*) FROM btd_window) AS btd_window_observation_count,
-                        (SELECT MIN(observed_at) FROM btd_window) AS btd_window_started_at,
-                        (SELECT COUNT(*) FROM str_window) AS str_window_observation_count,
-                        (SELECT MIN(observed_at) FROM str_window) AS str_window_started_at
+                    SELECT *
+                    FROM (
+                        (
+                            SELECT *
+                            FROM observations
+                            WHERE symbol = %s AND route = 'BTD'
+                            ORDER BY observed_at DESC, received_at DESC, id DESC
+                            LIMIT %s
+                        )
+                        UNION ALL
+                        (
+                            SELECT *
+                            FROM observations
+                            WHERE symbol = %s AND route = 'STR'
+                            ORDER BY observed_at DESC, received_at DESC, id DESC
+                            LIMIT %s
+                        )
+                    ) AS retained_route_windows
+                    ORDER BY observed_at ASC, received_at ASC, id ASC
                     """,
                     (
                         normalized,
@@ -364,10 +361,53 @@ class EdgeRepository:
                         ROUTE_OBSERVATION_WINDOW,
                     ),
                 )
-                window_counts = cursor.fetchone()
+                window_rows = cursor.fetchall()
+                if not window_rows:
+                    return None
+                route_windows = {
+                    route: tuple(
+                        observation_from_row(row)
+                        for row in window_rows
+                        if row["route"] == route.value
+                    )
+                    for route in Route
+                }
+                latest = max(
+                    window_rows,
+                    key=lambda row: (row["observed_at"], row["received_at"], row["id"]),
+                )
+                window_counts = {
+                    "btd_window_observation_count": len(route_windows[Route.BTD]),
+                    "btd_window_started_at": (
+                        route_windows[Route.BTD][0].observed_at
+                        if route_windows[Route.BTD]
+                        else None
+                    ),
+                    "str_window_observation_count": len(route_windows[Route.STR]),
+                    "str_window_started_at": (
+                        route_windows[Route.STR][0].observed_at
+                        if route_windows[Route.STR]
+                        else None
+                    ),
+                }
                 cursor.execute("SELECT * FROM active_mrz WHERE symbol = %s", (normalized,))
                 active = active_from_row(cursor.fetchone())
-                return detail_payload(normalized, latest, active, window_counts)
+                concentration_checks = None
+                if active is None:
+                    concentration_checks = {
+                        route: evaluate_concentration(route_windows[route], route).diagnostic
+                        for route in Route
+                    }
+                    for diagnostic in concentration_checks.values():
+                        if diagnostic.result is ConcentrationResult.QUALIFIES:
+                            log_unestablished_qualifying_concentration(normalized, diagnostic)
+                return detail_payload(
+                    normalized,
+                    latest,
+                    active,
+                    window_counts,
+                    concentration_checks,
+                )
         finally:
             connection.close()
 
@@ -495,11 +535,66 @@ def iso(value: datetime | None) -> str | None:
     return None if value is None else value.isoformat().replace("+00:00", "Z")
 
 
+def decimal_text(value: Decimal | None) -> str | None:
+    return None if value is None else str(value)
+
+
+def concentration_diagnostic_payload(
+    diagnostic: ConcentrationDiagnostic,
+) -> dict[str, Any]:
+    return {
+        "route": diagnostic.route.value,
+        "retained_observation_count": diagnostic.retained_observation_count,
+        "minimum_required_count": diagnostic.minimum_required_count,
+        "newest_observation_included": diagnostic.newest_observation_included,
+        "tested_window_count": diagnostic.tested_window_count,
+        "selected_observation_count": diagnostic.selected_observation_count,
+        "selected_lower": decimal_text(diagnostic.selected_lower),
+        "selected_upper": decimal_text(diagnostic.selected_upper),
+        "observed_span": decimal_text(diagnostic.observed_span),
+        "ipda_20w_high": decimal_text(diagnostic.ipda_20w_high),
+        "ipda_20w_low": decimal_text(diagnostic.ipda_20w_low),
+        "ipda_width": decimal_text(diagnostic.ipda_width),
+        "concentration_threshold": decimal_text(diagnostic.concentration_threshold),
+        "allowance": decimal_text(diagnostic.allowance),
+        "normalized_span": decimal_text(diagnostic.normalized_span),
+        "proposed_midpoint": decimal_text(diagnostic.proposed_midpoint),
+        "proposed_structural_location": (
+            diagnostic.proposed_structural_location.value
+            if diagnostic.proposed_structural_location
+            else None
+        ),
+        "concentration_passed": diagnostic.concentration_passed,
+        "structural_eligibility_passed": diagnostic.structural_eligibility_passed,
+        "result": diagnostic.result.value,
+    }
+
+
+def log_unestablished_qualifying_concentration(
+    symbol: str,
+    diagnostic: ConcentrationDiagnostic,
+) -> None:
+    LOGGER.error(
+        "Concentration qualifies without active MRZ",
+        extra={
+            "symbol": symbol,
+            "route_owner": diagnostic.route.value,
+            "concentration_result": diagnostic.result.value,
+            "retained_observation_count": diagnostic.retained_observation_count,
+            "newest_observation_id": diagnostic.newest_observation_id,
+            "selected_observation_ids": list(diagnostic.selected_observation_ids),
+            "observed_span": decimal_text(diagnostic.observed_span),
+            "allowance": decimal_text(diagnostic.allowance),
+        },
+    )
+
+
 def detail_payload(
     symbol: str,
     latest: Mapping[str, Any],
     active: ActiveMRZ | None,
     window_counts: Mapping[str, Any],
+    concentration_checks: Mapping[Route, ConcentrationDiagnostic] | None,
 ) -> dict[str, Any]:
     base = {
         "symbol": symbol,
@@ -517,6 +612,14 @@ def detail_payload(
         "btd_window_started_at": iso(window_counts["btd_window_started_at"]),
         "str_window_observation_count": int(window_counts["str_window_observation_count"]),
         "str_window_started_at": iso(window_counts["str_window_started_at"]),
+        "concentration_checks": (
+            {
+                route.value: concentration_diagnostic_payload(concentration_checks[route])
+                for route in Route
+            }
+            if concentration_checks is not None
+            else None
+        ),
     }
     if active is None:
         return {

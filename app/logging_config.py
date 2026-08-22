@@ -24,6 +24,12 @@ class JsonFormatter(logging.Formatter):
             "core_mrz_upper",
             "old_core_mrz_lower",
             "old_core_mrz_upper",
+            "concentration_result",
+            "retained_observation_count",
+            "newest_observation_id",
+            "selected_observation_ids",
+            "observed_span",
+            "allowance",
         ):
             value = getattr(record, key, None)
             if value is not None:

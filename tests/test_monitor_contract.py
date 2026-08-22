@@ -12,6 +12,9 @@ OPERATOR_TIME = (ROOT / "app/static/operator-time.js").read_text(encoding="utf-8
 MONITOR_PRESENTATION = (ROOT / "app/static/monitor-presentation.js").read_text(encoding="utf-8")
 CSS = (ROOT / "app/static/styles.css").read_text(encoding="utf-8")
 REPOSITORY = (ROOT / "app/repository.py").read_text(encoding="utf-8")
+CONCENTRATION = (ROOT / "app/concentration.py").read_text(encoding="utf-8")
+STATE_ENGINE = (ROOT / "app/state_engine.py").read_text(encoding="utf-8")
+API = (ROOT / "app/api.py").read_text(encoding="utf-8")
 LATEST_INDEX = (ROOT / "migrations/002_latest_symbol_overview.sql").read_text(encoding="utf-8")
 EVIDENCE_MIGRATION = (ROOT / "migrations/003_active_mrz_supporting_evidence.sql").read_text(
     encoding="utf-8"
@@ -27,11 +30,11 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("Symbol Lab", HTML)
 
     def test_monitor_assets_are_versioned_together(self) -> None:
-        self.assertIn('/static/styles.css?v=window-start-20260822', HTML)
-        self.assertIn('/static/heatmap-state.js?v=window-start-20260822', HTML)
-        self.assertIn('/static/operator-time.js?v=window-start-20260822', HTML)
-        self.assertIn('/static/monitor-presentation.js?v=window-start-20260822', HTML)
-        self.assertIn('/static/app.js?v=window-start-20260822', HTML)
+        self.assertIn('/static/styles.css?v=concentration-check-20260822', HTML)
+        self.assertIn('/static/heatmap-state.js?v=concentration-check-20260822', HTML)
+        self.assertIn('/static/operator-time.js?v=concentration-check-20260822', HTML)
+        self.assertIn('/static/monitor-presentation.js?v=concentration-check-20260822', HTML)
+        self.assertIn('/static/app.js?v=concentration-check-20260822', HTML)
         self.assertLess(HTML.index("heatmap-state.js"), HTML.index("app.js"))
         self.assertLess(HTML.index("monitor-presentation.js"), HTML.index("app.js"))
 
@@ -194,14 +197,53 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn('`BTD window since · ${btdWindowStartedAt}`', MONITOR_PRESENTATION)
         self.assertIn('`STR · ${observationCount(strCount, "rejection")}`', MONITOR_PRESENTATION)
         self.assertIn('`STR window since · ${strWindowStartedAt}`', MONITOR_PRESENTATION)
-        self.assertIn(
-            "buildEvidencePresentation(state, formatOperatorTimestampUtcMinus4)",
-            JAVASCRIPT,
-        )
+        self.assertIn("buildEvidencePresentation(", JAVASCRIPT)
+        self.assertIn("formatOperatorTimestampUtcMinus4,", JAVASCRIPT)
+        self.assertIn("formatPrice,", JAVASCRIPT)
+        self.assertIn("formatLocation,", JAVASCRIPT)
+        self.assertIn('`CONCENTRATION CHECK · ${check.route}`', MONITOR_PRESENTATION)
         combined = HTML + JAVASCRIPT + MONITOR_PRESENTATION
         self.assertNotIn("3 / 4", combined)
         self.assertNotIn("progress", combined.lower())
         self.assertNotIn("predicted", combined.lower())
+
+    def test_pre_activation_diagnostic_reuses_the_production_evaluator(self) -> None:
+        self.assertIn("class ConcentrationDiagnostic", CONCENTRATION)
+        self.assertIn("def evaluate_concentration(", CONCENTRATION)
+        self.assertIn("_select_seed_and_cluster", CONCENTRATION)
+        self.assertIn("evaluate_concentration(tuple(route_window), incoming.route)", STATE_ENGINE)
+        self.assertIn("evaluate_concentration(route_windows[route], route).diagnostic", REPOSITORY)
+        self.assertNotIn("concentration", API.lower())
+        self.assertNotIn("CONCENTRATION_SPAN_THRESHOLD", JAVASCRIPT + MONITOR_PRESENTATION)
+        self.assertIn('INSUFFICIENT_OBSERVATIONS = "INSUFFICIENT_OBSERVATIONS"', CONCENTRATION)
+        self.assertIn('TOO_DISPERSED = "TOO_DISPERSED"', CONCENTRATION)
+        self.assertIn('STRUCTURALLY_INELIGIBLE = "STRUCTURALLY_INELIGIBLE"', CONCENTRATION)
+        self.assertIn('QUALIFIES = "QUALIFIES"', CONCENTRATION)
+
+    def test_public_diagnostic_omits_audit_observation_ids(self) -> None:
+        payload = REPOSITORY.split("def concentration_diagnostic_payload", 1)[1].split(
+            "def log_unestablished_qualifying_concentration", 1
+        )[0]
+        self.assertNotIn('"newest_observation_id"', payload)
+        self.assertNotIn('"selected_observation_ids"', payload)
+        self.assertIn('"newest_observation_included"', payload)
+        self.assertIn('"selected_observation_count"', payload)
+
+    def test_concentration_check_uses_muted_readable_fact_layout(self) -> None:
+        self.assertIn('label.className = "fact-section-label";', JAVASCRIPT)
+        self.assertIn('line.className = "fact-diagnostic";', JAVASCRIPT)
+        self.assertIn(".fact-section-label { display: block;", CSS)
+        diagnostic_style = CSS.split(".fact-diagnostic {", 1)[1].split("}", 1)[0]
+        self.assertIn("color: var(--muted);", diagnostic_style)
+        self.assertIn("overflow-wrap: anywhere;", diagnostic_style)
+        self.assertIn("line-height: 1.35;", diagnostic_style)
+
+    def test_active_mrz_hides_pre_activation_diagnostic(self) -> None:
+        active_branch = MONITOR_PRESENTATION.split('if (state.mrz_status === "active")', 1)[1].split(
+            "const btdCount", 1
+        )[0]
+        self.assertIn("checks: []", active_branch)
+        self.assertIn("Formation duration · ${duration}", active_branch)
 
     def test_heatmap_chips_do_not_include_evidence_counts(self) -> None:
         heatmap_group = JAVASCRIPT.split("function createLocationGroup", 1)[1].split(

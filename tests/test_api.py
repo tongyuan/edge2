@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.api import create_app
 from app.config import Settings
+from app.db import connect
 from tests.db_support import clean, migrate_and_clean, require_test_database
 
 
@@ -73,6 +74,12 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(detail["btd_window_started_at"], "2026-08-20T12:00:01Z")
         self.assertEqual(detail["str_window_observation_count"], 0)
         self.assertIsNone(detail["str_window_started_at"])
+        self.assertEqual(detail["concentration_checks"]["BTD"]["result"], "INSUFFICIENT_OBSERVATIONS")
+        self.assertEqual(detail["concentration_checks"]["BTD"]["minimum_required_count"], 4)
+        self.assertIsNone(detail["concentration_checks"]["BTD"]["selected_lower"])
+        self.assertEqual(detail["concentration_checks"]["STR"]["retained_observation_count"], 0)
+        self.assertNotIn("newest_observation_id", detail["concentration_checks"]["BTD"])
+        self.assertNotIn("selected_observation_ids", detail["concentration_checks"]["BTD"])
         self.assertIsNone(detail["supporting_observation_count"])
         self.assertIsNone(detail["formation_started_at"])
         self.assertIsNone(detail["formation_completed_at"])
@@ -96,6 +103,7 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertIsNone(str_detail["btd_window_started_at"])
         self.assertEqual(str_detail["str_window_observation_count"], 1)
         self.assertEqual(str_detail["str_window_started_at"], "2026-08-20T12:00:02Z")
+        self.assertEqual(str_detail["concentration_checks"]["STR"]["result"], "INSUFFICIENT_OBSERVATIONS")
 
     def test_duplicate_event_is_successful_no_op(self) -> None:
         packet = webhook_payload()
@@ -123,6 +131,7 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(detail["formation_started_at"], "2026-08-20T12:00:01Z")
         self.assertEqual(detail["formation_completed_at"], "2026-08-20T12:00:04Z")
         self.assertEqual(detail["formation_duration_seconds"], 3.0)
+        self.assertIsNone(detail["concentration_checks"])
         self.assertNotIn("recommendation", detail)
         self.assertNotIn("readiness", detail)
         overview = self.client.get("/api/symbols").json()["symbols"][0]
@@ -152,6 +161,20 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(detail["btd_window_started_at"], "2026-08-20T12:00:01Z")
         self.assertEqual(detail["str_window_observation_count"], 6)
         self.assertEqual(detail["str_window_started_at"], "2026-08-20T12:00:04Z")
+        btd_check = detail["concentration_checks"]["BTD"]
+        str_check = detail["concentration_checks"]["STR"]
+        self.assertEqual(btd_check["result"], "INSUFFICIENT_OBSERVATIONS")
+        self.assertEqual(str_check["result"], "TOO_DISPERSED")
+        self.assertEqual(str_check["retained_observation_count"], 6)
+        self.assertEqual(str_check["selected_observation_count"], 4)
+        self.assertEqual(str_check["selected_lower"], "176")
+        self.assertEqual(str_check["selected_upper"], "200")
+        self.assertEqual(str_check["observed_span"], "24")
+        self.assertEqual(str_check["ipda_width"], "100")
+        self.assertEqual(str_check["allowance"], "1.00")
+        self.assertEqual(str_check["normalized_span"], "0.24")
+        self.assertFalse(str_check["concentration_passed"])
+        self.assertTrue(str_check["structural_eligibility_passed"])
         overview = self.client.get("/api/symbols").json()["symbols"][0]
         self.assertEqual(overview["btd_window_observation_count"], 3)
         self.assertEqual(overview["str_window_observation_count"], 6)
@@ -176,6 +199,51 @@ class APIIntegrationTests(unittest.TestCase):
         overview = self.client.get("/api/symbols").json()["symbols"][0]
         self.assertEqual(overview["btd_window_observation_count"], 20)
         self.assertEqual(overview["str_window_observation_count"], 0)
+
+    def test_structurally_ineligible_diagnostic_uses_production_evaluator(self) -> None:
+        for index, price in enumerate(("120", "120.2", "120.4", "120.6"), 1):
+            packet = webhook_payload(
+                index,
+                price,
+                route="STR",
+                observation_type="rejection",
+            )
+            self.assertEqual(self.client.post("/webhook/tradingview", json=packet).status_code, 201)
+
+        detail = self.client.get("/api/symbols/SPXUSDT").json()
+        diagnostic = detail["concentration_checks"]["STR"]
+        self.assertEqual(detail["mrz_status"], "unestablished")
+        self.assertEqual(diagnostic["result"], "STRUCTURALLY_INELIGIBLE")
+        self.assertEqual(diagnostic["selected_lower"], "120")
+        self.assertEqual(diagnostic["selected_upper"], "120.6")
+        self.assertEqual(diagnostic["observed_span"], "0.6")
+        self.assertEqual(diagnostic["ipda_width"], "100")
+        self.assertEqual(diagnostic["allowance"], "1.00")
+        self.assertEqual(diagnostic["normalized_span"], "0.006")
+        self.assertEqual(diagnostic["proposed_midpoint"], "120.3")
+        self.assertEqual(diagnostic["proposed_structural_location"], "deep_discount")
+        self.assertTrue(diagnostic["concentration_passed"])
+        self.assertFalse(diagnostic["structural_eligibility_passed"])
+
+    def test_unexpected_qualifying_unestablished_state_is_visible_and_logged(self) -> None:
+        for index, price in enumerate(("110", "110.2", "110.4", "110.6"), 1):
+            self.assertEqual(
+                self.client.post("/webhook/tradingview", json=webhook_payload(index, price)).status_code,
+                201,
+            )
+        connection = connect(self.database_url)
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("DELETE FROM active_mrz WHERE symbol = %s", ("SPXUSDT",))
+            connection.commit()
+        finally:
+            connection.close()
+
+        with self.assertLogs("edge2.repository", level="ERROR") as captured:
+            detail = self.client.get("/api/symbols/SPXUSDT").json()
+        self.assertEqual(detail["mrz_status"], "unestablished")
+        self.assertEqual(detail["concentration_checks"]["BTD"]["result"], "QUALIFIES")
+        self.assertIn("Concentration qualifies without active MRZ", captured.output[0])
 
     def test_four_dispersed_observations_remain_unestablished(self) -> None:
         for index, price in enumerate(("110", "120", "130", "140"), 1):

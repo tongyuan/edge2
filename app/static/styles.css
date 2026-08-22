@@ -37,7 +37,7 @@ body {
   gap: 20px;
 }
 
-.eyebrow, .label {
+.eyebrow, .label, .fact-section-label {
   margin: 0 0 8px;
   color: var(--accent);
   font-size: 0.76rem;
@@ -267,6 +267,16 @@ dd { margin: 0; font-size: 0.95rem; font-weight: 620; }
   font-size: 0.82rem;
   font-weight: 450;
   line-height: 1.35;
+}
+.fact-section-label { display: block; margin: 16px 0 0; }
+.fact-diagnostic {
+  display: block;
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 450;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 680px) {

@@ -27,7 +27,50 @@
     return `${minutes}m`;
   }
 
-  function buildEvidencePresentation(state, timestampFormatter = () => null) {
+  function buildConcentrationCheck(check, priceFormatter, locationFormatter) {
+    const retainedCount = countValue(check.retained_observation_count);
+    const selectedCount = countValue(check.selected_observation_count);
+    const label = `CONCENTRATION CHECK · ${check.route}`;
+    if (check.result === "INSUFFICIENT_OBSERVATIONS") {
+      return {
+        label,
+        lines: [
+          "Concentration check unavailable",
+          `Minimum observations required · ${countValue(check.minimum_required_count)}`,
+        ],
+      };
+    }
+    if (check.result === "QUALIFIES") {
+      return {
+        label,
+        lines: ["Concentration qualifies but no active MRZ is recorded"],
+      };
+    }
+
+    const lines = [
+      `Tightest eligible group · ${selectedCount} of ${retainedCount}`,
+      `Price range · ${priceFormatter(check.selected_lower)}–${priceFormatter(check.selected_upper)}`,
+      `Observed span · ${priceFormatter(check.observed_span)}`,
+    ];
+    if (check.result === "TOO_DISPERSED") {
+      lines.push(`IPDA width · ${priceFormatter(check.ipda_width)}`);
+    }
+    lines.push(`Allowance · ≤${priceFormatter(check.allowance)} (1% of IPDA width)`);
+    if (check.result === "STRUCTURALLY_INELIGIBLE") {
+      lines.push(`Proposed location · ${locationFormatter(check.proposed_structural_location)}`);
+      lines.push("Result · Structurally ineligible");
+    } else {
+      lines.push("Result · Too dispersed");
+    }
+    return { label, lines };
+  }
+
+  function buildEvidencePresentation(
+    state,
+    timestampFormatter = () => null,
+    priceFormatter = (value) => String(value),
+    locationFormatter = (value) => String(value),
+  ) {
     if (state.mrz_status === "active") {
       const count = countValue(state.supporting_observation_count);
       const type = state.route_owner === "STR" ? "rejection" : "reclaim";
@@ -35,6 +78,7 @@
       return {
         primary: `${count} qualifying ${type} observation${count === 1 ? "" : "s"}`,
         secondary: duration ? [`Formation duration · ${duration}`] : [],
+        checks: [],
       };
     }
 
@@ -53,9 +97,15 @@
         secondary.push(`STR window since · ${strWindowStartedAt}`);
       }
     }
+    const checkPayload = state.concentration_checks || {};
+    const checks = ["BTD", "STR"]
+      .map((route) => checkPayload[route])
+      .filter((check) => check && countValue(check.retained_observation_count) > 0)
+      .map((check) => buildConcentrationCheck(check, priceFormatter, locationFormatter));
     return {
       primary: "No qualifying concentration",
       secondary,
+      checks,
     };
   }
 
@@ -67,6 +117,7 @@
 
   const monitorPresentation = {
     formatFormationDuration,
+    buildConcentrationCheck,
     buildEvidencePresentation,
     formatLatestObservationContext,
   };

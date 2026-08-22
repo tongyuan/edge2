@@ -46,12 +46,18 @@ class RepositoryIntegrationTests(unittest.TestCase):
     def test_duplicate_event_is_idempotently_ignored(self) -> None:
         payload = schema_payload(1, "110")
         first = self.repository.ingest(payload, Decimal("0.01"))
+        before_duplicate = self.repository.symbol_detail("SPXUSDT")
         duplicate = self.repository.ingest(payload, Decimal("0.01"))
+        after_duplicate = self.repository.symbol_detail("SPXUSDT")
         health = self.repository.health()
         self.assertTrue(first.accepted)
         self.assertTrue(duplicate.duplicate)
         self.assertEqual(health["accepted_payload_count"], 1)
         self.assertEqual(health["duplicate_payload_count"], 1)
+        self.assertEqual(
+            after_duplicate["concentration_checks"],
+            before_duplicate["concentration_checks"],
+        )
 
     def test_route_window_starts_are_route_specific_and_null_when_empty(self) -> None:
         self.ingest(1, "110", observed_offset=10)
@@ -60,12 +66,37 @@ class RepositoryIntegrationTests(unittest.TestCase):
         self.assertEqual(btd_only["btd_window_started_at"], "2026-08-20T12:00:10Z")
         self.assertEqual(btd_only["str_window_observation_count"], 0)
         self.assertIsNone(btd_only["str_window_started_at"])
+        self.assertEqual(
+            btd_only["concentration_checks"]["BTD"]["result"],
+            "INSUFFICIENT_OBSERVATIONS",
+        )
 
         self.ingest(2, "180", observed_offset=30, route="STR")
         both_routes = self.repository.symbol_detail("SPXUSDT")
         self.assertEqual(both_routes["btd_window_started_at"], "2026-08-20T12:00:10Z")
         self.assertEqual(both_routes["str_window_observation_count"], 1)
         self.assertEqual(both_routes["str_window_started_at"], "2026-08-20T12:00:30Z")
+
+    def test_restart_reproduces_identical_concentration_diagnostic(self) -> None:
+        for index, price in enumerate(("110", "120", "130", "140"), 1):
+            self.ingest(index, price)
+
+        before = self.repository.symbol_detail("SPXUSDT")["concentration_checks"]
+        after = EdgeRepository(self.database_url).symbol_detail("SPXUSDT")["concentration_checks"]
+        self.assertEqual(after, before)
+        self.assertEqual(after["BTD"]["result"], "TOO_DISPERSED")
+
+    def test_duplicate_packet_does_not_change_concentration_diagnostic(self) -> None:
+        for index, price in enumerate(("110", "120", "130", "140"), 1):
+            self.ingest(index, price)
+        before = self.repository.symbol_detail("SPXUSDT")["concentration_checks"]
+
+        duplicate = self.repository.ingest(schema_payload(4, "140"), Decimal("0.01"))
+        after = self.repository.symbol_detail("SPXUSDT")["concentration_checks"]
+
+        self.assertTrue(duplicate.duplicate)
+        self.assertEqual(after, before)
+        self.assertEqual(after["BTD"]["selected_observation_count"], 4)
 
     def test_route_window_start_advances_after_twenty_with_out_of_order_and_duplicate_ingestion(self) -> None:
         for index in (21, *range(1, 21)):
