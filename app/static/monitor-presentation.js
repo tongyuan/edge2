@@ -27,7 +27,7 @@
     return `${minutes}m`;
   }
 
-  function buildEvidencePresentation(state) {
+  function buildEvidencePresentation(state, timestampFormatter = () => null) {
     if (state.mrz_status === "active") {
       const count = countValue(state.supporting_observation_count);
       const type = state.route_owner === "STR" ? "rejection" : "reclaim";
@@ -40,10 +40,19 @@
 
     const btdCount = countValue(state.btd_window_observation_count);
     const strCount = countValue(state.str_window_observation_count);
-    const secondary = btdCount + strCount === 0 ? [] : [
-      `BTD · ${observationCount(btdCount, "reclaim")}`,
-      `STR · ${observationCount(strCount, "rejection")}`,
-    ];
+    const secondary = [];
+    if (btdCount + strCount > 0) {
+      secondary.push(`BTD · ${observationCount(btdCount, "reclaim")}`);
+      const btdWindowStartedAt = timestampFormatter(state.btd_window_started_at);
+      if (btdCount > 0 && btdWindowStartedAt) {
+        secondary.push(`BTD window since · ${btdWindowStartedAt}`);
+      }
+      secondary.push(`STR · ${observationCount(strCount, "rejection")}`);
+      const strWindowStartedAt = timestampFormatter(state.str_window_started_at);
+      if (strCount > 0 && strWindowStartedAt) {
+        secondary.push(`STR window since · ${strWindowStartedAt}`);
+      }
+    }
     return {
       primary: "No qualifying concentration",
       secondary,

@@ -246,7 +246,7 @@ function renderSymbol(state) {
   fields.location.textContent = active ? formatLocation(state.structural_location) : "—";
   fields.currentLocation.textContent = formatLocation(state.current_price_location);
   fields.currentLocationContext.textContent = state.current_location_context || "—";
-  const evidence = buildEvidencePresentation(state);
+  const evidence = buildEvidencePresentation(state, formatOperatorTimestampUtcMinus4);
   renderFact(fields.evidence, evidence.primary, evidence.secondary);
   renderFact(
     fields.latest,

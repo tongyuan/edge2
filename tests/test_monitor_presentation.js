@@ -19,13 +19,17 @@ assert.deepEqual(
   buildEvidencePresentation({
     mrz_status: "unestablished",
     btd_window_observation_count: 3,
+    btd_window_started_at: "2026-08-20T18:05:00Z",
     str_window_observation_count: 6,
-  }),
+    str_window_started_at: "2026-08-20T20:42:00Z",
+  }, formatOperatorTimestampUtcMinus4),
   {
     primary: "No qualifying concentration",
     secondary: [
       "BTD · 3 reclaim observations",
+      "BTD window since · 20 Aug 2026 · 14:05 UTC−4",
       "STR · 6 rejection observations",
+      "STR window since · 20 Aug 2026 · 16:42 UTC−4",
     ],
   },
 );
@@ -34,8 +38,28 @@ assert.deepEqual(
   buildEvidencePresentation({
     mrz_status: "unestablished",
     btd_window_observation_count: 0,
+    btd_window_started_at: null,
+    str_window_observation_count: 1,
+    str_window_started_at: "2026-08-20T20:42:00Z",
+  }, formatOperatorTimestampUtcMinus4),
+  {
+    primary: "No qualifying concentration",
+    secondary: [
+      "BTD · 0 reclaim observations",
+      "STR · 1 rejection observation",
+      "STR window since · 20 Aug 2026 · 16:42 UTC−4",
+    ],
+  },
+);
+
+assert.deepEqual(
+  buildEvidencePresentation({
+    mrz_status: "unestablished",
+    btd_window_observation_count: 0,
+    btd_window_started_at: "2026-08-20T18:05:00Z",
     str_window_observation_count: 0,
-  }),
+    str_window_started_at: "2026-08-20T20:42:00Z",
+  }, formatOperatorTimestampUtcMinus4),
   { primary: "No qualifying concentration", secondary: [] },
 );
 
@@ -45,7 +69,8 @@ assert.deepEqual(
     route_owner: "BTD",
     supporting_observation_count: 4,
     formation_duration_seconds: 11700,
-  }),
+    btd_window_started_at: "2026-08-20T18:05:00Z",
+  }, formatOperatorTimestampUtcMinus4),
   {
     primary: "4 qualifying reclaim observations",
     secondary: ["Formation duration · 3h 15m"],

@@ -27,11 +27,11 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("Symbol Lab", HTML)
 
     def test_monitor_assets_are_versioned_together(self) -> None:
-        self.assertIn('/static/styles.css?v=heatmap-activity-20260822', HTML)
-        self.assertIn('/static/heatmap-state.js?v=heatmap-activity-20260822', HTML)
-        self.assertIn('/static/operator-time.js?v=heatmap-activity-20260822', HTML)
-        self.assertIn('/static/monitor-presentation.js?v=heatmap-activity-20260822', HTML)
-        self.assertIn('/static/app.js?v=heatmap-activity-20260822', HTML)
+        self.assertIn('/static/styles.css?v=window-start-20260822', HTML)
+        self.assertIn('/static/heatmap-state.js?v=window-start-20260822', HTML)
+        self.assertIn('/static/operator-time.js?v=window-start-20260822', HTML)
+        self.assertIn('/static/monitor-presentation.js?v=window-start-20260822', HTML)
+        self.assertIn('/static/app.js?v=window-start-20260822', HTML)
         self.assertLess(HTML.index("heatmap-state.js"), HTML.index("app.js"))
         self.assertLess(HTML.index("monitor-presentation.js"), HTML.index("app.js"))
 
@@ -191,7 +191,13 @@ class MonitorContractTests(unittest.TestCase):
     def test_unestablished_state_shows_raw_windows_without_progress_semantics(self) -> None:
         self.assertIn('primary: "No qualifying concentration"', MONITOR_PRESENTATION)
         self.assertIn('`BTD · ${observationCount(btdCount, "reclaim")}`', MONITOR_PRESENTATION)
+        self.assertIn('`BTD window since · ${btdWindowStartedAt}`', MONITOR_PRESENTATION)
         self.assertIn('`STR · ${observationCount(strCount, "rejection")}`', MONITOR_PRESENTATION)
+        self.assertIn('`STR window since · ${strWindowStartedAt}`', MONITOR_PRESENTATION)
+        self.assertIn(
+            "buildEvidencePresentation(state, formatOperatorTimestampUtcMinus4)",
+            JAVASCRIPT,
+        )
         combined = HTML + JAVASCRIPT + MONITOR_PRESENTATION
         self.assertNotIn("3 / 4", combined)
         self.assertNotIn("progress", combined.lower())
@@ -312,6 +318,9 @@ class MonitorContractTests(unittest.TestCase):
     def test_bottom_facts_remain_three_columns_and_responsive(self) -> None:
         self.assertIn("grid-template-columns: repeat(3, 1fr);", CSS)
         self.assertIn(".answer-grid, .context-grid, .facts { grid-template-columns: 1fr; }", CSS)
+        self.assertIn(".fact-support {", CSS)
+        self.assertIn("display: block;", CSS.split(".fact-support", 1)[1])
+        self.assertIn("line-height: 1.35;", CSS.split(".fact-support", 1)[1])
 
     def test_selected_timestamp_adds_no_observation_history_request(self) -> None:
         load_symbol = JAVASCRIPT.split("async function loadSymbol(symbol)", 1)[1].split(

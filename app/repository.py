@@ -338,14 +338,14 @@ class EdgeRepository:
                 cursor.execute(
                     """
                     WITH btd_window AS (
-                        SELECT id
+                        SELECT observed_at
                         FROM observations
                         WHERE symbol = %s AND route = 'BTD'
                         ORDER BY observed_at DESC, received_at DESC, id DESC
                         LIMIT %s
                     ),
                     str_window AS (
-                        SELECT id
+                        SELECT observed_at
                         FROM observations
                         WHERE symbol = %s AND route = 'STR'
                         ORDER BY observed_at DESC, received_at DESC, id DESC
@@ -353,7 +353,9 @@ class EdgeRepository:
                     )
                     SELECT
                         (SELECT COUNT(*) FROM btd_window) AS btd_window_observation_count,
-                        (SELECT COUNT(*) FROM str_window) AS str_window_observation_count
+                        (SELECT MIN(observed_at) FROM btd_window) AS btd_window_started_at,
+                        (SELECT COUNT(*) FROM str_window) AS str_window_observation_count,
+                        (SELECT MIN(observed_at) FROM str_window) AS str_window_started_at
                     """,
                     (
                         normalized,
@@ -512,7 +514,9 @@ def detail_payload(
             Decimal(latest["ipda_20w_low"]),
         ),
         "btd_window_observation_count": int(window_counts["btd_window_observation_count"]),
+        "btd_window_started_at": iso(window_counts["btd_window_started_at"]),
         "str_window_observation_count": int(window_counts["str_window_observation_count"]),
+        "str_window_started_at": iso(window_counts["str_window_started_at"]),
     }
     if active is None:
         return {

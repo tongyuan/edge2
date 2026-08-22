@@ -53,6 +53,34 @@ class RepositoryIntegrationTests(unittest.TestCase):
         self.assertEqual(health["accepted_payload_count"], 1)
         self.assertEqual(health["duplicate_payload_count"], 1)
 
+    def test_route_window_starts_are_route_specific_and_null_when_empty(self) -> None:
+        self.ingest(1, "110", observed_offset=10)
+        btd_only = self.repository.symbol_detail("SPXUSDT")
+        self.assertEqual(btd_only["btd_window_observation_count"], 1)
+        self.assertEqual(btd_only["btd_window_started_at"], "2026-08-20T12:00:10Z")
+        self.assertEqual(btd_only["str_window_observation_count"], 0)
+        self.assertIsNone(btd_only["str_window_started_at"])
+
+        self.ingest(2, "180", observed_offset=30, route="STR")
+        both_routes = self.repository.symbol_detail("SPXUSDT")
+        self.assertEqual(both_routes["btd_window_started_at"], "2026-08-20T12:00:10Z")
+        self.assertEqual(both_routes["str_window_observation_count"], 1)
+        self.assertEqual(both_routes["str_window_started_at"], "2026-08-20T12:00:30Z")
+
+    def test_route_window_start_advances_after_twenty_with_out_of_order_and_duplicate_ingestion(self) -> None:
+        for index in (21, *range(1, 21)):
+            self.ingest(index, "110", observed_offset=index)
+
+        detail = self.repository.symbol_detail("SPXUSDT")
+        self.assertEqual(detail["btd_window_observation_count"], 20)
+        self.assertEqual(detail["btd_window_started_at"], "2026-08-20T12:00:02Z")
+
+        duplicate = self.repository.ingest(schema_payload(2, "110", observed_offset=2), Decimal("0.01"))
+        after_duplicate = self.repository.symbol_detail("SPXUSDT")
+        self.assertTrue(duplicate.duplicate)
+        self.assertEqual(after_duplicate["btd_window_observation_count"], 20)
+        self.assertEqual(after_duplicate["btd_window_started_at"], "2026-08-20T12:00:02Z")
+
     def test_activation_persists_across_repository_restart(self) -> None:
         for index, price in enumerate(("110", "110.2", "110.4", "110.6"), 1):
             self.ingest(index, price)

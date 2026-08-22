@@ -70,7 +70,9 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(detail["latest_observation_route"], "BTD")
         self.assertEqual(detail["latest_observation_type"], "reclaim")
         self.assertEqual(detail["btd_window_observation_count"], 1)
+        self.assertEqual(detail["btd_window_started_at"], "2026-08-20T12:00:01Z")
         self.assertEqual(detail["str_window_observation_count"], 0)
+        self.assertIsNone(detail["str_window_started_at"])
         self.assertIsNone(detail["supporting_observation_count"])
         self.assertIsNone(detail["formation_started_at"])
         self.assertIsNone(detail["formation_completed_at"])
@@ -89,6 +91,11 @@ class APIIntegrationTests(unittest.TestCase):
             observation_type="rejection",
         )
         self.assertEqual(self.client.post("/webhook/tradingview", json=str_packet).status_code, 201)
+        str_detail = self.client.get("/api/symbols/NASDAQ:NDX").json()
+        self.assertEqual(str_detail["btd_window_observation_count"], 0)
+        self.assertIsNone(str_detail["btd_window_started_at"])
+        self.assertEqual(str_detail["str_window_observation_count"], 1)
+        self.assertEqual(str_detail["str_window_started_at"], "2026-08-20T12:00:02Z")
 
     def test_duplicate_event_is_successful_no_op(self) -> None:
         packet = webhook_payload()
@@ -142,7 +149,9 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(detail["mrz_status"], "unestablished")
         self.assertIsNone(detail["route_owner"])
         self.assertEqual(detail["btd_window_observation_count"], 3)
+        self.assertEqual(detail["btd_window_started_at"], "2026-08-20T12:00:01Z")
         self.assertEqual(detail["str_window_observation_count"], 6)
+        self.assertEqual(detail["str_window_started_at"], "2026-08-20T12:00:04Z")
         overview = self.client.get("/api/symbols").json()["symbols"][0]
         self.assertEqual(overview["btd_window_observation_count"], 3)
         self.assertEqual(overview["str_window_observation_count"], 6)
@@ -161,7 +170,9 @@ class APIIntegrationTests(unittest.TestCase):
         detail = self.client.get("/api/symbols/SPXUSDT").json()
         self.assertEqual(detail["mrz_status"], "unestablished")
         self.assertEqual(detail["btd_window_observation_count"], 20)
+        self.assertEqual(detail["btd_window_started_at"], "2026-08-20T12:00:06Z")
         self.assertEqual(detail["str_window_observation_count"], 0)
+        self.assertIsNone(detail["str_window_started_at"])
         overview = self.client.get("/api/symbols").json()["symbols"][0]
         self.assertEqual(overview["btd_window_observation_count"], 20)
         self.assertEqual(overview["str_window_observation_count"], 0)
