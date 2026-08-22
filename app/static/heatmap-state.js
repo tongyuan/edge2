@@ -38,8 +38,7 @@
     return "strongest";
   }
 
-  function routeAlignedActivity(symbolState) {
-    if (hasActiveMrz(symbolState)) return null;
+  function routeAlignedObservationContext(symbolState) {
     const location = symbolState.current_price_location;
     let route;
     let observationType;
@@ -57,7 +56,18 @@
     }
     const count = safeActivityCount(symbolState[countField]);
     if (count == null) return null;
-    return { count, route, observationType, tier: activityTier(count) };
+    return { count, route, observationType };
+  }
+
+  function routeAlignedObservationCount(symbolState) {
+    return routeAlignedObservationContext(symbolState)?.count ?? null;
+  }
+
+  function routeAlignedActivity(symbolState) {
+    if (hasActiveMrz(symbolState)) return null;
+    const context = routeAlignedObservationContext(symbolState);
+    if (!context) return null;
+    return { ...context, tier: activityTier(context.count) };
   }
 
   function activityTooltipText(countValue) {
@@ -80,6 +90,20 @@
     return `${symbol}, ${locationLabel}, ${activity.count} ${activity.route} ${activity.observationType} ${observationNoun}, no qualifying concentration, MRZ unestablished`;
   }
 
+  function compareSymbolsByActivity(left, right) {
+    const countDifference = (
+      (routeAlignedObservationCount(right) ?? 0)
+      - (routeAlignedObservationCount(left) ?? 0)
+    );
+    if (countDifference !== 0) return countDifference;
+    return String(left.symbol).localeCompare(String(right.symbol));
+  }
+
+  function preservedSelectedSymbol(currentSymbol, symbols) {
+    if (!currentSymbol) return "";
+    return symbols.some((symbolState) => symbolState.symbol === currentSymbol) ? currentSymbol : "";
+  }
+
   function groupSymbolsByLocation(symbols) {
     const groups = Object.fromEntries([...allLocationKeys].map((key) => [key, []]));
     symbols.forEach((symbolState) => {
@@ -87,9 +111,7 @@
       const key = allLocationKeys.has(currentLocation) ? currentLocation : "unavailable";
       groups[key].push(symbolState);
     });
-    Object.values(groups).forEach((symbolsInGroup) => symbolsInGroup.sort(
-      (left, right) => left.symbol.localeCompare(right.symbol),
-    ));
+    Object.values(groups).forEach((symbolsInGroup) => symbolsInGroup.sort(compareSymbolsByActivity));
     return groups;
   }
 
@@ -98,9 +120,12 @@
     secondaryLocationKeys,
     hasActiveMrz,
     activityTier,
+    routeAlignedObservationCount,
     routeAlignedActivity,
     activityTooltipText,
     accessibleChipLabel,
+    compareSymbolsByActivity,
+    preservedSelectedSymbol,
     groupSymbolsByLocation,
   };
 

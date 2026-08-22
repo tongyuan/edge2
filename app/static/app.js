@@ -13,6 +13,7 @@ const {
   routeAlignedActivity,
   activityTooltipText,
   accessibleChipLabel,
+  preservedSelectedSymbol,
   groupSymbolsByLocation,
 } = globalThis.edgeHeatmapState;
 const {
@@ -204,10 +205,13 @@ async function loadSymbols() {
   const response = await fetch("/api/symbols");
   if (!response.ok) throw new Error("Unable to load symbols");
   const payload = await response.json();
+  const selectedSymbol = preservedSelectedSymbol(select.value, payload.symbols);
   select.replaceChildren(new Option("Select a symbol", ""));
   payload.symbols.forEach(({ symbol }) => select.add(new Option(symbol, symbol)));
   select.disabled = payload.symbols.length === 0;
   renderLocationHeatmap(payload.symbols);
+  select.value = selectedSymbol;
+  updateSelectedChip(selectedSymbol);
 }
 
 async function selectSymbol(symbol) {

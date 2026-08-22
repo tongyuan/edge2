@@ -4,9 +4,12 @@ const {
   secondaryLocationKeys,
   hasActiveMrz,
   activityTier,
+  routeAlignedObservationCount,
   routeAlignedActivity,
   activityTooltipText,
   accessibleChipLabel,
+  compareSymbolsByActivity,
+  preservedSelectedSymbol,
   groupSymbolsByLocation,
 } = require("../app/static/heatmap-state.js");
 
@@ -52,7 +55,7 @@ const unavailable = {
 };
 const groups = groupSymbolsByLocation([inactive, unavailable, secondary, active]);
 
-assert.deepEqual(groups.deep_discount, [active, inactive], "bucket and alphabetical order");
+assert.deepEqual(groups.deep_discount, [active, inactive], "equal-count bucket tie is alphabetical");
 assert.deepEqual(groups.deep_premium, [], "MRZ location must not determine bucket");
 assert.deepEqual(groups.above_ipda_range, [secondary], "secondary bucket");
 assert.deepEqual(groups.unavailable, [unavailable], "unavailable bucket");
@@ -133,5 +136,100 @@ assert.equal(
   }, "Deep Premium"),
   "ETHUSDT, Deep Premium, 4 STR rejection observations, no qualifying concentration, MRZ unestablished",
 );
+
+const deepPremiumSymbols = [
+  {
+    symbol: "HSI",
+    mrz_status: "unestablished",
+    current_price_location: "deep_premium",
+    btd_window_observation_count: 20,
+    str_window_observation_count: 0,
+  },
+  {
+    symbol: "BMNR",
+    mrz_status: "unestablished",
+    current_price_location: "deep_premium",
+    btd_window_observation_count: 20,
+    str_window_observation_count: 1,
+  },
+  {
+    symbol: "BTCUSDT",
+    mrz_status: "unestablished",
+    current_price_location: "deep_premium",
+    btd_window_observation_count: 20,
+    str_window_observation_count: 2,
+  },
+  {
+    symbol: "ETHUSDT",
+    mrz_status: "unestablished",
+    current_price_location: "deep_premium",
+    btd_window_observation_count: 0,
+    str_window_observation_count: 4,
+  },
+];
+const sortedPremium = groupSymbolsByLocation(deepPremiumSymbols).deep_premium;
+assert.deepEqual(
+  sortedPremium.map(({ symbol }) => symbol),
+  ["ETHUSDT", "BTCUSDT", "BMNR", "HSI"],
+  "premium uses numeric descending STR counts and retains row-major DOM order",
+);
+assert.equal(routeAlignedObservationCount(deepPremiumSymbols[0]), 0);
+assert.equal(routeAlignedObservationCount(deepPremiumSymbols[3]), 4);
+
+const discountSymbols = [
+  {
+    symbol: "ALPHA",
+    mrz_status: "unestablished",
+    current_price_location: "shallow_discount",
+    btd_window_observation_count: 2,
+    str_window_observation_count: 20,
+  },
+  {
+    symbol: "OMEGA",
+    mrz_status: "unestablished",
+    current_price_location: "shallow_discount",
+    btd_window_observation_count: 10,
+    str_window_observation_count: 0,
+  },
+];
+assert.deepEqual(
+  groupSymbolsByLocation(discountSymbols).shallow_discount.map(({ symbol }) => symbol),
+  ["OMEGA", "ALPHA"],
+  "discount uses numeric BTD counts and ignores opposite-route STR counts",
+);
+
+const equalCounts = [
+  { symbol: "ZETA", current_price_location: "deep_discount", btd_window_observation_count: 4 },
+  { symbol: "ALPHA", current_price_location: "deep_discount", btd_window_observation_count: 4 },
+];
+assert.equal(compareSymbolsByActivity(equalCounts[0], equalCounts[1]) > 0, true);
+assert.deepEqual(
+  groupSymbolsByLocation(equalCounts).deep_discount.map(({ symbol }) => symbol),
+  ["ALPHA", "ZETA"],
+  "equal counts use normalized symbol ascending",
+);
+
+const activeDoesNotOverride = [
+  {
+    symbol: "ACTIVE",
+    mrz_status: "active",
+    route_owner: "STR",
+    current_price_location: "shallow_premium",
+    str_window_observation_count: 1,
+  },
+  {
+    symbol: "INACTIVE",
+    mrz_status: "unestablished",
+    current_price_location: "shallow_premium",
+    str_window_observation_count: 9,
+  },
+];
+assert.deepEqual(
+  groupSymbolsByLocation(activeDoesNotOverride).shallow_premium.map(({ symbol }) => symbol),
+  ["INACTIVE", "ACTIVE"],
+  "active MRZ status does not override count order",
+);
+assert.equal(preservedSelectedSymbol("ETHUSDT", sortedPremium), "ETHUSDT");
+assert.equal(preservedSelectedSymbol("MISSING", sortedPremium), "");
 
 console.log("heatmap state tests passed");

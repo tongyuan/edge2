@@ -92,11 +92,24 @@ class MonitorContractTests(unittest.TestCase):
         )
         self.assertIn('key === "unavailable" ? "Unavailable"', JAVASCRIPT)
 
-    def test_heatmap_groups_each_symbol_once_and_sorts_alphabetically(self) -> None:
+    def test_heatmap_groups_each_symbol_once_and_sorts_by_activity_then_symbol(self) -> None:
         self.assertIn('const key = allLocationKeys.has(currentLocation) ? currentLocation : "unavailable";', HEATMAP_STATE)
         self.assertEqual(HEATMAP_STATE.count("groups[key].push(symbolState);"), 1)
-        self.assertIn("left.symbol.localeCompare(right.symbol)", HEATMAP_STATE)
+        self.assertIn("function compareSymbolsByActivity(left, right)", HEATMAP_STATE)
+        self.assertIn("routeAlignedObservationCount(right)", HEATMAP_STATE)
+        self.assertIn("routeAlignedObservationCount(left)", HEATMAP_STATE)
+        self.assertIn("String(left.symbol).localeCompare(String(right.symbol))", HEATMAP_STATE)
+        self.assertIn("symbolsInGroup.sort(compareSymbolsByActivity)", HEATMAP_STATE)
         self.assertIn('heatmapEmpty.textContent = "No symbols yet";', JAVASCRIPT)
+
+    def test_heatmap_refresh_preserves_selected_symbol_after_reordering(self) -> None:
+        self.assertIn("function preservedSelectedSymbol(currentSymbol, symbols)", HEATMAP_STATE)
+        load_symbols = JAVASCRIPT.split("async function loadSymbols()", 1)[1].split(
+            "async function selectSymbol", 1
+        )[0]
+        self.assertIn("preservedSelectedSymbol(select.value, payload.symbols)", load_symbols)
+        self.assertIn("select.value = selectedSymbol;", load_symbols)
+        self.assertIn("updateSelectedChip(selectedSymbol);", load_symbols)
 
     def test_heatmap_active_indicator_uses_authoritative_status_and_is_accessible(self) -> None:
         self.assertIn('return symbolState.mrz_status === "active";', HEATMAP_STATE)
