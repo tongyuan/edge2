@@ -9,6 +9,7 @@ from typing import Any, Mapping, Sequence
 
 from psycopg2.extras import Json, RealDictCursor
 
+from app.concentration import ROUTE_OBSERVATION_WINDOW
 from app.db import connect, transaction
 from app.domain import (
     ActiveMRZ,
@@ -341,20 +342,25 @@ class EdgeRepository:
                         FROM observations
                         WHERE symbol = %s AND route = 'BTD'
                         ORDER BY observed_at DESC, received_at DESC, id DESC
-                        LIMIT 20
+                        LIMIT %s
                     ),
                     str_window AS (
                         SELECT id
                         FROM observations
                         WHERE symbol = %s AND route = 'STR'
                         ORDER BY observed_at DESC, received_at DESC, id DESC
-                        LIMIT 20
+                        LIMIT %s
                     )
                     SELECT
                         (SELECT COUNT(*) FROM btd_window) AS btd_window_observation_count,
                         (SELECT COUNT(*) FROM str_window) AS str_window_observation_count
                     """,
-                    (normalized, normalized),
+                    (
+                        normalized,
+                        ROUTE_OBSERVATION_WINDOW,
+                        normalized,
+                        ROUTE_OBSERVATION_WINDOW,
+                    ),
                 )
                 window_counts = cursor.fetchone()
                 cursor.execute("SELECT * FROM active_mrz WHERE symbol = %s", (normalized,))
@@ -369,16 +375,53 @@ class EdgeRepository:
             with connection.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute(
                     """
-                    SELECT DISTINCT ON (o.symbol)
+                    WITH latest_observations AS (
+                        SELECT DISTINCT ON (o.symbol)
+                            o.symbol, o.observation_price,
+                            o.ipda_20w_high, o.ipda_20w_low, o.observed_at
+                        FROM observations o
+                        ORDER BY
+                            o.symbol ASC,
+                            o.observed_at DESC,
+                            o.received_at DESC,
+                            o.id DESC
+                    )
+                    SELECT
                         o.symbol, o.observation_price,
                         o.ipda_20w_high, o.ipda_20w_low, o.observed_at,
                         a.route_owner, a.core_mrz_lower, a.core_mrz_upper,
                         a.core_mrz_midpoint, a.structural_location,
-                        a.confirming_observation_count
-                    FROM observations o
+                        a.confirming_observation_count,
+                        c.btd_window_observation_count,
+                        c.str_window_observation_count
+                    FROM latest_observations o
                     LEFT JOIN active_mrz a ON a.symbol = o.symbol
-                    ORDER BY o.symbol ASC, o.observed_at DESC, o.received_at DESC, o.id DESC
-                    """
+                    LEFT JOIN LATERAL (
+                        SELECT
+                            (
+                                SELECT COUNT(*)
+                                FROM (
+                                    SELECT id
+                                    FROM observations
+                                    WHERE symbol = o.symbol AND route = 'BTD'
+                                    ORDER BY observed_at DESC, received_at DESC, id DESC
+                                    LIMIT %s
+                                ) AS btd_window
+                            ) AS btd_window_observation_count,
+                            (
+                                SELECT COUNT(*)
+                                FROM (
+                                    SELECT id
+                                    FROM observations
+                                    WHERE symbol = o.symbol AND route = 'STR'
+                                    ORDER BY observed_at DESC, received_at DESC, id DESC
+                                    LIMIT %s
+                                ) AS str_window
+                            ) AS str_window_observation_count
+                    ) c ON TRUE
+                    ORDER BY o.symbol ASC
+                    """,
+                    (ROUTE_OBSERVATION_WINDOW, ROUTE_OBSERVATION_WINDOW),
                 )
                 return [
                     {
@@ -393,6 +436,8 @@ class EdgeRepository:
                         "latest_observation_price": number(row["observation_price"]),
                         "latest_observed_at": iso(row["observed_at"]),
                         "current_price_location": current_price_location_value(row),
+                        "btd_window_observation_count": int(row["btd_window_observation_count"]),
+                        "str_window_observation_count": int(row["str_window_observation_count"]),
                     }
                     for row in cursor.fetchall()
                 ]

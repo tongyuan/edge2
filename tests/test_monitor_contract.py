@@ -27,11 +27,11 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("Symbol Lab", HTML)
 
     def test_monitor_assets_are_versioned_together(self) -> None:
-        self.assertIn('/static/styles.css?v=observation-evidence-20260822', HTML)
-        self.assertIn('/static/heatmap-state.js?v=observation-evidence-20260822', HTML)
-        self.assertIn('/static/operator-time.js?v=observation-evidence-20260822', HTML)
-        self.assertIn('/static/monitor-presentation.js?v=observation-evidence-20260822', HTML)
-        self.assertIn('/static/app.js?v=observation-evidence-20260822', HTML)
+        self.assertIn('/static/styles.css?v=heatmap-activity-20260822', HTML)
+        self.assertIn('/static/heatmap-state.js?v=heatmap-activity-20260822', HTML)
+        self.assertIn('/static/operator-time.js?v=heatmap-activity-20260822', HTML)
+        self.assertIn('/static/monitor-presentation.js?v=heatmap-activity-20260822', HTML)
+        self.assertIn('/static/app.js?v=heatmap-activity-20260822', HTML)
         self.assertLess(HTML.index("heatmap-state.js"), HTML.index("app.js"))
         self.assertLess(HTML.index("monitor-presentation.js"), HTML.index("app.js"))
 
@@ -100,15 +100,18 @@ class MonitorContractTests(unittest.TestCase):
 
     def test_heatmap_active_indicator_uses_authoritative_status_and_is_accessible(self) -> None:
         self.assertIn('return symbolState.mrz_status === "active";', HEATMAP_STATE)
-        self.assertNotIn("confirming_observation_count", HEATMAP_STATE)
-        self.assertNotIn("route_owner", HEATMAP_STATE)
+        active_method = HEATMAP_STATE.split("function hasActiveMrz", 1)[1].split(
+            "function safeActivityCount", 1
+        )[0]
+        self.assertNotIn("confirming_observation_count", active_method)
+        self.assertNotIn("route_owner", active_method)
         heatmap_group = JAVASCRIPT.split("function createLocationGroup", 1)[1].split(
             "function renderLocationHeatmap", 1
         )[0]
         self.assertIn("const active = hasActiveMrz(symbolState);", heatmap_group)
         self.assertIn('indicator.className = "active-mrz-dot";', heatmap_group)
         self.assertIn('indicator.setAttribute("aria-hidden", "true");', heatmap_group)
-        self.assertIn('active ? `${symbol} — Active MRZ` : `Select ${symbol}`', heatmap_group)
+        self.assertIn("accessibleChipLabel(symbolState, locationLabel)", heatmap_group)
         self.assertNotIn("BTD", heatmap_group)
         self.assertNotIn("STR", heatmap_group)
 
@@ -119,6 +122,14 @@ class MonitorContractTests(unittest.TestCase):
         active_style = CSS.split(".active-mrz-dot", 1)[1].split(".heatmap-grid", 1)[0]
         self.assertNotIn("animation", active_style)
         self.assertNotIn("pulse", active_style)
+
+    def test_heatmap_has_minimal_neutral_activity_legend(self) -> None:
+        self.assertIn("Chip intensity · Observation activity", HTML)
+        self.assertIn('class="activity-legend-swatch" aria-hidden="true"', HTML)
+        swatch_style = CSS.split(".activity-legend-swatch", 1)[1].split(".heatmap-grid", 1)[0]
+        self.assertIn("background: rgba(112, 132, 160, 0.3);", swatch_style)
+        self.assertNotIn("green", swatch_style.lower())
+        self.assertNotIn("animation", swatch_style)
 
     def test_heatmap_click_reuses_selector_and_lazy_detail_loader(self) -> None:
         self.assertIn('button.addEventListener("click", () => selectSymbol(symbol).catch(showError));', JAVASCRIPT)
@@ -139,6 +150,10 @@ class MonitorContractTests(unittest.TestCase):
         self.assertEqual(symbols_method.count("cursor.execute("), 1)
         self.assertIn("SELECT DISTINCT ON (o.symbol)", symbols_method)
         self.assertNotIn("SELECT * FROM observations", symbols_method)
+        self.assertIn("LEFT JOIN LATERAL", symbols_method)
+        self.assertEqual(symbols_method.count("LIMIT %s"), 2)
+        self.assertIn("WHERE symbol = o.symbol AND route = 'BTD'", symbols_method)
+        self.assertIn("WHERE symbol = o.symbol AND route = 'STR'", symbols_method)
 
     def test_latest_symbol_overview_has_a_covering_index(self) -> None:
         self.assertIn("idx_observations_symbol_latest", LATEST_INDEX)
@@ -148,6 +163,7 @@ class MonitorContractTests(unittest.TestCase):
     def test_heatmap_is_two_columns_and_stacks_on_narrow_screens(self) -> None:
         self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr));", CSS)
         self.assertIn(".heatmap-grid, .heatmap-secondary { grid-template-columns: 1fr; }", CSS)
+        self.assertIn(".symbol-chips { display: flex; flex-wrap: wrap; gap: 7px; }", CSS)
 
     def test_active_evidence_uses_supporting_count_route_type_and_duration(self) -> None:
         self.assertIn(">EVIDENCE<", HTML)
@@ -174,6 +190,52 @@ class MonitorContractTests(unittest.TestCase):
         )[0]
         self.assertNotIn("supporting_observation_count", heatmap_group)
         self.assertNotIn("confirming_observation_count", heatmap_group)
+        self.assertIn("label.textContent = symbol;", heatmap_group)
+        self.assertNotIn("label.textContent = tooltipText", heatmap_group)
+
+    def test_activity_tiers_change_only_neutral_fill_and_preserve_chip_dimensions(self) -> None:
+        tiers = ("low", "medium", "medium-high", "high", "strongest")
+        for index, tier in enumerate(tiers):
+            start = CSS.index(f".symbol-chip.activity-{tier}")
+            end = CSS.find("\n", start)
+            rule = CSS[start:end]
+            self.assertIn("background-color: rgba(112, 132, 160", rule)
+            for dimension in ("padding", "width", "height", "font-size", "border"):
+                self.assertNotIn(dimension, rule)
+            if index:
+                previous = CSS.index(f".symbol-chip.activity-{tiers[index - 1]}")
+                self.assertGreater(start, previous)
+
+    def test_selected_active_hover_and_focus_treatments_remain_distinct(self) -> None:
+        self.assertIn(".symbol-chip.active-mrz {", CSS)
+        self.assertIn("background-color: transparent;", CSS.split(".symbol-chip.active-mrz", 1)[1])
+        self.assertIn(".symbol-chip:hover {", CSS)
+        self.assertIn(".symbol-chip.selected {", CSS)
+        self.assertIn("box-shadow: 0 0 0 1px", CSS.split(".symbol-chip.selected", 1)[1])
+        self.assertIn(".symbol-chip:focus-visible { outline: 2px solid var(--accent);", CSS)
+
+    def test_activity_tooltip_is_custom_accessible_and_not_clipped_by_cards(self) -> None:
+        self.assertIn('id="heatmapActivityTooltip" role="tooltip" hidden', HTML)
+        self.assertIn('button.addEventListener("mouseenter",', JAVASCRIPT)
+        self.assertIn('button.addEventListener("mouseleave",', JAVASCRIPT)
+        self.assertIn('button.addEventListener("focus",', JAVASCRIPT)
+        self.assertIn('button.addEventListener("blur",', JAVASCRIPT)
+        self.assertIn('button.setAttribute("aria-describedby", activityTooltip.id);', JAVASCRIPT)
+        self.assertIn('button.removeAttribute("aria-describedby");', JAVASCRIPT)
+        tooltip_style = CSS.split(".activity-tooltip {", 1)[1].split("}", 1)[0]
+        self.assertIn("position: fixed;", tooltip_style)
+        self.assertIn("pointer-events: none;", tooltip_style)
+        self.assertIn("max-width: calc(100vw - 16px);", tooltip_style)
+        self.assertIn("window.innerWidth", JAVASCRIPT)
+        self.assertIn("window.innerHeight", JAVASCRIPT)
+        self.assertNotIn("title =", JAVASCRIPT)
+
+    def test_activity_accessible_name_keeps_full_context(self) -> None:
+        self.assertIn("activityTooltipText", HEATMAP_STATE)
+        self.assertIn("accessibleChipLabel", HEATMAP_STATE)
+        self.assertIn("no qualifying concentration, MRZ unestablished", HEATMAP_STATE)
+        self.assertIn("activity.route", HEATMAP_STATE)
+        self.assertIn("activity.observationType", HEATMAP_STATE)
 
     def test_evidence_migration_preserves_confirmation_and_audit_counts(self) -> None:
         self.assertIn("supporting_observation_count", EVIDENCE_MIGRATION)

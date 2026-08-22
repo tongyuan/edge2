@@ -78,6 +78,8 @@ class APIIntegrationTests(unittest.TestCase):
         overview = self.client.get("/api/symbols").json()["symbols"]
         self.assertEqual(overview[0]["current_price_location"], "deep_discount")
         self.assertEqual(overview[0]["mrz_status"], "unestablished")
+        self.assertEqual(overview[0]["btd_window_observation_count"], 1)
+        self.assertEqual(overview[0]["str_window_observation_count"], 0)
         str_packet = webhook_payload(
             2,
             "180",
@@ -141,6 +143,9 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertIsNone(detail["route_owner"])
         self.assertEqual(detail["btd_window_observation_count"], 3)
         self.assertEqual(detail["str_window_observation_count"], 6)
+        overview = self.client.get("/api/symbols").json()["symbols"][0]
+        self.assertEqual(overview["btd_window_observation_count"], 3)
+        self.assertEqual(overview["str_window_observation_count"], 6)
         self.assertNotIn("formation_progress", detail)
         self.assertNotIn("progress", detail)
         self.assertNotIn("predicted_route_owner", detail)
@@ -157,6 +162,9 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(detail["mrz_status"], "unestablished")
         self.assertEqual(detail["btd_window_observation_count"], 20)
         self.assertEqual(detail["str_window_observation_count"], 0)
+        overview = self.client.get("/api/symbols").json()["symbols"][0]
+        self.assertEqual(overview["btd_window_observation_count"], 20)
+        self.assertEqual(overview["str_window_observation_count"], 0)
 
     def test_four_dispersed_observations_remain_unestablished(self) -> None:
         for index, price in enumerate(("110", "120", "130", "140"), 1):

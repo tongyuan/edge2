@@ -10,6 +10,9 @@ const {
   primaryLocationKeys,
   secondaryLocationKeys,
   hasActiveMrz,
+  routeAlignedActivity,
+  activityTooltipText,
+  accessibleChipLabel,
   groupSymbolsByLocation,
 } = globalThis.edgeHeatmapState;
 const {
@@ -29,6 +32,8 @@ const fields = {
   latest: document.querySelector("#latestObservation"),
   midpoint: document.querySelector("#mrzMidpoint"),
 };
+const activityTooltip = document.querySelector("#heatmapActivityTooltip");
+let activityTooltipOwner = null;
 
 const formatPrice = (value) => value == null ? "—" : new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 12,
@@ -62,6 +67,44 @@ function renderFact(field, primary, secondary = []) {
   field.replaceChildren(primaryLine, ...secondaryLines);
 }
 
+function positionActivityTooltip(button) {
+  const triggerRect = button.getBoundingClientRect();
+  const tooltipRect = activityTooltip.getBoundingClientRect();
+  const viewportMargin = 8;
+  const gap = 8;
+  const centeredLeft = triggerRect.left + ((triggerRect.width - tooltipRect.width) / 2);
+  const maximumLeft = Math.max(viewportMargin, window.innerWidth - tooltipRect.width - viewportMargin);
+  const left = Math.min(Math.max(centeredLeft, viewportMargin), maximumLeft);
+  let top = triggerRect.top - tooltipRect.height - gap;
+  if (top < viewportMargin) top = triggerRect.bottom + gap;
+  top = Math.min(top, window.innerHeight - tooltipRect.height - viewportMargin);
+  activityTooltip.style.left = `${Math.round(left)}px`;
+  activityTooltip.style.top = `${Math.round(Math.max(top, viewportMargin))}px`;
+}
+
+function showActivityTooltip(button, text) {
+  if (!text) return;
+  activityTooltipOwner = button;
+  activityTooltip.textContent = text;
+  activityTooltip.hidden = false;
+  button.setAttribute("aria-describedby", activityTooltip.id);
+  positionActivityTooltip(button);
+}
+
+function hideActivityTooltip(button) {
+  if (activityTooltipOwner !== button) return;
+  button.removeAttribute("aria-describedby");
+  activityTooltip.hidden = true;
+  activityTooltipOwner = null;
+}
+
+window.addEventListener("resize", () => {
+  if (activityTooltipOwner) positionActivityTooltip(activityTooltipOwner);
+});
+window.addEventListener("scroll", () => {
+  if (activityTooltipOwner) positionActivityTooltip(activityTooltipOwner);
+}, true);
+
 function createLocationGroup(key, symbols, secondary = false) {
   const group = document.createElement("section");
   group.className = secondary ? "location-group secondary" : "location-group";
@@ -80,14 +123,26 @@ function createLocationGroup(key, symbols, secondary = false) {
   } else {
     symbols.forEach((symbolState) => {
       const active = hasActiveMrz(symbolState);
+      const activity = routeAlignedActivity(symbolState);
       const { symbol } = symbolState;
       const button = document.createElement("button");
       button.type = "button";
       button.className = "symbol-chip";
       button.classList.toggle("active-mrz", active);
+      if (activity && activity.tier !== "none") {
+        button.classList.add(`activity-${activity.tier}`);
+      }
       button.dataset.symbol = symbol;
       button.setAttribute("aria-pressed", "false");
-      button.setAttribute("aria-label", active ? `${symbol} — Active MRZ` : `Select ${symbol}`);
+      const locationLabel = key === "unavailable" ? "Unavailable" : formatLocation(key);
+      button.setAttribute("aria-label", accessibleChipLabel(symbolState, locationLabel));
+      const tooltipText = activity ? activityTooltipText(activity.count) : null;
+      if (tooltipText) {
+        button.addEventListener("mouseenter", () => showActivityTooltip(button, tooltipText));
+        button.addEventListener("mouseleave", () => hideActivityTooltip(button));
+        button.addEventListener("focus", () => showActivityTooltip(button, tooltipText));
+        button.addEventListener("blur", () => hideActivityTooltip(button));
+      }
       if (active) {
         const indicator = document.createElement("span");
         indicator.className = "active-mrz-dot";
