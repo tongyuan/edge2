@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="EDGE 2.0 operational MRZ Monitor" />
     <title>EDGE 2.0 · MRZ Monitor</title>
-    <link rel="stylesheet" href="/static/styles.css?v=active-mrz-indicator-20260821" />
+    <link rel="stylesheet" href="/static/styles.css?v=observation-evidence-20260822" />
   </head>
   <body>
     <main class="shell">
@@ -72,29 +72,30 @@
             <article>
               <p class="label">CURRENT LOCATION</p>
               <p class="context-answer" id="currentPriceLocation">—</p>
-              <p class="support" id="currentObservationTime">Latest observation · —</p>
+              <p class="support" id="currentLocationContext">—</p>
             </article>
           </div>
 
           <dl class="facts">
             <div>
               <dt>EVIDENCE</dt>
-              <dd id="evidence">—</dd>
+              <dd id="evidence"><span class="fact-primary">—</span></dd>
             </div>
             <div>
-              <dt>Latest observation</dt>
-              <dd id="latestObservation">—</dd>
+              <dt>LATEST OBSERVATION</dt>
+              <dd id="latestObservation"><span class="fact-primary">—</span></dd>
             </div>
             <div>
-              <dt>MRZ midpoint</dt>
+              <dt>MRZ MIDPOINT</dt>
               <dd id="mrzMidpoint">—</dd>
             </div>
           </dl>
         </section>
       </section>
     </main>
-    <script src="/static/heatmap-state.js?v=active-mrz-indicator-20260821" defer></script>
-    <script src="/static/operator-time.js?v=active-mrz-indicator-20260821" defer></script>
-    <script src="/static/app.js?v=active-mrz-indicator-20260821" defer></script>
+    <script src="/static/heatmap-state.js?v=observation-evidence-20260822" defer></script>
+    <script src="/static/operator-time.js?v=observation-evidence-20260822" defer></script>
+    <script src="/static/monitor-presentation.js?v=observation-evidence-20260822" defer></script>
+    <script src="/static/app.js?v=observation-evidence-20260822" defer></script>
   </body>
 </html>

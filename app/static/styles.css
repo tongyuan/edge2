@@ -216,6 +216,15 @@ select {
 .facts div + div { border-left: 1px solid var(--line); }
 dt { margin-bottom: 8px; color: var(--muted); font-size: 0.76rem; }
 dd { margin: 0; font-size: 0.95rem; font-weight: 620; }
+.fact-primary { display: block; color: var(--text); }
+.fact-support {
+  display: block;
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 450;
+  line-height: 1.35;
+}
 
 @media (max-width: 680px) {
   .shell { padding-top: 28px; }

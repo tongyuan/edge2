@@ -9,10 +9,14 @@ HTML = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
 JAVASCRIPT = (ROOT / "app/static/app.js").read_text(encoding="utf-8")
 HEATMAP_STATE = (ROOT / "app/static/heatmap-state.js").read_text(encoding="utf-8")
 OPERATOR_TIME = (ROOT / "app/static/operator-time.js").read_text(encoding="utf-8")
+MONITOR_PRESENTATION = (ROOT / "app/static/monitor-presentation.js").read_text(encoding="utf-8")
 CSS = (ROOT / "app/static/styles.css").read_text(encoding="utf-8")
 REPOSITORY = (ROOT / "app/repository.py").read_text(encoding="utf-8")
 LATEST_INDEX = (ROOT / "migrations/002_latest_symbol_overview.sql").read_text(encoding="utf-8")
 EVIDENCE_MIGRATION = (ROOT / "migrations/003_active_mrz_supporting_evidence.sql").read_text(
+    encoding="utf-8"
+)
+FORMATION_MIGRATION = (ROOT / "migrations/004_mrz_formation_evidence.sql").read_text(
     encoding="utf-8"
 )
 
@@ -23,11 +27,13 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("Symbol Lab", HTML)
 
     def test_monitor_assets_are_versioned_together(self) -> None:
-        self.assertIn('/static/styles.css?v=active-mrz-indicator-20260821', HTML)
-        self.assertIn('/static/heatmap-state.js?v=active-mrz-indicator-20260821', HTML)
-        self.assertIn('/static/operator-time.js?v=active-mrz-indicator-20260821', HTML)
-        self.assertIn('/static/app.js?v=active-mrz-indicator-20260821', HTML)
+        self.assertIn('/static/styles.css?v=observation-evidence-20260822', HTML)
+        self.assertIn('/static/heatmap-state.js?v=observation-evidence-20260822', HTML)
+        self.assertIn('/static/operator-time.js?v=observation-evidence-20260822', HTML)
+        self.assertIn('/static/monitor-presentation.js?v=observation-evidence-20260822', HTML)
+        self.assertIn('/static/app.js?v=observation-evidence-20260822', HTML)
         self.assertLess(HTML.index("heatmap-state.js"), HTML.index("app.js"))
+        self.assertLess(HTML.index("monitor-presentation.js"), HTML.index("app.js"))
 
     def test_source_and_active_mrz_replace_who_and_where(self) -> None:
         self.assertIn(">SOURCE<", HTML)
@@ -143,23 +149,24 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr));", CSS)
         self.assertIn(".heatmap-grid, .heatmap-secondary { grid-template-columns: 1fr; }", CSS)
 
-    def test_active_evidence_uses_supporting_count_with_correct_pluralization(self) -> None:
+    def test_active_evidence_uses_supporting_count_route_type_and_duration(self) -> None:
         self.assertIn(">EVIDENCE<", HTML)
-        self.assertIn("state.supporting_observation_count", JAVASCRIPT)
-        self.assertIn('qualifying observation${state.supporting_observation_count === 1 ? "" : "s"}', JAVASCRIPT)
-        evidence_render = JAVASCRIPT.split("fields.evidence.textContent", 1)[1].split(
-            "fields.latest.textContent", 1
-        )[0]
-        self.assertNotIn("confirming_observation_count", evidence_render)
-        self.assertNotIn("reclaim", evidence_render)
-        self.assertNotIn("rejection", evidence_render)
+        self.assertIn("state.supporting_observation_count", MONITOR_PRESENTATION)
+        self.assertIn('state.route_owner === "STR" ? "rejection" : "reclaim"', MONITOR_PRESENTATION)
+        self.assertIn("qualifying ${type} observation", MONITOR_PRESENTATION)
+        self.assertIn("Formation duration · ${duration}", MONITOR_PRESENTATION)
+        self.assertNotIn("confirming_observation_count", MONITOR_PRESENTATION)
+        self.assertIn(".fact-primary { display: block; color: var(--text); }", CSS)
+        self.assertIn("color: var(--muted);", CSS.split(".fact-support", 1)[1])
 
-    def test_unestablished_state_is_explicit_without_partial_formation_progress(self) -> None:
-        evidence_render = JAVASCRIPT.split("fields.evidence.textContent", 1)[1].split(
-            "fields.latest.textContent", 1
-        )[0]
-        self.assertIn(': "Concentration not established";', evidence_render)
-        self.assertNotIn("3 / 4", HTML + JAVASCRIPT)
+    def test_unestablished_state_shows_raw_windows_without_progress_semantics(self) -> None:
+        self.assertIn('primary: "No qualifying concentration"', MONITOR_PRESENTATION)
+        self.assertIn('`BTD · ${observationCount(btdCount, "reclaim")}`', MONITOR_PRESENTATION)
+        self.assertIn('`STR · ${observationCount(strCount, "rejection")}`', MONITOR_PRESENTATION)
+        combined = HTML + JAVASCRIPT + MONITOR_PRESENTATION
+        self.assertNotIn("3 / 4", combined)
+        self.assertNotIn("progress", combined.lower())
+        self.assertNotIn("predicted", combined.lower())
 
     def test_heatmap_chips_do_not_include_evidence_counts(self) -> None:
         heatmap_group = JAVASCRIPT.split("function createLocationGroup", 1)[1].split(
@@ -174,13 +181,35 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn("new_supporting_observation_count", EVIDENCE_MIGRATION)
         self.assertIn("SET supporting_observation_count = confirming_observation_count", EVIDENCE_MIGRATION)
 
-    def test_current_location_uses_latest_observation_timestamp_support_text(self) -> None:
-        self.assertIn('id="currentObservationTime">Latest observation · —<', HTML)
-        self.assertNotIn("Latest observation inside current IPDA 20W", HTML + JAVASCRIPT)
+    def test_formation_migration_is_nullable_and_does_not_fabricate_history(self) -> None:
+        self.assertIn("formation_started_at", FORMATION_MIGRATION)
+        self.assertIn("formation_completed_at", FORMATION_MIGRATION)
+        self.assertIn("formation_duration_seconds", FORMATION_MIGRATION)
+        self.assertIn("old_formation_started_at", FORMATION_MIGRATION)
+        self.assertIn("new_formation_started_at", FORMATION_MIGRATION)
+        self.assertNotIn("UPDATE active_mrz", FORMATION_MIGRATION)
+        self.assertNotIn("SET formation_", FORMATION_MIGRATION)
+
+    def test_current_location_uses_only_directional_structural_context(self) -> None:
+        self.assertIn('id="currentLocationContext">—<', HTML)
         self.assertIn(
-            "fields.currentObservationTime.textContent = formatObservationTimestamp(state.latest_observed_at);",
+            'fields.currentLocationContext.textContent = state.current_location_context || "—";',
             JAVASCRIPT,
         )
+        self.assertNotIn("Latest observation inside IPDA 20W", HTML + JAVASCRIPT)
+        current_location_render = JAVASCRIPT.split("fields.currentLocation.textContent", 1)[1].split(
+            "const evidence", 1
+        )[0]
+        self.assertNotIn("latest_observed_at", current_location_render)
+
+    def test_latest_observation_combines_price_route_type_and_timestamp_once(self) -> None:
+        self.assertIn(">LATEST OBSERVATION<", HTML)
+        self.assertIn("formatPrice(state.latest_observation_price)", JAVASCRIPT)
+        self.assertIn("formatLatestObservationContext(state, formatOperatorTimestampUtcMinus4)", JAVASCRIPT)
+        self.assertIn("state.latest_observation_route", MONITOR_PRESENTATION)
+        self.assertIn("state.latest_observation_type", MONITOR_PRESENTATION)
+        self.assertEqual(JAVASCRIPT.count("state.latest_observed_at"), 0)
+        self.assertEqual(MONITOR_PRESENTATION.count("state.latest_observed_at"), 1)
 
     def test_observation_timestamp_uses_canonical_observed_at_not_delivery_time(self) -> None:
         detail_payload = REPOSITORY.split("def detail_payload", 1)[1].split(
@@ -198,21 +227,16 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("second:", OPERATOR_TIME)
         self.assertNotIn("timeZoneName:", OPERATOR_TIME)
         self.assertIn("UTC−4`", OPERATOR_TIME)
-        self.assertIn("formatOperatorTimestampUtcMinus4(value)", JAVASCRIPT)
+        self.assertIn("formatOperatorTimestampUtcMinus4", JAVASCRIPT)
 
     def test_observation_timestamp_has_neutral_fallback_and_is_not_mrz_gated(self) -> None:
-        timestamp_formatter = JAVASCRIPT.split("function formatObservationTimestamp", 1)[1].split(
-            "function createLocationGroup", 1
-        )[0]
-        self.assertIn(': "Latest observation · —";', timestamp_formatter)
         self.assertIn("if (!value) return null;", OPERATOR_TIME)
-        render_symbol = JAVASCRIPT.split("function renderSymbol", 1)[1].split(
-            "select.addEventListener", 1
-        )[0]
-        timestamp_line = next(
-            line for line in render_symbol.splitlines() if "currentObservationTime.textContent" in line
-        )
-        self.assertNotIn("active ?", timestamp_line)
+        latest_formatter = MONITOR_PRESENTATION.split("function formatLatestObservationContext", 1)[1]
+        self.assertNotIn("mrz_status", latest_formatter)
+
+    def test_bottom_facts_remain_three_columns_and_responsive(self) -> None:
+        self.assertIn("grid-template-columns: repeat(3, 1fr);", CSS)
+        self.assertIn(".answer-grid, .context-grid, .facts { grid-template-columns: 1fr; }", CSS)
 
     def test_selected_timestamp_adds_no_observation_history_request(self) -> None:
         load_symbol = JAVASCRIPT.split("async function loadSymbol(symbol)", 1)[1].split(

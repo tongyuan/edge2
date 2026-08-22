@@ -62,6 +62,9 @@ class RepositoryIntegrationTests(unittest.TestCase):
         self.assertEqual(before, after)
         self.assertEqual(after["activation_event_id"], "db-event-4")
         self.assertEqual(after["supporting_observation_count"], 4)
+        self.assertEqual(after["formation_started_at"], "2026-08-20T12:00:01Z")
+        self.assertEqual(after["formation_completed_at"], "2026-08-20T12:00:04Z")
+        self.assertEqual(after["formation_duration_seconds"], 3.0)
 
     def test_late_event_replays_in_canonical_timestamp_order(self) -> None:
         self.ingest(1, "110", observed_offset=1)
@@ -72,6 +75,9 @@ class RepositoryIntegrationTests(unittest.TestCase):
         self.assertEqual(detail["activation_event_id"], "db-event-4")
         self.assertEqual(detail["core_mrz_lower"], 110.0)
         self.assertEqual(detail["core_mrz_upper"], 110.6)
+        self.assertEqual(detail["formation_started_at"], "2026-08-20T12:00:01Z")
+        self.assertEqual(detail["formation_completed_at"], "2026-08-20T12:00:04Z")
+        self.assertEqual(detail["formation_duration_seconds"], 3.0)
 
     def test_migration_and_old_state_audit_are_committed_together(self) -> None:
         prices = (
@@ -79,7 +85,10 @@ class RepositoryIntegrationTests(unittest.TestCase):
             "110.3", "110.5",
             "120", "120.2", "120.4", "120.6",
         )
-        for index, price in enumerate(prices, 1):
+        for index, price in enumerate(prices[:4], 1):
+            self.ingest(index, price)
+        activation_event_before = self.repository.audit_events("SPXUSDT")[0]
+        for index, price in enumerate(prices[4:], 5):
             self.ingest(index, price)
         detail = self.repository.symbol_detail("SPXUSDT")
         events = self.repository.audit_events("SPXUSDT")
@@ -90,6 +99,14 @@ class RepositoryIntegrationTests(unittest.TestCase):
         self.assertEqual(events[-1]["old_supporting_observation_count"], 6)
         self.assertEqual(events[-1]["new_supporting_observation_count"], 4)
         self.assertEqual(detail["supporting_observation_count"], 4)
+        self.assertEqual(events[0]["new_formation_started_at"], activation_event_before["new_formation_started_at"])
+        self.assertEqual(events[0]["new_formation_completed_at"], activation_event_before["new_formation_completed_at"])
+        self.assertEqual(events[0]["new_formation_duration_seconds"], activation_event_before["new_formation_duration_seconds"])
+        self.assertEqual(events[-1]["old_formation_started_at"], events[0]["new_formation_started_at"])
+        self.assertEqual(events[-1]["old_formation_completed_at"], events[0]["new_formation_completed_at"])
+        self.assertEqual(events[-1]["old_formation_duration_seconds"], Decimal("3"))
+        self.assertEqual(events[-1]["new_formation_duration_seconds"], Decimal("3"))
+        self.assertEqual(detail["formation_duration_seconds"], 3.0)
 
     def test_active_core_support_persists_without_resizing_bounds(self) -> None:
         for index, price in enumerate(("110", "110.2", "110.4", "110.6"), 1):
@@ -104,6 +121,34 @@ class RepositoryIntegrationTests(unittest.TestCase):
         self.assertEqual(supported["confirming_observation_count"], 4)
         self.assertEqual(supported["core_mrz_lower"], activated["core_mrz_lower"])
         self.assertEqual(supported["core_mrz_upper"], activated["core_mrz_upper"])
+        self.assertEqual(supported["formation_started_at"], activated["formation_started_at"])
+        self.assertEqual(supported["formation_completed_at"], activated["formation_completed_at"])
+        self.assertEqual(supported["formation_duration_seconds"], activated["formation_duration_seconds"])
+
+    def test_historical_active_mrz_with_unavailable_formation_is_not_fabricated(self) -> None:
+        for index, price in enumerate(("110", "110.2", "110.4", "110.6"), 1):
+            self.ingest(index, price)
+        connection = connect(self.database_url)
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE active_mrz
+                    SET formation_started_at = NULL,
+                        formation_completed_at = NULL,
+                        formation_duration_seconds = NULL
+                    WHERE symbol = %s
+                    """,
+                    ("SPXUSDT",),
+                )
+            connection.commit()
+        finally:
+            connection.close()
+
+        detail = EdgeRepository(self.database_url).symbol_detail("SPXUSDT")
+        self.assertIsNone(detail["formation_started_at"])
+        self.assertIsNone(detail["formation_completed_at"])
+        self.assertIsNone(detail["formation_duration_seconds"])
 
     def test_duplicate_packet_cannot_increment_evidence(self) -> None:
         for index, price in enumerate(("110", "110.2", "110.4", "110.6"), 1):

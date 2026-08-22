@@ -20,7 +20,7 @@ from app.domain import (
     StructuralLocation,
 )
 from app.state_engine import replay_symbol
-from app.structure import classify_ipda_location
+from app.structure import classify_ipda_location, ipda_directional_context
 from app.validation import ObservationPayload, normalize_symbol
 
 
@@ -65,6 +65,13 @@ def active_from_row(row: Mapping[str, Any] | None) -> ActiveMRZ | None:
         supporting_observation_count=int(row["supporting_observation_count"]),
         activated_at=row["activated_at"],
         activation_event_id=str(row["activation_event_id"]),
+        formation_started_at=row.get("formation_started_at"),
+        formation_completed_at=row.get("formation_completed_at"),
+        formation_duration_seconds=(
+            Decimal(row["formation_duration_seconds"])
+            if row.get("formation_duration_seconds") is not None
+            else None
+        ),
         ipda_20w_high_at_activation=Decimal(row["ipda_20w_high_at_activation"]),
         ipda_20w_low_at_activation=Decimal(row["ipda_20w_low_at_activation"]),
         ipda_width_at_activation=Decimal(row["ipda_width_at_activation"]),
@@ -172,11 +179,16 @@ class EdgeRepository:
                     new_core_mrz_lower, new_core_mrz_upper, new_core_mrz_midpoint,
                     structural_location, confirming_observation_count,
                     old_supporting_observation_count, new_supporting_observation_count,
+                    old_formation_started_at, old_formation_completed_at,
+                    old_formation_duration_seconds,
+                    new_formation_started_at, new_formation_completed_at,
+                    new_formation_duration_seconds,
                     details
                 )
                 VALUES (
                     %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s
                 )
                 """,
                 (
@@ -197,6 +209,12 @@ class EdgeRepository:
                     new.confirming_observation_count,
                     old.supporting_observation_count if old else None,
                     new.supporting_observation_count,
+                    old.formation_started_at if old else None,
+                    old.formation_completed_at if old else None,
+                    old.formation_duration_seconds if old else None,
+                    new.formation_started_at,
+                    new.formation_completed_at,
+                    new.formation_duration_seconds,
                     Json(transition.details),
                 ),
             )
@@ -212,13 +230,16 @@ class EdgeRepository:
                 core_mrz_midpoint, structural_location, confirming_observation_count,
                 supporting_observation_count,
                 activated_at, activation_event_id,
+                formation_started_at, formation_completed_at,
+                formation_duration_seconds,
                 ipda_20w_high_at_activation, ipda_20w_low_at_activation,
                 ipda_width_at_activation, normalized_span_at_activation,
                 instrument_tick, updated_at
             )
             VALUES (
                 %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s, clock_timestamp()
+                %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                clock_timestamp()
             )
             ON CONFLICT (symbol) DO UPDATE SET
                 route_owner = EXCLUDED.route_owner,
@@ -230,6 +251,9 @@ class EdgeRepository:
                 supporting_observation_count = EXCLUDED.supporting_observation_count,
                 activated_at = EXCLUDED.activated_at,
                 activation_event_id = EXCLUDED.activation_event_id,
+                formation_started_at = EXCLUDED.formation_started_at,
+                formation_completed_at = EXCLUDED.formation_completed_at,
+                formation_duration_seconds = EXCLUDED.formation_duration_seconds,
                 ipda_20w_high_at_activation = EXCLUDED.ipda_20w_high_at_activation,
                 ipda_20w_low_at_activation = EXCLUDED.ipda_20w_low_at_activation,
                 ipda_width_at_activation = EXCLUDED.ipda_width_at_activation,
@@ -248,6 +272,9 @@ class EdgeRepository:
                 active.supporting_observation_count,
                 active.activated_at,
                 active.activation_event_id,
+                active.formation_started_at,
+                active.formation_completed_at,
+                active.formation_duration_seconds,
                 active.ipda_20w_high_at_activation,
                 active.ipda_20w_low_at_activation,
                 active.ipda_width_at_activation,
@@ -307,9 +334,32 @@ class EdgeRepository:
                 latest = cursor.fetchone()
                 if latest is None:
                     return None
+                cursor.execute(
+                    """
+                    WITH btd_window AS (
+                        SELECT id
+                        FROM observations
+                        WHERE symbol = %s AND route = 'BTD'
+                        ORDER BY observed_at DESC, received_at DESC, id DESC
+                        LIMIT 20
+                    ),
+                    str_window AS (
+                        SELECT id
+                        FROM observations
+                        WHERE symbol = %s AND route = 'STR'
+                        ORDER BY observed_at DESC, received_at DESC, id DESC
+                        LIMIT 20
+                    )
+                    SELECT
+                        (SELECT COUNT(*) FROM btd_window) AS btd_window_observation_count,
+                        (SELECT COUNT(*) FROM str_window) AS str_window_observation_count
+                    """,
+                    (normalized, normalized),
+                )
+                window_counts = cursor.fetchone()
                 cursor.execute("SELECT * FROM active_mrz WHERE symbol = %s", (normalized,))
                 active = active_from_row(cursor.fetchone())
-                return detail_payload(normalized, latest, active)
+                return detail_payload(normalized, latest, active, window_counts)
         finally:
             connection.close()
 
@@ -398,12 +448,26 @@ def iso(value: datetime | None) -> str | None:
     return None if value is None else value.isoformat().replace("+00:00", "Z")
 
 
-def detail_payload(symbol: str, latest: Mapping[str, Any], active: ActiveMRZ | None) -> dict[str, Any]:
+def detail_payload(
+    symbol: str,
+    latest: Mapping[str, Any],
+    active: ActiveMRZ | None,
+    window_counts: Mapping[str, Any],
+) -> dict[str, Any]:
     base = {
         "symbol": symbol,
         "latest_observation_price": number(latest["observation_price"]),
         "latest_observed_at": iso(latest["observed_at"]),
+        "latest_observation_route": str(latest["route"]),
+        "latest_observation_type": str(latest["observation_type"]),
         "current_price_location": current_price_location_value(latest),
+        "current_location_context": ipda_directional_context(
+            Decimal(latest["observation_price"]),
+            Decimal(latest["ipda_20w_high"]),
+            Decimal(latest["ipda_20w_low"]),
+        ),
+        "btd_window_observation_count": int(window_counts["btd_window_observation_count"]),
+        "str_window_observation_count": int(window_counts["str_window_observation_count"]),
     }
     if active is None:
         return {
@@ -418,6 +482,9 @@ def detail_payload(symbol: str, latest: Mapping[str, Any], active: ActiveMRZ | N
             "supporting_observation_count": None,
             "activated_at": None,
             "activation_event_id": None,
+            "formation_started_at": None,
+            "formation_completed_at": None,
+            "formation_duration_seconds": None,
         }
     return {
         **base,
@@ -431,6 +498,9 @@ def detail_payload(symbol: str, latest: Mapping[str, Any], active: ActiveMRZ | N
         "supporting_observation_count": active.supporting_observation_count,
         "activated_at": iso(active.activated_at),
         "activation_event_id": active.activation_event_id,
+        "formation_started_at": iso(active.formation_started_at),
+        "formation_completed_at": iso(active.formation_completed_at),
+        "formation_duration_seconds": number(active.formation_duration_seconds),
         "ipda_20w_high_at_activation": number(active.ipda_20w_high_at_activation),
         "ipda_20w_low_at_activation": number(active.ipda_20w_low_at_activation),
         "ipda_width_at_activation": number(active.ipda_width_at_activation),

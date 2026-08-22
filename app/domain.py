@@ -75,6 +75,20 @@ class Cluster:
     def observation_count(self) -> int:
         return len(self.members)
 
+    @property
+    def formation_started_at(self) -> datetime:
+        return min(member.observed_at for member in self.members)
+
+    @property
+    def formation_completed_at(self) -> datetime:
+        return max(member.observed_at for member in self.members)
+
+    @property
+    def formation_duration_seconds(self) -> Decimal:
+        duration = self.formation_completed_at - self.formation_started_at
+        whole_seconds = (duration.days * 86400) + duration.seconds
+        return Decimal(whole_seconds) + (Decimal(duration.microseconds) / Decimal("1000000"))
+
 
 @dataclass(frozen=True, slots=True)
 class ActiveMRZ:
@@ -88,6 +102,9 @@ class ActiveMRZ:
     supporting_observation_count: int
     activated_at: datetime
     activation_event_id: str
+    formation_started_at: datetime | None
+    formation_completed_at: datetime | None
+    formation_duration_seconds: Decimal | None
     ipda_20w_high_at_activation: Decimal
     ipda_20w_low_at_activation: Decimal
     ipda_width_at_activation: Decimal

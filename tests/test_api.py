@@ -65,8 +65,16 @@ class APIIntegrationTests(unittest.TestCase):
         detail = self.client.get("/api/symbols/SPXUSDT").json()
         self.assertEqual(detail["mrz_status"], "unestablished")
         self.assertEqual(detail["current_price_location"], "deep_discount")
+        self.assertEqual(detail["current_location_context"], "80% from EQM toward IPDA low")
         self.assertEqual(detail["latest_observed_at"], "2026-08-20T12:00:01Z")
+        self.assertEqual(detail["latest_observation_route"], "BTD")
+        self.assertEqual(detail["latest_observation_type"], "reclaim")
+        self.assertEqual(detail["btd_window_observation_count"], 1)
+        self.assertEqual(detail["str_window_observation_count"], 0)
         self.assertIsNone(detail["supporting_observation_count"])
+        self.assertIsNone(detail["formation_started_at"])
+        self.assertIsNone(detail["formation_completed_at"])
+        self.assertIsNone(detail["formation_duration_seconds"])
         overview = self.client.get("/api/symbols").json()["symbols"]
         self.assertEqual(overview[0]["current_price_location"], "deep_discount")
         self.assertEqual(overview[0]["mrz_status"], "unestablished")
@@ -103,10 +111,63 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(detail["current_price_location"], "deep_discount")
         self.assertEqual(detail["latest_observed_at"], "2026-08-20T12:00:04Z")
         self.assertEqual(detail["supporting_observation_count"], 4)
+        self.assertEqual(detail["formation_started_at"], "2026-08-20T12:00:01Z")
+        self.assertEqual(detail["formation_completed_at"], "2026-08-20T12:00:04Z")
+        self.assertEqual(detail["formation_duration_seconds"], 3.0)
         self.assertNotIn("recommendation", detail)
         self.assertNotIn("readiness", detail)
         overview = self.client.get("/api/symbols").json()["symbols"][0]
         self.assertEqual(overview["mrz_status"], "active")
+
+    def test_unestablished_detail_reports_raw_retained_route_windows_without_progress(self) -> None:
+        btd_prices = ("110", "120", "130")
+        str_prices = ("160", "168", "176", "184", "192", "200")
+        for index, price in enumerate(btd_prices, 1):
+            self.assertEqual(
+                self.client.post("/webhook/tradingview", json=webhook_payload(index, price)).status_code,
+                201,
+            )
+        for index, price in enumerate(str_prices, 4):
+            packet = webhook_payload(
+                index,
+                price,
+                route="STR",
+                observation_type="rejection",
+            )
+            self.assertEqual(self.client.post("/webhook/tradingview", json=packet).status_code, 201)
+
+        detail = self.client.get("/api/symbols/SPXUSDT").json()
+        self.assertEqual(detail["mrz_status"], "unestablished")
+        self.assertIsNone(detail["route_owner"])
+        self.assertEqual(detail["btd_window_observation_count"], 3)
+        self.assertEqual(detail["str_window_observation_count"], 6)
+        self.assertNotIn("formation_progress", detail)
+        self.assertNotIn("progress", detail)
+        self.assertNotIn("predicted_route_owner", detail)
+
+    def test_unestablished_route_window_counts_cap_at_twenty(self) -> None:
+        for index in range(1, 26):
+            price = f"{101 + (index * 1.8):.1f}"
+            self.assertEqual(
+                self.client.post("/webhook/tradingview", json=webhook_payload(index, price)).status_code,
+                201,
+            )
+
+        detail = self.client.get("/api/symbols/SPXUSDT").json()
+        self.assertEqual(detail["mrz_status"], "unestablished")
+        self.assertEqual(detail["btd_window_observation_count"], 20)
+        self.assertEqual(detail["str_window_observation_count"], 0)
+
+    def test_four_dispersed_observations_remain_unestablished(self) -> None:
+        for index, price in enumerate(("110", "120", "130", "140"), 1):
+            self.assertEqual(
+                self.client.post("/webhook/tradingview", json=webhook_payload(index, price)).status_code,
+                201,
+            )
+        detail = self.client.get("/api/symbols/SPXUSDT").json()
+        self.assertEqual(detail["mrz_status"], "unestablished")
+        self.assertEqual(detail["btd_window_observation_count"], 4)
+        self.assertIsNone(detail["route_owner"])
 
     def test_active_mrz_support_count_accepts_only_valid_frozen_core_evidence(self) -> None:
         for index, price in enumerate(("110", "110.2", "110.4", "110.6"), 1):

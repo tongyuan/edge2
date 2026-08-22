@@ -145,15 +145,16 @@ The selected detail renders SOURCE, ACTIVE MRZ, MRZ LOCATION, CURRENT LOCATION,
 active-core supporting evidence, latest observation, and MRZ status. Both
 overview and detail derive `current_price_location` through the same backend
 classifier using the latest accepted observation price and that observation's
-IPDA 20W frame. The monitor contains no chronology, lifecycle, research,
-recommendation, readiness, approval, or handover interface.
+IPDA 20W frame. CURRENT LOCATION adds a display-only whole-percentage depth
+from EQM toward the relevant IPDA boundary, or explicit EQM/out-of-range text.
+This does not alter shallow/deep classification.
 
-The CURRENT LOCATION support line formats the selected symbol's canonical UTC
-`latest_observed_at` in the operator's fixed TradingView timezone as
-`Latest observation · DD Mon YYYY · HH:MM UTC−4`. The display offset never
-varies for daylight saving time or the browser, Mac, and server timezones. It
-never substitutes delivery, database-write, refresh, activation, or migration
-time.
+LATEST OBSERVATION combines the latest price, route, observation type, and
+canonical `observed_at`. Its operator timestamp is formatted in the fixed
+TradingView timezone as `DD Mon YYYY · HH:MM UTC−4`; it never substitutes
+delivery, database-write, refresh, activation, or migration time. The display
+offset never varies for daylight saving time or the browser, Mac, and server
+timezones.
 
 `supporting_observation_count` starts with the observations in the confirming
 cluster. During that active MRZ's lifetime it increases only for accepted,
@@ -162,8 +163,16 @@ and fall inside the frozen core bounds. Observations elsewhere in the migration
 envelope, successor candidates, and opposite-route observations do not count.
 The count is cumulative rather than rolling-window progress, and a migrated MRZ
 starts from its own confirming cluster without inheriting the old count.
-Before activation, the selected detail reports `Concentration not established`
-rather than showing partial formation progress or implying missing data.
+For every activation or migration, formation start, completion, and duration
+come from the earliest and latest `observed_at` values in the exact final
+confirming `Cluster.members`. They remain supporting evidence only and are
+stored with the active row plus old/new transition audit state. The additive
+migration leaves pre-existing rows null rather than guessing historical values.
+
+Before activation, Evidence reports `No qualifying concentration` and the raw
+BTD reclaim/STR rejection counts retained in the two route-specific latest-20
+windows. These counts are visibility, not progress, ownership, prediction, or
+candidate bounds.
 
 ## Clean database
 
@@ -175,7 +184,9 @@ The PostgreSQL 16 database revolves around:
 - `ingestion_rejections` — sanitized invalid-packet diagnostics.
 - `ingestion_metrics` — lightweight durable counters for health reporting.
 
-Migration `001_initial.sql` builds a new schema. No 4.2 table or historical record is read.
+Migration `001_initial.sql` builds the isolated schema. Additive migrations
+`002–004` add the overview index, supporting count, and nullable immutable
+formation evidence. No 4.2 table or historical record is read.
 
 ## Test
 
@@ -185,7 +196,11 @@ Tests run in an isolated, temporary PostgreSQL container and remove its volume a
 make test
 ```
 
-The suite covers ingestion, validation, durable duplicate handling, price-space concentration, route windows, IPDA boundaries, activation, frozen bounds, migration, zero-width tick safety, late replay, atomic audit preservation, API output, and restart persistence.
+The suite covers ingestion, validation, durable duplicate handling, price-space
+concentration, route windows, directional IPDA context, exact-cluster formation
+duration, activation, frozen bounds, migration, zero-width tick safety, late
+replay, atomic audit preservation, API output, UI presentation, and restart
+persistence.
 
 ## Git development and remote operation
 

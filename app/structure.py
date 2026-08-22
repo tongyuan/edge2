@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from app.domain import PriceLocation, Route, StructuralLocation
 
@@ -58,3 +58,27 @@ def classify_ipda_location(
     if value <= ipda_high:
         return PriceLocation.DEEP_PREMIUM
     return PriceLocation.ABOVE_IPDA_RANGE
+
+
+def ipda_directional_context(
+    value: Decimal,
+    ipda_high: Decimal,
+    ipda_low: Decimal,
+) -> str:
+    if not value.is_finite():
+        raise ValueError("IPDA directional value must be finite")
+    geometry = structural_geometry(ipda_high, ipda_low)
+    if value > ipda_high:
+        return "Above IPDA high"
+    if value < ipda_low:
+        return "Below IPDA low"
+    if value == geometry["eqm"]:
+        return "At IPDA EQM"
+    if value > geometry["eqm"]:
+        depth = (value - geometry["eqm"]) / (ipda_high - geometry["eqm"])
+        direction = "high"
+    else:
+        depth = (geometry["eqm"] - value) / (geometry["eqm"] - ipda_low)
+        direction = "low"
+    percentage = (depth * Decimal("100")).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    return f"{percentage}% from EQM toward IPDA {direction}"

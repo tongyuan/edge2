@@ -12,6 +12,10 @@ const {
   hasActiveMrz,
   groupSymbolsByLocation,
 } = globalThis.edgeHeatmapState;
+const {
+  buildEvidencePresentation,
+  formatLatestObservationContext,
+} = globalThis.edgeMonitorPresentation;
 
 const fields = {
   symbol: document.querySelector("#symbolName"),
@@ -20,7 +24,7 @@ const fields = {
   bounds: document.querySelector("#mrzBounds"),
   location: document.querySelector("#structuralLocation"),
   currentLocation: document.querySelector("#currentPriceLocation"),
-  currentObservationTime: document.querySelector("#currentObservationTime"),
+  currentLocationContext: document.querySelector("#currentLocationContext"),
   evidence: document.querySelector("#evidence"),
   latest: document.querySelector("#latestObservation"),
   midpoint: document.querySelector("#mrzMidpoint"),
@@ -45,11 +49,17 @@ const locationLabels = {
 
 const formatLocation = (value) => value == null ? "—" : locationLabels[value] || "—";
 
-function formatObservationTimestamp(value) {
-  const formattedTimestamp = formatOperatorTimestampUtcMinus4(value);
-  return formattedTimestamp
-    ? `Latest observation · ${formattedTimestamp}`
-    : "Latest observation · —";
+function renderFact(field, primary, secondary = []) {
+  const primaryLine = document.createElement("span");
+  primaryLine.className = "fact-primary";
+  primaryLine.textContent = primary;
+  const secondaryLines = secondary.filter(Boolean).map((text) => {
+    const line = document.createElement("span");
+    line.className = "fact-support";
+    line.textContent = text;
+    return line;
+  });
+  field.replaceChildren(primaryLine, ...secondaryLines);
 }
 
 function createLocationGroup(key, symbols, secondary = false) {
@@ -176,11 +186,14 @@ function renderSymbol(state) {
     : "—";
   fields.location.textContent = active ? formatLocation(state.structural_location) : "—";
   fields.currentLocation.textContent = formatLocation(state.current_price_location);
-  fields.currentObservationTime.textContent = formatObservationTimestamp(state.latest_observed_at);
-  fields.evidence.textContent = active
-    ? `${state.supporting_observation_count} qualifying observation${state.supporting_observation_count === 1 ? "" : "s"}`
-    : "Concentration not established";
-  fields.latest.textContent = formatPrice(state.latest_observation_price);
+  fields.currentLocationContext.textContent = state.current_location_context || "—";
+  const evidence = buildEvidencePresentation(state);
+  renderFact(fields.evidence, evidence.primary, evidence.secondary);
+  renderFact(
+    fields.latest,
+    formatPrice(state.latest_observation_price),
+    [formatLatestObservationContext(state, formatOperatorTimestampUtcMinus4)],
+  );
   fields.midpoint.textContent = formatPrice(state.core_mrz_midpoint);
   emptyState.hidden = true;
   stateCard.hidden = false;

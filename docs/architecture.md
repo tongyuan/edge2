@@ -35,6 +35,13 @@ Seed selection orders by raw span, lower price, upper price, and canonical membe
 
 An active MRZ is constructed once from the confirming cluster. No later evidence mutates its bounds or activation metadata. A successor constructs a new immutable MRZ and replaces the active row while the transition retains the former bounds.
 
+Formation evidence is derived at that same construction boundary from the
+exact final cluster members: earliest canonical `observed_at`, latest canonical
+`observed_at`, and their difference in seconds. Supporting observations cannot
+change it. Activation and migration audit rows retain the new formation values;
+migration rows also retain the old MRZ's values. Nullable additive columns keep
+historical rows explicitly unavailable rather than assigning a guessed zero.
+
 ## Cross-route boundary
 
 The data and transition model support a future `ROUTE_CHANGED` event. The first build does not guess at the trigger: `evaluate_cross_route_replacement()` is a small explicit no-op until a separate frozen doctrine defines legitimate opposite-route authority replacement.

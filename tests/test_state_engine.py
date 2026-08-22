@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from app.domain import MRZEventType, Route, StructuralLocation
 from app.state_engine import replay_symbol
-from tests.helpers import observation
+from tests.helpers import BASE_TIME, observation
 
 
 class ActiveMRZStateTests(unittest.TestCase):
@@ -20,6 +20,49 @@ class ActiveMRZStateTests(unittest.TestCase):
         self.assertEqual(result.active_mrz.supporting_observation_count, 4)
         self.assertEqual(result.transitions[0].event_type, MRZEventType.ACTIVATED)
 
+    def test_formation_duration_uses_exact_confirming_observation_times(self) -> None:
+        offsets = (0, 1800, 3600, 11700)
+        rows = [
+            observation(index, price, observed_offset=offset)
+            for index, (price, offset) in enumerate(zip(("110", "110.2", "110.4", "110.6"), offsets), 1)
+        ]
+        active = replay_symbol(rows).active_mrz
+
+        self.assertEqual(active.formation_started_at, BASE_TIME)
+        self.assertEqual(active.formation_completed_at, BASE_TIME.replace(hour=15, minute=15))
+        self.assertEqual(active.formation_duration_seconds, Decimal("11700"))
+
+    def test_non_selected_observations_do_not_affect_formation_duration(self) -> None:
+        rows = [
+            observation(1, "140", observed_offset=0),
+            observation(2, "110", observed_offset=3600),
+            observation(3, "132", observed_offset=4000),
+            observation(4, "110.2", observed_offset=7200),
+            observation(5, "110.4", observed_offset=10800),
+            observation(6, "110.6", observed_offset=14400),
+        ]
+        active = replay_symbol(rows).active_mrz
+
+        self.assertEqual(active.confirming_observation_count, 4)
+        self.assertEqual(active.formation_started_at, rows[1].observed_at)
+        self.assertEqual(active.formation_completed_at, rows[-1].observed_at)
+        self.assertEqual(active.formation_duration_seconds, Decimal("10800"))
+
+    def test_expanded_cluster_formation_uses_all_final_members(self) -> None:
+        rows = [
+            observation(1, "110", observed_offset=0),
+            observation(2, "110.2", observed_offset=60),
+            observation(3, "110.4", observed_offset=120),
+            observation(4, "110.6", observed_offset=180, ipda_low="0", ipda_high="120"),
+            observation(5, "110.8", observed_offset=600),
+        ]
+        active = replay_symbol(rows).active_mrz
+
+        self.assertEqual(active.confirming_observation_count, 5)
+        self.assertEqual(active.formation_started_at, rows[0].observed_at)
+        self.assertEqual(active.formation_completed_at, rows[-1].observed_at)
+        self.assertEqual(active.formation_duration_seconds, Decimal("600"))
+
     def test_same_route_structural_observations_inside_frozen_core_accumulate_support(self) -> None:
         rows = [observation(i, price) for i, price in enumerate(("110", "110.2", "110.4", "110.6"), 1)]
         activated = replay_symbol(rows).active_mrz
@@ -32,6 +75,9 @@ class ActiveMRZStateTests(unittest.TestCase):
             (supported.core_mrz_lower, supported.core_mrz_upper),
             (activated.core_mrz_lower, activated.core_mrz_upper),
         )
+        self.assertEqual(supported.formation_started_at, activated.formation_started_at)
+        self.assertEqual(supported.formation_completed_at, activated.formation_completed_at)
+        self.assertEqual(supported.formation_duration_seconds, activated.formation_duration_seconds)
 
     def test_outside_core_envelope_and_successor_observations_do_not_support_active_mrz(self) -> None:
         rows = [observation(i, price) for i, price in enumerate(("110", "110.2", "110.4", "110.6"), 1)]
@@ -89,6 +135,41 @@ class ActiveMRZStateTests(unittest.TestCase):
         self.assertEqual(migrated.transitions[-1].old_mrz.supporting_observation_count, 6)
         self.assertEqual(migrated.active_mrz.supporting_observation_count, 4)
         self.assertEqual(migrated.active_mrz.confirming_observation_count, 4)
+
+    def test_migration_records_its_own_immutable_formation_duration(self) -> None:
+        rows = [
+            observation(index, price, observed_offset=offset)
+            for index, (price, offset) in enumerate(
+                zip(
+                    ("110", "110.2", "110.4", "110.6", "120", "120.2", "120.4", "120.6"),
+                    (0, 60, 120, 180, 3600, 7200, 10800, 14400),
+                ),
+                1,
+            )
+        ]
+        result = replay_symbol(rows)
+        activation, migration = result.transitions
+
+        self.assertEqual(activation.new_mrz.formation_duration_seconds, Decimal("180"))
+        self.assertEqual(migration.old_mrz.formation_duration_seconds, Decimal("180"))
+        self.assertEqual(migration.new_mrz.formation_duration_seconds, Decimal("10800"))
+        self.assertEqual(result.active_mrz.formation_started_at, rows[4].observed_at)
+        self.assertEqual(result.active_mrz.formation_completed_at, rows[7].observed_at)
+
+    def test_replay_order_does_not_change_formation_metadata(self) -> None:
+        rows = [
+            observation(index, price, observed_offset=offset, received_offset=20 - index)
+            for index, (price, offset) in enumerate(
+                zip(("110", "110.2", "110.4", "110.6"), (10, 20, 30, 40)),
+                1,
+            )
+        ]
+        forward = replay_symbol(rows).active_mrz
+        reversed_result = replay_symbol(reversed(rows)).active_mrz
+
+        self.assertEqual(forward.formation_started_at, reversed_result.formation_started_at)
+        self.assertEqual(forward.formation_completed_at, reversed_result.formation_completed_at)
+        self.assertEqual(forward.formation_duration_seconds, reversed_result.formation_duration_seconds)
 
     def test_str_mirror_migrates_below_lower_envelope(self) -> None:
         prices = ("180", "180.2", "180.4", "180.6", "170.6", "170.4", "170.2", "170")
