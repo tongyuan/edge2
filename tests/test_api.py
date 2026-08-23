@@ -59,6 +59,70 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertIn("MRZ Monitor", response.text)
         self.assertNotIn("Symbol Lab", response.text)
 
+    def test_activation_feasibility_page_is_private_routed_and_complete(self) -> None:
+        response = self.client.get("/diagnostics/activation-feasibility")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["cache-control"], "no-store, max-age=0")
+        self.assertIn("Activation Feasibility", response.text)
+        self.assertIn("Observed activation frequency is descriptive", response.text)
+        self.assertIn("Algorithm A · 4 observations · 1%", response.text)
+        self.assertIn('id="summaryA"', response.text)
+        self.assertIn('id="summaryB"', response.text)
+        self.assertIn('id="comparisonTable"', response.text)
+        self.assertIn('id="auditFilters"', response.text)
+        self.assertIn("What the current sample says", response.text)
+        self.assertIn('id="diagnosisContent"', response.text)
+
+    def test_activation_feasibility_api_empty_and_refreshes_without_stale_results(self) -> None:
+        first = self.client.get("/api/diagnostics/activation-feasibility")
+        second = self.client.get("/api/diagnostics/activation-feasibility")
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(first.headers["cache-control"], "no-store, max-age=0")
+        first_payload = first.json()
+        second_payload = second.json()
+        self.assertEqual(len(first_payload["scenarios"]), 30)
+        self.assertEqual(len(first_payload["comparisons"]), 15)
+        self.assertEqual(first_payload["sequence_details"], [])
+        self.assertEqual(
+            first_payload["diagnosis"]["sample_assessment"]["code"],
+            "SAMPLE_PRELIMINARY",
+        )
+        self.assertNotEqual(first_payload["generated_at"], second_payload["generated_at"])
+        first_payload.pop("generated_at")
+        second_payload.pop("generated_at")
+        self.assertEqual(first_payload, second_payload)
+
+    def test_activation_feasibility_api_serializes_auditable_results_without_event_ids(self) -> None:
+        for index, price in enumerate(("110", "110.2", "110.4", "110.6"), 1):
+            self.assertEqual(
+                self.client.post("/webhook/tradingview", json=webhook_payload(index, price)).status_code,
+                201,
+            )
+
+        response = self.client.get("/api/diagnostics/activation-feasibility")
+        payload = response.json()
+        production = payload["current_production_rule"]["result"]
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(payload["total_observations_evaluated"], 4)
+        self.assertEqual(payload["total_normalized_symbols"], 1)
+        self.assertEqual(payload["total_symbol_route_sequences"], 1)
+        self.assertEqual(production["scenario_id"], "A-4-1")
+        self.assertEqual(production["hypothetical_activations"], 1)
+        self.assertEqual(
+            production["median_minimum_required_allowance_pct_at_qualification"],
+            "0.600",
+        )
+        self.assertEqual(
+            payload["diagnosis"]["production_feasibility"]["numerator"],
+            1,
+        )
+        self.assertNotIn("event_id", response.text)
+        self.assertNotIn("api-event", response.text)
+
     def test_valid_btd_valid_str_and_unestablished_responses(self) -> None:
         btd = self.client.post("/webhook/tradingview", json=webhook_payload())
         self.assertEqual(btd.status_code, 201)
@@ -173,6 +237,10 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(str_check["ipda_width"], "100")
         self.assertEqual(str_check["allowance"], "1.00")
         self.assertEqual(str_check["normalized_span"], "0.24")
+        self.assertEqual(str_check["minimum_required_allowance_pct"], "24.00")
+        self.assertEqual(str_check["configured_allowance_pct"], "1.00")
+        self.assertEqual(str_check["allowance_difference_pct_points"], "23.00")
+        self.assertEqual(str_check["allowance_comparison"], "SHORTFALL")
         self.assertFalse(str_check["concentration_passed"])
         self.assertTrue(str_check["structural_eligibility_passed"])
         overview = self.client.get("/api/symbols").json()["symbols"][0]
@@ -220,6 +288,10 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(diagnostic["ipda_width"], "100")
         self.assertEqual(diagnostic["allowance"], "1.00")
         self.assertEqual(diagnostic["normalized_span"], "0.006")
+        self.assertEqual(diagnostic["minimum_required_allowance_pct"], "0.600")
+        self.assertEqual(diagnostic["configured_allowance_pct"], "1.00")
+        self.assertEqual(diagnostic["allowance_difference_pct_points"], "-0.400")
+        self.assertEqual(diagnostic["allowance_comparison"], "MARGIN")
         self.assertEqual(diagnostic["proposed_midpoint"], "120.3")
         self.assertEqual(diagnostic["proposed_structural_location"], "deep_discount")
         self.assertTrue(diagnostic["concentration_passed"])

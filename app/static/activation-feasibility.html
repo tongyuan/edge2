@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="EDGE 2.0 activation feasibility diagnostic" />
+    <title>EDGE 2.0 · Activation Feasibility</title>
+    <link rel="stylesheet" href="/static/activation-feasibility.css?v=20260823" />
+  </head>
+  <body>
+    <main class="report-shell">
+      <header class="report-header">
+        <div>
+          <p class="eyebrow">EDGE 2.0 · DIAGNOSTIC</p>
+          <h1>Activation Feasibility</h1>
+          <p class="subtitle">Live read-only replay of stored route observations</p>
+        </div>
+        <button type="button" id="refreshReport">Refresh report</button>
+      </header>
+
+      <aside class="notice" aria-label="Interpretation notice">
+        Observed activation frequency is descriptive, not a predictive probability.
+        Results are preliminary while the stored sample remains small.
+      </aside>
+      <section class="status-panel" id="reportStatus" aria-live="polite">
+        Calculating the latest report…
+      </section>
+
+      <div id="reportContent" hidden>
+        <section class="metadata-grid" aria-label="Report metadata">
+          <article><span>GENERATED</span><strong id="generatedAt">—</strong></article>
+          <article><span>OBSERVATION RANGE</span><strong id="observationRange">—</strong></article>
+          <article><span>OBSERVATIONS</span><strong id="totalObservations">0</strong></article>
+          <article><span>SYMBOLS</span><strong id="totalSymbols">0</strong></article>
+          <article><span>SYMBOL-ROUTE SEQUENCES</span><strong id="totalSequences">0</strong></article>
+        </section>
+
+        <aside class="sample-warning" id="sampleWarning" hidden>
+          Preliminary sample: fewer than 30 production-eligible symbol-route sequences are available.
+        </aside>
+
+        <section class="report-section diagnosis-section" aria-labelledby="diagnosis-title">
+          <div class="section-heading">
+            <div><p class="eyebrow">DETERMINISTIC DIAGNOSIS</p><h2 id="diagnosis-title">What the current sample says</h2></div>
+          </div>
+          <div id="diagnosisContent"></div>
+        </section>
+
+        <section class="production-marker" aria-label="Current production rule">
+          <span>PRODUCTION</span>
+          <strong>Algorithm A · 4 observations · 1%</strong>
+          <p id="productionResult">—</p>
+        </section>
+
+        <section class="report-section" aria-labelledby="overall-title">
+          <div class="section-heading">
+            <div><p class="eyebrow">30 SCENARIOS</p><h2 id="overall-title">Overall scenario summary</h2></div>
+          </div>
+          <h3>Algorithm A · Price-space recognition</h3>
+          <div class="table-wrap"><table id="summaryA"></table></div>
+          <h3>Algorithm B · Recent chronological concentration</h3>
+          <div class="table-wrap"><table id="summaryB"></table></div>
+        </section>
+
+        <section class="report-section" aria-labelledby="matrix-title">
+          <div class="section-heading">
+            <div><p class="eyebrow">SENSITIVITY</p><h2 id="matrix-title">Activation matrices</h2></div>
+          </div>
+          <div class="matrix-grid">
+            <article><h3>Algorithm A</h3><div class="table-wrap"><table id="matrixA"></table></div></article>
+            <article><h3>Algorithm B</h3><div class="table-wrap"><table id="matrixB"></table></div></article>
+          </div>
+        </section>
+
+        <section class="report-section" aria-labelledby="comparison-title">
+          <div class="section-heading">
+            <div><p class="eyebrow">15 MATCHED SETTINGS</p><h2 id="comparison-title">A/B comparison</h2></div>
+          </div>
+          <div class="table-wrap"><table id="comparisonTable"></table></div>
+        </section>
+
+        <section class="report-section" aria-labelledby="audit-title">
+          <div class="section-heading">
+            <div><p class="eyebrow">AUDIT DETAIL</p><h2 id="audit-title">Symbol-route scenarios</h2></div>
+            <span id="auditCount">0 rows</span>
+          </div>
+          <form class="filters" id="auditFilters">
+            <label>Symbol<select id="symbolFilter"><option value="">All</option></select></label>
+            <label>Route<select id="routeFilter"><option value="">All</option><option>BTD</option><option>STR</option></select></label>
+            <label>Algorithm<select id="algorithmFilter"><option value="">All</option><option>A</option><option>B</option></select></label>
+            <label>Minimum<select id="minimumFilter"><option value="">All</option><option>2</option><option>3</option><option>4</option></select></label>
+            <label>Allowance<select id="allowanceFilter"><option value="">All</option><option value="1">1%</option><option value="2">2%</option><option value="3">3%</option><option value="4">4%</option><option value="5">5%</option></select></label>
+            <label>Result<select id="classificationFilter"><option value="">All</option><option>QUALIFIED</option><option>NEAR_MISS</option><option>DISPERSED</option><option>INSUFFICIENT</option></select></label>
+          </form>
+          <div class="table-wrap audit-wrap"><table id="auditTable"></table></div>
+        </section>
+      </div>
+    </main>
+    <script src="/static/operator-time.js?v=20260823" defer></script>
+    <script src="/static/activation-feasibility.js?v=20260823" defer></script>
+  </body>
+</html>

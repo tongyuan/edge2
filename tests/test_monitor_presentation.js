@@ -4,6 +4,7 @@ const {
   buildConcentrationCheck,
   buildEvidencePresentation,
   formatLatestObservationContext,
+  percentageText,
 } = require("../app/static/monitor-presentation.js");
 const {
   formatOperatorTimestampUtcMinus4,
@@ -25,6 +26,7 @@ assert.equal(formatFormationDuration(280800), "3d 6h");
 assert.equal(formatFormationDuration(30), "<1m");
 assert.equal(formatFormationDuration(0), "0m");
 assert.equal(formatFormationDuration(null), null);
+assert.equal(percentageText("1.126789"), "1.13");
 
 assert.deepEqual(
   buildEvidencePresentation({
@@ -141,6 +143,10 @@ assert.deepEqual(
     observed_span: "117.18",
     ipda_width: "1042.73",
     allowance: "10.4273",
+    minimum_required_allowance_pct: "11.237",
+    configured_allowance_pct: "1",
+    allowance_difference_pct_points: "10.237",
+    allowance_comparison: "SHORTFALL",
     result: "TOO_DISPERSED",
   }, formatPrice, formatLocation),
   {
@@ -148,9 +154,11 @@ assert.deepEqual(
     lines: [
       "Tightest eligible group · 4 of 5",
       "Price range · 2,326.95–2,444.13",
-      "Observed span · 117.18",
+      "Minimum allowance required · 11.24%",
+      "Current allowance · ≤1.00%",
+      "Shortfall · 10.24 percentage points",
+      "Price span · 117.18",
       "IPDA width · 1,042.73",
-      "Allowance · ≤10.4273 (1% of IPDA width)",
       "Result · Too dispersed",
     ],
   },
@@ -164,7 +172,12 @@ assert.deepEqual(
     selected_lower: "120",
     selected_upper: "120.6",
     observed_span: "0.6",
+    ipda_width: "100",
     allowance: "1",
+    minimum_required_allowance_pct: "0.6",
+    configured_allowance_pct: "1",
+    allowance_difference_pct_points: "-0.4",
+    allowance_comparison: "MARGIN",
     proposed_structural_location: "deep_discount",
     result: "STRUCTURALLY_INELIGIBLE",
   }, formatPrice, formatLocation),
@@ -173,13 +186,34 @@ assert.deepEqual(
     lines: [
       "Tightest eligible group · 4 of 4",
       "Price range · 120–120.6",
-      "Observed span · 0.6",
-      "Allowance · ≤1 (1% of IPDA width)",
+      "Minimum allowance required · 0.60%",
+      "Current allowance · ≤1.00%",
+      "Margin · 0.40 percentage points inside",
+      "Price span · 0.6",
+      "IPDA width · 100",
       "Proposed location · Deep Discount",
       "Result · Structurally ineligible",
     ],
   },
 );
+
+const atThreshold = buildConcentrationCheck({
+  route: "BTD",
+  retained_observation_count: 4,
+  selected_observation_count: 4,
+  selected_lower: "110",
+  selected_upper: "111",
+  observed_span: "1",
+  ipda_width: "100",
+  minimum_required_allowance_pct: "1.00",
+  configured_allowance_pct: "1",
+  allowance_difference_pct_points: "0.00",
+  allowance_comparison: "AT_THRESHOLD",
+  proposed_structural_location: "deep_premium",
+  result: "STRUCTURALLY_INELIGIBLE",
+}, formatPrice, formatLocation);
+assert.match(atThreshold.lines.join("\n"), /Margin · At threshold/);
+assert.doesNotMatch(atThreshold.lines.join("\n"), /Algorithm B/);
 
 assert.deepEqual(
   buildConcentrationCheck({

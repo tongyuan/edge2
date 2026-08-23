@@ -4,6 +4,7 @@ import unittest
 from decimal import Decimal
 
 from app.concentration import (
+    CONCENTRATION_SPAN_THRESHOLD,
     ConcentrationResult,
     evaluate_concentration,
     latest_route_window,
@@ -25,6 +26,10 @@ class ConcentrationTests(unittest.TestCase):
         self.assertEqual(diagnostic.selected_observation_ids, ())
         self.assertIsNone(diagnostic.selected_lower)
         self.assertIsNone(diagnostic.observed_span)
+        self.assertIsNone(diagnostic.minimum_required_allowance_pct)
+        self.assertIsNone(diagnostic.allowance_difference_pct_points)
+        self.assertIsNone(diagnostic.allowance_comparison)
+        self.assertEqual(diagnostic.configured_allowance_pct, Decimal("1.00"))
 
     def test_exactly_four_tight_observations_qualify(self) -> None:
         rows = [observation(i, price) for i, price in enumerate(("110", "110.3", "110.7", "111"), 1)]
@@ -38,6 +43,10 @@ class ConcentrationTests(unittest.TestCase):
         self.assertEqual(diagnostic.observed_span, Decimal("1"))
         self.assertEqual(diagnostic.allowance, Decimal("1.00"))
         self.assertEqual(diagnostic.normalized_span, Decimal("0.01"))
+        self.assertEqual(diagnostic.minimum_required_allowance_pct, Decimal("1.00"))
+        self.assertEqual(diagnostic.configured_allowance_pct, Decimal("1.00"))
+        self.assertEqual(diagnostic.allowance_difference_pct_points, Decimal("0.00"))
+        self.assertEqual(diagnostic.allowance_comparison, "AT_THRESHOLD")
         self.assertTrue(diagnostic.newest_observation_included)
 
     def test_four_wide_observations_fail(self) -> None:
@@ -51,6 +60,24 @@ class ConcentrationTests(unittest.TestCase):
         self.assertEqual(diagnostic.proposed_midpoint, Decimal("111.5"))
         self.assertEqual(diagnostic.proposed_structural_location, PriceLocation.DEEP_DISCOUNT)
         self.assertTrue(diagnostic.structural_eligibility_passed)
+        self.assertEqual(diagnostic.minimum_required_allowance_pct, Decimal("3"))
+        self.assertEqual(diagnostic.allowance_difference_pct_points, Decimal("2.00"))
+        self.assertEqual(diagnostic.allowance_comparison, "SHORTFALL")
+
+    def test_minimum_required_allowance_preserves_decimal_precision(self) -> None:
+        rows = [
+            observation(i, price)
+            for i, price in enumerate(("110", "110.1", "110.2", "111.126789"), 1)
+        ]
+        diagnostic = evaluate_concentration(rows, Route.BTD).diagnostic
+
+        self.assertEqual(diagnostic.observed_span, Decimal("1.126789"))
+        self.assertEqual(diagnostic.ipda_width, Decimal("100"))
+        self.assertEqual(
+            diagnostic.minimum_required_allowance_pct,
+            (Decimal("1.126789") / Decimal("100")) * Decimal("100"),
+        )
+        self.assertEqual(diagnostic.minimum_required_allowance_pct, Decimal("1.126789"))
 
     def test_first_outlier_is_excluded_when_recent_four_are_tight(self) -> None:
         prices = ("2326.95", "2400", "2403", "2406", "2409")
@@ -150,6 +177,27 @@ class ConcentrationTests(unittest.TestCase):
         self.assertEqual(discount.result, ConcentrationResult.STRUCTURALLY_INELIGIBLE)
         self.assertFalse(discount.structural_eligibility_passed)
         self.assertEqual(discount.proposed_structural_location, PriceLocation.DEEP_DISCOUNT)
+        self.assertEqual(discount.minimum_required_allowance_pct, Decimal("0.6"))
+        self.assertEqual(discount.allowance_comparison, "MARGIN")
+
+    def test_production_threshold_and_decision_remain_exactly_unchanged(self) -> None:
+        self.assertEqual(CONCENTRATION_SPAN_THRESHOLD, Decimal("0.01"))
+        qualifying = [
+            observation(i, price)
+            for i, price in enumerate(("110", "110.3", "110.7", "111"), 1)
+        ]
+        dispersed = [
+            observation(i, price)
+            for i, price in enumerate(("110", "111", "112", "113"), 1)
+        ]
+        self.assertEqual(
+            evaluate_concentration(qualifying, Route.BTD).result,
+            ConcentrationResult.QUALIFIES,
+        )
+        self.assertEqual(
+            evaluate_concentration(dispersed, Route.BTD).result,
+            ConcentrationResult.TOO_DISPERSED,
+        )
 
     def test_seed_tie_breaking_is_deterministic(self) -> None:
         rows = [

@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
+from app.activation_feasibility import ActivationFeasibilityService
 from app.config import Settings
 from app.logging_config import configure_logging
 from app.repository import EdgeRepository, json_diagnostics, sanitize_payload
@@ -84,6 +85,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def symbol_lab() -> FileResponse:
         return FileResponse(
             STATIC_DIR / "index.html",
+            headers={
+                "Cache-Control": "no-store, max-age=0",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
+
+    @application.get("/diagnostics/activation-feasibility", include_in_schema=False)
+    def activation_feasibility_page() -> FileResponse:
+        return FileResponse(
+            STATIC_DIR / "activation-feasibility.html",
             headers={
                 "Cache-Control": "no-store, max-age=0",
                 "Pragma": "no-cache",
@@ -221,6 +233,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @application.get("/api/symbols")
     def symbols() -> dict[str, Any]:
         return {"symbols": repository.symbols()}
+
+    @application.get("/api/diagnostics/activation-feasibility")
+    def activation_feasibility() -> JSONResponse:
+        service = ActivationFeasibilityService(repository.schema_43_observations)
+        return JSONResponse(
+            service.generate_report(),
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
 
     @application.get("/api/symbols/{symbol}")
     def symbol_detail(symbol: str) -> dict[str, Any]:

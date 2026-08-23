@@ -27,6 +27,16 @@
     return `${minutes}m`;
   }
 
+  function percentageText(value) {
+    if (value === null || value === undefined || value === "") return "—";
+    const number = Number(value);
+    if (!Number.isFinite(number)) return "—";
+    return number.toLocaleString("en-GB", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }
+
   function buildConcentrationCheck(check, priceFormatter, locationFormatter) {
     const retainedCount = countValue(check.retained_observation_count);
     const selectedCount = countValue(check.selected_observation_count);
@@ -50,12 +60,19 @@
     const lines = [
       `Tightest eligible group · ${selectedCount} of ${retainedCount}`,
       `Price range · ${priceFormatter(check.selected_lower)}–${priceFormatter(check.selected_upper)}`,
-      `Observed span · ${priceFormatter(check.observed_span)}`,
+      `Minimum allowance required · ${percentageText(check.minimum_required_allowance_pct)}%`,
+      `Current allowance · ≤${percentageText(check.configured_allowance_pct)}%`,
     ];
-    if (check.result === "TOO_DISPERSED") {
-      lines.push(`IPDA width · ${priceFormatter(check.ipda_width)}`);
+    const difference = percentageText(Math.abs(Number(check.allowance_difference_pct_points)));
+    if (check.allowance_comparison === "SHORTFALL") {
+      lines.push(`Shortfall · ${difference} percentage points`);
+    } else if (check.allowance_comparison === "MARGIN") {
+      lines.push(`Margin · ${difference} percentage points inside`);
+    } else if (check.allowance_comparison === "AT_THRESHOLD") {
+      lines.push("Margin · At threshold");
     }
-    lines.push(`Allowance · ≤${priceFormatter(check.allowance)} (1% of IPDA width)`);
+    lines.push(`Price span · ${priceFormatter(check.observed_span)}`);
+    lines.push(`IPDA width · ${priceFormatter(check.ipda_width)}`);
     if (check.result === "STRUCTURALLY_INELIGIBLE") {
       lines.push(`Proposed location · ${locationFormatter(check.proposed_structural_location)}`);
       lines.push("Result · Structurally ineligible");
@@ -117,6 +134,7 @@
 
   const monitorPresentation = {
     formatFormationDuration,
+    percentageText,
     buildConcentrationCheck,
     buildEvidencePresentation,
     formatLatestObservationContext,

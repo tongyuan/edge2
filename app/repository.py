@@ -411,6 +411,28 @@ class EdgeRepository:
         finally:
             connection.close()
 
+    def schema_43_observations(self) -> tuple[Observation, ...]:
+        """Return the complete canonical sample for read-only diagnostics."""
+        connection = connect(self.database_url)
+        try:
+            connection.set_session(readonly=True)
+            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        id, event_id, schema_version, symbol, route, observation_type,
+                        observation_price, observation_price_tick,
+                        ipda_20w_high, ipda_20w_low, observed_at, received_at
+                    FROM observations
+                    WHERE schema_version = '4.3'
+                    ORDER BY symbol ASC, route ASC,
+                             observed_at ASC, received_at ASC, id ASC
+                    """
+                )
+                return tuple(observation_from_row(row) for row in cursor.fetchall())
+        finally:
+            connection.close()
+
     def symbols(self) -> list[dict[str, Any]]:
         connection = connect(self.database_url)
         try:
@@ -558,6 +580,14 @@ def concentration_diagnostic_payload(
         "concentration_threshold": decimal_text(diagnostic.concentration_threshold),
         "allowance": decimal_text(diagnostic.allowance),
         "normalized_span": decimal_text(diagnostic.normalized_span),
+        "minimum_required_allowance_pct": decimal_text(
+            diagnostic.minimum_required_allowance_pct
+        ),
+        "configured_allowance_pct": decimal_text(diagnostic.configured_allowance_pct),
+        "allowance_difference_pct_points": decimal_text(
+            diagnostic.allowance_difference_pct_points
+        ),
+        "allowance_comparison": diagnostic.allowance_comparison,
         "proposed_midpoint": decimal_text(diagnostic.proposed_midpoint),
         "proposed_structural_location": (
             diagnostic.proposed_structural_location.value
