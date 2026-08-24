@@ -433,6 +433,47 @@ class EdgeRepository:
         finally:
             connection.close()
 
+    def mrz_robustness_inputs(
+        self,
+    ) -> tuple[tuple[ActiveMRZ, ...], tuple[Observation, ...]]:
+        """Return one consistent read-only snapshot for post-activation diagnostics."""
+        connection = connect(self.database_url)
+        try:
+            connection.set_session(
+                readonly=True,
+                isolation_level="REPEATABLE READ",
+            )
+            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute("SELECT * FROM active_mrz ORDER BY symbol ASC")
+                active_mrzs = tuple(
+                    active
+                    for active in (
+                        active_from_row(row) for row in cursor.fetchall()
+                    )
+                    if active is not None
+                )
+                if not active_mrzs:
+                    return (), ()
+                cursor.execute(
+                    """
+                    SELECT
+                        id, event_id, schema_version, symbol, route, observation_type,
+                        observation_price, observation_price_tick,
+                        ipda_20w_high, ipda_20w_low, observed_at, received_at
+                    FROM observations
+                    WHERE schema_version = '4.3'
+                      AND symbol = ANY(%s)
+                    ORDER BY symbol ASC, observed_at ASC, received_at ASC, id ASC
+                    """,
+                    ([active.symbol for active in active_mrzs],),
+                )
+                observations = tuple(
+                    observation_from_row(row) for row in cursor.fetchall()
+                )
+                return active_mrzs, observations
+        finally:
+            connection.close()
+
     def symbols(self) -> list[dict[str, Any]]:
         connection = connect(self.database_url)
         try:

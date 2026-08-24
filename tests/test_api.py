@@ -76,6 +76,49 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertIn("What the current sample says", response.text)
         self.assertIn('id="diagnosisContent"', response.text)
 
+    def test_mrz_robustness_page_is_separate_read_only_diagnostic(self) -> None:
+        response = self.client.get("/diagnostics/mrz-robustness")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["cache-control"], "no-store, max-age=0")
+        self.assertIn("Post-Activation MRZ Robustness", response.text)
+        self.assertIn("Observation only", response.text)
+        self.assertIn("Robustness Monitoring", response.text)
+        self.assertIn('id="activeReports"', response.text)
+        self.assertNotIn('id="summaryA"', response.text)
+
+    def test_mrz_robustness_api_uses_authoritative_state_without_mutation(self) -> None:
+        for index, price in enumerate(("110", "110.2", "110.4", "110.6", "120"), 1):
+            self.assertEqual(
+                self.client.post(
+                    "/webhook/tradingview",
+                    json=webhook_payload(index, price),
+                ).status_code,
+                201,
+            )
+
+        before = self.client.get("/api/symbols/SPXUSDT").json()
+        response = self.client.get("/api/diagnostics/mrz-robustness")
+        after = self.client.get("/api/symbols/SPXUSDT").json()
+        payload = response.json()
+        report = payload["active_mrzs"][0]
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["cache-control"], "no-store, max-age=0")
+        self.assertEqual(payload["active_mrz_count"], 1)
+        self.assertEqual(report["symbol"], "SPXUSDT")
+        self.assertEqual(report["route_owner"], "BTD")
+        self.assertEqual(report["active_mrz"]["lower"], "110")
+        self.assertEqual(report["active_mrz"]["upper"], "110.6")
+        self.assertEqual(report["active_mrz"]["activated_at"], "2026-08-20T12:00:04Z")
+        self.assertEqual(
+            report["robustness_evidence"]["post_activation_observation_count"],
+            1,
+        )
+        self.assertEqual(report["migration_pressure"]["status"], "UNDER_PRESSURE")
+        self.assertEqual(report["successor_watch"]["status"], "CANDIDATE_FORMING")
+        self.assertEqual(before, after)
+
     def test_activation_feasibility_api_empty_and_refreshes_without_stale_results(self) -> None:
         first = self.client.get("/api/diagnostics/activation-feasibility")
         second = self.client.get("/api/diagnostics/activation-feasibility")
