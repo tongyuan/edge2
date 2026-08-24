@@ -1009,6 +1009,107 @@ class ActivationFeasibilityService:
             "largest_frequency_difference": largest_payload,
         }
 
+        production_allowance = int(production["allowance_percent"])
+        candidate_row = next(
+            (
+                row
+                for row in allowance_rows
+                if int(row["allowance_percent"]) > production_allowance
+                and int(row["hypothetical_activations"]) > production_activated
+            ),
+            None,
+        )
+        candidate_policy_evaluation: dict[str, object]
+        if candidate_row is None:
+            candidate_policy_evaluation = {
+                "code": "POLICY_CANDIDATE_NOT_OBSERVED",
+                "heading": "Candidate Policy Evaluation",
+                "status": "NO_CANDIDATE_IDENTIFIED",
+                "text": (
+                    "No tested allowance increase formed more MRZs than the current "
+                    "production rule in this sample."
+                ),
+                "candidate": None,
+                "current": {
+                    "scenario_id": production_id,
+                    "algorithm": production["algorithm"],
+                    "minimum_observations": production["minimum_observations"],
+                    "allowance_percent": production["allowance_percent"],
+                    "activation_frequency": production["activation_frequency"],
+                },
+                "selection_basis": [
+                    "No tested higher allowance improved MRZ formation coverage.",
+                    "Production parameters remain unchanged.",
+                    (
+                        "Sample remains preliminary."
+                        if preliminary
+                        else "Results remain descriptive historical evidence."
+                    ),
+                ],
+                "scenario_ids": [row["scenario_id"] for row in allowance_rows],
+                "small_sample": preliminary,
+            }
+        else:
+            candidate_allowance = int(candidate_row["allowance_percent"])
+            candidate_activations = int(candidate_row["hypothetical_activations"])
+            wider_rows = [
+                row
+                for row in allowance_rows
+                if int(row["allowance_percent"]) > candidate_allowance
+            ]
+            selection_basis = [
+                (
+                    "Maintains the current "
+                    f"{production['minimum_observations']}-observation evidence requirement."
+                ),
+                (
+                    "First tested allowance increase with a material improvement in MRZ "
+                    "formation coverage."
+                ),
+            ]
+            if wider_rows and all(
+                int(row["hypothetical_activations"]) == candidate_activations
+                for row in wider_rows
+            ):
+                selection_basis.append(
+                    "Wider tested allowances from "
+                    f"{Decimal(wider_rows[0]['allowance_percent']):.2f}%–"
+                    f"{Decimal(wider_rows[-1]['allowance_percent']):.2f}% produced no "
+                    "additional MRZ formations in the current sample."
+                )
+            selection_basis.append(
+                "Sample remains preliminary."
+                if preliminary
+                else "Results remain descriptive historical evidence."
+            )
+            candidate_policy_evaluation = {
+                "code": "POLICY_CANDIDATE_UNDER_EVALUATION",
+                "heading": "Candidate Policy Evaluation",
+                "status": "CANDIDATE_IDENTIFIED",
+                "text": (
+                    "This parameter combination is the first tested allowance increase "
+                    "that improved MRZ formation coverage while retaining the production "
+                    "observation requirement. It is an evidence-monitoring candidate only."
+                ),
+                "candidate": {
+                    "scenario_id": candidate_row["scenario_id"],
+                    "algorithm": candidate_row["algorithm"],
+                    "minimum_observations": candidate_row["minimum_observations"],
+                    "allowance_percent": candidate_row["allowance_percent"],
+                    "activation_frequency": candidate_row["activation_frequency"],
+                },
+                "current": {
+                    "scenario_id": production_id,
+                    "algorithm": production["algorithm"],
+                    "minimum_observations": production["minimum_observations"],
+                    "allowance_percent": production["allowance_percent"],
+                    "activation_frequency": production["activation_frequency"],
+                },
+                "selection_basis": selection_basis,
+                "scenario_ids": [production_id, candidate_row["scenario_id"]],
+                "small_sample": preliminary,
+            }
+
         configured_allowance = Decimal("1")
         def production_near_misses(
             evaluation_key: str,
@@ -1100,22 +1201,51 @@ class ActivationFeasibilityService:
             )
 
         interpretation_parts = []
+        production_rule_text = (
+            f"The current production rule ({production['minimum_observations']} observations "
+            f"+ {Decimal(production['allowance_percent']):.2f}% allowance)"
+        )
         if production_eligible == 0:
             interpretation_parts.append(
-                "No symbol-route history is currently eligible for the production rule."
+                f"{production_rule_text} has no eligible symbol-route history in the "
+                "current sample."
             )
         elif production_activated == 0:
             interpretation_parts.append(
-                f"The current production rule formed no MRZ in {production_eligible} "
+                f"{production_rule_text} formed no MRZ in {production_eligible} "
                 f"eligible symbol-route {'history' if production_eligible == 1 else 'histories'}."
             )
         else:
             interpretation_parts.append(
-                f"The current production rule formed an MRZ in {production_activated} of "
+                f"{production_rule_text} formed an MRZ in {production_activated} of "
                 f"{production_eligible} eligible symbol-route "
                 f"{'history' if production_eligible == 1 else 'histories'}."
             )
-        if increases:
+
+        candidate = candidate_policy_evaluation["candidate"]
+        if candidate is not None:
+            wider_rows = [
+                row
+                for row in allowance_rows
+                if int(row["allowance_percent"]) > int(candidate["allowance_percent"])
+            ]
+            candidate_activations = int(
+                candidate["activation_frequency"]["numerator"]
+            )
+            candidate_statement = (
+                "The current sample shows that increasing allowance to "
+                f"{Decimal(candidate['allowance_percent']):.2f}% materially improves "
+                "formation coverage"
+            )
+            if wider_rows and all(
+                int(row["hypothetical_activations"]) == candidate_activations
+                for row in wider_rows
+            ):
+                candidate_statement += (
+                    " while wider allowances provide no additional MRZ formations"
+                )
+            interpretation_parts.append(candidate_statement + ".")
+        elif increases:
             interpretation_parts.append(
                 "At least one tested allowance increase admitted additional symbol-route "
                 "histories."
@@ -1124,24 +1254,14 @@ class ActivationFeasibilityService:
             interpretation_parts.append(
                 "No tested allowance increase admitted an additional symbol-route history."
             )
-        if plateaus:
-            ranges = ", ".join(
-                f"{item['from_allowance_pct']}%–{item['to_allowance_pct']}%"
-                for item in plateaus
-            )
-            interpretation_parts.append(
-                f"Wider tested allowances produced no additional MRZ formations across {ranges}."
-            )
-        differing_scenarios = a_more + b_more
         interpretation_parts.append(
-            f"Algorithm A and B MRZ formation counts differed in {differing_scenarios} of "
-            f"{len(comparisons)} matched scenarios."
+            f"The {production['minimum_observations']}-observation requirement remains the "
+            "primary confidence control."
         )
-        if preliminary:
-            interpretation_parts.append(
-                "More four-observation symbol-route histories are required before using "
-                "these frequencies to make a production-policy decision."
-            )
+        interpretation_parts.append(
+            "More eligible symbol-route histories are required before considering any "
+            "production-policy change."
+        )
         evidence_interpretation = {
             "code": "EVIDENCE_INTERPRETATION_PRELIMINARY" if preliminary else "EVIDENCE_INTERPRETATION_OBSERVED",
             "heading": "Evidence interpretation",
@@ -1158,6 +1278,7 @@ class ActivationFeasibilityService:
             "count_sensitivity": count_sensitivity,
             "allowance_sensitivity": allowance_sensitivity,
             "algorithm_comparison": algorithm_comparison,
+            "candidate_policy_evaluation": candidate_policy_evaluation,
             "current_production_near_misses": current_near_misses,
             "closest_production_near_misses": historical_near_misses,
             "evidence_interpretation": evidence_interpretation,

@@ -1,6 +1,7 @@
 const assert = require("node:assert/strict");
 const {
   auditTableMarkup,
+  candidatePolicyMarkup,
   comparisonTableMarkup,
   diagnosisMarkup,
   filterAuditRows,
@@ -145,6 +146,28 @@ const suppliedDiagnosis = {
   count_sensitivity: { heading: "Count sensitivity", text: "Backend count text." },
   allowance_sensitivity: { heading: "Allowance sensitivity", text: "Backend allowance text." },
   algorithm_comparison: { heading: "Algorithm comparison", text: "Backend comparison text." },
+  candidate_policy_evaluation: {
+    heading: "Candidate Policy Evaluation",
+    small_sample: true,
+    current: {
+      algorithm: "A",
+      minimum_observations: 4,
+      allowance_percent: 1,
+      activation_frequency: { numerator: 1, denominator: 5, percentage: "20.0" },
+    },
+    candidate: {
+      algorithm: "A",
+      minimum_observations: 4,
+      allowance_percent: 2,
+      activation_frequency: { numerator: 4, denominator: 5, percentage: "80.0" },
+    },
+    selection_basis: [
+      "Maintains the current 4-observation evidence requirement.",
+      "First tested allowance increase with a material improvement in MRZ formation coverage.",
+      "Wider tested allowances from 3.00%–5.00% produced no additional MRZ formations in the current sample.",
+      "Sample remains preliminary.",
+    ],
+  },
   current_production_near_misses: [{
     heading: "WLDUSDT · BTD",
     text: "Current minimum allowance required · 1.59%. Current allowance · 1.00%. Shortfall · 0.59 percentage points.",
@@ -169,6 +192,14 @@ const suppliedDiagnosis = {
 const diagnosis = diagnosisMarkup(suppliedDiagnosis, () => "20 Aug 2026 · 21:30 UTC−4");
 assert.match(diagnosis, /Backend sample text 7\./);
 assert.match(diagnosis, /Backend interpretation only\./);
+assert.match(diagnosis, /Candidate Policy Evaluation/);
+assert.match(diagnosis, /Algorithm A/);
+assert.match(diagnosis, /Minimum observations/);
+assert.match(diagnosis, /4 observations · 1\.00%/);
+assert.match(diagnosis, /4 observations · 2\.00%/);
+assert.match(diagnosis, /1 of 5 histories formed an MRZ/);
+assert.match(diagnosis, /4 of 5 histories formed an MRZ/);
+assert.match(diagnosis, /SELECTION BASIS/);
 assert.match(diagnosis, /WLDUSDT · BTD/);
 assert.match(diagnosis, /20 Aug 2026 · 21:30 UTC−4/);
 assert.match(diagnosis, /Current production near misses/);
@@ -178,6 +209,20 @@ assert.match(diagnosis, /Current candidate is also the closest historical near m
 assert.equal((diagnosis.match(/2\.7–2\.8/g) || []).length, 1);
 assert.doesNotMatch(diagnosis, />Activated</);
 assert.doesNotMatch(diagnosis, /7 of 11/);
+assert.doesNotMatch(diagnosis, /recommended/i);
+assert.ok(
+  diagnosis.indexOf("Algorithm comparison") < diagnosis.indexOf("Candidate Policy Evaluation"),
+  "candidate policy follows algorithm comparison",
+);
+assert.ok(
+  diagnosis.indexOf("Candidate Policy Evaluation") < diagnosis.indexOf("Current production near misses"),
+  "candidate policy precedes current production near misses",
+);
+
+const standaloneCandidate = candidatePolicyMarkup(suppliedDiagnosis.candidate_policy_evaluation);
+assert.match(standaloneCandidate, /CURRENT/);
+assert.match(standaloneCandidate, /CANDIDATE/);
+assert.match(standaloneCandidate, /PRELIMINARY/);
 
 const operatorFacingMarkup = [summary, matrix, comparison, audit, production, zeroProduction, diagnosis].join("\n");
 assert.doesNotMatch(operatorFacingMarkup, /\bsequences?\b/i);

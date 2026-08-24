@@ -325,6 +325,48 @@ class ActivationFeasibilityTests(unittest.TestCase):
             15,
         )
 
+        candidate = diagnosis["candidate_policy_evaluation"]
+        current_scenario = scenario(report, "A", 4, 1)
+        candidate_scenario = scenario(report, "A", 4, 2)
+        self.assertEqual(candidate["code"], "POLICY_CANDIDATE_UNDER_EVALUATION")
+        self.assertEqual(candidate["candidate"]["scenario_id"], "A-4-2")
+        self.assertEqual(candidate["candidate"]["algorithm"], "A")
+        self.assertEqual(candidate["candidate"]["minimum_observations"], 4)
+        self.assertEqual(candidate["candidate"]["allowance_percent"], 2)
+        self.assertEqual(
+            candidate["current"]["activation_frequency"],
+            current_scenario["activation_frequency"],
+        )
+        self.assertEqual(
+            candidate["candidate"]["activation_frequency"],
+            candidate_scenario["activation_frequency"],
+        )
+        self.assertIn(
+            "Wider tested allowances from 3.00%–5.00% produced no additional MRZ formations",
+            " ".join(candidate["selection_basis"]),
+        )
+        self.assertEqual(report["current_production_rule"]["scenario_id"], "A-4-1")
+        self.assertEqual(report["current_production_rule"]["minimum_observations"], 4)
+        self.assertEqual(report["current_production_rule"]["allowance_percent"], 1)
+
+        interpretation = diagnosis["evidence_interpretation"]["text"]
+        self.assertIn(
+            "The current production rule (4 observations + 1.00% allowance) formed no MRZ",
+            interpretation,
+        )
+        self.assertIn(
+            "increasing allowance to 2.00% materially improves formation coverage",
+            interpretation,
+        )
+        self.assertIn(
+            "wider allowances provide no additional MRZ formations",
+            interpretation,
+        )
+        self.assertIn(
+            "The 4-observation requirement remains the primary confidence control",
+            interpretation,
+        )
+
     def test_current_near_miss_matches_latest_monitor_window_not_historical_best(self) -> None:
         rows = [
             observation(i, price, symbol="WLDUSDT")
@@ -403,6 +445,13 @@ class ActivationFeasibilityTests(unittest.TestCase):
         self.assertIsNone(
             empty["diagnosis"]["allowance_sensitivity"]["first_activating_allowance_pct"]
         )
+        self.assertEqual(
+            empty["diagnosis"]["candidate_policy_evaluation"]["status"],
+            "NO_CANDIDATE_IDENTIFIED",
+        )
+        self.assertIsNone(
+            empty["diagnosis"]["candidate_policy_evaluation"]["candidate"]
+        )
         self.assertEqual(empty["diagnosis"]["closest_production_near_misses"], [])
         self.assertEqual(empty["diagnosis"]["current_production_near_misses"], [])
         self.assertEqual(empty["current_production_rule"]["activations"], [])
@@ -451,6 +500,7 @@ class ActivationFeasibilityTests(unittest.TestCase):
         ])
         diagnosis_text = json.dumps(report["diagnosis"], sort_keys=True).lower()
         for prohibited in (
+            "recommended",
             "change production to",
             "use algorithm b",
             "this mrz is reliable",

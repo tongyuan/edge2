@@ -167,6 +167,46 @@ function auditTableMarkup(rows, timestampFormatter) {
   </tr></thead><tbody>${body}</tbody>`;
 }
 
+function candidatePolicyMarkup(evaluation) {
+  if (!evaluation) return "";
+  const current = evaluation.current || {};
+  const candidate = evaluation.candidate;
+  const resultMarkup = (label, policy) => {
+    const frequency = policy?.activation_frequency || {};
+    const denominator = frequency.denominator ?? 0;
+    return `<article class="candidate-policy-result">
+      <span>${label}</span>
+      <strong>Algorithm ${escapeHtml(policy?.algorithm || "—")} · ${policy?.minimum_observations ?? "—"} observations · ${percentageText(policy?.allowance_percent)}</strong>
+      <p>${frequency.numerator ?? 0} of ${denominator} ${denominator === 1 ? "history" : "histories"} formed an MRZ</p>
+    </article>`;
+  };
+  const basis = (evaluation.selection_basis || []).map((item) =>
+    `<li><span aria-hidden="true">✓</span>${escapeHtml(item)}</li>`
+  ).join("");
+  const candidateDetails = candidate
+    ? `<div class="candidate-policy-identity">
+        <span>CANDIDATE</span>
+        <strong>Algorithm ${escapeHtml(candidate.algorithm)}</strong>
+        <dl>
+          <div><dt>Minimum observations</dt><dd>${candidate.minimum_observations}</dd></div>
+          <div><dt>Allowance</dt><dd>${percentageText(candidate.allowance_percent)}</dd></div>
+        </dl>
+      </div>
+      <div class="candidate-policy-comparison">
+        <span>OBSERVED IMPACT</span>
+        <div>${resultMarkup("CURRENT", current)}${resultMarkup("CANDIDATE", candidate)}</div>
+      </div>`
+    : `<div class="candidate-policy-empty"><p>${escapeHtml(evaluation.text)}</p></div>`;
+  return `<article class="candidate-policy-card">
+    <div class="candidate-policy-heading">
+      <div><span>DECISION SUPPORT</span><h3>${escapeHtml(evaluation.heading)}</h3></div>
+      ${evaluation.small_sample ? '<strong class="candidate-policy-status">PRELIMINARY</strong>' : ""}
+    </div>
+    <div class="candidate-policy-layout">${candidateDetails}</div>
+    <div class="candidate-policy-basis"><span>SELECTION BASIS</span><ul>${basis}</ul></div>
+  </article>`;
+}
+
 function diagnosisMarkup(diagnosis, timestampFormatter = (value) => value) {
   if (!diagnosis) return "";
   const sections = [
@@ -218,7 +258,8 @@ function diagnosisMarkup(diagnosis, timestampFormatter = (value) => value) {
   const interpretation = diagnosis.evidence_interpretation
     ? `<article class="diagnosis-card interpretation-card"><h3>${escapeHtml(diagnosis.evidence_interpretation.heading)}</h3><p>${escapeHtml(diagnosis.evidence_interpretation.text)}</p></article>`
     : "";
-  return `<div class="diagnosis-grid">${cards}</div>${currentNearMissSection}${historicalNearMissSection}${interpretation}`;
+  const candidatePolicy = candidatePolicyMarkup(diagnosis.candidate_policy_evaluation);
+  return `<div class="diagnosis-grid">${cards}</div>${candidatePolicy}${currentNearMissSection}${historicalNearMissSection}${interpretation}`;
 }
 
 function filterAuditRows(rows, filters) {
@@ -321,6 +362,7 @@ if (typeof document !== "undefined") {
 if (typeof module === "object" && module.exports) {
   module.exports = {
     auditTableMarkup,
+    candidatePolicyMarkup,
     comparisonTableMarkup,
     filterAuditRows,
     frequencyText,
