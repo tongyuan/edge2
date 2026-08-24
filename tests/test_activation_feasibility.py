@@ -158,6 +158,10 @@ class ActivationFeasibilityTests(unittest.TestCase):
         self.assertEqual(summary["eligible_symbol_route_sequences"], 1)
         self.assertEqual(summary["hypothetical_activations"], 1)
         self.assertEqual(selected["ordinal_route_observation_number"], 2)
+        self.assertEqual(
+            selected["current_evaluation"]["ordinal_route_observation_number"],
+            4,
+        )
 
         expanded_rows = [
             observation(1, "110", observed_offset=0),
@@ -292,7 +296,7 @@ class ActivationFeasibilityTests(unittest.TestCase):
         self.assertEqual(near_miss["candidate_lower_boundary"], "110")
         self.assertEqual(near_miss["candidate_upper_boundary"], "111.13")
         self.assertEqual(near_miss["candidate_observation_count"], 4)
-        self.assertTrue(near_miss["closest_timestamp"].endswith("Z"))
+        self.assertTrue(near_miss["candidate_timestamp"].endswith("Z"))
 
         comparison = diagnosis["algorithm_comparison"]
         expected_equal = sum(
@@ -305,6 +309,43 @@ class ActivationFeasibilityTests(unittest.TestCase):
             + comparison["algorithm_a_more"]
             + comparison["algorithm_b_more"],
             15,
+        )
+
+    def test_current_near_miss_matches_latest_monitor_window_not_historical_best(self) -> None:
+        rows = [
+            observation(i, price, symbol="WLDUSDT")
+            for i, price in enumerate(
+                ("110", "110.3", "110.7", "111.13", "111.89"),
+                1,
+            )
+        ]
+        report = report_for(rows)
+        production_detail = detail(report, "WLDUSDT", "BTD", "A", 4, 1)
+
+        self.assertFalse(production_detail["activated"])
+        self.assertEqual(
+            production_detail["closest_evaluation"][
+                "minimum_required_allowance_pct"
+            ],
+            "1.1300",
+        )
+        self.assertEqual(
+            production_detail["current_evaluation"][
+                "minimum_required_allowance_pct"
+            ],
+            "1.5900",
+        )
+        self.assertEqual(
+            report["diagnosis"]["current_production_near_misses"][0][
+                "minimum_required_allowance_pct"
+            ],
+            "1.5900",
+        )
+        self.assertEqual(
+            report["diagnosis"]["closest_production_near_misses"][0][
+                "minimum_required_allowance_pct"
+            ],
+            "1.1300",
         )
 
     def test_diagnosis_handles_activation_empty_sample_and_structural_exclusion(self) -> None:
@@ -330,6 +371,7 @@ class ActivationFeasibilityTests(unittest.TestCase):
             empty["diagnosis"]["allowance_sensitivity"]["first_activating_allowance_pct"]
         )
         self.assertEqual(empty["diagnosis"]["closest_production_near_misses"], [])
+        self.assertEqual(empty["diagnosis"]["current_production_near_misses"], [])
 
         structurally_ineligible = report_for([
             observation(i, price, symbol="PREMIUM")
@@ -342,6 +384,10 @@ class ActivationFeasibilityTests(unittest.TestCase):
         )
         self.assertEqual(
             structurally_ineligible["diagnosis"]["closest_production_near_misses"],
+            [],
+        )
+        self.assertEqual(
+            structurally_ineligible["diagnosis"]["current_production_near_misses"],
             [],
         )
 

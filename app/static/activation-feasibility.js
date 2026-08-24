@@ -143,25 +143,39 @@ function diagnosisMarkup(diagnosis, timestampFormatter = (value) => value) {
       <h3>${escapeHtml(item.heading)}</h3>
       <p>${escapeHtml(item.text)}</p>
     </article>`).join("");
-  const nearMisses = (diagnosis.closest_production_near_misses || []).map((item) => {
-    const timestamp = timestampFormatter(item.closest_timestamp) || "—";
-    return `<article class="near-miss-card">
-      <h3>${escapeHtml(item.heading)}</h3>
-      <p>${escapeHtml(item.text)}</p>
-      <dl>
-        <div><dt>Candidate range</dt><dd>${decimalText(item.candidate_lower_boundary, 6)}–${decimalText(item.candidate_upper_boundary, 6)}</dd></div>
-        <div><dt>Observations</dt><dd>${item.candidate_observation_count} of ${item.total_stored_route_observations}</dd></div>
-        <div><dt>Closest time</dt><dd>${escapeHtml(timestamp)}</dd></div>
-      </dl>
-    </article>`;
-  }).join("");
-  const nearMissSection = nearMisses
-    ? `<div class="diagnosis-subsection"><h3>Closest production near misses</h3><div class="near-miss-grid">${nearMisses}</div></div>`
-    : `<div class="diagnosis-subsection"><h3>Closest production near misses</h3><p class="neutral">No structurally eligible production near miss currently falls above 1% and at or below 2%.</p></div>`;
+  function nearMissSection(items, heading, timeLabel, emptyText) {
+    const cards = (items || []).map((item) => {
+      const timestamp = timestampFormatter(item.candidate_timestamp || item.closest_timestamp) || "—";
+      return `<article class="near-miss-card">
+        <h3>${escapeHtml(item.heading)}</h3>
+        <p>${escapeHtml(item.text)}</p>
+        <dl>
+          <div><dt>Candidate range</dt><dd>${decimalText(item.candidate_lower_boundary, 6)}–${decimalText(item.candidate_upper_boundary, 6)}</dd></div>
+          <div><dt>Observations</dt><dd>${item.candidate_observation_count} of ${item.total_stored_route_observations}</dd></div>
+          <div><dt>${timeLabel}</dt><dd>${escapeHtml(timestamp)}</dd></div>
+        </dl>
+      </article>`;
+    }).join("");
+    return cards
+      ? `<div class="diagnosis-subsection"><h3>${heading}</h3><div class="near-miss-grid">${cards}</div></div>`
+      : `<div class="diagnosis-subsection"><h3>${heading}</h3><p class="neutral">${emptyText}</p></div>`;
+  }
+  const currentNearMissSection = nearMissSection(
+    diagnosis.current_production_near_misses,
+    "Current production near misses",
+    "Current candidate time",
+    "No current structurally eligible production near miss falls above 1% and at or below 2%.",
+  );
+  const historicalNearMissSection = nearMissSection(
+    diagnosis.closest_production_near_misses,
+    "Closest historical production near misses",
+    "Closest historical time",
+    "No historical structurally eligible production near miss fell above 1% and at or below 2%.",
+  );
   const interpretation = diagnosis.evidence_interpretation
     ? `<article class="diagnosis-card interpretation-card"><h3>${escapeHtml(diagnosis.evidence_interpretation.heading)}</h3><p>${escapeHtml(diagnosis.evidence_interpretation.text)}</p></article>`
     : "";
-  return `<div class="diagnosis-grid">${cards}</div>${nearMissSection}${interpretation}`;
+  return `<div class="diagnosis-grid">${cards}</div>${currentNearMissSection}${historicalNearMissSection}${interpretation}`;
 }
 
 function filterAuditRows(rows, filters) {

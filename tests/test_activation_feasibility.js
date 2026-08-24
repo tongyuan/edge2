@@ -107,6 +107,15 @@ const suppliedDiagnosis = {
   count_sensitivity: { heading: "Count sensitivity", text: "Backend count text." },
   allowance_sensitivity: { heading: "Allowance sensitivity", text: "Backend allowance text." },
   algorithm_comparison: { heading: "Algorithm comparison", text: "Backend comparison text." },
+  current_production_near_misses: [{
+    heading: "WLDUSDT · BTD",
+    text: "Current minimum allowance required · 1.59%. Current allowance · 1.00%. Shortfall · 0.59 percentage points.",
+    candidate_lower_boundary: "2.7",
+    candidate_upper_boundary: "2.8",
+    candidate_observation_count: 4,
+    total_stored_route_observations: 5,
+    candidate_timestamp: "2026-08-22T00:30:00Z",
+  }],
   closest_production_near_misses: [{
     heading: "WLDUSDT · BTD",
     text: "Minimum allowance required · 1.13%. Current allowance · 1.00%. Shortfall · 0.13 percentage points.",
@@ -123,6 +132,9 @@ assert.match(diagnosis, /Backend sample text 7\./);
 assert.match(diagnosis, /Backend interpretation only\./);
 assert.match(diagnosis, /WLDUSDT · BTD/);
 assert.match(diagnosis, /20 Aug 2026 · 21:30 UTC−4/);
+assert.match(diagnosis, /Current production near misses/);
+assert.match(diagnosis, /Closest historical production near misses/);
+assert.match(diagnosis, /Current minimum allowance required · 1\.59%/);
 assert.doesNotMatch(diagnosis, /7 of 11/);
 
 console.log("activation feasibility presentation tests passed");

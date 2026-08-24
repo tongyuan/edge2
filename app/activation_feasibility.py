@@ -128,6 +128,7 @@ class SequenceOutcome:
     classification: str
     first_qualification: FirstQualification | None
     closest_evaluation: ClosestEvaluation | None
+    current_evaluation: ClosestEvaluation | None
 
     @property
     def activated(self) -> bool:
@@ -175,6 +176,9 @@ class SequenceOutcome:
             ),
             "closest_evaluation": (
                 self.closest_evaluation.payload() if self.closest_evaluation else None
+            ),
+            "current_evaluation": (
+                self.current_evaluation.payload() if self.current_evaluation else None
             ),
         }
 
@@ -381,17 +385,20 @@ class ActivationFeasibilityService:
                 classification="INSUFFICIENT",
                 first_qualification=None,
                 closest_evaluation=None,
+                current_evaluation=None,
             )
 
         window: deque[Observation] = deque(maxlen=ROUTE_OBSERVATION_WINDOW)
         first_qualification: FirstQualification | None = None
         closest: ClosestEvaluation | None = None
+        current: ClosestEvaluation | None = None
         for ordinal, incoming in enumerate(observations, 1):
             window.append(incoming)
             if len(window) < scenario.minimum_observations:
                 continue
             evaluation = evaluate_feasibility_concentration(tuple(window), route, scenario)
             diagnostic = evaluation.diagnostic
+            current = None
             if diagnostic.normalized_span is not None and diagnostic.observed_span is not None:
                 if diagnostic.selected_lower is None or diagnostic.selected_upper is None:
                     raise RuntimeError("measurable candidate must include its price range")
@@ -414,10 +421,13 @@ class ActivationFeasibilityService:
                     ),
                     evaluation_result=diagnostic.result.value,
                 )
+                current = candidate
                 if closest is None or candidate.qualification_ratio < closest.qualification_ratio:
                     closest = candidate
 
             if evaluation.result is not ConcentrationResult.QUALIFIES:
+                continue
+            if first_qualification is not None:
                 continue
             if evaluation.cluster is None:
                 raise RuntimeError("qualifying evaluation must include an expanded cluster")
@@ -454,7 +464,6 @@ class ActivationFeasibilityService:
                     else "unclassified"
                 ),
             )
-            break
 
         if first_qualification is not None:
             classification = "QUALIFIED"
@@ -471,6 +480,7 @@ class ActivationFeasibilityService:
             classification=classification,
             first_qualification=first_qualification,
             closest_evaluation=closest,
+            current_evaluation=current,
         )
 
     @staticmethod
@@ -961,55 +971,77 @@ class ActivationFeasibilityService:
             "largest_frequency_difference": largest_payload,
         }
 
-        near_misses = []
         configured_allowance = Decimal("1")
-        for row in report["sequence_details"]:
-            if (
-                row["scenario_id"] != production_id
-                or not row["eligible"]
-                or row["activated"]
-                or row["closest_evaluation"] is None
-                or row["closest_evaluation"]["structural_eligibility_passed"] is not True
-            ):
-                continue
-            closest = row["closest_evaluation"]
-            required = Decimal(closest["minimum_required_allowance_pct"])
-            if required <= configured_allowance or required > Decimal("2"):
-                continue
-            shortfall = required - configured_allowance
-            near_misses.append({
-                "code": "PRODUCTION_SPATIAL_NEAR_MISS",
-                "heading": f"{row['symbol']} · {row['route']}",
-                "text": (
-                    f"Minimum allowance required · {display_decimal(required, '0.01')}%. "
-                    "Current allowance · 1.00%. Shortfall · "
-                    f"{display_decimal(shortfall, '0.01')} percentage points."
-                ),
-                "numerator": closest["candidate_observation_count"],
-                "denominator": row["total_stored_route_observations"],
-                "scenario_ids": [production_id],
-                "small_sample": preliminary,
-                "symbol": row["symbol"],
-                "route": row["route"],
-                "minimum_required_allowance_pct": decimal_text(required),
-                "configured_allowance_pct": decimal_text(configured_allowance),
-                "shortfall_percentage_points": decimal_text(shortfall),
-                "candidate_lower_boundary": closest["candidate_lower_boundary"],
-                "candidate_upper_boundary": closest["candidate_upper_boundary"],
-                "candidate_observation_count": closest["candidate_observation_count"],
-                "total_stored_route_observations": row[
-                    "total_stored_route_observations"
-                ],
-                "closest_timestamp": closest["timestamp"],
-            })
-        near_misses.sort(
-            key=lambda item: (
-                Decimal(item["minimum_required_allowance_pct"]),
-                item["symbol"],
-                item["route"],
+        def production_near_misses(
+            evaluation_key: str,
+            *,
+            scope: str,
+        ) -> list[dict[str, object]]:
+            near_misses = []
+            for row in report["sequence_details"]:
+                evaluation = row[evaluation_key]
+                if (
+                    row["scenario_id"] != production_id
+                    or not row["eligible"]
+                    or row["activated"]
+                    or evaluation is None
+                    or evaluation["structural_eligibility_passed"] is not True
+                ):
+                    continue
+                required = Decimal(evaluation["minimum_required_allowance_pct"])
+                if required <= configured_allowance or required > Decimal("2"):
+                    continue
+                shortfall = required - configured_allowance
+                scope_label = (
+                    "Current minimum allowance required"
+                    if scope == "CURRENT"
+                    else "Closest historical minimum allowance required"
+                )
+                near_misses.append({
+                    "code": f"PRODUCTION_SPATIAL_NEAR_MISS_{scope}",
+                    "heading": f"{row['symbol']} · {row['route']}",
+                    "text": (
+                        f"{scope_label} · {display_decimal(required, '0.01')}%. "
+                        "Current allowance · 1.00%. Shortfall · "
+                        f"{display_decimal(shortfall, '0.01')} percentage points."
+                    ),
+                    "measurement_scope": scope,
+                    "numerator": evaluation["candidate_observation_count"],
+                    "denominator": row["total_stored_route_observations"],
+                    "scenario_ids": [production_id],
+                    "small_sample": preliminary,
+                    "symbol": row["symbol"],
+                    "route": row["route"],
+                    "minimum_required_allowance_pct": decimal_text(required),
+                    "configured_allowance_pct": decimal_text(configured_allowance),
+                    "shortfall_percentage_points": decimal_text(shortfall),
+                    "candidate_lower_boundary": evaluation["candidate_lower_boundary"],
+                    "candidate_upper_boundary": evaluation["candidate_upper_boundary"],
+                    "candidate_observation_count": evaluation[
+                        "candidate_observation_count"
+                    ],
+                    "total_stored_route_observations": row[
+                        "total_stored_route_observations"
+                    ],
+                    "candidate_timestamp": evaluation["timestamp"],
+                })
+            near_misses.sort(
+                key=lambda item: (
+                    Decimal(item["minimum_required_allowance_pct"]),
+                    item["symbol"],
+                    item["route"],
+                )
             )
+            return near_misses[:5]
+
+        current_near_misses = production_near_misses(
+            "current_evaluation",
+            scope="CURRENT",
         )
-        near_misses = near_misses[:5]
+        historical_near_misses = production_near_misses(
+            "closest_evaluation",
+            scope="HISTORICAL_CLOSEST",
+        )
 
         interpretation_parts = []
         if production_eligible == 0:
@@ -1067,6 +1099,7 @@ class ActivationFeasibilityService:
             "count_sensitivity": count_sensitivity,
             "allowance_sensitivity": allowance_sensitivity,
             "algorithm_comparison": algorithm_comparison,
-            "closest_production_near_misses": near_misses,
+            "current_production_near_misses": current_near_misses,
+            "closest_production_near_misses": historical_near_misses,
             "evidence_interpretation": evidence_interpretation,
         }
