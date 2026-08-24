@@ -218,13 +218,28 @@ def display_decimal(value: Decimal, places: str = "0.1") -> str:
     return str(value.quantize(Decimal(places), rounding=ROUND_HALF_UP))
 
 
-def frequency_clause(summary: dict[str, object]) -> str:
+def history_frequency_clause(
+    summary: dict[str, object],
+    *,
+    singular_outcome: str,
+    plural_outcome: str,
+) -> str:
     frequency = summary["activation_frequency"]
     numerator = int(frequency["numerator"])
     denominator = int(frequency["denominator"])
     percent = frequency["percentage"]
     suffix = "—" if percent is None else f"{percent}%"
-    return f"{numerator} of {denominator} sequences ({suffix})"
+    history_label = "history" if denominator == 1 else "histories"
+    outcome = singular_outcome if numerator == 1 else plural_outcome
+    return (
+        f"{numerator} of {denominator} eligible symbol-route {history_label} "
+        f"{outcome} ({suffix})"
+    )
+
+
+def symbol_route_history_count(count: int) -> str:
+    noun = "history" if count == 1 else "histories"
+    return f"{count} symbol-route {noun}"
 
 
 def _chronological_seed_selector(
@@ -331,6 +346,21 @@ class ActivationFeasibilityService:
         production_summary = next(
             summary for summary in scenario_summaries if summary["scenario_id"] == production_id
         )
+        production_activations = []
+        for outcome in outcomes_by_scenario[production_id]:
+            first = outcome.first_qualification
+            if first is None:
+                continue
+            production_activations.append({
+                "symbol": outcome.symbol,
+                "route": outcome.route.value,
+                "core_mrz_lower": decimal_text(first.proposed_lower_boundary),
+                "core_mrz_upper": decimal_text(first.proposed_upper_boundary),
+                "activated_at": iso(first.timestamp),
+                "minimum_observations": outcome.scenario.minimum_observations,
+                "allowance_percent": outcome.scenario.allowance_percent,
+            })
+        production_activations.sort(key=lambda item: (item["symbol"], item["route"]))
         report = {
             "generated_at": iso(self._clock()),
             "earliest_observation_at": iso(min(observed_times)) if observed_times else None,
@@ -353,8 +383,9 @@ class ActivationFeasibilityService:
                 "algorithm": ALGORITHM_A,
                 "minimum_observations": 4,
                 "allowance_percent": 1,
-                "label": "Algorithm A · 4 observations · 1%",
+                "label": "Algorithm A · 4 observations · 1.00%",
                 "result": production_summary,
+                "activations": production_activations,
             },
             "small_sample_sequence_threshold": LOW_SAMPLE_SEQUENCE_THRESHOLD,
             "has_small_sample_scenarios": any(
@@ -718,7 +749,7 @@ class ActivationFeasibilityService:
                 "code": "SAMPLE_PRELIMINARY",
                 "heading": "Sample confidence · Preliminary",
                 "text": (
-                    f"Only {production_eligible} symbol-route sequences contain at least "
+                    f"Only {symbol_route_history_count(production_eligible)} contain at least "
                     "four observations. The sample is insufficient for a production-policy "
                     "conclusion."
                 ),
@@ -732,7 +763,7 @@ class ActivationFeasibilityService:
                 "code": "SAMPLE_OBSERVED_HISTORY",
                 "heading": "Sample assessment · Observed history",
                 "text": (
-                    f"{production_eligible} symbol-route sequences contain at least four "
+                    f"{symbol_route_history_count(production_eligible)} contain at least four "
                     "observations. Frequencies remain observed historical frequencies, not "
                     "predictive probabilities."
                 ),
@@ -745,20 +776,23 @@ class ActivationFeasibilityService:
         if production_eligible == 0:
             production_code = "PRODUCTION_INSUFFICIENT_OBSERVATIONS"
             production_heading = "Production feasibility · Insufficient observations"
-            production_text = "No symbol-route sequence currently contains four observations."
+            production_text = "No symbol-route history currently contains four observations."
         elif production_activated == 0:
             production_code = "PRODUCTION_NO_ACTIVATION_OBSERVED"
-            production_heading = "Production feasibility · No activation observed"
+            production_heading = "Production feasibility · No MRZ formed"
             production_text = (
-                "Algorithm A with four observations and 1% activated 0 of "
-                f"{production_eligible} eligible symbol-route sequences in the current sample."
+                "The current production rule formed no MRZ in "
+                f"{production_eligible} eligible symbol-route "
+                f"{'history' if production_eligible == 1 else 'histories'}."
             )
         else:
             production_code = "PRODUCTION_ACTIVATION_OBSERVED"
-            production_heading = "Production feasibility · Activation observed"
+            production_heading = "Production feasibility · MRZ formation observed"
             production_text = (
-                "Algorithm A with four observations and 1% activated "
-                f"{frequency_clause(production)}."
+                "The current production rule formed an MRZ in "
+                f"{production_activated} of {production_eligible} eligible symbol-route "
+                f"{'history' if production_eligible == 1 else 'histories'} "
+                f"({production['activation_frequency']['percentage']}%)."
             )
         production_feasibility = {
             "code": production_code,
@@ -781,8 +815,9 @@ class ActivationFeasibilityService:
             }
             for row in count_rows
         ]
-        count_text = "At the 1% allowance, Algorithm A activated: " + "; ".join(
-            f"{row['minimum_observations']} observations · {frequency_clause(row)}"
+        count_text = "At the 1.00% allowance, Algorithm A produced: " + "; ".join(
+            f"{row['minimum_observations']}-observation requirement · "
+            f"{history_frequency_clause(row, singular_outcome='qualifies', plural_outcome='qualify')}"
             for row in count_rows
         ) + "."
         count_percentages = {
@@ -790,13 +825,15 @@ class ActivationFeasibilityService:
         }
         if len(count_percentages) > 1:
             count_text += (
-                " Observed activation frequency changed across the available count settings, "
-                "but the eligible sample sizes differ."
+                " Qualification frequency changed across the available count settings. "
+                "Denominators differ because not every symbol-route history contains enough "
+                "observations for each requirement."
             )
         else:
             count_text += (
-                " Observed activation frequency was the same across the available count "
-                "settings, whose eligible sample sizes may differ."
+                " Qualification frequency was the same across the available count settings. "
+                "Denominators may differ because not every symbol-route history contains "
+                "enough observations for each requirement."
             )
         count_sensitivity = {
             "code": "COUNT_SENSITIVITY_OBSERVED",
@@ -857,29 +894,30 @@ class ActivationFeasibilityService:
             plateau_start = plateau_end + 1
 
         allowance_text = (
-            "With four observations, Algorithm A produced: "
+            "With a four-observation requirement, Algorithm A produced: "
             + "; ".join(
-                f"{row['allowance_percent']}% · {frequency_clause(row)}"
+                f"{Decimal(row['allowance_percent']):.2f}% allowance · "
+                f"{history_frequency_clause(row, singular_outcome='forms an MRZ', plural_outcome='form an MRZ')}"
                 for row in allowance_rows
             )
             + "."
         )
         if first_activating is None:
-            allowance_text += " No tested allowance produced an activation."
+            allowance_text += " No tested allowance formed an MRZ."
         else:
             allowance_text += (
-                f" The first tested allowance with an activation was {first_activating}%."
+                f" The first tested allowance that formed an MRZ was {first_activating:.2f}%."
             )
         for increase in increases:
             allowance_text += (
                 f" Increasing from {increase['from_allowance_pct']}% to "
-                f"{increase['to_allowance_pct']}% increased observed activations from "
+                f"{increase['to_allowance_pct']}% increased MRZ formations from "
                 f"{increase['from_activations']} to {increase['to_activations']}."
             )
         for plateau in plateaus:
             allowance_text += (
                 f" Increasing from {plateau['from_allowance_pct']}% through "
-                f"{plateau['to_allowance_pct']}% produced no additional activations "
+                f"{plateau['to_allowance_pct']}% produced no additional MRZ formations "
                 f"({plateau['activation_count']} throughout)."
             )
         allowance_sensitivity = {
@@ -932,9 +970,9 @@ class ActivationFeasibilityService:
             if largest is None or candidate[0] > largest[0]:
                 largest = candidate
         comparison_text = (
-            f"The algorithms produced equal activation counts in {equal_counts} of "
-            f"{len(comparisons)} scenarios. Algorithm A produced more activations in "
-            f"{a_more} scenarios. Algorithm B produced more activations in {b_more} scenarios."
+            f"The algorithms produced equal MRZ formation counts in {equal_counts} of "
+            f"{len(comparisons)} scenarios. Algorithm A formed more MRZs in "
+            f"{a_more} scenarios. Algorithm B formed more MRZs in {b_more} scenarios."
         )
         if largest is not None:
             absolute_difference, signed_difference, largest_row = largest
@@ -1042,28 +1080,49 @@ class ActivationFeasibilityService:
             "closest_evaluation",
             scope="HISTORICAL_CLOSEST",
         )
+        current_by_history = {
+            (item["symbol"], item["route"]): item for item in current_near_misses
+        }
+        for historical in historical_near_misses:
+            current = current_by_history.get((historical["symbol"], historical["route"]))
+            historical["matches_current_candidate"] = bool(
+                current
+                and all(
+                    current[field] == historical[field]
+                    for field in (
+                        "minimum_required_allowance_pct",
+                        "candidate_lower_boundary",
+                        "candidate_upper_boundary",
+                        "candidate_observation_count",
+                        "candidate_timestamp",
+                    )
+                )
+            )
 
         interpretation_parts = []
         if production_eligible == 0:
             interpretation_parts.append(
-                "The production scenario has no eligible sequences in the current sample."
+                "No symbol-route history is currently eligible for the production rule."
             )
         elif production_activated == 0:
             interpretation_parts.append(
-                "The production scenario has no observed activation in the current sample."
+                f"The current production rule formed no MRZ in {production_eligible} "
+                f"eligible symbol-route {'history' if production_eligible == 1 else 'histories'}."
             )
         else:
             interpretation_parts.append(
-                f"The production scenario activated {production_activated} of "
-                f"{production_eligible} eligible sequences in the current sample."
+                f"The current production rule formed an MRZ in {production_activated} of "
+                f"{production_eligible} eligible symbol-route "
+                f"{'history' if production_eligible == 1 else 'histories'}."
             )
         if increases:
             interpretation_parts.append(
-                "At least one tested allowance increase admitted additional sequences."
+                "At least one tested allowance increase admitted additional symbol-route "
+                "histories."
             )
         else:
             interpretation_parts.append(
-                "No tested allowance increase admitted an additional sequence."
+                "No tested allowance increase admitted an additional symbol-route history."
             )
         if plateaus:
             ranges = ", ".join(
@@ -1071,16 +1130,16 @@ class ActivationFeasibilityService:
                 for item in plateaus
             )
             interpretation_parts.append(
-                f"Wider tested allowances produced no additional activations across {ranges}."
+                f"Wider tested allowances produced no additional MRZ formations across {ranges}."
             )
         differing_scenarios = a_more + b_more
         interpretation_parts.append(
-            f"Algorithm A and B activation counts differed in {differing_scenarios} of "
+            f"Algorithm A and B MRZ formation counts differed in {differing_scenarios} of "
             f"{len(comparisons)} matched scenarios."
         )
         if preliminary:
             interpretation_parts.append(
-                "More four-observation symbol-route sequences are required before using "
+                "More four-observation symbol-route histories are required before using "
                 "these frequencies to make a production-policy decision."
             )
         evidence_interpretation = {

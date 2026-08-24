@@ -114,6 +114,42 @@ button:disabled { cursor: progress; opacity: 0.65; }
 .production-marker span { margin-bottom: 6px; color: var(--accent); }
 .production-marker strong { font-size: 1.08rem; }
 .production-marker p { margin: 8px 0 0; color: var(--muted); }
+.production-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 24px;
+  margin-top: 12px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(98, 230, 181, 0.24);
+}
+.production-summary .production-outcome { margin: 0; color: #d8e5e0; font-weight: 650; }
+.production-summary .production-rate {
+  color: var(--text);
+  font-size: clamp(2rem, 5vw, 3.35rem);
+  line-height: 0.9;
+  letter-spacing: -0.04em;
+}
+.production-activations { margin-top: 20px; }
+.production-activations > h3 {
+  margin: 0 0 10px;
+  color: var(--accent);
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+}
+.production-activation-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.production-activation-card {
+  padding: 16px;
+  border: 1px solid rgba(98, 230, 181, 0.2);
+  border-radius: 10px;
+  background: rgba(8, 11, 16, 0.35);
+}
+.production-activation-card h4 { margin: 0 0 13px; font-size: 0.95rem; }
+.production-activation-card dl { margin: 0; }
+.production-activation-card dl div { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 12px; padding-top: 7px; }
+.production-activation-card dt { color: var(--muted); font-size: 0.72rem; }
+.production-activation-card dd { margin: 0; color: var(--text); font-size: 0.78rem; text-align: right; }
+.production-empty { margin: 0; color: var(--muted); }
 
 .diagnosis-section { border-color: #344757; }
 .diagnosis-grid {
@@ -141,6 +177,7 @@ button:disabled { cursor: progress; opacity: 0.65; }
 }
 .diagnosis-subsection { margin-top: 22px; }
 .near-miss-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.near-miss-shared { margin-top: 10px; color: #c5cedb; font-size: 0.82rem; }
 .near-miss-card dl { margin: 15px 0 0; }
 .near-miss-card dl div { display: flex; justify-content: space-between; gap: 16px; padding-top: 7px; }
 .near-miss-card dt { color: var(--muted); font-size: 0.72rem; }
@@ -198,7 +235,7 @@ tr.production-row { background: var(--accent-soft); }
 @media (max-width: 1100px) {
   .metadata-grid { grid-template-columns: repeat(3, 1fr); }
   .metadata-grid article:nth-child(2) { grid-column: span 2; }
-  .matrix-grid, .diagnosis-grid, .near-miss-grid { grid-template-columns: 1fr; }
+  .matrix-grid, .diagnosis-grid, .near-miss-grid, .production-activation-grid { grid-template-columns: 1fr; }
   .filters { grid-template-columns: repeat(3, 1fr); }
 }
 
@@ -208,5 +245,6 @@ tr.production-row { background: var(--accent-soft); }
   .metadata-grid { grid-template-columns: 1fr; }
   .metadata-grid article:nth-child(2) { grid-column: auto; }
   .report-section { padding: 18px; }
+  .production-summary { grid-template-columns: 1fr; align-items: start; }
   .filters { grid-template-columns: repeat(2, 1fr); }
 }

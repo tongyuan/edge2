@@ -30,11 +30,11 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("Symbol Lab", HTML)
 
     def test_monitor_assets_are_versioned_together(self) -> None:
-        self.assertIn('/static/styles.css?v=concentration-check-20260822', HTML)
-        self.assertIn('/static/heatmap-state.js?v=concentration-check-20260822', HTML)
-        self.assertIn('/static/operator-time.js?v=concentration-check-20260822', HTML)
-        self.assertIn('/static/monitor-presentation.js?v=concentration-check-20260822', HTML)
-        self.assertIn('/static/app.js?v=concentration-check-20260822', HTML)
+        self.assertIn('/static/styles.css?v=operator-clarity-20260824', HTML)
+        self.assertIn('/static/heatmap-state.js?v=operator-clarity-20260824', HTML)
+        self.assertIn('/static/operator-time.js?v=operator-clarity-20260824', HTML)
+        self.assertIn('/static/monitor-presentation.js?v=operator-clarity-20260824', HTML)
+        self.assertIn('/static/app.js?v=operator-clarity-20260824', HTML)
         self.assertLess(HTML.index("heatmap-state.js"), HTML.index("app.js"))
         self.assertLess(HTML.index("monitor-presentation.js"), HTML.index("app.js"))
 
@@ -43,6 +43,17 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn(">ACTIVE MRZ<", HTML)
         self.assertNotIn(">WHO<", HTML)
         self.assertNotIn(">WHERE<", HTML)
+
+    def test_active_mrz_displays_authoritative_activation_timestamp(self) -> None:
+        self.assertIn('id="mrzActivation" hidden', HTML)
+        self.assertIn('id="mrzActivatedAt"', HTML)
+        self.assertIn(">Activated<", HTML)
+        self.assertIn("formatActivatedAt(state, formatOperatorTimestampUtcMinus4)", JAVASCRIPT)
+        self.assertIn("timestampFormatter(state.activated_at)", MONITOR_PRESENTATION)
+        self.assertIn('state.mrz_status !== "active"', MONITOR_PRESENTATION)
+        self.assertIn("fields.activation.hidden = !activatedAt;", JAVASCRIPT)
+        self.assertIn('fields.activatedAt.textContent = activatedAt || "—";', JAVASCRIPT)
+        self.assertIn(".mrz-activation[hidden] { display: none; }", CSS)
 
     def test_mrz_and_current_price_locations_are_separate(self) -> None:
         self.assertIn(">MRZ LOCATION<", HTML)
@@ -354,7 +365,9 @@ class MonitorContractTests(unittest.TestCase):
 
     def test_observation_timestamp_has_neutral_fallback_and_is_not_mrz_gated(self) -> None:
         self.assertIn("if (!value) return null;", OPERATOR_TIME)
-        latest_formatter = MONITOR_PRESENTATION.split("function formatLatestObservationContext", 1)[1]
+        latest_formatter = MONITOR_PRESENTATION.split("function formatLatestObservationContext", 1)[1].split(
+            "function formatActivatedAt", 1
+        )[0]
         self.assertNotIn("mrz_status", latest_formatter)
 
     def test_bottom_facts_remain_three_columns_and_responsive(self) -> None:

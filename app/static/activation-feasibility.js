@@ -29,6 +29,44 @@ function percentageText(value) {
   })}%`;
 }
 
+function frequencyPercentageText(value) {
+  if (value === null || value === undefined || value === "") return "—";
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "—";
+  return `${number.toLocaleString("en-GB", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  })}%`;
+}
+
+function productionMarkup(rule, timestampFormatter = (value) => value) {
+  const result = rule?.result || {};
+  const frequency = result.activation_frequency || {};
+  const activations = rule?.activations || [];
+  const cards = activations.map((activation) => `
+    <article class="production-activation-card">
+      <h4>${escapeHtml(activation.symbol)} · ${escapeHtml(activation.route)}</h4>
+      <dl>
+        <div><dt>MRZ</dt><dd>${decimalText(activation.core_mrz_lower, 12)}–${decimalText(activation.core_mrz_upper, 12)}</dd></div>
+        <div><dt>Activated</dt><dd>${escapeHtml(timestampFormatter(activation.activated_at) || "—")}</dd></div>
+        <div><dt>Rule</dt><dd>${activation.minimum_observations} observations · ${percentageText(activation.allowance_percent)} allowance</dd></div>
+      </dl>
+    </article>`).join("");
+  const activationDetail = cards
+    ? `<div class="production-activation-grid">${cards}</div>`
+    : '<p class="production-empty">No MRZ formed under the current production rule in this sample.</p>';
+  return `
+    <strong>Algorithm ${escapeHtml(rule?.algorithm || "—")} · ${rule?.minimum_observations ?? "—"} observations · ${percentageText(rule?.allowance_percent)}</strong>
+    <div class="production-summary">
+      <p class="production-outcome">${frequency.numerator ?? 0} of ${frequency.denominator ?? 0} eligible symbol-route histories formed an MRZ</p>
+      <strong class="production-rate">${frequencyPercentageText(frequency.percentage)}</strong>
+    </div>
+    <div class="production-activations">
+      <h3>ACTIVATED MRZ</h3>
+      ${activationDetail}
+    </div>`;
+}
+
 function durationText(value) {
   if (value === null || value === undefined) return "—";
   const seconds = Number(value);
@@ -54,8 +92,8 @@ function summaryTableMarkup(rows) {
       <td>${percentageText(row.median_minimum_required_allowance_pct_at_qualification)}</td>
     </tr>`).join("");
   return `<thead><tr>
-    <th>Minimum</th><th>Allowance</th><th>Eligible</th><th>Activations</th>
-    <th>Observed frequency</th><th>Near misses</th><th>Dispersed</th>
+    <th>Minimum</th><th>Allowance</th><th>Eligible</th><th>MRZ formations</th>
+    <th>Formation frequency</th><th>Near misses</th><th>Dispersed</th>
     <th>Median ordinal</th><th>Median duration</th><th>Median minimum allowance required</th>
   </tr></thead><tbody>${body}</tbody>`;
 }
@@ -88,7 +126,7 @@ function comparisonTableMarkup(rows) {
       <td>${percentageText(row.median_algorithm_b_minimum_required_allowance_pct)}</td>
     </tr>`).join("");
   return `<thead><tr>
-    <th>Minimum</th><th>Allowance</th><th>A frequency</th><th>B frequency</th><th>B − A</th>
+    <th>Minimum</th><th>Allowance</th><th>A formation frequency</th><th>B formation frequency</th><th>B − A</th>
     <th>Both</th><th>A only</th><th>B only</th><th>Neither</th>
     <th>Median time B − A</th><th>Median ordinal B − A</th><th>Median span B − A</th>
     <th>Median A ratio</th><th>Median B ratio</th><th>Median A required</th><th>Median B required</th>
@@ -144,7 +182,9 @@ function diagnosisMarkup(diagnosis, timestampFormatter = (value) => value) {
       <p>${escapeHtml(item.text)}</p>
     </article>`).join("");
   function nearMissSection(items, heading, timeLabel, emptyText) {
-    const cards = (items || []).map((item) => {
+    const uniqueItems = (items || []).filter((item) => !item.matches_current_candidate);
+    const sharedItems = (items || []).filter((item) => item.matches_current_candidate);
+    const cards = uniqueItems.map((item) => {
       const timestamp = timestampFormatter(item.candidate_timestamp || item.closest_timestamp) || "—";
       return `<article class="near-miss-card">
         <h3>${escapeHtml(item.heading)}</h3>
@@ -156,8 +196,11 @@ function diagnosisMarkup(diagnosis, timestampFormatter = (value) => value) {
         </dl>
       </article>`;
     }).join("");
-    return cards
-      ? `<div class="diagnosis-subsection"><h3>${heading}</h3><div class="near-miss-grid">${cards}</div></div>`
+    const shared = sharedItems.map((item) =>
+      `<p class="near-miss-shared"><strong>${escapeHtml(item.heading)}</strong> · Current candidate is also the closest historical near miss.</p>`
+    ).join("");
+    return cards || shared
+      ? `<div class="diagnosis-subsection"><h3>${heading}</h3>${cards ? `<div class="near-miss-grid">${cards}</div>` : ""}${shared}</div>`
       : `<div class="diagnosis-subsection"><h3>${heading}</h3><p class="neutral">${emptyText}</p></div>`;
   }
   const currentNearMissSection = nearMissSection(
@@ -228,8 +271,10 @@ if (typeof document !== "undefined") {
         formatOperatorTimestampUtcMinus4,
       );
 
-      const production = value.current_production_rule.result;
-      document.getElementById("productionResult").textContent = `${frequencyText(production.activation_frequency)} observed activations`;
+      document.getElementById("productionContent").innerHTML = productionMarkup(
+        value.current_production_rule,
+        formatOperatorTimestampUtcMinus4,
+      );
       const rowsA = value.scenarios.filter((row) => row.algorithm === "A");
       const rowsB = value.scenarios.filter((row) => row.algorithm === "B");
       document.getElementById("summaryA").innerHTML = summaryTableMarkup(rowsA);
@@ -279,9 +324,11 @@ if (typeof module === "object" && module.exports) {
     comparisonTableMarkup,
     filterAuditRows,
     frequencyText,
+    frequencyPercentageText,
     diagnosisMarkup,
     matrixMarkup,
     percentageText,
+    productionMarkup,
     summaryTableMarkup,
   };
 }

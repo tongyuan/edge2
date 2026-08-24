@@ -271,7 +271,7 @@ class ActivationFeasibilityTests(unittest.TestCase):
         self.assertEqual(diagnosis["sample_assessment"]["code"], "SAMPLE_PRELIMINARY")
         self.assertEqual(diagnosis["sample_assessment"]["numerator"], 1)
         self.assertIn(
-            "Algorithm A with four observations and 1% activated 0 of 1",
+            "The current production rule formed no MRZ in 1 eligible symbol-route history",
             diagnosis["production_feasibility"]["text"],
         )
         self.assertEqual(
@@ -297,6 +297,20 @@ class ActivationFeasibilityTests(unittest.TestCase):
         self.assertEqual(near_miss["candidate_upper_boundary"], "111.13")
         self.assertEqual(near_miss["candidate_observation_count"], 4)
         self.assertTrue(near_miss["candidate_timestamp"].endswith("Z"))
+        self.assertTrue(near_miss["matches_current_candidate"])
+
+        count_settings = diagnosis["count_sensitivity"]["settings"]
+        self.assertEqual(
+            [
+                (item["minimum_observations"], item["numerator"], item["denominator"])
+                for item in count_settings
+            ],
+            [(2, 1, 1), (3, 1, 1), (4, 0, 1)],
+        )
+        self.assertIn(
+            "Denominators differ because not every symbol-route history contains enough observations",
+            diagnosis["count_sensitivity"]["text"],
+        )
 
         comparison = diagnosis["algorithm_comparison"]
         expected_equal = sum(
@@ -347,6 +361,11 @@ class ActivationFeasibilityTests(unittest.TestCase):
             ],
             "1.1300",
         )
+        self.assertFalse(
+            report["diagnosis"]["closest_production_near_misses"][0][
+                "matches_current_candidate"
+            ]
+        )
 
     def test_diagnosis_handles_activation_empty_sample_and_structural_exclusion(self) -> None:
         active_report = report_for([
@@ -358,8 +377,22 @@ class ActivationFeasibilityTests(unittest.TestCase):
             "PRODUCTION_ACTIVATION_OBSERVED",
         )
         self.assertIn(
-            "activated 1 of 1 sequences (100.0%)",
+            "formed an MRZ in 1 of 1 eligible symbol-route history (100.0%)",
             active_report["diagnosis"]["production_feasibility"]["text"],
+        )
+        self.assertEqual(
+            active_report["current_production_rule"]["activations"],
+            [{
+                "symbol": "SPXUSDT",
+                "route": "BTD",
+                "core_mrz_lower": "110",
+                "core_mrz_upper": "110.6",
+                "activated_at": detail(
+                    active_report, "SPXUSDT", "BTD", "A", 4, 1
+                )["first_qualifying_timestamp"],
+                "minimum_observations": 4,
+                "allowance_percent": 1,
+            }],
         )
 
         empty = report_for([])
@@ -372,6 +405,7 @@ class ActivationFeasibilityTests(unittest.TestCase):
         )
         self.assertEqual(empty["diagnosis"]["closest_production_near_misses"], [])
         self.assertEqual(empty["diagnosis"]["current_production_near_misses"], [])
+        self.assertEqual(empty["current_production_rule"]["activations"], [])
 
         structurally_ineligible = report_for([
             observation(i, price, symbol="PREMIUM")
@@ -391,6 +425,25 @@ class ActivationFeasibilityTests(unittest.TestCase):
             [],
         )
 
+    def test_production_projection_lists_every_formed_mrz(self) -> None:
+        rows = []
+        for offset, symbol, prices in (
+            (0, "AAA", ("110", "110.2", "110.4", "110.6")),
+            (10, "BBB", ("120", "120.2", "120.4", "120.6")),
+        ):
+            rows.extend(
+                observation(offset + index, price, symbol=symbol)
+                for index, price in enumerate(prices, 1)
+            )
+
+        activations = report_for(rows)["current_production_rule"]["activations"]
+
+        self.assertEqual([item["symbol"] for item in activations], ["AAA", "BBB"])
+        self.assertTrue(all(item["route"] == "BTD" for item in activations))
+        self.assertTrue(all(item["minimum_observations"] == 4 for item in activations))
+        self.assertTrue(all(item["allowance_percent"] == 1 for item in activations))
+        self.assertTrue(all(item["activated_at"].endswith("Z") for item in activations))
+
     def test_diagnosis_contains_no_automatic_policy_or_trading_claim(self) -> None:
         report = report_for([
             observation(i, price)
@@ -405,6 +458,16 @@ class ActivationFeasibilityTests(unittest.TestCase):
             "trading recommendation",
         ):
             self.assertNotIn(prohibited, diagnosis_text)
+
+    def test_operator_diagnosis_uses_symbol_route_history_terminology(self) -> None:
+        report = report_for([
+            observation(i, price)
+            for i, price in enumerate(("110", "110.2", "110.4", "110.6"), 1)
+        ])
+        diagnosis_text = json.dumps(report["diagnosis"], sort_keys=True).lower()
+
+        self.assertNotRegex(diagnosis_text, r"\bsequences?\b")
+        self.assertRegex(diagnosis_text, r"symbol-route histor(?:y|ies)")
 
     def test_production_near_misses_sort_by_exact_required_allowance(self) -> None:
         rows = []

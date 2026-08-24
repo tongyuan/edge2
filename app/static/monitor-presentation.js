@@ -132,12 +132,18 @@
     return `${state.latest_observation_route} ${state.latest_observation_type} · ${timestamp}`;
   }
 
+  function formatActivatedAt(state, timestampFormatter) {
+    if (state.mrz_status !== "active") return null;
+    return timestampFormatter(state.activated_at);
+  }
+
   const monitorPresentation = {
     formatFormationDuration,
     percentageText,
     buildConcentrationCheck,
     buildEvidencePresentation,
     formatLatestObservationContext,
+    formatActivatedAt,
   };
 
   root.edgeMonitorPresentation = monitorPresentation;

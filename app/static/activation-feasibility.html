@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="EDGE 2.0 activation feasibility diagnostic" />
     <title>EDGE 2.0 · Activation Feasibility</title>
-    <link rel="stylesheet" href="/static/activation-feasibility.css?v=20260823" />
+    <link rel="stylesheet" href="/static/activation-feasibility.css?v=operator-clarity-20260824" />
   </head>
   <body>
     <main class="report-shell">
@@ -19,7 +19,7 @@
       </header>
 
       <aside class="notice" aria-label="Interpretation notice">
-        Observed activation frequency is descriptive, not a predictive probability.
+        Observed MRZ formation frequency is descriptive, not a predictive probability.
         Results are preliminary while the stored sample remains small.
       </aside>
       <section class="status-panel" id="reportStatus" aria-live="polite">
@@ -32,11 +32,11 @@
           <article><span>OBSERVATION RANGE</span><strong id="observationRange">—</strong></article>
           <article><span>OBSERVATIONS</span><strong id="totalObservations">0</strong></article>
           <article><span>SYMBOLS</span><strong id="totalSymbols">0</strong></article>
-          <article><span>SYMBOL-ROUTE SEQUENCES</span><strong id="totalSequences">0</strong></article>
+          <article><span>SYMBOL-ROUTE HISTORIES</span><strong id="totalSequences">0</strong></article>
         </section>
 
         <aside class="sample-warning" id="sampleWarning" hidden>
-          Preliminary sample: fewer than 30 production-eligible symbol-route sequences are available.
+          Preliminary sample: fewer than 30 production-eligible symbol-route histories are available.
         </aside>
 
         <section class="report-section diagnosis-section" aria-labelledby="diagnosis-title">
@@ -48,8 +48,7 @@
 
         <section class="production-marker" aria-label="Current production rule">
           <span>PRODUCTION</span>
-          <strong>Algorithm A · 4 observations · 1%</strong>
-          <p id="productionResult">—</p>
+          <div id="productionContent">—</div>
         </section>
 
         <section class="report-section" aria-labelledby="overall-title">
@@ -96,7 +95,7 @@
         </section>
       </div>
     </main>
-    <script src="/static/operator-time.js?v=20260823" defer></script>
-    <script src="/static/activation-feasibility.js?v=20260824" defer></script>
+    <script src="/static/operator-time.js?v=operator-clarity-20260824" defer></script>
+    <script src="/static/activation-feasibility.js?v=operator-clarity-20260824" defer></script>
   </body>
 </html>

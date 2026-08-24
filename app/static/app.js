@@ -19,6 +19,7 @@ const {
 const {
   buildEvidencePresentation,
   formatLatestObservationContext,
+  formatActivatedAt,
 } = globalThis.edgeMonitorPresentation;
 
 const fields = {
@@ -26,6 +27,8 @@ const fields = {
   status: document.querySelector("#mrzStatus"),
   owner: document.querySelector("#routeOwner"),
   bounds: document.querySelector("#mrzBounds"),
+  activation: document.querySelector("#mrzActivation"),
+  activatedAt: document.querySelector("#mrzActivatedAt"),
   location: document.querySelector("#structuralLocation"),
   currentLocation: document.querySelector("#currentPriceLocation"),
   currentLocationContext: document.querySelector("#currentLocationContext"),
@@ -255,6 +258,9 @@ function renderSymbol(state) {
   fields.bounds.textContent = active
     ? `${formatPrice(state.core_mrz_lower)} – ${formatPrice(state.core_mrz_upper)}`
     : "—";
+  const activatedAt = formatActivatedAt(state, formatOperatorTimestampUtcMinus4);
+  fields.activation.hidden = !activatedAt;
+  fields.activatedAt.textContent = activatedAt || "—";
   fields.location.textContent = active ? formatLocation(state.structural_location) : "—";
   fields.currentLocation.textContent = formatLocation(state.current_price_location);
   fields.currentLocationContext.textContent = state.current_location_context || "—";

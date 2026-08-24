@@ -65,8 +65,10 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["cache-control"], "no-store, max-age=0")
         self.assertIn("Activation Feasibility", response.text)
-        self.assertIn("Observed activation frequency is descriptive", response.text)
-        self.assertIn("Algorithm A · 4 observations · 1%", response.text)
+        self.assertIn("Observed MRZ formation frequency is descriptive", response.text)
+        self.assertIn('id="productionContent"', response.text)
+        self.assertIn("SYMBOL-ROUTE HISTORIES", response.text)
+        self.assertNotIn("SYMBOL-ROUTE SEQUENCES", response.text)
         self.assertIn('id="summaryA"', response.text)
         self.assertIn('id="summaryB"', response.text)
         self.assertIn('id="comparisonTable"', response.text)
@@ -116,6 +118,19 @@ class APIIntegrationTests(unittest.TestCase):
             production["median_minimum_required_allowance_pct_at_qualification"],
             "0.600",
         )
+        self.assertEqual(payload["current_production_rule"]["label"], "Algorithm A · 4 observations · 1.00%")
+        self.assertEqual(
+            payload["current_production_rule"]["activations"],
+            [{
+                "symbol": "SPXUSDT",
+                "route": "BTD",
+                "core_mrz_lower": "110",
+                "core_mrz_upper": "110.6",
+                "activated_at": "2026-08-20T12:00:04Z",
+                "minimum_observations": 4,
+                "allowance_percent": 1,
+            }],
+        )
         self.assertEqual(
             payload["diagnosis"]["production_feasibility"]["numerator"],
             1,
@@ -129,6 +144,7 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertTrue(btd.json()["accepted"])
         detail = self.client.get("/api/symbols/SPXUSDT").json()
         self.assertEqual(detail["mrz_status"], "unestablished")
+        self.assertIsNone(detail["activated_at"])
         self.assertEqual(detail["current_price_location"], "deep_discount")
         self.assertEqual(detail["current_location_context"], "80% from EQM toward IPDA low")
         self.assertEqual(detail["latest_observed_at"], "2026-08-20T12:00:01Z")
@@ -191,6 +207,7 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(detail["structural_location"], "deep_discount_core_mrz")
         self.assertEqual(detail["current_price_location"], "deep_discount")
         self.assertEqual(detail["latest_observed_at"], "2026-08-20T12:00:04Z")
+        self.assertEqual(detail["activated_at"], "2026-08-20T12:00:04Z")
         self.assertEqual(detail["supporting_observation_count"], 4)
         self.assertEqual(detail["formation_started_at"], "2026-08-20T12:00:01Z")
         self.assertEqual(detail["formation_completed_at"], "2026-08-20T12:00:04Z")
@@ -392,6 +409,7 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(after["current_price_location"], "shallow_premium")
         self.assertEqual(after["latest_observed_at"], "2026-08-20T12:00:05Z")
         self.assertNotEqual(after["latest_observed_at"], after["activated_at"])
+        self.assertEqual(after["activated_at"], before["activated_at"])
         self.assertEqual(overview_after["current_price_location"], "shallow_premium")
         self.assertEqual(overview_after["structural_location"], "deep_discount_core_mrz")
         self.assertEqual(after["route_owner"], before["route_owner"])

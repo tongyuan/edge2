@@ -238,6 +238,22 @@ select {
 .answer.route.str { color: var(--str); }
 .answer.route.unestablished { color: var(--muted); }
 .support { margin-bottom: 0; color: var(--muted); font-size: 0.88rem; overflow-wrap: anywhere; }
+.mrz-activation {
+  margin-top: 26px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.mrz-activation[hidden] { display: none; }
+.mrz-activation span {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 720;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.mrz-activation strong { font-size: 0.92rem; line-height: 1.35; }
 
 .context-grid {
   display: grid;

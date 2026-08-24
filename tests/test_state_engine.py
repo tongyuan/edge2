@@ -118,6 +118,7 @@ class ActiveMRZStateTests(unittest.TestCase):
         migrated = replay_symbol(fewer + [observation(8, "120.6")])
         self.assertEqual(migrated.active_mrz.core_mrz_lower, Decimal("120"))
         self.assertEqual(migrated.active_mrz.core_mrz_upper, Decimal("120.6"))
+        self.assertEqual(migrated.active_mrz.activated_at, migrated.transitions[-1].occurred_at)
         self.assertEqual(migrated.transitions[-1].event_type, MRZEventType.MIGRATED)
         self.assertEqual(migrated.transitions[-1].old_mrz.core_mrz_lower, Decimal("110"))
 

@@ -3,6 +3,7 @@ const {
   formatFormationDuration,
   buildConcentrationCheck,
   buildEvidencePresentation,
+  formatActivatedAt,
   formatLatestObservationContext,
   percentageText,
 } = require("../app/static/monitor-presentation.js");
@@ -27,6 +28,27 @@ assert.equal(formatFormationDuration(30), "<1m");
 assert.equal(formatFormationDuration(0), "0m");
 assert.equal(formatFormationDuration(null), null);
 assert.equal(percentageText("1.126789"), "1.13");
+assert.equal(
+  formatActivatedAt(
+    { mrz_status: "active", activated_at: "2026-08-24T02:21:00Z" },
+    formatOperatorTimestampUtcMinus4,
+  ),
+  "23 Aug 2026 · 22:21 UTC−4",
+);
+assert.equal(
+  formatActivatedAt(
+    { mrz_status: "unestablished", activated_at: "2026-08-24T02:21:00Z" },
+    formatOperatorTimestampUtcMinus4,
+  ),
+  null,
+);
+assert.equal(
+  formatActivatedAt(
+    { mrz_status: "active", activated_at: null },
+    formatOperatorTimestampUtcMinus4,
+  ),
+  null,
+);
 
 assert.deepEqual(
   buildEvidencePresentation({
@@ -283,6 +305,18 @@ assert.equal(
     formatOperatorTimestampUtcMinus4,
   ),
   "STR rejection · 20 Aug 2026 · 21:30 UTC−4",
+);
+
+const stableActivatedAt = formatActivatedAt(
+  { mrz_status: "active", activated_at: "2026-08-24T02:21:00Z", latest_observed_at: "2026-08-24T02:21:00Z" },
+  formatOperatorTimestampUtcMinus4,
+);
+assert.equal(
+  formatActivatedAt(
+    { mrz_status: "active", activated_at: "2026-08-24T02:21:00Z", latest_observed_at: "2026-08-24T05:45:00Z" },
+    formatOperatorTimestampUtcMinus4,
+  ),
+  stableActivatedAt,
 );
 
 console.log("monitor presentation tests passed");

@@ -7,6 +7,7 @@ const {
   frequencyText,
   matrixMarkup,
   percentageText,
+  productionMarkup,
   summaryTableMarkup,
 } = require("../app/static/activation-feasibility.js");
 
@@ -32,7 +33,8 @@ assert.equal(frequencyText({ numerator: 0, denominator: 0, percentage: null }), 
 assert.equal(percentageText("1.126789"), "1.13%");
 
 const summary = summaryTableMarkup(scenarios);
-assert.match(summary, /Observed frequency/);
+assert.match(summary, /Formation frequency/);
+assert.match(summary, /MRZ formations/);
 assert.match(summary, /Near misses/);
 assert.match(summary, /Median duration/);
 assert.match(summary, /Median minimum allowance required/);
@@ -69,6 +71,42 @@ assert.match(comparison, /Neither/);
 assert.match(comparison, /Median A required/);
 assert.match(comparison, /0\.80%/);
 
+const production = productionMarkup({
+  algorithm: "A",
+  minimum_observations: 4,
+  allowance_percent: 1,
+  result: {
+    activation_frequency: { numerator: 1, denominator: 5, percentage: "20.0" },
+  },
+  activations: [{
+    symbol: "BTCUSDT",
+    route: "STR",
+    core_mrz_lower: "77309.19",
+    core_mrz_upper: "77436.91",
+    activated_at: "2026-08-24T02:21:00Z",
+    minimum_observations: 4,
+    allowance_percent: 1,
+  }],
+}, () => "23 Aug 2026 · 22:21 UTC−4");
+assert.match(production, /Algorithm A · 4 observations · 1\.00%/);
+assert.match(production, /1 of 5 eligible symbol-route histories formed an MRZ/);
+assert.match(production, />20\.0%</);
+assert.match(production, /BTCUSDT · STR/);
+assert.match(production, /77,309\.19–77,436\.91/);
+assert.match(production, /23 Aug 2026 · 22:21 UTC−4/);
+assert.match(production, /4 observations · 1\.00% allowance/);
+
+const zeroProduction = productionMarkup({
+  algorithm: "A",
+  minimum_observations: 4,
+  allowance_percent: 1,
+  result: {
+    activation_frequency: { numerator: 0, denominator: 5, percentage: "0.0" },
+  },
+  activations: [],
+});
+assert.match(zeroProduction, /No MRZ formed under the current production rule in this sample\./);
+
 const details = [
   {
     symbol: "ETHUSDT", route: "STR", algorithm: "A", minimum_observations: 4,
@@ -103,7 +141,7 @@ assert.match(audit, /First · 0\.20%/);
 
 const suppliedDiagnosis = {
   sample_assessment: { heading: "Sample confidence · Preliminary", text: "Backend sample text 7." },
-  production_feasibility: { heading: "Production feasibility · No activation observed", text: "Backend production text 11." },
+  production_feasibility: { heading: "Production feasibility · No MRZ formed", text: "Backend production text 11." },
   count_sensitivity: { heading: "Count sensitivity", text: "Backend count text." },
   allowance_sensitivity: { heading: "Allowance sensitivity", text: "Backend allowance text." },
   algorithm_comparison: { heading: "Algorithm comparison", text: "Backend comparison text." },
@@ -118,12 +156,13 @@ const suppliedDiagnosis = {
   }],
   closest_production_near_misses: [{
     heading: "WLDUSDT · BTD",
-    text: "Minimum allowance required · 1.13%. Current allowance · 1.00%. Shortfall · 0.13 percentage points.",
-    candidate_lower_boundary: "2.5",
-    candidate_upper_boundary: "2.6",
+    text: "Closest historical minimum allowance required · 1.59%. Current allowance · 1.00%. Shortfall · 0.59 percentage points.",
+    candidate_lower_boundary: "2.7",
+    candidate_upper_boundary: "2.8",
     candidate_observation_count: 4,
     total_stored_route_observations: 5,
-    closest_timestamp: "2026-08-21T01:30:00Z",
+    candidate_timestamp: "2026-08-22T00:30:00Z",
+    matches_current_candidate: true,
   }],
   evidence_interpretation: { heading: "Evidence interpretation", text: "Backend interpretation only." },
 };
@@ -135,6 +174,12 @@ assert.match(diagnosis, /20 Aug 2026 · 21:30 UTC−4/);
 assert.match(diagnosis, /Current production near misses/);
 assert.match(diagnosis, /Closest historical production near misses/);
 assert.match(diagnosis, /Current minimum allowance required · 1\.59%/);
+assert.match(diagnosis, /Current candidate is also the closest historical near miss\./);
+assert.equal((diagnosis.match(/2\.7–2\.8/g) || []).length, 1);
+assert.doesNotMatch(diagnosis, />Activated</);
 assert.doesNotMatch(diagnosis, /7 of 11/);
+
+const operatorFacingMarkup = [summary, matrix, comparison, audit, production, zeroProduction, diagnosis].join("\n");
+assert.doesNotMatch(operatorFacingMarkup, /\bsequences?\b/i);
 
 console.log("activation feasibility presentation tests passed");
