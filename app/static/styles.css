@@ -15,6 +15,10 @@
 
 * { box-sizing: border-box; }
 
+a { color: #c9d4e2; text-decoration: none; }
+a:hover { color: var(--accent); }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -36,6 +40,15 @@ body {
   justify-content: space-between;
   gap: 20px;
 }
+
+.masthead-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+}
+.page-nav { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px 16px; }
+.page-nav a { font-size: 0.78rem; font-weight: 620; }
 
 .eyebrow, .label, .fact-section-label {
   margin: 0 0 8px;
@@ -297,7 +310,9 @@ dd { margin: 0; font-size: 0.95rem; font-weight: 620; }
 
 @media (max-width: 680px) {
   .shell { padding-top: 28px; }
-  .masthead { align-items: flex-end; }
+  .masthead { align-items: flex-start; flex-direction: column; }
+  .masthead-actions { align-items: flex-start; }
+  .page-nav { justify-content: flex-start; }
   .heatmap-grid, .heatmap-secondary { grid-template-columns: 1fr; }
   .answer-grid, .context-grid, .facts { grid-template-columns: 1fr; }
   .answer-grid article + article, .context-grid article + article, .facts div + div { border-left: 0; border-top: 1px solid var(--line); }

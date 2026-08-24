@@ -87,6 +87,18 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertIn('id="activeReports"', response.text)
         self.assertNotIn('id="summaryA"', response.text)
 
+    def test_operator_page_navigation_is_reciprocal(self) -> None:
+        monitor = self.client.get("/").text
+        feasibility = self.client.get("/diagnostics/activation-feasibility").text
+        robustness = self.client.get("/diagnostics/mrz-robustness").text
+
+        self.assertIn('href="/diagnostics/activation-feasibility">Activation Feasibility</a>', monitor)
+        self.assertIn('href="/diagnostics/mrz-robustness">MRZ Robustness</a>', monitor)
+        self.assertIn('href="/">MRZ Monitor</a>', feasibility)
+        self.assertIn('href="/diagnostics/mrz-robustness">MRZ Robustness</a>', feasibility)
+        self.assertIn('href="/">MRZ Monitor</a>', robustness)
+        self.assertIn('href="/diagnostics/activation-feasibility">Activation Feasibility</a>', robustness)
+
     def test_mrz_robustness_api_uses_authoritative_state_without_mutation(self) -> None:
         for index, price in enumerate(("110", "110.2", "110.4", "110.6", "120"), 1):
             self.assertEqual(

@@ -30,13 +30,18 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("Symbol Lab", HTML)
 
     def test_monitor_assets_are_versioned_together(self) -> None:
-        self.assertIn('/static/styles.css?v=operator-clarity-20260824', HTML)
-        self.assertIn('/static/heatmap-state.js?v=operator-clarity-20260824', HTML)
-        self.assertIn('/static/operator-time.js?v=operator-clarity-20260824', HTML)
-        self.assertIn('/static/monitor-presentation.js?v=operator-clarity-20260824', HTML)
-        self.assertIn('/static/app.js?v=operator-clarity-20260824', HTML)
+        self.assertIn('/static/styles.css?v=operator-navigation-20260824', HTML)
+        self.assertIn('/static/heatmap-state.js?v=operator-navigation-20260824', HTML)
+        self.assertIn('/static/operator-time.js?v=operator-navigation-20260824', HTML)
+        self.assertIn('/static/monitor-presentation.js?v=operator-navigation-20260824', HTML)
+        self.assertIn('/static/app.js?v=operator-navigation-20260824', HTML)
         self.assertLess(HTML.index("heatmap-state.js"), HTML.index("app.js"))
         self.assertLess(HTML.index("monitor-presentation.js"), HTML.index("app.js"))
+
+    def test_monitor_links_to_both_read_only_diagnostics(self) -> None:
+        self.assertIn('href="/diagnostics/activation-feasibility">Activation Feasibility</a>', HTML)
+        self.assertIn('href="/diagnostics/mrz-robustness">MRZ Robustness</a>', HTML)
+        self.assertIn('aria-label="Diagnostic navigation"', HTML)
 
     def test_source_and_active_mrz_replace_who_and_where(self) -> None:
         self.assertIn(">SOURCE<", HTML)

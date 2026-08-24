@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="EDGE 2.0 activation feasibility diagnostic" />
     <title>EDGE 2.0 · Activation Feasibility</title>
-    <link rel="stylesheet" href="/static/activation-feasibility.css?v=candidate-policy-20260824" />
+    <link rel="stylesheet" href="/static/activation-feasibility.css?v=report-navigation-20260824" />
   </head>
   <body>
     <main class="report-shell">
@@ -15,7 +15,13 @@
           <h1>Activation Feasibility</h1>
           <p class="subtitle">Live read-only replay of stored route observations</p>
         </div>
-        <button type="button" id="refreshReport">Refresh report</button>
+        <div class="header-actions">
+          <nav class="page-nav" aria-label="Diagnostic navigation">
+            <a href="/">MRZ Monitor</a>
+            <a href="/diagnostics/mrz-robustness">MRZ Robustness</a>
+          </nav>
+          <button type="button" id="refreshReport">Refresh report</button>
+        </div>
       </header>
 
       <aside class="notice" aria-label="Interpretation notice">
@@ -96,6 +102,6 @@
       </div>
     </main>
     <script src="/static/operator-time.js?v=operator-clarity-20260824" defer></script>
-    <script src="/static/activation-feasibility.js?v=candidate-policy-20260824" defer></script>
+    <script src="/static/activation-feasibility.js?v=report-navigation-20260824" defer></script>
   </body>
 </html>
