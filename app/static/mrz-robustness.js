@@ -37,6 +37,26 @@ function statusClass(status) {
   return String(status || "").toLowerCase().replaceAll("_", "-");
 }
 
+function migrationProvenanceMarkup(migration, timestampFormatter = (value) => value) {
+  if (!migration?.has_migrated) return "";
+  const downward = migration.direction === "DOWN";
+  const arrow = downward ? "↓" : "↑";
+  const direction = downward ? "DOWNWARD" : "UPWARD";
+  const previousRange = `${priceText(migration.previous_lower)} – ${priceText(migration.previous_upper)}`;
+  const currentRange = `${priceText(migration.current_lower)} – ${priceText(migration.current_upper)}`;
+  return `<aside class="migration-provenance" aria-label="Current MRZ migration provenance">
+    <div class="migration-provenance-heading">
+      <span class="section-label">CURRENT MRZ PROVENANCE</span>
+      <strong>${arrow} MIGRATED ${direction}</strong>
+      <span class="migration-provenance-time">${escapeHtml(timestampFormatter(migration.migrated_at) || "—")}</span>
+    </div>
+    <dl>
+      <div><dt>Previous</dt><dd>${previousRange}</dd></div>
+      <div><dt>Current</dt><dd>${currentRange}</dd></div>
+    </dl>
+  </aside>`;
+}
+
 function robustnessCardMarkup(report, timestampFormatter = (value) => value) {
   const active = report.active_mrz;
   const formation = report.formation_evidence;
@@ -67,6 +87,7 @@ function robustnessCardMarkup(report, timestampFormatter = (value) => value) {
       <article><span>ACTIVATED</span><strong>${escapeHtml(timestampFormatter(active.activated_at) || "—")}</strong></article>
       <article><span>MRZ AGE</span><strong>${durationText(age.active_duration_seconds)}</strong></article>
     </div>
+    ${migrationProvenanceMarkup(report.migration, timestampFormatter)}
     <div class="evidence-split">
       <article><span class="section-label">FORMATION EVIDENCE</span><strong>${formation.confirming_observation_count} qualifying observations</strong><p>${escapeHtml(formation.meaning)}</p></article>
       <article><span class="section-label">ROBUSTNESS EVIDENCE</span><strong>${robustness.post_activation_observation_count} post-activation observations</strong><p>${escapeHtml(robustness.meaning)}</p></article>
@@ -162,6 +183,7 @@ if (typeof document !== "undefined") {
 if (typeof module === "object" && module.exports) {
   module.exports = {
     durationText,
+    migrationProvenanceMarkup,
     percentageText,
     reportMarkup,
     robustnessCardMarkup,

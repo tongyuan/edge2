@@ -90,6 +90,67 @@ def active_from_row(row: Mapping[str, Any] | None) -> ActiveMRZ | None:
     )
 
 
+def migration_provenance_payload(
+    row: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if not row:
+        return {"has_migrated": False}
+    previous_midpoint = (
+        Decimal(row["old_core_mrz_lower"])
+        + Decimal(row["old_core_mrz_upper"])
+    ) / Decimal("2")
+    current_midpoint = Decimal(row["new_core_mrz_midpoint"])
+    direction = "UP" if current_midpoint > previous_midpoint else "DOWN"
+    return {
+        "has_migrated": True,
+        "direction": direction,
+        "migrated_at": iso(row["occurred_at"]),
+        "previous_lower": number(row["old_core_mrz_lower"]),
+        "previous_upper": number(row["old_core_mrz_upper"]),
+        "current_lower": number(row["new_core_mrz_lower"]),
+        "current_upper": number(row["new_core_mrz_upper"]),
+        "route_owner": str(row["route_owner"]),
+        "migration_event_id": str(row["trigger_event_id"]),
+    }
+
+
+def current_migration_provenance(
+    cursor: RealDictCursor,
+    active: ActiveMRZ | None,
+) -> dict[str, Any]:
+    if active is None:
+        return migration_provenance_payload(None)
+    cursor.execute(
+        """
+        SELECT
+            occurred_at, trigger_event_id, route_owner,
+            old_core_mrz_lower, old_core_mrz_upper,
+            new_core_mrz_lower, new_core_mrz_upper, new_core_mrz_midpoint
+        FROM mrz_events
+        WHERE symbol = %s
+          AND event_type = 'MRZ_MIGRATED'
+          AND trigger_event_id = %s
+          AND occurred_at = %s
+          AND route_owner = %s
+          AND new_core_mrz_lower = %s
+          AND new_core_mrz_upper = %s
+          AND new_core_mrz_midpoint = %s
+        ORDER BY sequence DESC
+        LIMIT 1
+        """,
+        (
+            active.symbol,
+            active.activation_event_id,
+            active.activated_at,
+            active.route_owner.value,
+            active.core_mrz_lower,
+            active.core_mrz_upper,
+            active.core_mrz_midpoint,
+        ),
+    )
+    return migration_provenance_payload(cursor.fetchone())
+
+
 class EdgeRepository:
     def __init__(self, database_url: str) -> None:
         self.database_url = database_url
@@ -392,6 +453,7 @@ class EdgeRepository:
                 }
                 cursor.execute("SELECT * FROM active_mrz WHERE symbol = %s", (normalized,))
                 active = active_from_row(cursor.fetchone())
+                migration = current_migration_provenance(cursor, active)
                 concentration_checks = None
                 if active is None:
                     concentration_checks = {
@@ -407,6 +469,7 @@ class EdgeRepository:
                     active,
                     window_counts,
                     concentration_checks,
+                    migration,
                 )
         finally:
             connection.close()
@@ -435,7 +498,11 @@ class EdgeRepository:
 
     def mrz_robustness_inputs(
         self,
-    ) -> tuple[tuple[ActiveMRZ, ...], tuple[Observation, ...]]:
+    ) -> tuple[
+        tuple[ActiveMRZ, ...],
+        tuple[Observation, ...],
+        dict[str, dict[str, Any]],
+    ]:
         """Return one consistent read-only snapshot for post-activation diagnostics."""
         connection = connect(self.database_url)
         try:
@@ -453,7 +520,33 @@ class EdgeRepository:
                     if active is not None
                 )
                 if not active_mrzs:
-                    return (), ()
+                    return (), (), {}
+                cursor.execute(
+                    """
+                    SELECT
+                        e.symbol, e.occurred_at, e.trigger_event_id, e.route_owner,
+                        e.old_core_mrz_lower, e.old_core_mrz_upper,
+                        e.new_core_mrz_lower, e.new_core_mrz_upper,
+                        e.new_core_mrz_midpoint
+                    FROM mrz_events e
+                    INNER JOIN active_mrz a
+                        ON a.symbol = e.symbol
+                       AND a.activation_event_id = e.trigger_event_id
+                       AND a.activated_at = e.occurred_at
+                       AND a.route_owner = e.route_owner
+                       AND a.core_mrz_lower = e.new_core_mrz_lower
+                       AND a.core_mrz_upper = e.new_core_mrz_upper
+                       AND a.core_mrz_midpoint = e.new_core_mrz_midpoint
+                    WHERE e.event_type = 'MRZ_MIGRATED'
+                      AND e.symbol = ANY(%s)
+                    ORDER BY e.symbol ASC, e.sequence DESC
+                    """,
+                    ([active.symbol for active in active_mrzs],),
+                )
+                migration_by_symbol = {
+                    str(row["symbol"]): migration_provenance_payload(row)
+                    for row in cursor.fetchall()
+                }
                 cursor.execute(
                     """
                     SELECT
@@ -470,7 +563,14 @@ class EdgeRepository:
                 observations = tuple(
                     observation_from_row(row) for row in cursor.fetchall()
                 )
-                return active_mrzs, observations
+                migration_provenance = {
+                    active.symbol: migration_by_symbol.get(
+                        active.symbol,
+                        migration_provenance_payload(None),
+                    )
+                    for active in active_mrzs
+                }
+                return active_mrzs, observations, migration_provenance
         finally:
             connection.close()
 
@@ -666,6 +766,7 @@ def detail_payload(
     active: ActiveMRZ | None,
     window_counts: Mapping[str, Any],
     concentration_checks: Mapping[Route, ConcentrationDiagnostic] | None,
+    migration: Mapping[str, Any],
 ) -> dict[str, Any]:
     base = {
         "symbol": symbol,
@@ -691,6 +792,7 @@ def detail_payload(
             if concentration_checks is not None
             else None
         ),
+        "migration": dict(migration),
     }
     if active is None:
         return {

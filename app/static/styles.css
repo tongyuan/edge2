@@ -267,6 +267,26 @@ select {
   text-transform: uppercase;
 }
 .mrz-activation strong { font-size: 0.92rem; line-height: 1.35; }
+.mrz-migration {
+  margin-top: 16px;
+  padding: 15px 16px;
+  border: 1px solid #566c85;
+  border-left: 4px solid #9ab9db;
+  border-radius: 10px;
+  background: rgba(108, 142, 180, 0.1);
+}
+.mrz-migration[hidden] { display: none; }
+.mrz-migration-title,
+.mrz-migration-time,
+.mrz-migration-from { display: block; }
+.mrz-migration-title {
+  color: #c9ddf3;
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+}
+.mrz-migration-time { margin-top: 7px; color: var(--text); font-size: 0.86rem; }
+.mrz-migration-from { margin-top: 6px; color: var(--muted); font-size: 0.8rem; }
+.mrz-migration-from strong { color: var(--text); font-size: inherit; }
 
 .context-grid {
   display: grid;

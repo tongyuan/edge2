@@ -131,6 +131,33 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(report["successor_watch"]["status"], "CANDIDATE_FORMING")
         self.assertEqual(before, after)
 
+    def test_monitor_and_robustness_share_current_migration_provenance(self) -> None:
+        prices = (
+            "110", "110.2", "110.4", "110.6",
+            "120", "120.2", "120.4", "120.6",
+        )
+        for index, price in enumerate(prices, 1):
+            self.assertEqual(
+                self.client.post(
+                    "/webhook/tradingview",
+                    json=webhook_payload(index, price),
+                ).status_code,
+                201,
+            )
+
+        monitor = self.client.get("/api/symbols/SPXUSDT").json()
+        report = self.client.get(
+            "/api/diagnostics/mrz-robustness"
+        ).json()["active_mrzs"][0]
+
+        self.assertTrue(monitor["migration"]["has_migrated"])
+        self.assertEqual(report["migration"], monitor["migration"])
+        self.assertEqual(report["migration_pressure"]["status"], "STABLE")
+        self.assertEqual(
+            report["successor_watch"]["status"],
+            "NO_SUCCESSOR_CANDIDATE",
+        )
+
     def test_activation_feasibility_api_empty_and_refreshes_without_stale_results(self) -> None:
         first = self.client.get("/api/diagnostics/activation-feasibility")
         second = self.client.get("/api/diagnostics/activation-feasibility")
@@ -199,6 +226,7 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertTrue(btd.json()["accepted"])
         detail = self.client.get("/api/symbols/SPXUSDT").json()
         self.assertEqual(detail["mrz_status"], "unestablished")
+        self.assertEqual(detail["migration"], {"has_migrated": False})
         self.assertIsNone(detail["activated_at"])
         self.assertEqual(detail["current_price_location"], "deep_discount")
         self.assertEqual(detail["current_location_context"], "80% from EQM toward IPDA low")
@@ -256,6 +284,7 @@ class APIIntegrationTests(unittest.TestCase):
             self.assertEqual(response.status_code, 201)
         detail = self.client.get("/api/symbols/SPXUSDT/mrz").json()
         self.assertEqual(detail["mrz_status"], "active")
+        self.assertEqual(detail["migration"], {"has_migrated": False})
         self.assertEqual(detail["route_owner"], "BTD")
         self.assertEqual(detail["core_mrz_lower"], 110.0)
         self.assertEqual(detail["core_mrz_upper"], 110.6)

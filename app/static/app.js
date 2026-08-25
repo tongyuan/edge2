@@ -18,6 +18,7 @@ const {
 } = globalThis.edgeHeatmapState;
 const {
   buildEvidencePresentation,
+  buildMigrationPresentation,
   formatLatestObservationContext,
   formatActivatedAt,
 } = globalThis.edgeMonitorPresentation;
@@ -29,6 +30,10 @@ const fields = {
   bounds: document.querySelector("#mrzBounds"),
   activation: document.querySelector("#mrzActivation"),
   activatedAt: document.querySelector("#mrzActivatedAt"),
+  migration: document.querySelector("#mrzMigration"),
+  migrationTitle: document.querySelector("#mrzMigrationTitle"),
+  migratedAt: document.querySelector("#mrzMigratedAt"),
+  previousRange: document.querySelector("#mrzPreviousRange"),
   location: document.querySelector("#structuralLocation"),
   currentLocation: document.querySelector("#currentPriceLocation"),
   currentLocationContext: document.querySelector("#currentLocationContext"),
@@ -261,6 +266,15 @@ function renderSymbol(state) {
   const activatedAt = formatActivatedAt(state, formatOperatorTimestampUtcMinus4);
   fields.activation.hidden = !activatedAt;
   fields.activatedAt.textContent = activatedAt || "—";
+  const migration = buildMigrationPresentation(
+    state,
+    formatOperatorTimestampUtcMinus4,
+    formatPrice,
+  );
+  fields.migration.hidden = migration === null;
+  fields.migrationTitle.textContent = migration?.title || "MIGRATED";
+  fields.migratedAt.textContent = migration?.timestamp || "—";
+  fields.previousRange.textContent = migration?.previousRange || "—";
   fields.location.textContent = active ? formatLocation(state.structural_location) : "—";
   fields.currentLocation.textContent = formatLocation(state.current_price_location);
   fields.currentLocationContext.textContent = state.current_location_context || "—";

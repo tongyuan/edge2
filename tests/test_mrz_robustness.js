@@ -1,6 +1,7 @@
 const assert = require("node:assert/strict");
 const {
   durationText,
+  migrationProvenanceMarkup,
   percentageText,
   reportMarkup,
   robustnessCardMarkup,
@@ -14,6 +15,7 @@ assert.equal(percentageText(null), "—");
 const activeReport = {
   symbol: "BTCUSDT",
   route_owner: "STR",
+  migration: { has_migrated: false },
   active_mrz: {
     lower: "77309.19",
     upper: "77436.91",
@@ -105,6 +107,70 @@ assert.match(markup, /Current MRZ remains authoritative/);
 assert.match(markup, /Diagnostic only\. Migration remains controlled by the MRZ engine/);
 assert.match(markup, /2d 13h/);
 assert.doesNotMatch(markup, /Healthy|Weak|Good|Bad/);
+assert.doesNotMatch(markup, /MIGRATED UPWARD|MIGRATED DOWNWARD/);
+
+const wldMigration = {
+  has_migrated: true,
+  direction: "UP",
+  migrated_at: "2026-08-24T16:00:00Z",
+  previous_lower: 0.3936,
+  previous_upper: 0.3966,
+  current_lower: 0.4034,
+  current_upper: 0.4083,
+};
+const migrationMarkup = migrationProvenanceMarkup(
+  wldMigration,
+  () => "24 Aug 2026 · 12:00 UTC−4",
+);
+assert.match(migrationMarkup, /↑ MIGRATED UPWARD/);
+assert.match(migrationMarkup, /24 Aug 2026 · 12:00 UTC−4/);
+assert.match(migrationMarkup, /0\.3936 – 0\.3966/);
+assert.match(migrationMarkup, /0\.4034 – 0\.4083/);
+
+const migratedStableReport = {
+  ...activeReport,
+  symbol: "WLDUSDT",
+  route_owner: "BTD",
+  migration: wldMigration,
+  active_mrz: {
+    ...activeReport.active_mrz,
+    lower: "0.4034",
+    upper: "0.4083",
+    midpoint: "0.40585",
+  },
+  migration_pressure: {
+    status: "STABLE",
+    label: "Stable",
+    reason: "No post-activation observation has moved outside the active MRZ envelope.",
+  },
+  successor_watch: {
+    ...activeReport.successor_watch,
+    status: "NO_SUCCESSOR_CANDIDATE",
+    label: "No successor candidate",
+    symbol: null,
+    route: null,
+    candidate_lower: null,
+    candidate_upper: null,
+    evidence_observation_count: 0,
+  },
+  robustness_classification: {
+    status: "STABLE",
+    label: "Stable",
+    reasons: ["No confirmed successor is detected."],
+  },
+};
+const migratedStableMarkup = robustnessCardMarkup(
+  migratedStableReport,
+  () => "24 Aug 2026 · 12:00 UTC−4",
+);
+assert.match(migratedStableMarkup, /↑ MIGRATED UPWARD/);
+assert.match(migratedStableMarkup, /Stable/);
+assert.match(migratedStableMarkup, /No successor candidate/);
+
+assert.match(
+  migrationProvenanceMarkup({ ...wldMigration, direction: "DOWN" }, () => "timestamp"),
+  /↓ MIGRATED DOWNWARD/,
+);
 
 const empty = reportMarkup([]);
 assert.match(empty, /No active MRZ is available/);

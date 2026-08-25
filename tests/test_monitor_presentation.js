@@ -3,6 +3,7 @@ const {
   formatFormationDuration,
   buildConcentrationCheck,
   buildEvidencePresentation,
+  buildMigrationPresentation,
   formatActivatedAt,
   formatLatestObservationContext,
   percentageText,
@@ -28,6 +29,48 @@ assert.equal(formatFormationDuration(30), "<1m");
 assert.equal(formatFormationDuration(0), "0m");
 assert.equal(formatFormationDuration(null), null);
 assert.equal(percentageText("1.126789"), "1.13");
+assert.equal(
+  buildMigrationPresentation(
+    { mrz_status: "active", migration: { has_migrated: false } },
+    formatOperatorTimestampUtcMinus4,
+    formatPrice,
+  ),
+  null,
+);
+assert.deepEqual(
+  buildMigrationPresentation({
+    mrz_status: "active",
+    migration: {
+      has_migrated: true,
+      direction: "UP",
+      migrated_at: "2026-08-24T16:00:00Z",
+      previous_lower: 0.3936,
+      previous_upper: 0.3966,
+      current_lower: 0.4034,
+      current_upper: 0.4083,
+    },
+  }, formatOperatorTimestampUtcMinus4, formatPrice),
+  {
+    title: "↑ MIGRATED",
+    timestamp: "24 Aug 2026 · 12:00 UTC−4",
+    previousRange: "0.3936–0.3966",
+    currentRange: "0.4034–0.4083",
+  },
+);
+assert.equal(
+  buildMigrationPresentation({
+    mrz_status: "active",
+    migration: {
+      has_migrated: true,
+      direction: "DOWN",
+      previous_lower: 180,
+      previous_upper: 180.6,
+      current_lower: 170,
+      current_upper: 170.6,
+    },
+  }, () => "24 Aug 2026 · 13:00 UTC−4", formatPrice).title,
+  "↓ MIGRATED",
+);
 assert.equal(
   formatActivatedAt(
     { mrz_status: "active", activated_at: "2026-08-24T02:21:00Z" },

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Callable, Sequence
+from typing import Callable, Mapping, Sequence
 
 from app.concentration import ConcentrationResult, evaluate_concentration, latest_route_window
 from app.domain import ActiveMRZ, Observation, Route
@@ -12,7 +12,11 @@ from app.structure import classify_structural_location
 
 RobustnessInputProvider = Callable[
     [],
-    tuple[tuple[ActiveMRZ, ...], tuple[Observation, ...]],
+    tuple[
+        tuple[ActiveMRZ, ...],
+        tuple[Observation, ...],
+        Mapping[str, Mapping[str, object]],
+    ],
 ]
 
 
@@ -57,7 +61,7 @@ class MRZRobustnessService:
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     def generate_report(self) -> dict[str, object]:
-        active_mrzs, observations = self._input_provider()
+        active_mrzs, observations, migration_provenance = self._input_provider()
         generated_at = self._clock()
         observations_by_symbol: dict[str, list[Observation]] = {}
         for observation in observations:
@@ -68,6 +72,10 @@ class MRZRobustnessService:
                 active,
                 observations_by_symbol.get(active.symbol, []),
                 generated_at,
+                migration_provenance.get(
+                    active.symbol,
+                    {"has_migrated": False},
+                ),
             )
             for active in sorted(active_mrzs, key=lambda item: item.symbol)
         ]
@@ -107,6 +115,7 @@ class MRZRobustnessService:
         active: ActiveMRZ,
         observations: Sequence[Observation],
         generated_at: datetime,
+        migration: Mapping[str, object],
     ) -> dict[str, object]:
         post_activation = self._post_activation_observations(active, observations)
         total = len(post_activation)
@@ -258,6 +267,7 @@ class MRZRobustnessService:
         return {
             "symbol": active.symbol,
             "route_owner": active.route_owner.value,
+            "migration": dict(migration),
             "active_mrz": {
                 "lower": decimal_text(active.core_mrz_lower),
                 "upper": decimal_text(active.core_mrz_upper),

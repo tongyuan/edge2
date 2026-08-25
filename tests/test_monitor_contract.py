@@ -30,11 +30,12 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("Symbol Lab", HTML)
 
     def test_monitor_assets_are_versioned_together(self) -> None:
-        self.assertIn('/static/styles.css?v=operator-navigation-20260824', HTML)
-        self.assertIn('/static/heatmap-state.js?v=operator-navigation-20260824', HTML)
-        self.assertIn('/static/operator-time.js?v=operator-navigation-20260824', HTML)
-        self.assertIn('/static/monitor-presentation.js?v=operator-navigation-20260824', HTML)
-        self.assertIn('/static/app.js?v=operator-navigation-20260824', HTML)
+        version = "migration-provenance-20260825"
+        self.assertIn(f'/static/styles.css?v={version}', HTML)
+        self.assertIn(f'/static/heatmap-state.js?v={version}', HTML)
+        self.assertIn(f'/static/operator-time.js?v={version}', HTML)
+        self.assertIn(f'/static/monitor-presentation.js?v={version}', HTML)
+        self.assertIn(f'/static/app.js?v={version}', HTML)
         self.assertLess(HTML.index("heatmap-state.js"), HTML.index("app.js"))
         self.assertLess(HTML.index("monitor-presentation.js"), HTML.index("app.js"))
 
@@ -59,6 +60,18 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn("fields.activation.hidden = !activatedAt;", JAVASCRIPT)
         self.assertIn('fields.activatedAt.textContent = activatedAt || "—";', JAVASCRIPT)
         self.assertIn(".mrz-activation[hidden] { display: none; }", CSS)
+
+    def test_current_migration_provenance_is_persistent_and_explicit(self) -> None:
+        self.assertIn('id="mrzMigration" hidden', HTML)
+        self.assertIn('id="mrzMigrationTitle">↑ MIGRATED<', HTML)
+        self.assertIn('id="mrzMigratedAt"', HTML)
+        self.assertIn('id="mrzPreviousRange"', HTML)
+        self.assertIn("buildMigrationPresentation(", JAVASCRIPT)
+        self.assertIn('migration.direction === "DOWN" ? "↓" : "↑"', MONITOR_PRESENTATION)
+        self.assertIn('title: `${arrow} MIGRATED`', MONITOR_PRESENTATION)
+        self.assertIn("fields.migration.hidden = migration === null;", JAVASCRIPT)
+        migration_style = CSS.split(".mrz-migration {", 1)[1].split("}", 1)[0]
+        self.assertNotIn("animation", migration_style)
 
     def test_mrz_and_current_price_locations_are_separate(self) -> None:
         self.assertIn(">MRZ LOCATION<", HTML)

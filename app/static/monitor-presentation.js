@@ -137,11 +137,28 @@
     return timestampFormatter(state.activated_at);
   }
 
+  function buildMigrationPresentation(
+    state,
+    timestampFormatter = () => null,
+    priceFormatter = (value) => String(value),
+  ) {
+    const migration = state.migration;
+    if (state.mrz_status !== "active" || !migration?.has_migrated) return null;
+    const arrow = migration.direction === "DOWN" ? "↓" : "↑";
+    return {
+      title: `${arrow} MIGRATED`,
+      timestamp: timestampFormatter(migration.migrated_at),
+      previousRange: `${priceFormatter(migration.previous_lower)}–${priceFormatter(migration.previous_upper)}`,
+      currentRange: `${priceFormatter(migration.current_lower)}–${priceFormatter(migration.current_upper)}`,
+    };
+  }
+
   const monitorPresentation = {
     formatFormationDuration,
     percentageText,
     buildConcentrationCheck,
     buildEvidencePresentation,
+    buildMigrationPresentation,
     formatLatestObservationContext,
     formatActivatedAt,
   };

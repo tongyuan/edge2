@@ -166,6 +166,68 @@ class RepositoryIntegrationTests(unittest.TestCase):
         self.assertEqual(events[-1]["old_formation_duration_seconds"], Decimal("3"))
         self.assertEqual(events[-1]["new_formation_duration_seconds"], Decimal("3"))
         self.assertEqual(detail["formation_duration_seconds"], 3.0)
+        self.assertEqual(
+            detail["migration"],
+            {
+                "has_migrated": True,
+                "direction": "UP",
+                "migrated_at": "2026-08-20T12:00:10Z",
+                "previous_lower": 110.0,
+                "previous_upper": 110.6,
+                "current_lower": 120.0,
+                "current_upper": 120.6,
+                "route_owner": "BTD",
+                "migration_event_id": "db-event-10",
+            },
+        )
+
+        restarted = EdgeRepository(self.database_url)
+        self.assertEqual(
+            restarted.symbol_detail("SPXUSDT")["migration"],
+            detail["migration"],
+        )
+        _active_mrzs, _observations, robustness_migrations = (
+            restarted.mrz_robustness_inputs()
+        )
+        self.assertEqual(robustness_migrations["SPXUSDT"], detail["migration"])
+
+    def test_current_provenance_uses_only_the_latest_migration_that_created_the_active_mrz(self) -> None:
+        prices = (
+            "110", "110.2", "110.4", "110.6",
+            "120", "120.2", "120.4", "120.6",
+            "130", "130.2", "130.4", "130.6",
+        )
+        for index, price in enumerate(prices, 1):
+            self.ingest(index, price)
+
+        detail = self.repository.symbol_detail("SPXUSDT")
+        events = self.repository.audit_events("SPXUSDT")
+
+        self.assertEqual(
+            [event["event_type"] for event in events],
+            ["MRZ_ACTIVATED", "MRZ_MIGRATED", "MRZ_MIGRATED"],
+        )
+        self.assertEqual(detail["core_mrz_lower"], 130.0)
+        self.assertEqual(detail["migration"]["previous_lower"], 120.0)
+        self.assertEqual(detail["migration"]["previous_upper"], 120.6)
+        self.assertEqual(detail["migration"]["current_lower"], 130.0)
+        self.assertEqual(detail["migration"]["current_upper"], 130.6)
+        self.assertEqual(detail["migration"]["migration_event_id"], "db-event-12")
+
+    def test_downward_migration_provenance_is_derived_from_persisted_event_ranges(self) -> None:
+        prices = (
+            "180", "180.2", "180.4", "180.6",
+            "170.6", "170.4", "170.2", "170",
+        )
+        for index, price in enumerate(prices, 1):
+            self.ingest(index, price, route="STR")
+
+        detail = self.repository.symbol_detail("SPXUSDT")
+
+        self.assertTrue(detail["migration"]["has_migrated"])
+        self.assertEqual(detail["migration"]["direction"], "DOWN")
+        self.assertEqual(detail["migration"]["previous_lower"], 180.0)
+        self.assertEqual(detail["migration"]["current_lower"], 170.0)
 
     def test_active_core_support_persists_without_resizing_bounds(self) -> None:
         for index, price in enumerate(("110", "110.2", "110.4", "110.6"), 1):

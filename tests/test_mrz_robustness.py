@@ -17,7 +17,12 @@ from tests.helpers import BASE_TIME, observation
 FIXED_NOW = datetime(2026, 8, 23, 12, 0, tzinfo=timezone.utc)
 
 
-def report_for(post_activation_rows=(), *, active_route=Route.BTD):
+def report_for(
+    post_activation_rows=(),
+    *,
+    active_route=Route.BTD,
+    migration=None,
+):
     formation_prices = (
         ("110", "110.2", "110.4", "110.6")
         if active_route is Route.BTD
@@ -30,7 +35,11 @@ def report_for(post_activation_rows=(), *, active_route=Route.BTD):
     active = replay_symbol(formation).active_mrz
     rows = (*formation, *post_activation_rows)
     report = MRZRobustnessService(
-        lambda: ((active,), rows),
+        lambda: (
+            (active,),
+            rows,
+            {active.symbol: migration or {"has_migrated": False}},
+        ),
         clock=lambda: FIXED_NOW,
     ).generate_report()
     return active, report["active_mrzs"][0]
@@ -112,7 +121,11 @@ class MRZRobustnessTests(unittest.TestCase):
         )
         active = replay_symbol(formation).active_mrz
         service = MRZRobustnessService(
-            lambda: ((active,), (*formation, *post)),
+            lambda: (
+                (active,),
+                (*formation, *post),
+                {active.symbol: {"has_migrated": False}},
+            ),
             clock=lambda: FIXED_NOW,
         )
 
@@ -153,7 +166,7 @@ class MRZRobustnessTests(unittest.TestCase):
 
     def test_empty_active_set_and_newly_activated_mrz_are_neutral(self) -> None:
         empty = MRZRobustnessService(
-            lambda: ((), ()),
+            lambda: ((), (), {}),
             clock=lambda: FIXED_NOW,
         ).generate_report()
         self.assertEqual(empty["active_mrz_count"], 0)
@@ -163,6 +176,48 @@ class MRZRobustnessTests(unittest.TestCase):
         self.assertEqual(report["migration_pressure"]["status"], "STABLE")
         self.assertEqual(report["successor_watch"]["status"], "NO_SUCCESSOR_CANDIDATE")
         self.assertEqual(report["containment"]["percentage"], None)
+        self.assertEqual(report["migration"], {"has_migrated": False})
+
+    def test_migration_provenance_remains_visible_when_current_state_is_stable(self) -> None:
+        migration = {
+            "has_migrated": True,
+            "direction": "UP",
+            "migrated_at": "2026-08-24T16:00:00Z",
+            "previous_lower": 0.3936,
+            "previous_upper": 0.3966,
+            "current_lower": 0.4034,
+            "current_upper": 0.4083,
+            "route_owner": "BTD",
+            "migration_event_id": "wld-migration",
+        }
+        _active, report = report_for((), migration=migration)
+
+        self.assertEqual(report["migration"], migration)
+        self.assertEqual(report["migration_pressure"]["status"], "STABLE")
+        self.assertEqual(
+            report["successor_watch"]["status"],
+            "NO_SUCCESSOR_CANDIDATE",
+        )
+
+    def test_downward_migration_direction_is_preserved(self) -> None:
+        migration = {
+            "has_migrated": True,
+            "direction": "DOWN",
+            "migrated_at": "2026-08-24T17:00:00Z",
+            "previous_lower": 180.0,
+            "previous_upper": 180.6,
+            "current_lower": 170.0,
+            "current_upper": 170.6,
+            "route_owner": "STR",
+            "migration_event_id": "str-migration",
+        }
+        _active, report = report_for(
+            (),
+            active_route=Route.STR,
+            migration=migration,
+        )
+
+        self.assertEqual(report["migration"]["direction"], "DOWN")
 
 
 class MRZRobustnessDatabaseSafetyTests(unittest.TestCase):
