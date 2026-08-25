@@ -3,17 +3,17 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="EDGE 2.0 post-activation MRZ robustness diagnostic" />
-    <title>EDGE 2.0 · MRZ Robustness</title>
-    <link rel="stylesheet" href="/static/mrz-robustness.css?v=migration-provenance-20260825" />
+    <meta name="description" content="EDGE 2.0 MRZ operation card" />
+    <title>EDGE 2.0 · MRZ Operation Card</title>
+    <link rel="stylesheet" href="/static/mrz-robustness.css?v=operation-card-20260825" />
   </head>
   <body>
     <main class="report-shell">
       <header class="report-header">
         <div>
-          <p class="eyebrow">EDGE 2.0 · READ-ONLY DIAGNOSTIC</p>
-          <h1>Post-Activation MRZ Robustness</h1>
-          <p class="subtitle">Does each frozen MRZ continue to represent a valid structural concentration zone?</p>
+          <p class="eyebrow">EDGE 2.0 · READ-ONLY OPERATOR VIEW</p>
+          <h1>MRZ Operation Card</h1>
+          <p class="subtitle">Current structural authority, robustness, pressure and migration state.</p>
         </div>
         <div class="header-actions">
           <a href="/">MRZ Monitor</a>
@@ -23,13 +23,13 @@
       </header>
 
       <aside class="notice">
-        Observation only. This report cannot activate, migrate, replace, or change ownership of an MRZ.
+        Observation only. These cards explain authoritative state and cannot activate, migrate, replace, or change ownership of an MRZ.
       </aside>
 
       <ol class="lifecycle" aria-label="MRZ lifecycle">
         <li><span>01</span><strong>Formation</strong></li>
         <li><span>02</span><strong>Activation</strong></li>
-        <li class="current"><span>03</span><strong>Robustness Monitoring</strong></li>
+        <li class="current"><span>03</span><strong>Operation Card</strong></li>
         <li><span>04</span><strong>Migration Pressure</strong></li>
         <li><span>05</span><strong>Migration Confirmation</strong></li>
       </ol>
@@ -42,12 +42,12 @@
         <section class="report-meta" aria-label="Report metadata">
           <article><span>GENERATED</span><strong id="generatedAt">—</strong></article>
           <article><span>ACTIVE MRZS</span><strong id="activeMrzCount">0</strong></article>
-          <article><span>EVIDENCE BOUNDARY</span><strong>Strictly after authoritative activation event</strong></article>
+          <article><span>BEHAVIOR EVIDENCE</span><strong>Strictly after authoritative activation event</strong></article>
         </section>
         <div id="activeReports"></div>
       </div>
     </main>
-    <script src="/static/operator-time.js?v=migration-provenance-20260825" defer></script>
-    <script src="/static/mrz-robustness.js?v=migration-provenance-20260825" defer></script>
+    <script src="/static/operator-time.js?v=operation-card-20260825" defer></script>
+    <script src="/static/mrz-robustness.js?v=operation-card-20260825" defer></script>
   </body>
 </html>

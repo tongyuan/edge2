@@ -48,6 +48,27 @@ def duration_seconds(start: datetime, end: datetime) -> Decimal:
     )
 
 
+def structural_location_label(value: str) -> str:
+    labels = {
+        "deep_discount_core_mrz": "Deep Discount",
+        "shallow_discount_core_mrz": "Shallow Discount",
+        "shallow_premium_core_mrz": "Shallow Premium",
+        "deep_premium_core_mrz": "Deep Premium",
+    }
+    return labels[value]
+
+
+def directional_evidence(
+    upper_count: int,
+    lower_count: int,
+) -> tuple[str, str]:
+    if upper_count > lower_count:
+        return "UP", "Upward"
+    if lower_count > upper_count:
+        return "DOWN", "Downward"
+    return "NEUTRAL", "Neutral"
+
+
 class MRZRobustnessService:
     """Build a read-only post-activation diagnostic from authoritative state."""
 
@@ -139,11 +160,20 @@ class MRZRobustnessService:
             observation.observation_price <= active.core_mrz_lower
             for observation in post_activation
         )
-        outside_envelope = tuple(
+        above_upper_envelope = tuple(
+            observation
+            for observation in post_activation
+            if observation.observation_price > active.upper_migration_boundary
+        )
+        below_lower_envelope = tuple(
             observation
             for observation in post_activation
             if observation.observation_price < active.lower_migration_boundary
-            or observation.observation_price > active.upper_migration_boundary
+        )
+        outside_envelope = (*below_lower_envelope, *above_upper_envelope)
+        pressure_direction, pressure_direction_label = directional_evidence(
+            len(above_upper_envelope),
+            len(below_lower_envelope),
         )
 
         midpoint_distances = tuple(
@@ -225,7 +255,29 @@ class MRZRobustnessService:
             candidate_lower = None
             candidate_upper = None
 
-        if successor_confirmed:
+        if successor_pool and all(
+            item.observation_price > active.upper_migration_boundary
+            for item in successor_pool
+        ):
+            successor_direction = "UP"
+            successor_direction_label = "Higher MRZ"
+        elif successor_pool and all(
+            item.observation_price < active.lower_migration_boundary
+            for item in successor_pool
+        ):
+            successor_direction = "DOWN"
+            successor_direction_label = "Lower MRZ"
+        else:
+            successor_direction = None
+            successor_direction_label = None
+
+        if total == 0:
+            pressure_status = "NO_EVIDENCE"
+            pressure_label = "No evidence"
+            pressure_reason = (
+                "No post-activation observations are available to assess migration pressure."
+            )
+        elif successor_confirmed:
             pressure_status = "MIGRATION_CANDIDATE"
             pressure_label = "Migration Candidate"
             pressure_reason = (
@@ -246,28 +298,80 @@ class MRZRobustnessService:
                 "No post-activation observation has moved outside the active MRZ envelope."
             )
 
-        robustness_reasons = []
         if total == 0:
-            robustness_reasons.append("No post-activation observations are available yet.")
-        elif contained * 2 > total:
-            robustness_reasons.append(
-                "A majority of post-activation observations remain inside the frozen MRZ."
+            robustness_status = "NOT_YET_ASSESSABLE"
+            robustness_label = "Not yet assessable"
+            robustness_reason = "No post-activation observations are available yet."
+        elif pressure_status == "STABLE":
+            robustness_status = "STABLE"
+            robustness_label = "Stable"
+            robustness_reason = (
+                "No post-activation observation is beyond the active MRZ migration envelope."
             )
         else:
-            robustness_reasons.append(
-                "A majority of post-activation observations do not remain inside the frozen MRZ."
+            robustness_status = "UNDER_PRESSURE"
+            robustness_label = "Under Pressure"
+            robustness_reason = (
+                "Post-activation observations are present beyond the active MRZ migration envelope."
             )
-        robustness_reasons.append(route_integrity_label + ".")
-        robustness_reasons.append(
-            "No confirmed successor is detected."
-            if not successor_confirmed
-            else "A confirmed successor is visible diagnostically; migration authority is unchanged."
+
+        location_label = structural_location_label(active.structural_location.value)
+        structural_role_status = (
+            "SUPPORTIVE" if active.route_owner is Route.BTD else "RESISTIVE"
         )
+        structural_role_label = (
+            "Supportive" if active.route_owner is Route.BTD else "Resistive"
+        )
+        successor_summary_status = (
+            "CONFIRMED" if successor_confirmed else "NOT_CONFIRMED"
+        )
+        successor_summary_label = (
+            "Confirmed" if successor_confirmed else "Not confirmed"
+        )
+        if total == 0:
+            summary_detail = (
+                "No post-activation observations are available to assess pressure or "
+                "successor formation."
+            )
+        elif pressure_direction == "UP":
+            summary_detail = (
+                "Post-activation observations are exerting upward pressure, but no "
+                "successor MRZ is confirmed."
+                if not successor_confirmed
+                else "Upward evidence has produced a successor that satisfies the production check."
+            )
+        elif pressure_direction == "DOWN":
+            summary_detail = (
+                "Post-activation observations are exerting downward pressure, but no "
+                "successor MRZ is confirmed."
+                if not successor_confirmed
+                else "Downward evidence has produced a successor that satisfies the production check."
+            )
+        elif outside_envelope:
+            summary_detail = (
+                "Post-activation observations are beyond both sides of the migration "
+                "envelope without a dominant direction, but no successor MRZ is confirmed."
+                if not successor_confirmed
+                else "A successor satisfies the production check without a dominant pressure direction."
+            )
+        else:
+            summary_detail = (
+                "No post-activation observation is beyond the migration envelope, and "
+                "no successor MRZ is confirmed."
+            )
 
         return {
             "symbol": active.symbol,
             "route_owner": active.route_owner.value,
             "migration": dict(migration),
+            "structural_authority": {
+                "status": "AUTHORITATIVE",
+                "label": "Authoritative",
+                "structural_location": active.structural_location.value,
+                "structural_location_label": location_label,
+                "structural_role": structural_role_status,
+                "structural_role_label": structural_role_label,
+            },
             "active_mrz": {
                 "lower": decimal_text(active.core_mrz_lower),
                 "upper": decimal_text(active.core_mrz_upper),
@@ -293,6 +397,12 @@ class MRZRobustnessService:
                 "post_activation_observation_count": total,
                 "meaning": "What occurred after the active MRZ was formed.",
             },
+            "post_activation_robustness": {
+                "status": robustness_status,
+                "label": robustness_label,
+                "reason": robustness_reason,
+                "post_activation_observation_count": total,
+            },
             "containment": {
                 "inside_observation_count": contained,
                 "total_observation_count": total,
@@ -302,16 +412,24 @@ class MRZRobustnessService:
                 "upper_boundary_test_count": upper_tests,
                 "lower_boundary_test_count": lower_tests,
                 "outside_envelope_observation_count": len(outside_envelope),
+                "above_upper_envelope_observation_count": len(
+                    above_upper_envelope
+                ),
+                "below_lower_envelope_observation_count": len(
+                    below_lower_envelope
+                ),
                 "definition": (
                     "Boundary tests count observations at or beyond each frozen core "
                     "boundary. External observations fall beyond the migration envelope."
                 ),
             },
-            "midpoint_stability": {
+            "distance_from_mrz_midpoint": {
                 "median_distance_percentage_of_activation_ipda": decimal_text(
                     midpoint_median
                 ),
-                "normalization": "Full IPDA 20W width stored at activation.",
+                "normalization": (
+                    "Normalized by full IPDA 20W width stored at activation."
+                ),
             },
             "route_integrity": {
                 "status": route_integrity_status,
@@ -325,6 +443,29 @@ class MRZRobustnessService:
                 "status": pressure_status,
                 "label": pressure_label,
                 "reason": pressure_reason,
+                "direction": pressure_direction,
+                "direction_label": pressure_direction_label,
+                "relevant_boundary_label": (
+                    "Upper migration boundary"
+                    if pressure_direction == "UP"
+                    else "Lower migration boundary"
+                    if pressure_direction == "DOWN"
+                    else None
+                ),
+                "relevant_boundary": (
+                    decimal_text(active.upper_migration_boundary)
+                    if pressure_direction == "UP"
+                    else decimal_text(active.lower_migration_boundary)
+                    if pressure_direction == "DOWN"
+                    else None
+                ),
+                "observations_beyond_envelope": len(outside_envelope),
+                "above_upper_envelope_observation_count": len(
+                    above_upper_envelope
+                ),
+                "below_lower_envelope_observation_count": len(
+                    below_lower_envelope
+                ),
                 "current_mrz_remains_authoritative": True,
             },
             "successor_watch": {
@@ -334,8 +475,11 @@ class MRZRobustnessService:
                 "route": active.route_owner.value if successor_pool else None,
                 "candidate_lower": decimal_text(candidate_lower),
                 "candidate_upper": decimal_text(candidate_upper),
+                "direction": successor_direction,
+                "direction_label": successor_direction_label,
                 "evidence_observation_count": len(successor_pool),
                 "required_observation_count": diagnostic.minimum_required_count,
+                "normalized_span": decimal_text(diagnostic.normalized_span),
                 "production_evaluation_result": diagnostic.result.value,
                 "diagnostic_only": True,
             },
@@ -345,9 +489,21 @@ class MRZRobustnessService:
                     duration_seconds(active.activated_at, generated_at)
                 ),
             },
-            "robustness_classification": {
-                "status": pressure_status,
-                "label": pressure_label,
-                "reasons": robustness_reasons,
+            "structural_summary": {
+                "current_authority": (
+                    f"{active.route_owner.value} · {location_label}"
+                ),
+                "robustness_status": robustness_status,
+                "robustness_label": robustness_label,
+                "pressure_direction": pressure_direction,
+                "pressure_direction_label": pressure_direction_label,
+                "structural_role": structural_role_status,
+                "structural_role_label": structural_role_label,
+                "successor_status": successor_summary_status,
+                "successor_label": successor_summary_label,
+                "authority_statement": (
+                    f"The current {active.route_owner.value} MRZ remains authoritative."
+                ),
+                "detail_statement": summary_detail,
             },
         }

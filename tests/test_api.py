@@ -81,9 +81,13 @@ class APIIntegrationTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["cache-control"], "no-store, max-age=0")
-        self.assertIn("Post-Activation MRZ Robustness", response.text)
+        self.assertIn("MRZ Operation Card", response.text)
+        self.assertIn(
+            "Current structural authority, robustness, pressure and migration state.",
+            response.text,
+        )
         self.assertIn("Observation only", response.text)
-        self.assertIn("Robustness Monitoring", response.text)
+        self.assertIn("Operation Card", response.text)
         self.assertIn('id="activeReports"', response.text)
         self.assertNotIn('id="summaryA"', response.text)
 
@@ -93,9 +97,9 @@ class APIIntegrationTests(unittest.TestCase):
         robustness = self.client.get("/diagnostics/mrz-robustness").text
 
         self.assertIn('href="/diagnostics/activation-feasibility">Activation Feasibility</a>', monitor)
-        self.assertIn('href="/diagnostics/mrz-robustness">MRZ Robustness</a>', monitor)
+        self.assertIn('href="/diagnostics/mrz-robustness">MRZ Operation Card</a>', monitor)
         self.assertIn('href="/">MRZ Monitor</a>', feasibility)
-        self.assertIn('href="/diagnostics/mrz-robustness">MRZ Robustness</a>', feasibility)
+        self.assertIn('href="/diagnostics/mrz-robustness">MRZ Operation Card</a>', feasibility)
         self.assertIn('href="/">MRZ Monitor</a>', robustness)
         self.assertIn('href="/diagnostics/activation-feasibility">Activation Feasibility</a>', robustness)
 
@@ -128,13 +132,17 @@ class APIIntegrationTests(unittest.TestCase):
             1,
         )
         self.assertEqual(report["migration_pressure"]["status"], "UNDER_PRESSURE")
+        self.assertEqual(report["migration_pressure"]["direction"], "UP")
+        self.assertEqual(report["post_activation_robustness"]["status"], "UNDER_PRESSURE")
+        self.assertEqual(report["structural_authority"]["label"], "Authoritative")
+        self.assertEqual(report["structural_authority"]["structural_location_label"], "Deep Discount")
         self.assertEqual(report["successor_watch"]["status"], "CANDIDATE_FORMING")
         self.assertEqual(before, after)
 
     def test_monitor_and_robustness_share_current_migration_provenance(self) -> None:
         prices = (
             "110", "110.2", "110.4", "110.6",
-            "120", "120.2", "120.4", "120.6",
+            "120", "120.2", "120.4", "120.6", "120.3",
         )
         for index, price in enumerate(prices, 1):
             self.assertEqual(
@@ -153,6 +161,8 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertTrue(monitor["migration"]["has_migrated"])
         self.assertEqual(report["migration"], monitor["migration"])
         self.assertEqual(report["migration_pressure"]["status"], "STABLE")
+        self.assertEqual(report["migration_pressure"]["direction"], "NEUTRAL")
+        self.assertEqual(report["post_activation_robustness"]["status"], "STABLE")
         self.assertEqual(
             report["successor_watch"]["status"],
             "NO_SUCCESSOR_CANDIDATE",

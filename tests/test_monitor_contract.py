@@ -41,7 +41,7 @@ class MonitorContractTests(unittest.TestCase):
 
     def test_monitor_links_to_both_read_only_diagnostics(self) -> None:
         self.assertIn('href="/diagnostics/activation-feasibility">Activation Feasibility</a>', HTML)
-        self.assertIn('href="/diagnostics/mrz-robustness">MRZ Robustness</a>', HTML)
+        self.assertIn('href="/diagnostics/mrz-robustness">MRZ Operation Card</a>', HTML)
         self.assertIn('aria-label="Diagnostic navigation"', HTML)
 
     def test_source_and_active_mrz_replace_who_and_where(self) -> None:

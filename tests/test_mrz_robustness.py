@@ -21,9 +21,10 @@ def report_for(
     post_activation_rows=(),
     *,
     active_route=Route.BTD,
+    formation_prices=None,
     migration=None,
 ):
-    formation_prices = (
+    formation_prices = formation_prices or (
         ("110", "110.2", "110.4", "110.6")
         if active_route is Route.BTD
         else ("180", "180.2", "180.4", "180.6")
@@ -59,7 +60,7 @@ class MRZRobustnessTests(unittest.TestCase):
         self.assertEqual(report["robustness_evidence"]["post_activation_observation_count"], 2)
         self.assertEqual(report["containment"]["total_observation_count"], 2)
 
-    def test_containment_boundary_pressure_and_midpoint_stability(self) -> None:
+    def test_containment_boundary_pressure_and_midpoint_distance(self) -> None:
         post = (
             observation(5, "110", observed_offset=5),
             observation(6, "110.3", observed_offset=6),
@@ -75,8 +76,12 @@ class MRZRobustnessTests(unittest.TestCase):
         self.assertEqual(report["boundary_pressure"]["lower_boundary_test_count"], 1)
         self.assertEqual(report["boundary_pressure"]["outside_envelope_observation_count"], 0)
         self.assertEqual(
-            report["midpoint_stability"]["median_distance_percentage_of_activation_ipda"],
+            report["distance_from_mrz_midpoint"]["median_distance_percentage_of_activation_ipda"],
             "0.300",
+        )
+        self.assertEqual(
+            report["distance_from_mrz_midpoint"]["normalization"],
+            "Normalized by full IPDA 20W width stored at activation.",
         )
 
     def test_route_integrity_uses_owner_route_and_current_observation_ipda(self) -> None:
@@ -105,7 +110,15 @@ class MRZRobustnessTests(unittest.TestCase):
 
         self.assertEqual(active.upper_migration_boundary, Decimal("111.8"))
         self.assertEqual(report["migration_pressure"]["status"], "UNDER_PRESSURE")
+        self.assertEqual(report["migration_pressure"]["direction"], "UP")
+        self.assertEqual(report["migration_pressure"]["direction_label"], "Upward")
+        self.assertEqual(report["migration_pressure"]["relevant_boundary"], "111.8")
+        self.assertEqual(report["migration_pressure"]["observations_beyond_envelope"], 3)
+        self.assertEqual(report["post_activation_robustness"]["status"], "UNDER_PRESSURE")
+        self.assertEqual(report["structural_authority"]["label"], "Authoritative")
         self.assertEqual(report["successor_watch"]["status"], "AWAITING_CONFIRMATION")
+        self.assertEqual(report["successor_watch"]["direction"], "UP")
+        self.assertEqual(report["successor_watch"]["direction_label"], "Higher MRZ")
         self.assertEqual(report["successor_watch"]["evidence_observation_count"], 3)
         self.assertEqual(report["successor_watch"]["required_observation_count"], 4)
         self.assertTrue(report["migration_pressure"]["current_mrz_remains_authoritative"])
@@ -136,7 +149,7 @@ class MRZRobustnessTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual(report["successor_watch"]["status"], "CANDIDATE_FORMING")
         self.assertEqual(report["migration_pressure"]["status"], "UNDER_PRESSURE")
-        self.assertEqual(report["robustness_classification"]["status"], "UNDER_PRESSURE")
+        self.assertEqual(report["post_activation_robustness"]["status"], "UNDER_PRESSURE")
 
     def test_confirmed_successor_is_diagnostic_and_does_not_replace_active_mrz(self) -> None:
         post = tuple(
@@ -149,6 +162,7 @@ class MRZRobustnessTests(unittest.TestCase):
         self.assertEqual(report["successor_watch"]["status"], "CONFIRMED_SUCCESSOR")
         self.assertEqual(report["successor_watch"]["candidate_lower"], "120")
         self.assertEqual(report["successor_watch"]["candidate_upper"], "120.6")
+        self.assertEqual(report["successor_watch"]["normalized_span"], "0.006")
         self.assertTrue(report["successor_watch"]["diagnostic_only"])
         self.assertEqual(active.core_mrz_lower, Decimal("110"))
         self.assertEqual(active.activation_event_id, "event-4")
@@ -163,6 +177,9 @@ class MRZRobustnessTests(unittest.TestCase):
         self.assertEqual(report["route_integrity"]["label"], "Premium structure maintained")
         self.assertEqual(report["successor_watch"]["status"], "AWAITING_CONFIRMATION")
         self.assertEqual(report["successor_watch"]["route"], "STR")
+        self.assertEqual(report["migration_pressure"]["direction"], "DOWN")
+        self.assertEqual(report["migration_pressure"]["direction_label"], "Downward")
+        self.assertEqual(report["successor_watch"]["direction_label"], "Lower MRZ")
 
     def test_empty_active_set_and_newly_activated_mrz_are_neutral(self) -> None:
         empty = MRZRobustnessService(
@@ -173,7 +190,16 @@ class MRZRobustnessTests(unittest.TestCase):
         self.assertEqual(empty["active_mrzs"], [])
 
         _active, report = report_for(())
-        self.assertEqual(report["migration_pressure"]["status"], "STABLE")
+        self.assertEqual(report["migration_pressure"]["status"], "NO_EVIDENCE")
+        self.assertEqual(report["migration_pressure"]["direction"], "NEUTRAL")
+        self.assertEqual(
+            report["post_activation_robustness"]["status"],
+            "NOT_YET_ASSESSABLE",
+        )
+        self.assertEqual(
+            report["post_activation_robustness"]["label"],
+            "Not yet assessable",
+        )
         self.assertEqual(report["successor_watch"]["status"], "NO_SUCCESSOR_CANDIDATE")
         self.assertEqual(report["containment"]["percentage"], None)
         self.assertEqual(report["migration"], {"has_migrated": False})
@@ -190,10 +216,15 @@ class MRZRobustnessTests(unittest.TestCase):
             "route_owner": "BTD",
             "migration_event_id": "wld-migration",
         }
-        _active, report = report_for((), migration=migration)
+        _active, report = report_for(
+            (observation(5, "110.3", observed_offset=5),),
+            migration=migration,
+        )
 
         self.assertEqual(report["migration"], migration)
         self.assertEqual(report["migration_pressure"]["status"], "STABLE")
+        self.assertEqual(report["migration_pressure"]["direction"], "NEUTRAL")
+        self.assertEqual(report["post_activation_robustness"]["status"], "STABLE")
         self.assertEqual(
             report["successor_watch"]["status"],
             "NO_SUCCESSOR_CANDIDATE",
@@ -218,6 +249,77 @@ class MRZRobustnessTests(unittest.TestCase):
         )
 
         self.assertEqual(report["migration"]["direction"], "DOWN")
+
+    def test_all_exact_structural_locations_and_roles_are_exposed(self) -> None:
+        cases = (
+            (Route.BTD, ("110", "110.2", "110.4", "110.6"), "Deep Discount", "Supportive"),
+            (Route.BTD, ("130", "130.2", "130.4", "130.6"), "Shallow Discount", "Supportive"),
+            (Route.STR, ("160", "160.2", "160.4", "160.6"), "Shallow Premium", "Resistive"),
+            (Route.STR, ("180", "180.2", "180.4", "180.6"), "Deep Premium", "Resistive"),
+        )
+        for route, prices, location, role in cases:
+            with self.subTest(route=route, location=location):
+                _active, report = report_for(
+                    (),
+                    active_route=route,
+                    formation_prices=prices,
+                )
+                self.assertEqual(
+                    report["structural_authority"]["structural_location_label"],
+                    location,
+                )
+                self.assertEqual(
+                    report["structural_authority"]["structural_role_label"],
+                    role,
+                )
+
+    def test_stable_behavior_has_neutral_pressure_with_factual_sample(self) -> None:
+        _active, report = report_for(
+            (observation(5, "110.3", observed_offset=5),),
+        )
+
+        self.assertEqual(report["post_activation_robustness"]["status"], "STABLE")
+        self.assertEqual(
+            report["post_activation_robustness"][
+                "post_activation_observation_count"
+            ],
+            1,
+        )
+        self.assertEqual(report["migration_pressure"]["status"], "STABLE")
+        self.assertEqual(report["migration_pressure"]["direction"], "NEUTRAL")
+        self.assertIsNone(report["migration_pressure"]["relevant_boundary"])
+
+    def test_pressure_without_successor_retains_directional_evidence(self) -> None:
+        opposite_route_pressure = (
+            observation(5, "180", route=Route.STR, observed_offset=5),
+        )
+        _active, report = report_for(opposite_route_pressure)
+
+        self.assertEqual(report["migration_pressure"]["status"], "UNDER_PRESSURE")
+        self.assertEqual(report["migration_pressure"]["direction"], "UP")
+        self.assertEqual(
+            report["successor_watch"]["status"],
+            "NO_SUCCESSOR_CANDIDATE",
+        )
+        self.assertEqual(
+            report["structural_summary"]["successor_label"],
+            "Not confirmed",
+        )
+
+    def test_balanced_external_evidence_is_neutral_without_hiding_pressure(self) -> None:
+        balanced_pressure = (
+            observation(5, "120", observed_offset=5),
+            observation(6, "100", observed_offset=6),
+        )
+        _active, report = report_for(balanced_pressure)
+
+        self.assertEqual(report["migration_pressure"]["status"], "UNDER_PRESSURE")
+        self.assertEqual(report["migration_pressure"]["direction"], "NEUTRAL")
+        self.assertEqual(report["migration_pressure"]["observations_beyond_envelope"], 2)
+        self.assertIn(
+            "without a dominant direction",
+            report["structural_summary"]["detail_statement"],
+        )
 
 
 class MRZRobustnessDatabaseSafetyTests(unittest.TestCase):
@@ -278,3 +380,22 @@ class MRZRobustnessDatabaseSafetyTests(unittest.TestCase):
         self.assertEqual(before, after)
         self.assertEqual(report["active_mrz_count"], 1)
         self.assertEqual(report["active_mrzs"][0]["migration_pressure"]["status"], "UNDER_PRESSURE")
+
+    def test_report_is_identical_after_repository_restart(self) -> None:
+        for index, price in enumerate(
+            ("110", "110.2", "110.4", "110.6", "120", "120.2"),
+            1,
+        ):
+            self.ingest(index, price)
+
+        before_restart = MRZRobustnessService(
+            self.repository.mrz_robustness_inputs,
+            clock=lambda: FIXED_NOW,
+        ).generate_report()
+        restarted_repository = EdgeRepository(self.database_url)
+        after_restart = MRZRobustnessService(
+            restarted_repository.mrz_robustness_inputs,
+            clock=lambda: FIXED_NOW,
+        ).generate_report()
+
+        self.assertEqual(before_restart, after_restart)
