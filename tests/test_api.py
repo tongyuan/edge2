@@ -136,6 +136,13 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(report["post_activation_robustness"]["status"], "UNDER_PRESSURE")
         self.assertEqual(report["structural_authority"]["label"], "Authoritative")
         self.assertEqual(report["structural_authority"]["structural_location_label"], "Deep Discount")
+        self.assertEqual(
+            report["mrz_displacement"][
+                "median_signed_displacement_percentage_of_activation_ipda"
+            ],
+            "9.700",
+        )
+        self.assertEqual(report["mrz_displacement"]["direction"], "ABOVE")
         self.assertEqual(report["successor_watch"]["status"], "CANDIDATE_FORMING")
         self.assertEqual(before, after)
 

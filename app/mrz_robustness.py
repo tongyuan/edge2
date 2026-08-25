@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Callable, Mapping, Sequence
 
 from app.concentration import ConcentrationResult, evaluate_concentration, latest_route_window
@@ -67,6 +67,19 @@ def directional_evidence(
     if lower_count > upper_count:
         return "DOWN", "Downward"
     return "NEUTRAL", "Neutral"
+
+
+def displacement_evidence(
+    value: Decimal | None,
+) -> tuple[str | None, str]:
+    if value is None:
+        return None, "No post-activation evidence"
+    displayed_value = value.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+    if displayed_value > 0:
+        return "ABOVE", "Median displacement above midpoint"
+    if displayed_value < 0:
+        return "BELOW", "Median displacement below midpoint"
+    return "CENTERED", "Centered around midpoint"
 
 
 class MRZRobustnessService:
@@ -176,13 +189,16 @@ class MRZRobustnessService:
             len(below_lower_envelope),
         )
 
-        midpoint_distances = tuple(
-            abs(observation.observation_price - active.core_mrz_midpoint)
+        midpoint_displacements = tuple(
+            (observation.observation_price - active.core_mrz_midpoint)
             / active.ipda_width_at_activation
             * Decimal("100")
             for observation in post_activation
         )
-        midpoint_median = median_decimal(midpoint_distances)
+        displacement_median = median_decimal(midpoint_displacements)
+        displacement_direction, displacement_label = displacement_evidence(
+            displacement_median
+        )
 
         route_aligned = tuple(
             observation
@@ -328,6 +344,22 @@ class MRZRobustnessService:
         successor_summary_label = (
             "Confirmed" if successor_confirmed else "Not confirmed"
         )
+        if displacement_direction == "ABOVE":
+            displacement_statement = (
+                "Post-activation observations are centered above the active MRZ midpoint."
+            )
+        elif displacement_direction == "BELOW":
+            displacement_statement = (
+                "Post-activation observations are centered below the active MRZ midpoint."
+            )
+        elif displacement_direction == "CENTERED":
+            displacement_statement = (
+                "Post-activation observations are centered around the active MRZ midpoint."
+            )
+        else:
+            displacement_statement = (
+                "No post-activation displacement evidence is available yet."
+            )
         if total == 0:
             summary_detail = (
                 "No post-activation observations are available to assess pressure or "
@@ -423,10 +455,12 @@ class MRZRobustnessService:
                     "boundary. External observations fall beyond the migration envelope."
                 ),
             },
-            "distance_from_mrz_midpoint": {
-                "median_distance_percentage_of_activation_ipda": decimal_text(
-                    midpoint_median
+            "mrz_displacement": {
+                "median_signed_displacement_percentage_of_activation_ipda": decimal_text(
+                    displacement_median
                 ),
+                "direction": displacement_direction,
+                "label": displacement_label,
                 "normalization": (
                     "Normalized by full IPDA 20W width stored at activation."
                 ),
@@ -504,6 +538,7 @@ class MRZRobustnessService:
                 "authority_statement": (
                     f"The current {active.route_owner.value} MRZ remains authoritative."
                 ),
+                "displacement_statement": displacement_statement,
                 "detail_statement": summary_detail,
             },
         }

@@ -21,6 +21,16 @@ function percentageText(value) {
   return `${number.toLocaleString("en-GB", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 }
 
+function displacementText(value, direction) {
+  if (value === null || value === undefined || value === "") return "—";
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "—";
+  if (direction === "ABOVE") return `↑ +${percentageText(Math.abs(number))}`;
+  if (direction === "BELOW") return `↓ -${percentageText(Math.abs(number))}`;
+  if (direction === "CENTERED") return percentageText(0);
+  return percentageText(number);
+}
+
 function durationText(value) {
   if (value === null || value === undefined || value === "") return "—";
   const totalSeconds = Math.max(0, Math.floor(Number(value)));
@@ -85,7 +95,7 @@ function robustnessCardMarkup(report, timestampFormatter = (value) => value) {
   const behavior = report.post_activation_robustness;
   const containment = report.containment;
   const boundary = report.boundary_pressure;
-  const midpointDistance = report.distance_from_mrz_midpoint;
+  const displacement = report.mrz_displacement;
   const route = report.route_integrity;
   const pressure = report.migration_pressure;
   const successor = report.successor_watch;
@@ -165,10 +175,10 @@ function robustnessCardMarkup(report, timestampFormatter = (value) => value) {
         <p class="metric-note">${escapeHtml(route.label)}</p>
       </article>
       <article class="metric-card">
-        <h3>Distance From MRZ Midpoint</h3>
-        <strong class="metric-primary">${percentageText(midpointDistance.median_distance_percentage_of_activation_ipda)}</strong>
-        <span class="metric-secondary">Median distance</span>
-        <p class="metric-note">${escapeHtml(midpointDistance.normalization)}</p>
+        <h3>MRZ Displacement</h3>
+        <strong class="metric-primary">${escapeHtml(displacementText(displacement.median_signed_displacement_percentage_of_activation_ipda, displacement.direction))}</strong>
+        <span class="metric-secondary">${escapeHtml(displacement.label)}</span>
+        <p class="metric-note">${escapeHtml(displacement.normalization)}</p>
       </article>
       </div>
     </section>
@@ -215,6 +225,7 @@ function robustnessCardMarkup(report, timestampFormatter = (value) => value) {
         <div><dt>Successor</dt><dd>${escapeHtml(summary.successor_label)}</dd></div>
       </dl>
       <p class="summary-authority">${escapeHtml(summary.authority_statement)}</p>
+      <p>${escapeHtml(summary.displacement_statement)}</p>
       <p>${escapeHtml(summary.detail_statement)}</p>
     </section>
   </section>`;
@@ -263,6 +274,7 @@ if (typeof document !== "undefined") {
 
 if (typeof module === "object" && module.exports) {
   module.exports = {
+    displacementText,
     durationText,
     directionText,
     migrationProvenanceMarkup,

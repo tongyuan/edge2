@@ -60,7 +60,7 @@ class MRZRobustnessTests(unittest.TestCase):
         self.assertEqual(report["robustness_evidence"]["post_activation_observation_count"], 2)
         self.assertEqual(report["containment"]["total_observation_count"], 2)
 
-    def test_containment_boundary_pressure_and_midpoint_distance(self) -> None:
+    def test_containment_boundary_pressure_and_signed_midpoint_displacement(self) -> None:
         post = (
             observation(5, "110", observed_offset=5),
             observation(6, "110.3", observed_offset=6),
@@ -76,13 +76,131 @@ class MRZRobustnessTests(unittest.TestCase):
         self.assertEqual(report["boundary_pressure"]["lower_boundary_test_count"], 1)
         self.assertEqual(report["boundary_pressure"]["outside_envelope_observation_count"], 0)
         self.assertEqual(
-            report["distance_from_mrz_midpoint"]["median_distance_percentage_of_activation_ipda"],
-            "0.300",
+            report["mrz_displacement"][
+                "median_signed_displacement_percentage_of_activation_ipda"
+            ],
+            "0.150",
         )
+        self.assertEqual(report["mrz_displacement"]["direction"], "ABOVE")
         self.assertEqual(
-            report["distance_from_mrz_midpoint"]["normalization"],
+            report["mrz_displacement"]["normalization"],
             "Normalized by full IPDA 20W width stored at activation.",
         )
+
+    def test_all_observations_above_midpoint_have_positive_displacement(self) -> None:
+        post = tuple(
+            observation(index, price, observed_offset=index)
+            for index, price in enumerate(("111", "112", "113"), 5)
+        )
+        _active, report = report_for(post)
+
+        displacement = report["mrz_displacement"]
+        self.assertEqual(
+            displacement[
+                "median_signed_displacement_percentage_of_activation_ipda"
+            ],
+            "1.700",
+        )
+        self.assertEqual(displacement["direction"], "ABOVE")
+        self.assertEqual(displacement["label"], "Median displacement above midpoint")
+
+    def test_all_observations_below_midpoint_have_negative_displacement(self) -> None:
+        post = tuple(
+            observation(index, price, observed_offset=index)
+            for index, price in enumerate(("109", "108", "107"), 5)
+        )
+        _active, report = report_for(post)
+
+        displacement = report["mrz_displacement"]
+        self.assertEqual(
+            displacement[
+                "median_signed_displacement_percentage_of_activation_ipda"
+            ],
+            "-2.300",
+        )
+        self.assertEqual(displacement["direction"], "BELOW")
+        self.assertEqual(displacement["label"], "Median displacement below midpoint")
+
+    def test_one_observation_uses_signed_full_ipda_normalization_without_pressure(self) -> None:
+        _active, report = report_for(
+            (observation(5, "111.3", observed_offset=5),),
+        )
+
+        self.assertEqual(
+            report["mrz_displacement"][
+                "median_signed_displacement_percentage_of_activation_ipda"
+            ],
+            "1.00",
+        )
+        self.assertEqual(report["mrz_displacement"]["direction"], "ABOVE")
+        self.assertEqual(report["migration_pressure"]["status"], "STABLE")
+        self.assertEqual(
+            report["successor_watch"]["status"],
+            "NO_SUCCESSOR_CANDIDATE",
+        )
+
+    def test_displacement_that_rounds_to_zero_is_centered(self) -> None:
+        _active, report = report_for(
+            (observation(5, "110.34", observed_offset=5),),
+        )
+
+        self.assertEqual(
+            report["mrz_displacement"][
+                "median_signed_displacement_percentage_of_activation_ipda"
+            ],
+            "0.0400",
+        )
+        self.assertEqual(report["mrz_displacement"]["direction"], "CENTERED")
+        self.assertEqual(report["mrz_displacement"]["label"], "Centered around midpoint")
+
+    def test_mixed_sample_preserves_sign_before_median(self) -> None:
+        post = tuple(
+            observation(index, price, observed_offset=index)
+            for index, price in enumerate(("105.3", "108.3", "111.3", "117.3"), 5)
+        )
+        _active, report = report_for(post)
+
+        self.assertEqual(
+            report["mrz_displacement"][
+                "median_signed_displacement_percentage_of_activation_ipda"
+            ],
+            "-0.50",
+        )
+        self.assertEqual(report["mrz_displacement"]["direction"], "BELOW")
+
+    def test_symmetric_sample_is_centered_around_midpoint(self) -> None:
+        post = tuple(
+            observation(index, price, observed_offset=index)
+            for index, price in enumerate(("105.3", "108.3", "112.3", "115.3"), 5)
+        )
+        _active, report = report_for(post)
+
+        self.assertEqual(
+            report["mrz_displacement"][
+                "median_signed_displacement_percentage_of_activation_ipda"
+            ],
+            "0.00",
+        )
+        self.assertEqual(report["mrz_displacement"]["direction"], "CENTERED")
+        self.assertEqual(report["mrz_displacement"]["label"], "Centered around midpoint")
+        self.assertEqual(report["migration_pressure"]["status"], "UNDER_PRESSURE")
+        self.assertEqual(report["migration_pressure"]["direction"], "NEUTRAL")
+        self.assertEqual(report["successor_watch"]["status"], "CANDIDATE_FORMING")
+
+    def test_median_displacement_resists_one_extreme_outlier(self) -> None:
+        post = tuple(
+            observation(index, price, observed_offset=index)
+            for index, price in enumerate(("110.4", "110.5", "110.6", "190.3"), 5)
+        )
+        _active, report = report_for(post)
+
+        self.assertEqual(
+            report["mrz_displacement"][
+                "median_signed_displacement_percentage_of_activation_ipda"
+            ],
+            "0.250",
+        )
+        self.assertEqual(report["mrz_displacement"]["direction"], "ABOVE")
 
     def test_route_integrity_uses_owner_route_and_current_observation_ipda(self) -> None:
         maintained = (
@@ -203,6 +321,16 @@ class MRZRobustnessTests(unittest.TestCase):
         self.assertEqual(report["successor_watch"]["status"], "NO_SUCCESSOR_CANDIDATE")
         self.assertEqual(report["containment"]["percentage"], None)
         self.assertEqual(report["migration"], {"has_migrated": False})
+        self.assertIsNone(
+            report["mrz_displacement"][
+                "median_signed_displacement_percentage_of_activation_ipda"
+            ]
+        )
+        self.assertIsNone(report["mrz_displacement"]["direction"])
+        self.assertEqual(
+            report["mrz_displacement"]["label"],
+            "No post-activation evidence",
+        )
 
     def test_migration_provenance_remains_visible_when_current_state_is_stable(self) -> None:
         migration = {
@@ -399,3 +527,9 @@ class MRZRobustnessDatabaseSafetyTests(unittest.TestCase):
         ).generate_report()
 
         self.assertEqual(before_restart, after_restart)
+        self.assertEqual(
+            before_restart["active_mrzs"][0]["mrz_displacement"][
+                "median_signed_displacement_percentage_of_activation_ipda"
+            ],
+            "9.800",
+        )

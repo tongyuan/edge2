@@ -1,6 +1,7 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const {
+  displacementText,
   durationText,
   directionText,
   migrationProvenanceMarkup,
@@ -14,6 +15,10 @@ assert.equal(durationText("219600"), "2d 13h");
 assert.equal(durationText("5400"), "1h 30m");
 assert.equal(percentageText("77.777"), "77.8%");
 assert.equal(percentageText(null), "—");
+assert.equal(displacementText("6.210106", "ABOVE"), "↑ +6.2%");
+assert.equal(displacementText("-3.44", "BELOW"), "↓ -3.4%");
+assert.equal(displacementText("0.04", "CENTERED"), "0.0%");
+assert.equal(displacementText(null, null), "—");
 assert.equal(directionText("UP", "Upward"), "↑ Upward");
 assert.equal(directionText("DOWN", "Downward"), "↓ Downward");
 assert.equal(directionText("NEUTRAL", "Neutral"), "Neutral");
@@ -71,8 +76,10 @@ const btcReport = {
     below_lower_envelope_observation_count: 0,
     definition: "Deterministic boundary definition.",
   },
-  distance_from_mrz_midpoint: {
-    median_distance_percentage_of_activation_ipda: "0.18",
+  mrz_displacement: {
+    median_signed_displacement_percentage_of_activation_ipda: "6.210106982847374890268628785",
+    direction: "ABOVE",
+    label: "Median displacement above midpoint",
     normalization: "Normalized by full IPDA 20W width stored at activation.",
   },
   route_integrity: {
@@ -122,6 +129,7 @@ const btcReport = {
     successor_status: "NOT_CONFIRMED",
     successor_label: "Not confirmed",
     authority_statement: "The current MRZ remains authoritative.",
+    displacement_statement: "Post-activation observations are centered above the active MRZ midpoint.",
     detail_statement: "Observed post-activation evidence is exerting upward pressure.",
   },
 };
@@ -154,13 +162,17 @@ assert.match(btcMarkup, /Under Pressure/);
 assert.match(btcMarkup, /↑ Upward/);
 assert.match(btcMarkup, /Upper migration boundary/);
 assert.match(btcMarkup, /Still authoritative/);
-assert.match(btcMarkup, /Distance From MRZ Midpoint/);
+assert.match(btcMarkup, /MRZ Displacement/);
+assert.match(btcMarkup, /↑ \+6\.2%/);
+assert.match(btcMarkup, /Median displacement above midpoint/);
+assert.match(btcMarkup, /centered above the active MRZ midpoint/);
 assert.match(btcMarkup, /Normalized by full IPDA 20W width stored at activation/);
 assert.match(btcMarkup, /No successor candidate/);
 assert.match(btcMarkup, /0 \/ 4/);
 assert.match(btcMarkup, /Insufficient observations/);
 assert.match(btcMarkup, /2d 13h/);
 assert.doesNotMatch(btcMarkup, /Midpoint Stability/);
+assert.doesNotMatch(btcMarkup, /Distance From MRZ Midpoint/);
 assert.doesNotMatch(btcMarkup, /bb_mrz/);
 assert.doesNotMatch(btcMarkup, /\b(?:buy|sell|long|short)\b/i);
 assert.doesNotMatch(btcMarkup, /Healthy|Weak|Good|Bad/);
@@ -235,6 +247,12 @@ const wldReport = {
     structurally_aligned_observation_count: 1,
     total_observation_count: 1,
   },
+  mrz_displacement: {
+    ...btcReport.mrz_displacement,
+    median_signed_displacement_percentage_of_activation_ipda: "-0.977428456267634",
+    direction: "BELOW",
+    label: "Median displacement below midpoint",
+  },
   migration_pressure: {
     ...btcReport.migration_pressure,
     status: "STABLE",
@@ -256,6 +274,7 @@ const wldReport = {
     pressure_direction_label: "Neutral",
     structural_role: "SUPPORTIVE",
     structural_role_label: "Supportive",
+    displacement_statement: "Post-activation observations are centered below the active MRZ midpoint.",
     detail_statement: "No post-activation observation is outside the frozen migration envelope.",
   },
 };
@@ -269,6 +288,8 @@ assert.match(wldMarkup, /Supportive/);
 assert.match(wldMarkup, /↑ MIGRATED UPWARD/);
 assert.match(wldMarkup, /Stable/);
 assert.match(wldMarkup, /Neutral/);
+assert.match(wldMarkup, /↓ -1\.0%/);
+assert.match(wldMarkup, /Median displacement below midpoint/);
 assert.match(wldMarkup, /No successor candidate/);
 
 const zeroEvidenceReport = {
@@ -297,9 +318,11 @@ const zeroEvidenceReport = {
     above_upper_envelope_observation_count: 0,
     below_lower_envelope_observation_count: 0,
   },
-  distance_from_mrz_midpoint: {
-    ...wldReport.distance_from_mrz_midpoint,
-    median_distance_percentage_of_activation_ipda: null,
+  mrz_displacement: {
+    ...wldReport.mrz_displacement,
+    median_signed_displacement_percentage_of_activation_ipda: null,
+    direction: null,
+    label: "No post-activation evidence",
   },
   route_integrity: {
     ...wldReport.route_integrity,
@@ -318,6 +341,7 @@ const zeroEvidenceReport = {
     ...wldReport.structural_summary,
     robustness_status: "NOT_YET_ASSESSABLE",
     robustness_label: "Not yet assessable",
+    displacement_statement: "No post-activation displacement evidence is available yet.",
     detail_statement: "No post-activation evidence is available yet.",
   },
 };
@@ -326,6 +350,8 @@ assert.match(zeroMarkup, /Not yet assessable/);
 assert.match(zeroMarkup, /0 post-activation observations/);
 assert.match(zeroMarkup, /No evidence/);
 assert.match(zeroMarkup, /Neutral/);
+assert.match(zeroMarkup, /MRZ Displacement<\/h3>\s*<strong class="metric-primary">—<\/strong>/);
+assert.match(zeroMarkup, /No post-activation evidence/);
 
 const successorReport = {
   ...btcReport,
