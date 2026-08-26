@@ -1,0 +1,102 @@
+.report-shell { width: min(1240px, calc(100% - 32px)); }
+.report-shell h1 { max-width: 820px; font-size: clamp(2rem, 6vw, 4.25rem); }
+.subtitle { max-width: 760px; margin: 10px 0 0; color: var(--muted); line-height: 1.5; }
+.report-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 14px; }
+.action-row { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+.action-row button {
+  min-height: 38px;
+  padding: 8px 13px;
+  border: 1px solid #486b61;
+  border-radius: 9px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+.action-row button:hover { border-color: var(--accent); }
+.action-row button:disabled { cursor: progress; opacity: 0.65; }
+.research-badge, .production-badge {
+  padding: 8px 11px;
+  border: 1px solid rgba(255, 210, 122, 0.35);
+  border-radius: 999px;
+  color: var(--warning);
+  font-size: 0.72rem;
+  font-weight: 780;
+  letter-spacing: 0.09em;
+  white-space: nowrap;
+}
+.report-intro, .report-loading, .report-section, .cohort-card {
+  margin-top: 24px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(16, 21, 29, 0.92);
+}
+.report-intro, .report-loading, .report-section { padding: 26px 28px; }
+.report-intro p { max-width: 850px; font-size: 1.06rem; line-height: 1.65; }
+.report-intro p:last-child, .report-loading p:last-child { margin-bottom: 0; }
+.notice { color: var(--warning); }
+.summary-grid, .identity-grid, .outcome-grid, .diagnosis-grid, .policy-grid {
+  display: grid;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--line);
+}
+.summary-grid { grid-template-columns: repeat(4, 1fr); }
+.identity-grid, .outcome-grid, .policy-grid { grid-template-columns: repeat(3, 1fr); }
+.summary-grid div, .identity-grid div, .outcome-grid div, .policy-grid div {
+  padding: 16px;
+  background: var(--surface-strong);
+}
+.metric-value { margin: 5px 0 0; font-size: 1.3rem; font-weight: 720; }
+.cohort-card { overflow: hidden; }
+.cohort-header { padding: 24px 28px; border-bottom: 1px solid var(--line); }
+.cohort-header h2 { margin-bottom: 8px; }
+.cohort-body { padding: 26px 28px; }
+.subsection + .subsection { margin-top: 30px; }
+.subsection h3, .report-section h2 { margin: 0 0 14px; font-size: 1.08rem; }
+.muted, .definition, .evidence-list { color: var(--muted); }
+.definition { line-height: 1.55; }
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+th, td { padding: 11px 12px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--muted); font-weight: 620; background: var(--surface-strong); }
+tr:last-child td { border-bottom: 0; }
+.diagnosis-panel, .policy-panel {
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-strong);
+}
+.diagnosis-panel { border-left: 3px solid var(--accent); }
+.policy-panel { border-left: 3px solid var(--warning); }
+.diagnosis-panel h4, .policy-panel h4 { margin: 0 0 14px; letter-spacing: 0.03em; text-transform: uppercase; }
+.diagnosis-grid { grid-template-columns: 1fr 1fr; background: transparent; border: 0; }
+.diagnosis-grid > div { padding: 0; }
+.evidence-list { margin: 8px 0 0; padding-left: 18px; line-height: 1.5; }
+.status { color: var(--accent); font-weight: 720; }
+.status.insufficient { color: var(--warning); }
+.limitations { line-height: 1.55; }
+.limitations li + li { margin-top: 8px; }
+.flow { color: var(--accent); font-weight: 720; letter-spacing: 0.08em; }
+details { margin-top: 18px; }
+summary { cursor: pointer; color: var(--muted); }
+dl.methodology { display: grid; grid-template-columns: minmax(180px, 0.35fr) 1fr; gap: 12px 24px; }
+dl.methodology dt, dl.methodology dd { padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+
+@media (max-width: 800px) {
+  .report-shell .masthead { align-items: flex-start; flex-direction: column; }
+  .report-actions { align-items: flex-start; }
+  .page-nav, .action-row { justify-content: flex-start; }
+  .summary-grid, .identity-grid, .outcome-grid, .policy-grid, .diagnosis-grid { grid-template-columns: 1fr 1fr; }
+  dl.methodology { grid-template-columns: 1fr; gap: 4px; }
+}
+
+@media (max-width: 520px) {
+  .summary-grid, .identity-grid, .outcome-grid, .policy-grid, .diagnosis-grid { grid-template-columns: 1fr; }
+  .report-intro, .report-loading, .report-section, .cohort-body, .cohort-header { padding: 20px; }
+}

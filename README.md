@@ -130,8 +130,20 @@ POST /webhook/tradingview
 GET  /api/symbols
 GET  /api/symbols/{symbol}
 GET  /api/symbols/{symbol}/mrz
+GET  /api/diagnostics/activation-feasibility
+GET  /api/diagnostics/mrz-robustness
+GET  /api/diagnostics/trading-window-feasibility
 GET  /
+GET  /diagnostics/activation-feasibility
+GET  /diagnostics/mrz-robustness
+GET  /diagnostics/trading-window-feasibility
 ```
+
+The Trading Window Feasibility tab is a separate, read-only research report.
+It reconstructs every MRZ activation generation, keeps completed and ongoing
+episodes distinct, and measures activation through post-activation checkpoints.
+Its candidate policies are always marked `NOT APPROVED`; it does not change the
+schema 4.3 payload, production MRZ engine, or MRZ Operation Card state.
 
 MRZ Monitor fetches one latest-row overview and fetches detail only after
 selection. Its Location Heatmap groups every symbol by `current_price_location`

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="EDGE 2.0 MRZ Trading Window Feasibility research report" />
+    <title>EDGE 2.0 · MRZ Trading Window Feasibility</title>
+    <link rel="stylesheet" href="/static/styles.css?v=trading-window-20260826" />
+    <link rel="stylesheet" href="/static/feasibility.css?v=trading-window-20260826" />
+  </head>
+  <body>
+    <main class="shell report-shell">
+      <header class="masthead">
+        <div>
+          <p class="eyebrow">EDGE 2.0 · READ-ONLY RESEARCH</p>
+          <h1>MRZ Trading Window Feasibility</h1>
+          <p class="subtitle">Activation episodes, structural checkpoints, and candidate timing diagnosis.</p>
+        </div>
+        <div class="report-actions">
+          <nav class="page-nav" aria-label="Diagnostic navigation">
+            <a href="/">MRZ Monitor</a>
+            <a href="/diagnostics/activation-feasibility">Activation Feasibility</a>
+            <a href="/diagnostics/mrz-robustness">MRZ Operation Card</a>
+          </nav>
+          <div class="action-row">
+            <span class="research-badge">RESEARCH ONLY</span>
+            <button type="button" id="refreshReport">Refresh report</button>
+          </div>
+        </div>
+      </header>
+
+      <section class="report-intro">
+        <p>Tests whether route + structural location + post-activation MRZ behavior can support a defensible future WAIT / OPEN timing policy.</p>
+        <p class="notice">Measurement and diagnosis only. No production trading-window behavior is changed.</p>
+      </section>
+
+      <section class="report-loading" id="reportLoading" aria-live="polite">
+        <p>Reconstructing MRZ activation episodes…</p>
+      </section>
+      <div id="report" hidden></div>
+    </main>
+    <script src="/static/feasibility.js?v=trading-window-20260826" defer></script>
+  </body>
+</html>

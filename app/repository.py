@@ -26,6 +26,7 @@ from app.domain import (
     Route,
     StructuralLocation,
 )
+from app.feasibility import build_feasibility_report
 from app.state_engine import replay_symbol
 from app.structure import classify_ipda_location, ipda_directional_context
 from app.validation import ObservationPayload, normalize_symbol
@@ -571,6 +572,53 @@ class EdgeRepository:
                     for active in active_mrzs
                 }
                 return active_mrzs, observations, migration_provenance
+        finally:
+            connection.close()
+
+    def trading_window_feasibility_report(self) -> dict[str, Any]:
+        """Build the research-only report from a consistent persisted snapshot."""
+        connection = connect(self.database_url)
+        try:
+            connection.set_session(
+                readonly=True,
+                isolation_level="REPEATABLE READ",
+            )
+            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        id, event_id, schema_version, symbol, route, observation_type,
+                        observation_price, observation_price_tick,
+                        ipda_20w_high, ipda_20w_low, observed_at, received_at
+                    FROM observations
+                    WHERE schema_version = '4.3'
+                    ORDER BY symbol ASC, observed_at ASC, received_at ASC, id ASC
+                    """
+                )
+                observations = tuple(
+                    observation_from_row(row) for row in cursor.fetchall()
+                )
+                cursor.execute(
+                    """
+                    SELECT symbol, sequence, event_type, trigger_event_id
+                    FROM mrz_events
+                    ORDER BY symbol ASC, sequence ASC
+                    """
+                )
+                events = tuple(dict(row) for row in cursor.fetchall())
+                cursor.execute("SELECT * FROM active_mrz ORDER BY symbol ASC")
+                active_rows = tuple(
+                    active
+                    for active in (
+                        active_from_row(row) for row in cursor.fetchall()
+                    )
+                    if active is not None
+                )
+                return build_feasibility_report(
+                    observations,
+                    events,
+                    active_rows,
+                )
         finally:
             connection.close()
 

@@ -91,17 +91,70 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertIn('id="activeReports"', response.text)
         self.assertNotIn('id="summaryA"', response.text)
 
+    def test_trading_window_feasibility_is_a_separate_research_tab(self) -> None:
+        response = self.client.get("/diagnostics/trading-window-feasibility")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["cache-control"], "no-store, max-age=0")
+        self.assertIn("MRZ Trading Window Feasibility", response.text)
+        self.assertIn("RESEARCH ONLY", response.text)
+        self.assertIn("MRZ Monitor", response.text)
+        self.assertIn("Activation Feasibility", response.text)
+        self.assertIn("MRZ Operation Card", response.text)
+        self.assertIn('id="refreshReport"', response.text)
+
     def test_operator_page_navigation_is_reciprocal(self) -> None:
         monitor = self.client.get("/").text
         feasibility = self.client.get("/diagnostics/activation-feasibility").text
         robustness = self.client.get("/diagnostics/mrz-robustness").text
+        trading_window = self.client.get(
+            "/diagnostics/trading-window-feasibility"
+        ).text
 
         self.assertIn('href="/diagnostics/activation-feasibility">Activation Feasibility</a>', monitor)
         self.assertIn('href="/diagnostics/mrz-robustness">MRZ Operation Card</a>', monitor)
+        self.assertIn('href="/diagnostics/trading-window-feasibility">Trading Window Feasibility</a>', monitor)
         self.assertIn('href="/">MRZ Monitor</a>', feasibility)
         self.assertIn('href="/diagnostics/mrz-robustness">MRZ Operation Card</a>', feasibility)
+        self.assertIn('href="/diagnostics/trading-window-feasibility">Trading Window Feasibility</a>', feasibility)
         self.assertIn('href="/">MRZ Monitor</a>', robustness)
         self.assertIn('href="/diagnostics/activation-feasibility">Activation Feasibility</a>', robustness)
+        self.assertIn('href="/diagnostics/trading-window-feasibility">Trading Window Feasibility</a>', robustness)
+        self.assertIn('href="/">MRZ Monitor</a>', trading_window)
+        self.assertIn('href="/diagnostics/activation-feasibility">Activation Feasibility</a>', trading_window)
+        self.assertIn('href="/diagnostics/mrz-robustness">MRZ Operation Card</a>', trading_window)
+
+    def test_trading_window_api_reconstructs_episodes_without_mutating_state(self) -> None:
+        for index, price in enumerate(("110", "110.2", "110.4", "110.6", "120"), 1):
+            self.assertEqual(
+                self.client.post(
+                    "/webhook/tradingview",
+                    json=webhook_payload(index, price),
+                ).status_code,
+                201,
+            )
+
+        before = self.client.get("/api/symbols/SPXUSDT").json()
+        response = self.client.get(
+            "/api/diagnostics/trading-window-feasibility"
+        )
+        after = self.client.get("/api/symbols/SPXUSDT").json()
+        payload = response.json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["cache-control"], "no-store, max-age=0")
+        self.assertEqual(payload["reconstruction"]["total_episodes"], 1)
+        self.assertEqual(payload["reconstruction"]["ongoing_episodes"], 1)
+        self.assertTrue(payload["reconstruction"]["fully_reconstructable"])
+        self.assertEqual(len(payload["cohorts"]), 4)
+        self.assertTrue(
+            all(
+                cohort["candidate_policy"]["production_status"] == "NOT APPROVED"
+                for cohort in payload["cohorts"]
+            )
+        )
+        self.assertEqual(payload["invariants"]["mrz_engine_behavior"], "unchanged")
+        self.assertEqual(before, after)
 
     def test_mrz_robustness_api_uses_authoritative_state_without_mutation(self) -> None:
         for index, price in enumerate(("110", "110.2", "110.4", "110.6", "120"), 1):
