@@ -5,6 +5,7 @@ const {
   hasActiveMrz,
   activityTier,
   routeAlignedObservationCount,
+  concentrationCheckEligible,
   routeAlignedActivity,
   activityTooltipText,
   accessibleChipLabel,
@@ -30,6 +31,36 @@ assert.equal(hasActiveMrz({ mrz_status: "unestablished" }), false, "unestablishe
 assert.equal(hasActiveMrz({ confirming_observation_count: 4 }), false, "candidate concentration");
 assert.equal(hasActiveMrz({ route_owner: "BTD" }), false, "route owner alone");
 assert.equal(hasActiveMrz({ mrz_events: [{ event_type: "activated" }] }), false, "historical MRZ");
+
+assert.equal(concentrationCheckEligible({
+  btd_window_observation_count: 4,
+  str_window_observation_count: 0,
+}, 4), true, "BTD route independently meets the minimum");
+assert.equal(concentrationCheckEligible({
+  btd_window_observation_count: 0,
+  str_window_observation_count: 4,
+}, 4), true, "STR route independently meets the minimum");
+assert.equal(concentrationCheckEligible({
+  btd_window_observation_count: 4,
+  str_window_observation_count: 4,
+}, 4), true, "both routes may meet the minimum");
+assert.equal(concentrationCheckEligible({
+  btd_window_observation_count: 2,
+  str_window_observation_count: 2,
+}, 4), false, "opposite-route counts are never summed");
+assert.equal(concentrationCheckEligible({
+  btd_window_observation_count: 3,
+  str_window_observation_count: 3,
+}, 4), false, "both routes below minimum remain ineligible");
+assert.equal(concentrationCheckEligible({
+  mrz_status: "active",
+  btd_window_observation_count: 4,
+  str_window_observation_count: 1,
+}, 4), true, "active status does not suppress independent evidence readiness");
+assert.equal(concentrationCheckEligible({
+  btd_window_observation_count: 20,
+  str_window_observation_count: 20,
+}, null), false, "a missing production threshold fails safely");
 
 const active = {
   symbol: "GRAB",

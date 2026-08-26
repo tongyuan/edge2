@@ -63,6 +63,18 @@
     return routeAlignedObservationContext(symbolState)?.count ?? null;
   }
 
+  function concentrationCheckEligible(symbolState, minimumObservations) {
+    // Count readiness only: this does not imply concentration, ownership, or an active MRZ.
+    const minimum = Number(minimumObservations);
+    if (!Number.isInteger(minimum) || minimum <= 0) return false;
+    const btdCount = safeActivityCount(symbolState.btd_window_observation_count);
+    const strCount = safeActivityCount(symbolState.str_window_observation_count);
+    return (
+      (btdCount != null && btdCount >= minimum)
+      || (strCount != null && strCount >= minimum)
+    );
+  }
+
   function routeAlignedActivity(symbolState) {
     if (hasActiveMrz(symbolState)) return null;
     const context = routeAlignedObservationContext(symbolState);
@@ -121,6 +133,7 @@
     hasActiveMrz,
     activityTier,
     routeAlignedObservationCount,
+    concentrationCheckEligible,
     routeAlignedActivity,
     activityTooltipText,
     accessibleChipLabel,

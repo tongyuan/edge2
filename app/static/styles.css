@@ -111,6 +111,14 @@ h2 { margin-bottom: 0; font-size: 1.55rem; letter-spacing: -0.02em; }
   border-radius: 4px;
   background: rgba(112, 132, 160, 0.3);
 }
+.evidence-ready-legend-swatch {
+  display: inline-block;
+  width: 18px;
+  height: 10px;
+  border: 2px solid #aebbd0;
+  border-radius: 4px;
+  background: transparent;
+}
 .heatmap-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -156,6 +164,10 @@ h2 { margin-bottom: 0; font-size: 1.55rem; letter-spacing: -0.02em; }
   background-color: transparent;
   color: var(--text);
 }
+.symbol-chip.evidence-ready {
+  border-color: #aebbd0;
+  box-shadow: inset 0 0 0 1px rgba(174, 187, 208, 0.4);
+}
 .symbol-chip:hover {
   border-color: #74839a;
   background-image: linear-gradient(rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.07));
@@ -166,6 +178,15 @@ h2 { margin-bottom: 0; font-size: 1.55rem; letter-spacing: -0.02em; }
   background-image: linear-gradient(rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.08));
   box-shadow: 0 0 0 1px rgba(213, 222, 235, 0.72);
   color: var(--text);
+}
+.symbol-chip.evidence-ready:hover {
+  border-color: #c2ccdb;
+}
+.symbol-chip.evidence-ready.selected {
+  border-color: #cbd4e1;
+  box-shadow:
+    0 0 0 1px rgba(213, 222, 235, 0.72),
+    inset 0 0 0 1px rgba(174, 187, 208, 0.4);
 }
 .symbol-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .activity-tooltip {

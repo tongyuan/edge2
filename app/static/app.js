@@ -10,6 +10,7 @@ const {
   primaryLocationKeys,
   secondaryLocationKeys,
   hasActiveMrz,
+  concentrationCheckEligible,
   routeAlignedActivity,
   activityTooltipText,
   accessibleChipLabel,
@@ -126,7 +127,7 @@ window.addEventListener("scroll", () => {
   if (activityTooltipOwner) positionActivityTooltip(activityTooltipOwner);
 }, true);
 
-function createLocationGroup(key, symbols, secondary = false) {
+function createLocationGroup(key, symbols, minimumClusterObservations, secondary = false) {
   const group = document.createElement("section");
   group.className = secondary ? "location-group secondary" : "location-group";
 
@@ -150,6 +151,10 @@ function createLocationGroup(key, symbols, secondary = false) {
       button.type = "button";
       button.className = "symbol-chip";
       button.classList.toggle("active-mrz", active);
+      button.classList.toggle(
+        "evidence-ready",
+        concentrationCheckEligible(symbolState, minimumClusterObservations),
+      );
       if (activity && activity.tier !== "none") {
         button.classList.add(`activity-${activity.tier}`);
       }
@@ -181,7 +186,7 @@ function createLocationGroup(key, symbols, secondary = false) {
   return group;
 }
 
-function renderLocationHeatmap(symbols) {
+function renderLocationHeatmap(symbols, minimumClusterObservations) {
   if (symbols.length === 0) {
     locationHeatmap.hidden = true;
     heatmapEmpty.hidden = false;
@@ -191,11 +196,15 @@ function renderLocationHeatmap(symbols) {
 
   const groups = groupSymbolsByLocation(symbols);
   primaryLocationGroups.replaceChildren(
-    ...primaryLocationKeys.map((key) => createLocationGroup(key, groups[key])),
+    ...primaryLocationKeys.map((key) => (
+      createLocationGroup(key, groups[key], minimumClusterObservations)
+    )),
   );
   const populatedSecondaryKeys = secondaryLocationKeys.filter((key) => groups[key].length > 0);
   secondaryLocationGroups.replaceChildren(
-    ...populatedSecondaryKeys.map((key) => createLocationGroup(key, groups[key], true)),
+    ...populatedSecondaryKeys.map((key) => (
+      createLocationGroup(key, groups[key], minimumClusterObservations, true)
+    )),
   );
   secondaryLocationGroups.hidden = populatedSecondaryKeys.length === 0;
   heatmapEmpty.hidden = true;
@@ -229,7 +238,7 @@ async function loadSymbols() {
   select.replaceChildren(new Option("Select a symbol", ""));
   payload.symbols.forEach(({ symbol }) => select.add(new Option(symbol, symbol)));
   select.disabled = payload.symbols.length === 0;
-  renderLocationHeatmap(payload.symbols);
+  renderLocationHeatmap(payload.symbols, payload.minimum_cluster_observations);
   select.value = selectedSymbol;
   updateSelectedChip(selectedSymbol);
 }

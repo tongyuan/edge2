@@ -30,7 +30,7 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("Symbol Lab", HTML)
 
     def test_monitor_assets_are_versioned_together(self) -> None:
-        version = "migration-provenance-20260825"
+        version = "evidence-ready-20260826"
         self.assertIn(f'/static/styles.css?v={version}', HTML)
         self.assertIn(f'/static/heatmap-state.js?v={version}', HTML)
         self.assertIn(f'/static/operator-time.js?v={version}', HTML)
@@ -176,6 +176,32 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("green", swatch_style.lower())
         self.assertNotIn("animation", swatch_style)
 
+    def test_heatmap_marks_production_count_eligibility_with_only_a_bright_outline(self) -> None:
+        self.assertIn("Bright outline · Concentration-check eligible", HTML)
+        self.assertIn('class="evidence-ready-legend-swatch" aria-hidden="true"', HTML)
+        self.assertIn("function concentrationCheckEligible(symbolState, minimumObservations)", HEATMAP_STATE)
+        self.assertIn("btdCount >= minimum", HEATMAP_STATE)
+        self.assertIn("strCount >= minimum", HEATMAP_STATE)
+        self.assertNotIn("btdCount + strCount", HEATMAP_STATE)
+        self.assertIn("payload.minimum_cluster_observations", JAVASCRIPT)
+        self.assertIn('"evidence-ready",', JAVASCRIPT)
+        eligible_style = CSS.split(".symbol-chip.evidence-ready {", 1)[1].split("}", 1)[0]
+        self.assertIn("border-color: #aebbd0;", eligible_style)
+        self.assertIn("box-shadow: inset", eligible_style)
+        self.assertNotIn("animation", eligible_style)
+
+    def test_heatmap_evidence_outline_coexists_with_active_selected_and_activity_states(self) -> None:
+        heatmap_group = JAVASCRIPT.split("function createLocationGroup", 1)[1].split(
+            "function renderLocationHeatmap", 1
+        )[0]
+        self.assertIn('button.classList.toggle("active-mrz", active);', heatmap_group)
+        self.assertIn('"evidence-ready",', heatmap_group)
+        self.assertIn("routeAlignedActivity(symbolState)", heatmap_group)
+        self.assertIn('button.classList.add(`activity-${activity.tier}`);', heatmap_group)
+        self.assertIn('indicator.className = "active-mrz-dot";', heatmap_group)
+        self.assertIn(".symbol-chip.evidence-ready.selected {", CSS)
+        self.assertNotIn("evidence-ready", HEATMAP_STATE.split("function groupSymbolsByLocation", 1)[1])
+
     def test_heatmap_click_reuses_selector_and_lazy_detail_loader(self) -> None:
         self.assertIn('button.addEventListener("click", () => selectSymbol(symbol).catch(showError));', JAVASCRIPT)
         self.assertIn("select.value = symbol;", JAVASCRIPT)
@@ -242,7 +268,8 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn("_select_seed_and_cluster", CONCENTRATION)
         self.assertIn("evaluate_concentration(tuple(route_window), incoming.route)", STATE_ENGINE)
         self.assertIn("evaluate_concentration(route_windows[route], route).diagnostic", REPOSITORY)
-        self.assertNotIn("concentration", API.lower())
+        self.assertNotIn("evaluate_concentration", API)
+        self.assertIn("MIN_CLUSTER_OBSERVATIONS", API)
         self.assertNotIn("CONCENTRATION_SPAN_THRESHOLD", JAVASCRIPT + MONITOR_PRESENTATION)
         self.assertIn('INSUFFICIENT_OBSERVATIONS = "INSUFFICIENT_OBSERVATIONS"', CONCENTRATION)
         self.assertIn('TOO_DISPERSED = "TOO_DISPERSED"', CONCENTRATION)

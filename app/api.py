@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
 from app.activation_feasibility import ActivationFeasibilityService
+from app.concentration import MIN_CLUSTER_OBSERVATIONS
 from app.config import Settings
 from app.logging_config import configure_logging
 from app.mrz_robustness import MRZRobustnessService
@@ -258,7 +259,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @application.get("/api/symbols")
     def symbols() -> dict[str, Any]:
-        return {"symbols": repository.symbols()}
+        return {
+            "minimum_cluster_observations": MIN_CLUSTER_OBSERVATIONS,
+            "symbols": repository.symbols(),
+        }
 
     @application.get("/api/diagnostics/activation-feasibility")
     def activation_feasibility() -> JSONResponse:

@@ -50,7 +50,10 @@ class APIIntegrationTests(unittest.TestCase):
         health = self.client.get("/health")
         self.assertEqual(health.status_code, 200)
         self.assertEqual(health.json()["database"], "ok")
-        self.assertEqual(self.client.get("/api/symbols").json(), {"symbols": []})
+        self.assertEqual(
+            self.client.get("/api/symbols").json(),
+            {"minimum_cluster_observations": 4, "symbols": []},
+        )
 
     def test_monitor_shell_uses_current_terminology_and_is_not_cached(self) -> None:
         response = self.client.get("/")
