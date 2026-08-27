@@ -194,7 +194,7 @@ function renderLocationHeatmap(symbols, minimumClusterObservations) {
     return;
   }
 
-  const groups = groupSymbolsByLocation(symbols);
+  const groups = groupSymbolsByLocation(symbols, minimumClusterObservations);
   primaryLocationGroups.replaceChildren(
     ...primaryLocationKeys.map((key) => (
       createLocationGroup(key, groups[key], minimumClusterObservations)

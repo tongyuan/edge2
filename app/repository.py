@@ -152,6 +152,44 @@ def current_migration_provenance(
     return migration_provenance_payload(cursor.fetchone())
 
 
+def concentration_ranking_payload(
+    route_windows: Mapping[Route, Sequence[Observation]],
+) -> dict[str, Any] | None:
+    diagnostics = (
+        evaluate_concentration(route_windows[route], route).diagnostic
+        for route in Route
+    )
+    eligible = [
+        diagnostic
+        for diagnostic in diagnostics
+        if (
+            diagnostic.retained_observation_count >= diagnostic.minimum_required_count
+            and diagnostic.minimum_required_allowance_pct is not None
+        )
+    ]
+    if not eligible:
+        return None
+    selected = min(
+        eligible,
+        key=lambda diagnostic: (
+            diagnostic.minimum_required_allowance_pct,
+            -diagnostic.retained_observation_count,
+            diagnostic.route.value,
+        ),
+    )
+    return {
+        "route": selected.route.value,
+        "observation_count": selected.retained_observation_count,
+        "minimum_required_allowance_pct": decimal_text(
+            selected.minimum_required_allowance_pct
+        ),
+        "configured_allowance_pct": decimal_text(selected.configured_allowance_pct),
+        "allowance_difference_pct_points": decimal_text(
+            selected.allowance_difference_pct_points
+        ),
+    }
+
+
 class EdgeRepository:
     def __init__(self, database_url: str) -> None:
         self.database_url = database_url
@@ -640,60 +678,95 @@ class EdgeRepository:
                             o.id DESC
                     )
                     SELECT
-                        o.symbol, o.observation_price,
-                        o.ipda_20w_high, o.ipda_20w_low, o.observed_at,
+                        o.symbol,
+                        o.observation_price AS latest_observation_price,
+                        o.ipda_20w_high AS latest_ipda_20w_high,
+                        o.ipda_20w_low AS latest_ipda_20w_low,
+                        o.observed_at AS latest_observed_at,
                         a.route_owner, a.core_mrz_lower, a.core_mrz_upper,
                         a.core_mrz_midpoint, a.structural_location,
                         a.confirming_observation_count,
-                        c.btd_window_observation_count,
-                        c.str_window_observation_count
+                        w.id, w.event_id, w.schema_version,
+                        w.route, w.observation_type,
+                        w.observation_price, w.observation_price_tick,
+                        w.ipda_20w_high, w.ipda_20w_low,
+                        w.observed_at, w.received_at
                     FROM latest_observations o
                     LEFT JOIN active_mrz a ON a.symbol = o.symbol
                     LEFT JOIN LATERAL (
-                        SELECT
-                            (
-                                SELECT COUNT(*)
-                                FROM (
-                                    SELECT id
-                                    FROM observations
-                                    WHERE symbol = o.symbol AND route = 'BTD'
-                                    ORDER BY observed_at DESC, received_at DESC, id DESC
-                                    LIMIT %s
-                                ) AS btd_window
-                            ) AS btd_window_observation_count,
-                            (
-                                SELECT COUNT(*)
-                                FROM (
-                                    SELECT id
-                                    FROM observations
-                                    WHERE symbol = o.symbol AND route = 'STR'
-                                    ORDER BY observed_at DESC, received_at DESC, id DESC
-                                    LIMIT %s
-                                ) AS str_window
-                            ) AS str_window_observation_count
-                    ) c ON TRUE
-                    ORDER BY o.symbol ASC
+                        (
+                            SELECT
+                                id, event_id, schema_version, route, observation_type,
+                                observation_price, observation_price_tick,
+                                ipda_20w_high, ipda_20w_low, observed_at, received_at
+                            FROM observations
+                            WHERE symbol = o.symbol AND route = 'BTD'
+                            ORDER BY observed_at DESC, received_at DESC, id DESC
+                            LIMIT %s
+                        )
+                        UNION ALL
+                        (
+                            SELECT
+                                id, event_id, schema_version, route, observation_type,
+                                observation_price, observation_price_tick,
+                                ipda_20w_high, ipda_20w_low, observed_at, received_at
+                            FROM observations
+                            WHERE symbol = o.symbol AND route = 'STR'
+                            ORDER BY observed_at DESC, received_at DESC, id DESC
+                            LIMIT %s
+                        )
+                    ) w ON TRUE
+                    ORDER BY o.symbol ASC, w.observed_at ASC, w.received_at ASC, w.id ASC
                     """,
                     (ROUTE_OBSERVATION_WINDOW, ROUTE_OBSERVATION_WINDOW),
                 )
-                return [
-                    {
-                        "symbol": row["symbol"],
-                        "mrz_status": "active" if row["route_owner"] else "unestablished",
-                        "route_owner": row["route_owner"],
-                        "core_mrz_lower": number(row["core_mrz_lower"]),
-                        "core_mrz_upper": number(row["core_mrz_upper"]),
-                        "core_mrz_midpoint": number(row["core_mrz_midpoint"]),
-                        "structural_location": row["structural_location"],
-                        "confirming_observation_count": row["confirming_observation_count"],
-                        "latest_observation_price": number(row["observation_price"]),
-                        "latest_observed_at": iso(row["observed_at"]),
-                        "current_price_location": current_price_location_value(row),
-                        "btd_window_observation_count": int(row["btd_window_observation_count"]),
-                        "str_window_observation_count": int(row["str_window_observation_count"]),
+                rows_by_symbol: dict[str, list[Mapping[str, Any]]] = {}
+                for row in cursor.fetchall():
+                    rows_by_symbol.setdefault(str(row["symbol"]), []).append(row)
+
+                payloads = []
+                for symbol, rows in rows_by_symbol.items():
+                    anchor = rows[0]
+                    route_windows = {
+                        route: tuple(
+                            observation_from_row(row)
+                            for row in rows
+                            if row["route"] == route.value
+                        )
+                        for route in Route
                     }
-                    for row in cursor.fetchall()
-                ]
+                    latest = {
+                        "observation_price": anchor["latest_observation_price"],
+                        "ipda_20w_high": anchor["latest_ipda_20w_high"],
+                        "ipda_20w_low": anchor["latest_ipda_20w_low"],
+                    }
+                    payloads.append(
+                        {
+                            "symbol": symbol,
+                            "mrz_status": (
+                                "active" if anchor["route_owner"] else "unestablished"
+                            ),
+                            "route_owner": anchor["route_owner"],
+                            "core_mrz_lower": number(anchor["core_mrz_lower"]),
+                            "core_mrz_upper": number(anchor["core_mrz_upper"]),
+                            "core_mrz_midpoint": number(anchor["core_mrz_midpoint"]),
+                            "structural_location": anchor["structural_location"],
+                            "confirming_observation_count": anchor[
+                                "confirming_observation_count"
+                            ],
+                            "latest_observation_price": number(
+                                anchor["latest_observation_price"]
+                            ),
+                            "latest_observed_at": iso(anchor["latest_observed_at"]),
+                            "current_price_location": current_price_location_value(latest),
+                            "btd_window_observation_count": len(route_windows[Route.BTD]),
+                            "str_window_observation_count": len(route_windows[Route.STR]),
+                            "concentration_ranking": concentration_ranking_payload(
+                                route_windows
+                            ),
+                        }
+                    )
+                return payloads
         finally:
             connection.close()
 

@@ -75,6 +75,17 @@
     );
   }
 
+  function concentrationRankingContext(symbolState, minimumObservations) {
+    if (!concentrationCheckEligible(symbolState, minimumObservations)) return null;
+    const ranking = symbolState.concentration_ranking;
+    if (!ranking) return null;
+    const minimumAllowance = Number(ranking.minimum_required_allowance_pct);
+    const observationCount = safeActivityCount(ranking.observation_count);
+    if (!Number.isFinite(minimumAllowance) || minimumAllowance < 0) return null;
+    if (observationCount == null) return null;
+    return { minimumAllowance, observationCount, route: ranking.route };
+  }
+
   function routeAlignedActivity(symbolState) {
     if (hasActiveMrz(symbolState)) return null;
     const context = routeAlignedObservationContext(symbolState);
@@ -111,19 +122,45 @@
     return String(left.symbol).localeCompare(String(right.symbol));
   }
 
+  function compareSymbolsForHeatmap(left, right, minimumObservations) {
+    const activeDifference = Number(hasActiveMrz(right)) - Number(hasActiveMrz(left));
+    if (activeDifference !== 0) return activeDifference;
+
+    const leftEligible = concentrationCheckEligible(left, minimumObservations);
+    const rightEligible = concentrationCheckEligible(right, minimumObservations);
+    const eligibilityDifference = Number(rightEligible) - Number(leftEligible);
+    if (eligibilityDifference !== 0) return eligibilityDifference;
+
+    if (leftEligible && rightEligible) {
+      const leftRanking = concentrationRankingContext(left, minimumObservations);
+      const rightRanking = concentrationRankingContext(right, minimumObservations);
+      if (leftRanking && rightRanking) {
+        const allowanceDifference = leftRanking.minimumAllowance - rightRanking.minimumAllowance;
+        if (allowanceDifference !== 0) return allowanceDifference;
+        const countDifference = rightRanking.observationCount - leftRanking.observationCount;
+        if (countDifference !== 0) return countDifference;
+      } else if (leftRanking || rightRanking) {
+        return leftRanking ? -1 : 1;
+      }
+    }
+    return compareSymbolsByActivity(left, right);
+  }
+
   function preservedSelectedSymbol(currentSymbol, symbols) {
     if (!currentSymbol) return "";
     return symbols.some((symbolState) => symbolState.symbol === currentSymbol) ? currentSymbol : "";
   }
 
-  function groupSymbolsByLocation(symbols) {
+  function groupSymbolsByLocation(symbols, minimumObservations) {
     const groups = Object.fromEntries([...allLocationKeys].map((key) => [key, []]));
     symbols.forEach((symbolState) => {
       const currentLocation = symbolState.current_price_location;
       const key = allLocationKeys.has(currentLocation) ? currentLocation : "unavailable";
       groups[key].push(symbolState);
     });
-    Object.values(groups).forEach((symbolsInGroup) => symbolsInGroup.sort(compareSymbolsByActivity));
+    Object.values(groups).forEach((symbolsInGroup) => symbolsInGroup.sort(
+      (left, right) => compareSymbolsForHeatmap(left, right, minimumObservations),
+    ));
     return groups;
   }
 
@@ -134,10 +171,12 @@
     activityTier,
     routeAlignedObservationCount,
     concentrationCheckEligible,
+    concentrationRankingContext,
     routeAlignedActivity,
     activityTooltipText,
     accessibleChipLabel,
     compareSymbolsByActivity,
+    compareSymbolsForHeatmap,
     preservedSelectedSymbol,
     groupSymbolsByLocation,
   };

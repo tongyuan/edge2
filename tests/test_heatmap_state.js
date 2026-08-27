@@ -6,10 +6,12 @@ const {
   activityTier,
   routeAlignedObservationCount,
   concentrationCheckEligible,
+  concentrationRankingContext,
   routeAlignedActivity,
   activityTooltipText,
   accessibleChipLabel,
   compareSymbolsByActivity,
+  compareSymbolsForHeatmap,
   preservedSelectedSymbol,
   groupSymbolsByLocation,
 } = require("../app/static/heatmap-state.js");
@@ -84,7 +86,7 @@ const unavailable = {
   mrz_status: "active",
   current_price_location: null,
 };
-const groups = groupSymbolsByLocation([inactive, unavailable, secondary, active]);
+const groups = groupSymbolsByLocation([inactive, unavailable, secondary, active], 4);
 
 assert.deepEqual(groups.deep_discount, [active, inactive], "equal-count bucket tie is alphabetical");
 assert.deepEqual(groups.deep_premium, [], "MRZ location must not determine bucket");
@@ -198,7 +200,7 @@ const deepPremiumSymbols = [
     str_window_observation_count: 4,
   },
 ];
-const sortedPremium = groupSymbolsByLocation(deepPremiumSymbols).deep_premium;
+const sortedPremium = groupSymbolsByLocation(deepPremiumSymbols, 4).deep_premium;
 assert.deepEqual(
   sortedPremium.map(({ symbol }) => symbol),
   ["ETHUSDT", "BTCUSDT", "BMNR", "HSI"],
@@ -224,7 +226,7 @@ const discountSymbols = [
   },
 ];
 assert.deepEqual(
-  groupSymbolsByLocation(discountSymbols).shallow_discount.map(({ symbol }) => symbol),
+  groupSymbolsByLocation(discountSymbols, 4).shallow_discount.map(({ symbol }) => symbol),
   ["OMEGA", "ALPHA"],
   "discount uses numeric BTD counts and ignores opposite-route STR counts",
 );
@@ -235,12 +237,92 @@ const equalCounts = [
 ];
 assert.equal(compareSymbolsByActivity(equalCounts[0], equalCounts[1]) > 0, true);
 assert.deepEqual(
-  groupSymbolsByLocation(equalCounts).deep_discount.map(({ symbol }) => symbol),
+  groupSymbolsByLocation(equalCounts, 4).deep_discount.map(({ symbol }) => symbol),
   ["ALPHA", "ZETA"],
   "equal counts use normalized symbol ascending",
 );
 
-const activeDoesNotOverride = [
+const rankedCandidates = [
+  {
+    symbol: "NORMAL",
+    mrz_status: "unestablished",
+    current_price_location: "deep_premium",
+    str_window_observation_count: 3,
+  },
+  {
+    symbol: "PLTR",
+    mrz_status: "unestablished",
+    current_price_location: "deep_premium",
+    str_window_observation_count: 5,
+    concentration_ranking: {
+      route: "STR",
+      observation_count: 5,
+      minimum_required_allowance_pct: "8.11",
+    },
+  },
+  {
+    symbol: "SE",
+    mrz_status: "unestablished",
+    current_price_location: "deep_premium",
+    str_window_observation_count: 4,
+    concentration_ranking: {
+      route: "STR",
+      observation_count: 4,
+      minimum_required_allowance_pct: "3.32",
+    },
+  },
+  {
+    symbol: "ACTIVE",
+    mrz_status: "active",
+    route_owner: "STR",
+    current_price_location: "deep_premium",
+    str_window_observation_count: 4,
+    concentration_ranking: {
+      route: "STR",
+      observation_count: 4,
+      minimum_required_allowance_pct: "12.00",
+    },
+  },
+];
+assert.deepEqual(
+  groupSymbolsByLocation(rankedCandidates, 4).deep_premium.map(({ symbol }) => symbol),
+  ["ACTIVE", "SE", "PLTR", "NORMAL"],
+  "active leads, then tighter eligible candidates, then non-eligible symbols",
+);
+assert.equal(compareSymbolsForHeatmap(rankedCandidates[2], rankedCandidates[1], 4) < 0, true);
+assert.deepEqual(concentrationRankingContext(rankedCandidates[2], 4), {
+  minimumAllowance: 3.32,
+  observationCount: 4,
+  route: "STR",
+});
+
+const equalAllowanceCandidates = [
+  {
+    symbol: "FOUR",
+    mrz_status: "unestablished",
+    current_price_location: "deep_discount",
+    btd_window_observation_count: 4,
+    concentration_ranking: {
+      route: "BTD", observation_count: 4, minimum_required_allowance_pct: "2.00",
+    },
+  },
+  {
+    symbol: "FIVE",
+    mrz_status: "unestablished",
+    current_price_location: "deep_discount",
+    btd_window_observation_count: 5,
+    concentration_ranking: {
+      route: "BTD", observation_count: 5, minimum_required_allowance_pct: "2.0",
+    },
+  },
+];
+assert.deepEqual(
+  groupSymbolsByLocation(equalAllowanceCandidates, 4).deep_discount.map(({ symbol }) => symbol),
+  ["FIVE", "FOUR"],
+  "equal allowance uses eligible-route observation count descending",
+);
+
+const activePriority = [
   {
     symbol: "ACTIVE",
     mrz_status: "active",
@@ -256,9 +338,9 @@ const activeDoesNotOverride = [
   },
 ];
 assert.deepEqual(
-  groupSymbolsByLocation(activeDoesNotOverride).shallow_premium.map(({ symbol }) => symbol),
-  ["INACTIVE", "ACTIVE"],
-  "active MRZ status does not override count order",
+  groupSymbolsByLocation(activePriority, 4).shallow_premium.map(({ symbol }) => symbol),
+  ["ACTIVE", "INACTIVE"],
+  "active MRZ authority overrides candidate observation count",
 );
 assert.equal(preservedSelectedSymbol("ETHUSDT", sortedPremium), "ETHUSDT");
 assert.equal(preservedSelectedSymbol("MISSING", sortedPremium), "");

@@ -30,7 +30,7 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("Symbol Lab", HTML)
 
     def test_monitor_assets_are_versioned_together(self) -> None:
-        version = "evidence-ready-20260826"
+        version = "allowance-ranking-20260827"
         self.assertIn(f'/static/styles.css?v={version}', HTML)
         self.assertIn(f'/static/heatmap-state.js?v={version}', HTML)
         self.assertIn(f'/static/operator-time.js?v={version}', HTML)
@@ -124,14 +124,18 @@ class MonitorContractTests(unittest.TestCase):
         )
         self.assertIn('key === "unavailable" ? "Unavailable"', JAVASCRIPT)
 
-    def test_heatmap_groups_each_symbol_once_and_sorts_by_activity_then_symbol(self) -> None:
+    def test_heatmap_groups_each_symbol_once_and_uses_deterministic_ranking_hierarchy(self) -> None:
         self.assertIn('const key = allLocationKeys.has(currentLocation) ? currentLocation : "unavailable";', HEATMAP_STATE)
         self.assertEqual(HEATMAP_STATE.count("groups[key].push(symbolState);"), 1)
         self.assertIn("function compareSymbolsByActivity(left, right)", HEATMAP_STATE)
-        self.assertIn("routeAlignedObservationCount(right)", HEATMAP_STATE)
-        self.assertIn("routeAlignedObservationCount(left)", HEATMAP_STATE)
+        self.assertIn("function compareSymbolsForHeatmap(left, right, minimumObservations)", HEATMAP_STATE)
+        self.assertIn("Number(hasActiveMrz(right)) - Number(hasActiveMrz(left))", HEATMAP_STATE)
+        self.assertIn("Number(rightEligible) - Number(leftEligible)", HEATMAP_STATE)
+        self.assertIn("leftRanking.minimumAllowance - rightRanking.minimumAllowance", HEATMAP_STATE)
+        self.assertIn("rightRanking.observationCount - leftRanking.observationCount", HEATMAP_STATE)
+        self.assertIn("return compareSymbolsByActivity(left, right);", HEATMAP_STATE)
         self.assertIn("String(left.symbol).localeCompare(String(right.symbol))", HEATMAP_STATE)
-        self.assertIn("symbolsInGroup.sort(compareSymbolsByActivity)", HEATMAP_STATE)
+        self.assertIn("compareSymbolsForHeatmap(left, right, minimumObservations)", HEATMAP_STATE)
         self.assertIn('heatmapEmpty.textContent = "No symbols yet";', JAVASCRIPT)
 
     def test_heatmap_refresh_preserves_selected_symbol_after_reordering(self) -> None:
@@ -200,7 +204,18 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn('button.classList.add(`activity-${activity.tier}`);', heatmap_group)
         self.assertIn('indicator.className = "active-mrz-dot";', heatmap_group)
         self.assertIn(".symbol-chip.evidence-ready.selected {", CSS)
-        self.assertNotIn("evidence-ready", HEATMAP_STATE.split("function groupSymbolsByLocation", 1)[1])
+        self.assertIn("concentrationCheckEligible(symbolState, minimumClusterObservations)", heatmap_group)
+
+    def test_heatmap_ranking_reuses_backend_production_diagnostics(self) -> None:
+        ranking_payload = REPOSITORY.split("def concentration_ranking_payload", 1)[1].split(
+            "class EdgeRepository", 1
+        )[0]
+        self.assertIn("evaluate_concentration(route_windows[route], route).diagnostic", ranking_payload)
+        self.assertIn("diagnostic.minimum_required_allowance_pct", ranking_payload)
+        self.assertIn("-diagnostic.retained_observation_count", ranking_payload)
+        self.assertIn('"concentration_ranking": concentration_ranking_payload(', REPOSITORY)
+        self.assertNotIn("CONCENTRATION_SPAN_THRESHOLD", HEATMAP_STATE + JAVASCRIPT)
+        self.assertNotIn("selected_lower", HEATMAP_STATE + JAVASCRIPT)
 
     def test_heatmap_click_reuses_selector_and_lazy_detail_loader(self) -> None:
         self.assertIn('button.addEventListener("click", () => selectSymbol(symbol).catch(showError));', JAVASCRIPT)

@@ -424,6 +424,42 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertNotIn("progress", detail)
         self.assertNotIn("predicted_route_owner", detail)
 
+    def test_overview_ranking_uses_the_tighter_independently_eligible_route(self) -> None:
+        for index, price in enumerate(("110", "110.4", "110.9", "111.8"), 1):
+            packet = webhook_payload(index, price, symbol="DUAL")
+            self.assertEqual(self.client.post("/webhook/tradingview", json=packet).status_code, 201)
+        for index, price in enumerate(("180", "180.7", "181.5", "182.4"), 5):
+            packet = webhook_payload(
+                index,
+                price,
+                symbol="DUAL",
+                route="STR",
+                observation_type="rejection",
+            )
+            self.assertEqual(self.client.post("/webhook/tradingview", json=packet).status_code, 201)
+
+        detail = self.client.get("/api/symbols/DUAL").json()
+        overview = self.client.get("/api/symbols").json()["symbols"][0]
+        ranking = overview["concentration_ranking"]
+
+        self.assertEqual(overview["mrz_status"], "unestablished")
+        self.assertEqual(overview["btd_window_observation_count"], 4)
+        self.assertEqual(overview["str_window_observation_count"], 4)
+        self.assertLess(
+            float(detail["concentration_checks"]["BTD"]["minimum_required_allowance_pct"]),
+            float(detail["concentration_checks"]["STR"]["minimum_required_allowance_pct"]),
+        )
+        self.assertEqual(ranking["route"], "BTD")
+        self.assertEqual(ranking["observation_count"], 4)
+        self.assertEqual(
+            ranking["minimum_required_allowance_pct"],
+            detail["concentration_checks"]["BTD"]["minimum_required_allowance_pct"],
+        )
+        self.assertEqual(
+            ranking["configured_allowance_pct"],
+            detail["concentration_checks"]["BTD"]["configured_allowance_pct"],
+        )
+
     def test_unestablished_route_window_counts_cap_at_twenty(self) -> None:
         for index in range(1, 26):
             price = f"{101 + (index * 1.8):.1f}"
