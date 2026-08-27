@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 from decimal import Decimal
 
 from app.domain import Route, StructuralLocation
@@ -14,6 +15,8 @@ from app.feasibility import (
     cross_cohort_diagnosis,
     diagnose_cohort,
     migration_interpretation,
+    operator_outcome_language,
+    primary_outcome_summary,
     reconstruct_episodes,
     route_interpretation,
     signed_displacement,
@@ -25,6 +28,14 @@ from tests.helpers import observation
 def btd_migration(symbol: str = "SPXUSDT"):
     prices = ("110", "110.2", "110.4", "110.6", "120", "120.2", "120.4", "120.6")
     return [observation(index, price, symbol=symbol) for index, price in enumerate(prices, 1)]
+
+
+def str_migration(symbol: str = "BTCUSDT"):
+    prices = ("180", "180.2", "180.4", "180.6", "170", "170.2", "170.4", "170.6")
+    return [
+        observation(index, price, symbol=symbol, route=Route.STR)
+        for index, price in enumerate(prices, 1)
+    ]
 
 
 def source_rows(rows):
@@ -159,14 +170,143 @@ class StructuralMeasurementTests(unittest.TestCase):
 class DiagnosisTests(unittest.TestCase):
     def test_completed_and_ongoing_are_separated(self) -> None:
         report = cohort_report(Cohort.BTD_DEEP_DISCOUNT, reconstruct_episodes(btd_migration()).episodes)
-        self.assertEqual(report["episode_counts"], {"total": 2, "completed": 1, "ongoing": 1})
+        self.assertEqual(
+            report["episode_counts"],
+            {"total": 2, "completed": 1, "ongoing": 1, "unique_symbols": 1},
+        )
         self.assertEqual(report["completed_episode_outcomes"]["migrated_upward"], 1)
+
+    def test_headline_outcome_uses_completed_episodes_only(self) -> None:
+        episodes = reconstruct_episodes(btd_migration()).episodes
+        primary = primary_outcome_summary(Cohort.BTD_DEEP_DISCOUNT, episodes)
+
+        self.assertEqual(primary["completed_denominator"], 1)
+        self.assertEqual(primary["reversal_count"], 1)
+        self.assertEqual(primary["reversal_percentage"], 100.0)
+        self.assertEqual(primary["continuation_count"], 0)
+        self.assertEqual(primary["unresolved_count"], 1)
+        self.assertIn("Only 1 completed episode", primary["qualification"])
+
+    def test_completed_route_adverse_btd_maps_to_downside_continuation(self) -> None:
+        completed = reconstruct_episodes(btd_migration()).episodes[0]
+        synthetic_adverse = replace(
+            completed,
+            migration_direction="DOWNWARD",
+            outcome="MIGRATED_DOWNWARD",
+        )
+        primary = primary_outcome_summary(
+            Cohort.BTD_DEEP_DISCOUNT,
+            (synthetic_adverse,),
+        )
+
+        self.assertEqual(primary["continuation_label"], "Downside continuation")
+        self.assertEqual(primary["continuation_count"], 1)
+        self.assertEqual(primary["reversal_count"], 0)
+
+    def test_completed_route_supportive_btd_maps_to_upward_reversal(self) -> None:
+        completed = reconstruct_episodes(btd_migration()).episodes[0]
+        primary = primary_outcome_summary(
+            Cohort.BTD_DEEP_DISCOUNT,
+            (completed,),
+        )
+
+        self.assertEqual(
+            primary["reversal_label"],
+            "Upward reversal / discount-long supportive",
+        )
+        self.assertEqual(primary["reversal_count"], 1)
+
+    def test_str_continuation_and_reversal_language_mirrors_btd(self) -> None:
+        completed = reconstruct_episodes(str_migration()).episodes[0]
+        supportive = primary_outcome_summary(
+            Cohort.STR_DEEP_PREMIUM,
+            (completed,),
+        )
+        adverse = primary_outcome_summary(
+            Cohort.STR_DEEP_PREMIUM,
+            (replace(completed, migration_direction="UPWARD", outcome="MIGRATED_UPWARD"),),
+        )
+
+        self.assertEqual(supportive["reversal_label"], "Downward reversal / premium-short supportive")
+        self.assertEqual(supportive["reversal_count"], 1)
+        self.assertEqual(adverse["continuation_label"], "Upside continuation")
+        self.assertEqual(adverse["continuation_count"], 1)
+        self.assertEqual(
+            operator_outcome_language(Cohort.STR_DEEP_PREMIUM)["adverse_meaning"],
+            "Upward / against STR",
+        )
+
+    def test_intermediate_adverse_pressure_does_not_resolve_ongoing_episode(self) -> None:
+        rows = [
+            observation(index, price)
+            for index, price in enumerate(("130", "130.2", "130.4", "130.6", "120"), 1)
+        ]
+        episode = reconstruct_episodes(rows).episodes[0]
+        report = cohort_report(Cohort.BTD_SHALLOW_DISCOUNT, (episode,))
+
+        self.assertTrue(episode.is_ongoing)
+        self.assertEqual(report["episodes"][0]["first_adverse_pressure_observation"], 1)
+        self.assertEqual(report["episodes"][0]["status"], "ONGOING")
+        self.assertEqual(report["primary_outcome"]["completed_denominator"], 0)
+        self.assertEqual(report["primary_outcome"]["continuation_count"], 0)
+        self.assertEqual(report["primary_outcome"]["unresolved_count"], 1)
+
+    def test_unique_symbol_breadth_is_independent_from_generation_count(self) -> None:
+        rows = [*btd_migration("ONE")]
+        rows.extend(
+            observation(index, price, symbol="TWO")
+            for index, price in enumerate(("110", "110.2", "110.4", "110.6"), 1)
+        )
+        episodes = reconstruct_episodes(rows).episodes
+        report = cohort_report(Cohort.BTD_DEEP_DISCOUNT, episodes)
+
+        self.assertEqual(report["episode_counts"]["total"], 3)
+        self.assertEqual(report["episode_counts"]["unique_symbols"], 2)
+        self.assertEqual(
+            [(item["symbol"], item["generation"]) for item in report["episodes"]],
+            [("ONE", 1), ("ONE", 2), ("TWO", 1)],
+        )
+
+    def test_checkpoint_definition_is_authoritative_observations_not_bars(self) -> None:
+        rows = btd_migration()
+        events, active = source_rows(rows)
+        report = build_feasibility_report(rows, events, active)
+
+        self.assertIn(
+            "authoritative post-activation observations",
+            report["methodology"]["checkpoint_series"],
+        )
+        self.assertIn("never means bars", report["methodology"]["checkpoint_series"])
+
+    def test_raw_episode_preserves_existing_values_and_adds_audit_status(self) -> None:
+        first = cohort_report(
+            Cohort.BTD_DEEP_DISCOUNT,
+            reconstruct_episodes(btd_migration()).episodes,
+        )["episodes"][0]
+
+        self.assertEqual(first["symbol"], "SPXUSDT")
+        self.assertEqual(first["generation"], 1)
+        self.assertEqual(first["mrz_lower"], 110.0)
+        self.assertEqual(first["mrz_upper"], 110.6)
+        self.assertEqual(first["outcome"], "MIGRATED_UPWARD")
+        self.assertEqual(first["route_relative_migration"], "ROUTE_SUPPORTIVE")
+        self.assertEqual(first["status"], "COMPLETED")
+        self.assertEqual(first["terminal_event"], "MRZ_MIGRATED")
 
     def test_insufficient_sample_is_prominent(self) -> None:
         episodes = reconstruct_episodes(btd_migration()).episodes
         report = cohort_report(Cohort.BTD_DEEP_DISCOUNT, episodes)
         self.assertEqual(report["diagnosis"]["status"], "Insufficient sample")
         self.assertIn("No reliable conclusion", report["diagnosis"]["activation_alone"])
+        self.assertEqual(report["primary_outcome"]["sample_state"], "INSUFFICIENT SAMPLE")
+        self.assertEqual(
+            report["operator_interpretation"]["activation_outcome_bias"],
+            "UNESTABLISHED",
+        )
+        self.assertEqual(
+            report["candidate_confirmation_point"]["status"],
+            "Not established",
+        )
 
     def test_supportive_and_contradictory_evidence_are_both_exposed(self) -> None:
         rows = []

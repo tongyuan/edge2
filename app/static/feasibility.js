@@ -13,12 +13,25 @@ const formatNumber = (value, digits = 4) => value == null ? "—" : new Intl.Num
   maximumFractionDigits: digits,
 }).format(value);
 
+const formatPercent = (value) => value == null ? "—" : `${formatNumber(value, 1)}%`;
+
 const metric = (label, value) => `
   <div><dt>${escapeHtml(label)}</dt><dd class="metric-value">${escapeHtml(value)}</dd></div>`;
 
 const evidenceList = (items) => `<ul class="evidence-list">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
 
 const titleCase = (value) => value.replaceAll("_", " ").replace(/\b\w/g, (character) => character.toUpperCase());
+
+const timingLabels = {
+  first_adverse_migration_pressure: "First adverse pressure",
+  first_route_supportive_displacement: "First route-supportive displacement",
+  first_route_supportive_median: "First route-supportive median",
+  first_successor_candidate: "First successor candidate",
+  first_two_observation_supportive_sequence: "First two-observation supportive sequence",
+  first_three_observation_supportive_sequence: "First three-observation supportive sequence",
+  first_core_containment: "First core containment",
+  first_no_adverse_envelope_breach: "First observation without adverse envelope breach",
+};
 
 function checkpointTable(checkpoints) {
   return `
@@ -56,9 +69,9 @@ function timingTable(timings) {
       <table>
         <thead><tr><th>Candidate event</th><th>Episodes observed</th><th>Median observation</th><th>Median hours</th><th>Index distribution</th></tr></thead>
         <tbody>${entries.map(([name, timing]) => `<tr>
-          <td>${escapeHtml(titleCase(name))}</td>
+          <td>${escapeHtml(timingLabels[name] || titleCase(name))}</td>
           <td>${timing.episodes}</td>
-          <td>${formatNumber(timing.median_observation_index, 1)}</td>
+          <td>${timing.median_observation_index == null ? "—" : `+${formatNumber(timing.median_observation_index, 1)}`}</td>
           <td>${formatNumber(timing.median_hours, 2)}</td>
           <td>${escapeHtml(Object.entries(timing.by_observation_index).map(([index, count]) => `+${index}: ${count}`).join(", "))}</td>
         </tr>`).join("")}</tbody>
@@ -72,20 +85,24 @@ function episodeTable(episodes) {
     <div class="table-wrap">
       <table>
         <thead><tr>
-          <th>Episode</th><th>Activated</th><th>MRZ</th><th>Activation IPDA</th><th>Post observations</th>
-          <th>Outcome</th><th>Actual direction</th><th>Route-relative</th><th>First adverse pressure</th>
+          <th>Episode</th><th>Route / location</th><th>MRZ</th><th>Activated</th><th>Activation IPDA</th><th>Post observations</th>
+          <th>First supportive</th><th>First adverse pressure</th><th>Terminal event</th><th>Actual direction</th>
+          <th>Route-relative outcome</th><th>Status</th>
         </tr></thead>
         <tbody>${episodes.map((row) => `
           <tr>
             <td>${escapeHtml(row.symbol)} · G${row.generation}</td>
-            <td>${escapeHtml(row.activated_at)}</td>
+            <td>${escapeHtml(row.route)} · ${escapeHtml(titleCase(row.structural_location_at_activation))}</td>
             <td>${formatNumber(row.mrz_lower)}–${formatNumber(row.mrz_upper)}</td>
+            <td>${escapeHtml(row.activated_at)}</td>
             <td>${formatNumber(row.ipda_20w_low_at_activation)}–${formatNumber(row.ipda_20w_high_at_activation)}</td>
             <td>${row.post_activation_observations}</td>
-            <td>${escapeHtml(row.outcome)}</td>
-            <td>${escapeHtml(row.migration_direction)}</td>
-            <td>${escapeHtml(row.route_relative_migration)}</td>
+            <td>${row.first_supportive_observation == null ? "—" : `+${row.first_supportive_observation} / ${formatNumber(row.first_supportive_hours, 2)}h`}</td>
             <td>${row.first_adverse_pressure_observation == null ? "—" : `+${row.first_adverse_pressure_observation} / ${formatNumber(row.first_adverse_pressure_hours, 2)}h`}</td>
+            <td>${escapeHtml(row.terminal_event)}</td>
+            <td>${escapeHtml(row.migration_direction)}</td>
+            <td><strong>${escapeHtml(row.route_relative_migration)}</strong><span class="table-subline">${escapeHtml(row.route_relative_meaning)}</span></td>
+            <td><span class="episode-status ${row.status === "ONGOING" ? "ongoing" : "completed"}">${escapeHtml(row.status)}</span></td>
           </tr>`).join("")}</tbody>
       </table>
     </div>`;
@@ -110,57 +127,115 @@ function diagnosisPanel(diagnosis) {
     </div>`;
 }
 
-function policyPanel(policy) {
+function primaryOutcomePanel(primary) {
   return `
-    <div class="policy-panel">
-      <h4>Candidate Trading Window Policy</h4>
-      <dl class="policy-grid">
-        ${metric("Strategy context", policy.strategy_context)}
-        ${metric("Candidate", policy.candidate)}
-        ${metric("Candidate checkpoint", policy.candidate_checkpoint)}
-        ${metric("Evidence status", policy.evidence_status)}
-        ${metric("Production status", policy.production_status)}
-      </dl>
-    </div>`;
+    <section class="subsection primary-outcome-card">
+      <p class="section-kicker">PRIMARY OUTCOME</p>
+      <h3>Continuation vs Reversal After Activation</h3>
+      <p class="denominator-line">Observed completed outcome rate · <strong>${primary.completed_denominator} completed</strong></p>
+      <div class="outcome-comparison">
+        <article class="outcome-row continuation">
+          <div><span>CONTINUATION</span><strong>${escapeHtml(primary.continuation_label)}</strong></div>
+          <p><strong>${primary.continuation_count} / ${primary.completed_denominator}</strong><em>${formatPercent(primary.continuation_percentage)}</em></p>
+        </article>
+        <article class="outcome-row reversal">
+          <div><span>REVERSAL</span><strong>${escapeHtml(primary.reversal_label)}</strong></div>
+          <p><strong>${primary.reversal_count} / ${primary.completed_denominator}</strong><em>${formatPercent(primary.reversal_percentage)}</em></p>
+        </article>
+        <article class="outcome-row unresolved">
+          <div><span>UNRESOLVED</span><strong>Ongoing MRZ generations</strong></div>
+          <p><strong>${primary.unresolved_count}</strong><em>excluded</em></p>
+        </article>
+      </div>
+      ${primary.other_terminal_count ? `<p class="definition">Other completed terminal outcomes: ${primary.other_terminal_count}. They remain in the completed denominator but are not forced into continuation or reversal.</p>` : ""}
+      <p class="sample-qualification">${escapeHtml(primary.qualification)}</p>
+      <p class="definition">${escapeHtml(primary.denominator_definition)}</p>
+    </section>`;
 }
 
-function renderCohort(cohort) {
+function operatorInterpretationPanel(cohort) {
+  const interpretation = cohort.operator_interpretation;
+  return `
+    <section class="subsection interpretation-card">
+      <p class="section-kicker">OPERATOR INTERPRETATION</p>
+      <div class="interpretation-grid">
+        ${metric("Structural location", interpretation.structural_location)}
+        ${metric("Strategy context", interpretation.strategy_context)}
+        ${metric("Activation outcome bias", interpretation.activation_outcome_bias)}
+        ${metric("Current evidence", interpretation.current_evidence)}
+        ${metric("Confirmation effect", interpretation.confirmation_effect)}
+        ${metric("Research status", interpretation.research_status)}
+      </div>
+      <p class="interpretation-summary">${escapeHtml(interpretation.summary)}</p>
+      <p class="operator-guardrail">${escapeHtml(interpretation.guardrail)}</p>
+      <details><summary>Supporting, contradictory, and limiting evidence</summary>${diagnosisPanel(cohort.diagnosis)}</details>
+    </section>`;
+}
+
+function methodologyPanel(cohort, methodology) {
+  return `
+    <section class="subsection methodology-section">
+      <p class="section-kicker">METHODOLOGY / DEFINITIONS</p>
+      <details>
+        <summary>Definitions, research assumptions, and production safeguards</summary>
+        <dl class="methodology">${Object.entries(methodology).map(([key, value]) => `<dt>${escapeHtml(key.replaceAll("_", " "))}</dt><dd>${escapeHtml(value)}</dd>`).join("")}</dl>
+        <dl class="identity-grid research-assumptions">
+          ${metric("Initial prior", cohort.prior)}
+          ${metric("Existing hypothesis", cohort.hypothesis)}
+          ${metric("Research-only candidate", cohort.candidate)}
+          ${metric("Production status", cohort.candidate_policy.production_status)}
+        </dl>
+      </details>
+    </section>`;
+}
+
+function renderCohort(cohort, methodology) {
   const outcomes = cohort.completed_episode_outcomes;
+  const candidate = cohort.candidate_confirmation_point;
   return `
     <section class="cohort-card">
       <header class="cohort-header">
         <p class="eyebrow">${escapeHtml(cohort.cohort)}</p>
         <h2>${escapeHtml(cohort.label)}</h2>
-        <p class="muted">${escapeHtml(cohort.hypothesis)}</p>
+        <p class="strategy-context">${escapeHtml(cohort.strategy_context)}</p>
+        <p class="research-question"><span>Research question</span>${escapeHtml(cohort.research_question)}</p>
+        <dl class="summary-grid cohort-counts">
+          ${metric("Episodes", cohort.episode_counts.total)}
+          ${metric("Completed", cohort.episode_counts.completed)}
+          ${metric("Ongoing", cohort.episode_counts.ongoing)}
+          ${metric("Unique symbols", cohort.episode_counts.unique_symbols)}
+        </dl>
+        <span class="sample-state ${cohort.primary_outcome.sample_sufficient ? "sufficient" : "insufficient"}">${escapeHtml(cohort.primary_outcome.sample_state)}</span>
       </header>
       <div class="cohort-body">
+        ${primaryOutcomePanel(cohort.primary_outcome)}
+        ${operatorInterpretationPanel(cohort)}
         <section class="subsection">
-          <h3>1. Cohort identity and hypothesis</h3>
-          <dl class="identity-grid">
-            ${metric("Route", cohort.route)}
-            ${metric("Structural location", cohort.location)}
-            ${metric("Initial prior", cohort.prior)}
-            ${metric("Strategy context", cohort.strategy_context)}
-            ${metric("Candidate hypothesis", cohort.candidate)}
-          </dl>
-        </section>
-        <section class="subsection">
-          <h3>2. Episode counts</h3>
-          <dl class="summary-grid">
-            ${metric("Total", cohort.episode_counts.total)}
-            ${metric("Completed", cohort.episode_counts.completed)}
-            ${metric("Ongoing", cohort.episode_counts.ongoing)}
-            ${metric("Sampling unit", "MRZ generation")}
-          </dl>
-        </section>
-        <section class="subsection">
-          <h3>3–5. Checkpoint sampling and structural measurements</h3>
-          <p class="definition">Signed displacement preserves raw above/below-midpoint direction and mirrors route-relative support for STR. Every fraction retains its episode denominator.</p>
+          <p class="section-kicker">CONFIRMATION EFFECT</p>
+          <h3>Does waiting after activation improve reversal clarity?</h3>
+          <p class="definition">If activation alone does not establish a useful reversal bias, do later route-supportive observations materially clarify the eventual outcome?</p>
+          <p class="checkpoint-definition"><strong>+N means the Nth authoritative post-activation observation — never bars.</strong> Intermediate behavior remains separate from final outcomes.</p>
           ${checkpointTable(cohort.checkpoints)}
-          <details><summary>First-confirmation timing</summary>${timingTable(cohort.first_confirmation_timing)}</details>
+        </section>
+        <section class="subsection candidate-card">
+          <p class="section-kicker">CANDIDATE CONFIRMATION POINT</p>
+          <p class="candidate-value">${escapeHtml(candidate.status).toUpperCase()}</p>
+          <p>${escapeHtml(candidate.confirmation_effect)}</p>
+          <dl class="candidate-facts">
+            ${metric("Evidence status", candidate.evidence_status)}
+            ${metric("Production status", candidate.production_status)}
+          </dl>
         </section>
         <section class="subsection">
-          <h3>6. Completed episode outcomes</h3>
+          <p class="section-kicker">WHAT TENDS TO HAPPEN FIRST?</p>
+          <h3>Post-activation event timing</h3>
+          <p class="definition">Lifecycle timing only. These events describe intermediate behavior and do not resolve an ongoing episode.</p>
+          ${timingTable(cohort.first_confirmation_timing)}
+        </section>
+        <section class="subsection final-outcomes">
+          <p class="section-kicker">FINAL OUTCOMES</p>
+          <h3>Completed MRZ generations only</h3>
+          <p class="denominator-line"><strong>Completed episodes: ${outcomes.completed}</strong> · Ongoing / unresolved: ${outcomes.ongoing}</p>
           <dl class="outcome-grid">
             ${metric("Upward migrations", outcomes.migrated_upward)}
             ${metric("Downward migrations", outcomes.migrated_downward)}
@@ -171,10 +246,15 @@ function renderCohort(cohort) {
             ${metric("Median hours to termination", formatNumber(outcomes.median_hours_to_termination, 2))}
             ${metric("Median authoritative observations", formatNumber(outcomes.median_authoritative_observation_count, 1))}
           </dl>
-          <details><summary>Raw reconstructed episodes</summary>${episodeTable(cohort.episodes)}</details>
+          ${cohort.primary_outcome.sample_sufficient ? "" : `<p class="sample-qualification">Descriptive only — insufficient completed sample.</p>`}
         </section>
-        <section class="subsection">${diagnosisPanel(cohort.diagnosis)}</section>
-        <section class="subsection">${policyPanel(cohort.candidate_policy)}</section>
+        <section class="subsection raw-episodes">
+          <p class="section-kicker">RAW RECONSTRUCTED EPISODES</p>
+          <h3>Generation-level audit layer</h3>
+          <p class="definition">Each row is one MRZ generation. Intermediate pressure is shown independently from canonical terminal status.</p>
+          ${episodeTable(cohort.episodes)}
+        </section>
+        ${methodologyPanel(cohort, methodology)}
       </div>
     </section>`;
 }
@@ -193,11 +273,8 @@ function renderReport(report) {
         ${metric("Excluded", reconstruction.excluded_episodes)}
       </dl>
       <p class="definition">Data as of ${escapeHtml(report.data_as_of)}. Audit match: ${reconstruction.event_history_matches_replay ? "yes" : "no"}. Active-state match: ${reconstruction.active_state_matches_replay ? "yes" : "no"}.</p>
-      <details><summary>Measurement and diagnosis methodology</summary>
-        <dl class="methodology">${Object.entries(report.methodology).map(([key, value]) => `<dt>${escapeHtml(key.replaceAll("_", " "))}</dt><dd>${escapeHtml(value)}</dd>`).join("")}</dl>
-      </details>
     </section>
-    ${report.cohorts.map(renderCohort).join("")}
+    ${report.cohorts.map((cohort) => renderCohort(cohort, report.methodology)).join("")}
     <section class="report-section">
       <h2>Cross-Cohort Diagnosis</h2>
       <p class="status${cross.status === "Insufficient sample" ? " insufficient" : ""}">${escapeHtml(cross.status)}</p>

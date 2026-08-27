@@ -464,6 +464,136 @@ def migration_interpretation(route: Route, direction: str | None) -> str:
     return "ROUTE_SUPPORTIVE" if supportive else "ROUTE_ADVERSE"
 
 
+def percentage_value(numerator: int, denominator: int) -> float | None:
+    if denominator == 0:
+        return None
+    return numeric(
+        Decimal(numerator) * Decimal("100") / Decimal(denominator)
+    )
+
+
+def operator_outcome_language(cohort: Cohort) -> dict[str, str]:
+    metadata = COHORT_METADATA[cohort]
+    route = Route(metadata["route"])
+    strategy_context = metadata["strategy_context"]
+    strategy_label = strategy_context.replace("_", "-")
+    location_label = {
+        StructuralLocation.DEEP_DISCOUNT.value: "Deep Discount",
+        StructuralLocation.SHALLOW_DISCOUNT.value: "Shallow Discount",
+        StructuralLocation.SHALLOW_PREMIUM.value: "Shallow Premium",
+        StructuralLocation.DEEP_PREMIUM.value: "Deep Premium",
+    }[metadata["location"]]
+    if route is Route.BTD:
+        continuation_label = "Downside continuation"
+        reversal_label = f"Upward reversal / {strategy_label} supportive"
+        question = (
+            f"After a BTD MRZ activates in {location_label}, is price more likely "
+            "to continue lower or reverse upward?"
+        )
+        supportive_meaning = "Upward / supports BTD"
+        adverse_meaning = "Downward / against BTD"
+    else:
+        continuation_label = "Upside continuation"
+        reversal_label = f"Downward reversal / {strategy_label} supportive"
+        question = (
+            f"After an STR MRZ activates in {location_label}, is price more likely "
+            "to continue higher or reverse downward?"
+        )
+        supportive_meaning = "Downward / supports STR"
+        adverse_meaning = "Upward / against STR"
+    return {
+        "location_label": location_label,
+        "question": question,
+        "continuation_label": continuation_label,
+        "reversal_label": reversal_label,
+        "supportive_meaning": supportive_meaning,
+        "adverse_meaning": adverse_meaning,
+    }
+
+
+def primary_outcome_summary(
+    cohort: Cohort,
+    episodes: Sequence[Episode],
+) -> dict[str, Any]:
+    language = operator_outcome_language(cohort)
+    completed = tuple(item for item in episodes if not item.is_ongoing)
+    supportive = sum(
+        migration_interpretation(
+            item.active_mrz.route_owner,
+            item.migration_direction,
+        )
+        == "ROUTE_SUPPORTIVE"
+        for item in completed
+    )
+    adverse = sum(
+        migration_interpretation(
+            item.active_mrz.route_owner,
+            item.migration_direction,
+        )
+        == "ROUTE_ADVERSE"
+        for item in completed
+    )
+    completed_count = len(completed)
+    unresolved = sum(item.is_ongoing for item in episodes)
+    other_terminal = completed_count - supportive - adverse
+    sample_sufficient = completed_count >= MIN_DIAGNOSTIC_EPISODES
+    if not sample_sufficient:
+        bias = "UNESTABLISHED"
+        sample_state = "INSUFFICIENT SAMPLE"
+        research_status = "SAMPLE BUILDING"
+    elif supportive > adverse:
+        bias = "REVERSAL"
+        sample_state = "DESCRIPTIVE SAMPLE"
+        research_status = "PATTERN EMERGING"
+    elif adverse > supportive:
+        bias = "CONTINUATION"
+        sample_state = "DESCRIPTIVE SAMPLE"
+        research_status = "PATTERN EMERGING"
+    else:
+        bias = "MIXED"
+        sample_state = "DESCRIPTIVE SAMPLE"
+        research_status = "MIXED EVIDENCE"
+
+    if completed_count == 0:
+        qualification = (
+            "No completed episodes. Outcome rates are not available yet."
+        )
+    elif completed_count == 1:
+        qualification = (
+            "Only 1 completed episode. Rates are descriptive and not "
+            "statistically meaningful yet."
+        )
+    elif not sample_sufficient:
+        qualification = (
+            f"Only {completed_count} completed episodes. Rates are descriptive "
+            "and not statistically meaningful yet."
+        )
+    else:
+        qualification = (
+            "Observed completed outcomes are descriptive research evidence, "
+            "not a trading probability or recommendation."
+        )
+
+    return {
+        **language,
+        "completed_denominator": completed_count,
+        "continuation_count": adverse,
+        "continuation_percentage": percentage_value(adverse, completed_count),
+        "reversal_count": supportive,
+        "reversal_percentage": percentage_value(supportive, completed_count),
+        "other_terminal_count": other_terminal,
+        "unresolved_count": unresolved,
+        "sample_sufficient": sample_sufficient,
+        "sample_state": sample_state,
+        "activation_outcome_bias": bias,
+        "research_status": research_status,
+        "qualification": qualification,
+        "denominator_definition": (
+            "Completed MRZ generations only; ongoing generations remain unresolved."
+        ),
+    }
+
+
 def first_timing(episode: Episode, predicate: Any) -> tuple[int, Decimal] | None:
     for index, observation in enumerate(episode.post_activation_observations, 1):
         if predicate(index, observation):
@@ -699,6 +829,15 @@ def cohort_report(cohort: Cohort, episodes: Sequence[Episode]) -> dict[str, Any]
     checkpoints = [aggregate_checkpoint(episodes, index) for index in available_checkpoints(episodes)]
     outcomes = outcome_summary(episodes)
     diagnosis, policy = diagnose_cohort(cohort, episodes, checkpoints, outcomes)
+    primary_outcome = primary_outcome_summary(cohort, episodes)
+    confirmation_established = diagnosis["status"] != "Insufficient sample"
+    completed = int(primary_outcome["completed_denominator"])
+    if completed == 0:
+        evidence_summary = "No completed episodes are available."
+    elif completed < MIN_DIAGNOSTIC_EPISODES:
+        evidence_summary = f"Insufficient completed episodes ({completed})."
+    else:
+        evidence_summary = f"{completed} completed episodes are available for description."
     return {
         "cohort": cohort.value,
         **COHORT_METADATA[cohort],
@@ -706,6 +845,42 @@ def cohort_report(cohort: Cohort, episodes: Sequence[Episode]) -> dict[str, Any]
             "total": len(episodes),
             "completed": outcomes["completed"],
             "ongoing": outcomes["ongoing"],
+            "unique_symbols": len({item.symbol for item in episodes}),
+        },
+        "research_question": primary_outcome["question"],
+        "primary_outcome": primary_outcome,
+        "operator_interpretation": {
+            "structural_location": primary_outcome["location_label"],
+            "strategy_context": COHORT_METADATA[cohort]["strategy_context"],
+            "activation_outcome_bias": primary_outcome["activation_outcome_bias"],
+            "current_evidence": evidence_summary,
+            "confirmation_effect": (
+                "DESCRIPTIVE PATTERN"
+                if confirmation_established
+                else "NOT ESTABLISHED"
+            ),
+            "research_status": primary_outcome["research_status"],
+            "summary": (
+                f"Insufficient evidence to determine whether a {COHORT_METADATA[cohort]['route']} "
+                f"MRZ in {primary_outcome['location_label']} is more likely to produce "
+                f"{primary_outcome['continuation_label'].lower()} or "
+                f"{primary_outcome['reversal_label'].lower()} after activation."
+                if not primary_outcome["sample_sufficient"]
+                else (
+                    f"The completed sample shows a descriptive "
+                    f"{primary_outcome['activation_outcome_bias'].lower()} pattern."
+                )
+            ),
+            "guardrail": (
+                f"Do not infer that MRZ activation alone validates "
+                f"{COHORT_METADATA[cohort]['strategy_context']}."
+            ),
+        },
+        "candidate_confirmation_point": {
+            "status": diagnosis["candidate_confirmation_point"],
+            "evidence_status": diagnosis["status"],
+            "confirmation_effect": diagnosis["confirmation_effect"],
+            "production_status": "NOT APPROVED",
         },
         "episodes": [episode_record(item) for item in episodes],
         "checkpoints": checkpoints,
@@ -720,6 +895,17 @@ def episode_record(episode: Episode) -> dict[str, Any]:
     active = episode.active_mrz
     timings = episode_timings(episode)
     adverse = timings["first_adverse_migration_pressure"]
+    supportive = timings["first_route_supportive_displacement"]
+    route_relative = migration_interpretation(
+        active.route_owner,
+        episode.migration_direction,
+    )
+    language = operator_outcome_language(episode.cohort)
+    route_relative_meaning = {
+        "ROUTE_SUPPORTIVE": language["supportive_meaning"],
+        "ROUTE_ADVERSE": language["adverse_meaning"],
+        "NOT_APPLICABLE": "Unresolved or non-directional terminal outcome",
+    }[route_relative]
     return {
         "symbol": episode.symbol,
         "generation": episode.generation,
@@ -734,11 +920,18 @@ def episode_record(episode: Episode) -> dict[str, Any]:
         "activation_event_id": active.activation_event_id,
         "post_activation_observations": len(episode.post_activation_observations),
         "ended_at": iso(episode.ended_at),
+        "status": "ONGOING" if episode.is_ongoing else "COMPLETED",
+        "terminal_event": (
+            episode.termination_event_type.value
+            if episode.termination_event_type is not None
+            else None
+        ),
         "outcome": episode.outcome,
         "migration_direction": episode.migration_direction,
-        "route_relative_migration": migration_interpretation(
-            active.route_owner, episode.migration_direction
-        ),
+        "route_relative_migration": route_relative,
+        "route_relative_meaning": route_relative_meaning,
+        "first_supportive_observation": supportive[0] if supportive else None,
+        "first_supportive_hours": numeric(supportive[1]) if supportive else None,
         "first_adverse_pressure_observation": adverse[0] if adverse else None,
         "first_adverse_pressure_hours": numeric(adverse[1]) if adverse else None,
     }
@@ -923,13 +1116,23 @@ def build_feasibility_report(
             **reconciliation,
         },
         "methodology": {
+            "episode": "one MRZ generation and lifecycle; multiple generations of one symbol remain separate episodes",
+            "completed_episode": "an MRZ generation that reached a canonical terminal transition",
+            "ongoing_episode": "an active unresolved generation; excluded from final continuation/reversal rates",
+            "unique_symbol_breadth": "distinct symbols represented in a cohort, reported separately from generation count",
             "chronology": "observed_at, then received_at, then persisted row id; event IDs are never chronology",
             "post_activation_selection": (
                 "all persisted symbol observations after the activation trigger through and including the "
                 "authoritative termination trigger; ongoing episodes end at available history"
             ),
             "checkpoint_series": (
-                "cumulative activation observation plus the first N post-activation observations"
+                "cumulative activation observation plus the first N authoritative post-activation observations; +N never means bars"
+            ),
+            "route_supportive": "movement or terminal direction consistent with the current route owner",
+            "route_adverse": "movement or terminal direction inconsistent with the current route owner",
+            "observed_outcome_rate": "completed historical MRZ generations only; ongoing generations remain unresolved",
+            "intermediate_vs_final": (
+                "checkpoint pressure, displacement, tests, and sequences are intermediate behavior and never convert an ongoing episode into a final outcome"
             ),
             "signed_displacement": (
                 "(observation_price - mrz_midpoint) / activation IPDA 20-week width; "
