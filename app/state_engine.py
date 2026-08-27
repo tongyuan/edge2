@@ -6,6 +6,8 @@ from decimal import Decimal
 from typing import Iterable, Sequence
 
 from app.concentration import (
+    CONCENTRATION_SPAN_THRESHOLD,
+    MIN_CLUSTER_OBSERVATIONS,
     ROUTE_OBSERVATION_WINDOW,
     ConcentrationResult,
     evaluate_concentration,
@@ -98,7 +100,12 @@ def evaluate_cross_route_replacement(
     return None
 
 
-def replay_symbol(observations: Iterable[Observation]) -> ReplayResult:
+def replay_symbol(
+    observations: Iterable[Observation],
+    *,
+    minimum_required_count: int = MIN_CLUSTER_OBSERVATIONS,
+    concentration_threshold: Decimal = CONCENTRATION_SPAN_THRESHOLD,
+) -> ReplayResult:
     ordered = sorted(observations, key=lambda item: item.order_key)
     if not ordered:
         return ReplayResult(symbol="", active_mrz=None, transitions=(), latest_observation=None)
@@ -118,7 +125,12 @@ def replay_symbol(observations: Iterable[Observation]) -> ReplayResult:
         route_window.append(incoming)
 
         if active is None:
-            evaluation = evaluate_concentration(tuple(route_window), incoming.route)
+            evaluation = evaluate_concentration(
+                tuple(route_window),
+                incoming.route,
+                minimum_required_count=minimum_required_count,
+                concentration_threshold=concentration_threshold,
+            )
             candidate = (
                 build_active_mrz(incoming, evaluation.cluster)
                 if evaluation.result is ConcentrationResult.QUALIFIES and evaluation.cluster
@@ -174,7 +186,12 @@ def replay_symbol(observations: Iterable[Observation]) -> ReplayResult:
         if not successor_eligible(active, incoming):
             continue
         eligible_pool = tuple(item for item in route_window if successor_eligible(active, item))
-        evaluation = evaluate_concentration(eligible_pool, incoming.route)
+        evaluation = evaluate_concentration(
+            eligible_pool,
+            incoming.route,
+            minimum_required_count=minimum_required_count,
+            concentration_threshold=concentration_threshold,
+        )
         successor = (
             build_active_mrz(incoming, evaluation.cluster)
             if evaluation.result is ConcentrationResult.QUALIFIES and evaluation.cluster

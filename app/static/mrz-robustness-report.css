@@ -1,0 +1,102 @@
+.robustness-report-shell { max-width: 1480px; }
+.robustness-report-shell [hidden] { display: none !important; }
+.sample-confidence { margin-top: 30px; }
+.sample-confidence .section-heading { margin-bottom: 14px; }
+.sample-confidence h2 { font-size: 1.25rem; }
+.section-note { margin: 10px 0 18px; color: var(--muted); font-size: 0.82rem; line-height: 1.5; }
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+.metric-card,
+.cohort-card,
+.policy-detail-card,
+.interpretation-card {
+  min-width: 0;
+  padding: 17px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.metric-card span,
+.detail-label {
+  display: block;
+  margin-bottom: 9px;
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 760;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.metric-card strong { display: block; font-size: 1.25rem; line-height: 1.2; overflow-wrap: anywhere; }
+.metric-card p { margin: 7px 0 0; color: var(--muted); font-size: 0.75rem; line-height: 1.45; }
+.metric-card.status-card { border-color: #665d43; background: var(--warning-soft); }
+.metric-card.status-card strong { color: var(--warning); font-size: 0.9rem; }
+.production-robustness { border-color: rgba(98, 230, 181, 0.42); }
+
+.pressure-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 14px;
+}
+.pressure-group { padding: 17px; border: 1px solid var(--line); border-radius: 12px; background: rgba(8, 11, 16, 0.32); }
+.pressure-group h3 { margin: 0 0 13px; color: var(--muted); font-size: 0.7rem; letter-spacing: 0.1em; }
+.pressure-counts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.pressure-counts div { padding: 11px; border: 1px solid rgba(37, 48, 65, 0.8); border-radius: 9px; }
+.pressure-counts span { display: block; color: var(--muted); font-size: 0.7rem; }
+.pressure-counts strong { display: block; margin-top: 5px; font-size: 1.05rem; }
+
+.cohort-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.cohort-card h3 { margin: 0; color: var(--text); }
+.cohort-definition { min-height: 42px; margin: 8px 0 15px; color: var(--muted); font-size: 0.78rem; line-height: 1.45; }
+.cohort-count { display: flex; align-items: baseline; gap: 7px; margin-bottom: 15px; }
+.cohort-count strong { color: var(--accent); font-size: 1.7rem; }
+.cohort-count span { color: var(--muted); font-size: 0.74rem; }
+.compact-facts { margin: 0; }
+.compact-facts div { display: flex; justify-content: space-between; gap: 14px; padding: 7px 0; border-top: 1px solid rgba(37, 48, 65, 0.72); }
+.compact-facts dt { color: var(--muted); font-size: 0.72rem; }
+.compact-facts dd { margin: 0; color: var(--text); font-size: 0.74rem; font-weight: 700; text-align: right; }
+
+.history-selector { display: block; width: min(420px, 100%); margin: 18px 0; color: var(--muted); font-size: 0.72rem; font-weight: 700; }
+.history-selector select { width: 100%; min-height: 44px; margin-top: 7px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-strong); color: var(--text); }
+.symbol-detail-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; margin-bottom: 13px; }
+.symbol-detail-heading h3 { margin: 0; color: var(--text); font-size: 1.1rem; }
+.symbol-detail-heading span { color: var(--muted); font-size: 0.78rem; }
+.policy-detail-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.policy-detail-card h3 { margin: 0 0 13px; color: var(--accent); }
+.policy-detail-card.unformed { border-style: dashed; }
+.policy-detail-card.unformed p { margin: 0; color: var(--muted); font-size: 0.8rem; line-height: 1.5; }
+.status-badge { display: inline-flex; margin-bottom: 12px; padding: 5px 8px; border: 1px solid #486b61; border-radius: 999px; color: var(--accent); font-size: 0.65rem; font-weight: 760; letter-spacing: 0.06em; }
+.status-under-pressure, .status-migration-candidate { border-color: #665d43; color: var(--warning); }
+.status-not-yet-assessable { border-color: var(--line); color: var(--muted); }
+
+.interpretation-card { border-left: 4px solid var(--accent); }
+.interpretation-card h3 { margin: 0 0 9px; color: var(--text); }
+.interpretation-card p { margin: 0; color: #c5cedb; line-height: 1.6; }
+.interpretation-card ul { margin: 14px 0 0; padding-left: 20px; color: var(--muted); font-size: 0.8rem; line-height: 1.65; }
+
+#crossSymbolTable { min-width: 1160px; }
+#policyComparisonTable { min-width: 820px; }
+#policyComparisonTable .production-cell { background: var(--accent-soft); }
+.robustness-report-shell td .secondary { display: block; margin-top: 4px; color: var(--muted); font-size: 0.68rem; }
+
+@media (max-width: 1100px) {
+  .metric-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .cohort-grid, .policy-detail-grid { grid-template-columns: 1fr; }
+  .cohort-definition { min-height: 0; }
+}
+
+@media (max-width: 700px) {
+  body { overflow-x: hidden; }
+  .metric-grid, .pressure-layout { grid-template-columns: 1fr; }
+  .pressure-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .symbol-detail-heading { align-items: flex-start; flex-direction: column; }
+  .table-wrap { max-width: 100%; }
+}
+
+@media (max-width: 420px) {
+  .pressure-counts { grid-template-columns: 1fr; }
+  .report-section { border-radius: 14px; }
+}

@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="EDGE 2.0 post-activation MRZ durability report" />
+    <title>EDGE 2.0 · MRZ Robustness</title>
+    <link rel="stylesheet" href="/static/activation-feasibility.css?v=robustness-report-20260827" />
+    <link rel="stylesheet" href="/static/diagnostics-nav.css?v=diagnostics-menu-20260827" />
+    <link rel="stylesheet" href="/static/mrz-robustness-report.css?v=robustness-report-20260827" />
+  </head>
+  <body>
+    <main class="report-shell robustness-report-shell">
+      <header class="report-header">
+        <div>
+          <p class="eyebrow">EDGE 2.0 · READ-ONLY RESEARCH</p>
+          <h1>MRZ Robustness</h1>
+          <p class="subtitle">Post-activation durability across symbols and formation allowances.</p>
+        </div>
+        <div class="header-actions">
+          <nav class="page-nav operator-navigation" aria-label="Operator navigation" data-diagnostics-nav>
+            <a href="/">MRZ Monitor</a>
+            <div class="diagnostics-menu has-current-page">
+              <button class="diagnostics-trigger" type="button" aria-expanded="false" aria-haspopup="menu" aria-controls="robustness-report-diagnostics-menu" data-diagnostics-trigger>
+                Diagnostics <span class="diagnostics-chevron" aria-hidden="true">▾</span>
+              </button>
+              <div class="diagnostics-dropdown" id="robustness-report-diagnostics-menu" role="menu" data-diagnostics-menu hidden>
+                <a href="/diagnostics/mrz-robustness" role="menuitem">MRZ Operation Card</a>
+                <a href="/diagnostics/activation-feasibility" role="menuitem">Activation Feasibility</a>
+                <a href="/diagnostics/mrz-robustness-report" role="menuitem" aria-current="page">MRZ Robustness</a>
+                <a href="/diagnostics/trading-window-feasibility" role="menuitem">Trading Window Feasibility</a>
+              </div>
+            </div>
+          </nav>
+          <button type="button" id="refreshReport">Refresh report</button>
+        </div>
+      </header>
+
+      <aside class="notice">
+        Research only. Replayed MRZs are transient and cannot activate, migrate, replace, or change ownership of an authoritative MRZ.
+      </aside>
+      <section class="status-panel" id="reportStatus" aria-live="polite">
+        Replaying post-activation durability…
+      </section>
+
+      <div id="reportContent" hidden>
+        <section class="sample-confidence" aria-labelledby="sample-confidence-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">SAMPLE CONFIDENCE / SCOPE</p>
+              <h2 id="sample-confidence-title">Available durability evidence</h2>
+            </div>
+            <span id="dataAsOf">—</span>
+          </div>
+          <div id="sampleConfidence"></div>
+        </section>
+
+        <section class="report-section production-robustness" aria-labelledby="production-title">
+          <div class="section-heading">
+            <div><p class="eyebrow">CURRENT PRODUCTION ROBUSTNESS</p><h2 id="production-title">4 observations · 1.00%</h2></div>
+          </div>
+          <div id="productionSummary"></div>
+        </section>
+
+        <section class="report-section" aria-labelledby="cross-symbol-title">
+          <div class="section-heading">
+            <div><p class="eyebrow">CROSS-SYMBOL ROBUSTNESS SUMMARY</p><h2 id="cross-symbol-title">Production-policy formations</h2></div>
+          </div>
+          <div class="table-wrap"><table id="crossSymbolTable"></table></div>
+        </section>
+
+        <section class="report-section" aria-labelledby="pressure-title">
+          <div class="section-heading">
+            <div><p class="eyebrow">MIGRATION PRESSURE SUMMARY</p><h2 id="pressure-title">Current production cohort state</h2></div>
+          </div>
+          <div id="pressureSummary"></div>
+        </section>
+
+        <section class="report-section" aria-labelledby="policy-title">
+          <div class="section-heading">
+            <div><p class="eyebrow">POLICY ROBUSTNESS COMPARISON</p><h2 id="policy-title">1.00% · 1.50% · 2.00%</h2></div>
+          </div>
+          <p class="section-note">Formation coverage is context, not a quality score. Observation count remains fixed at four.</p>
+          <div class="table-wrap"><table id="policyComparisonTable"></table></div>
+        </section>
+
+        <section class="report-section" aria-labelledby="cohort-title">
+          <div class="section-heading">
+            <div><p class="eyebrow">INCREMENTAL COHORT ANALYSIS</p><h2 id="cohort-title">Durability of additional formations</h2></div>
+          </div>
+          <div class="cohort-grid" id="incrementalCohorts"></div>
+        </section>
+
+        <section class="report-section" aria-labelledby="symbol-detail-title">
+          <div class="section-heading">
+            <div><p class="eyebrow">SYMBOL-LEVEL ROBUSTNESS DETAIL</p><h2 id="symbol-detail-title">Inspect a formed MRZ history</h2></div>
+          </div>
+          <label class="history-selector" for="historySelect">Symbol / Route
+            <select id="historySelect"></select>
+          </label>
+          <div id="symbolDetail"></div>
+        </section>
+
+        <section class="report-section interpretation-section" aria-labelledby="interpretation-title">
+          <div class="section-heading">
+            <div><p class="eyebrow">EVIDENCE INTERPRETATION</p><h2 id="interpretation-title">What the current durability sample supports</h2></div>
+          </div>
+          <div id="evidenceInterpretation"></div>
+        </section>
+      </div>
+    </main>
+    <script src="/static/diagnostics-nav.js?v=diagnostics-menu-20260827" defer></script>
+    <script src="/static/operator-time.js?v=robustness-report-20260827" defer></script>
+    <script src="/static/mrz-robustness-report.js?v=robustness-report-20260827" defer></script>
+  </body>
+</html>

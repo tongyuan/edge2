@@ -8,6 +8,7 @@ from enum import StrEnum
 from typing import Any, Iterable, Mapping, Sequence
 
 from app.concentration import (
+    CONCENTRATION_SPAN_THRESHOLD,
     ConcentrationResult,
     MIN_CLUSTER_OBSERVATIONS,
     evaluate_concentration,
@@ -126,7 +127,12 @@ def cohort_for(active: ActiveMRZ) -> Cohort | None:
     return mapping.get((active.route_owner, location))
 
 
-def reconstruct_episodes(observations: Iterable[Observation]) -> Reconstruction:
+def reconstruct_episodes(
+    observations: Iterable[Observation],
+    *,
+    minimum_required_count: int = MIN_CLUSTER_OBSERVATIONS,
+    concentration_threshold: Decimal = CONCENTRATION_SPAN_THRESHOLD,
+) -> Reconstruction:
     by_symbol: dict[str, list[Observation]] = defaultdict(list)
     for item in observations:
         by_symbol[item.symbol].append(item)
@@ -136,7 +142,11 @@ def reconstruct_episodes(observations: Iterable[Observation]) -> Reconstruction:
     for symbol in sorted(by_symbol):
         ordered = tuple(sorted(by_symbol[symbol], key=lambda item: item.order_key))
         by_event_id = {item.event_id: index for index, item in enumerate(ordered)}
-        replay = replay_symbol(ordered)
+        replay = replay_symbol(
+            ordered,
+            minimum_required_count=minimum_required_count,
+            concentration_threshold=concentration_threshold,
+        )
         transitions = replay.transitions
         for transition_index, transition in enumerate(transitions):
             activation_index = by_event_id.get(transition.trigger_event_id)

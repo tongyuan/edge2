@@ -17,6 +17,7 @@ from app.concentration import MIN_CLUSTER_OBSERVATIONS
 from app.config import Settings
 from app.logging_config import configure_logging
 from app.mrz_robustness import MRZRobustnessService
+from app.mrz_robustness_report import MRZRobustnessReportService
 from app.repository import EdgeRepository, json_diagnostics, sanitize_payload
 from app.validation import ObservationPayload
 
@@ -109,6 +110,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def mrz_robustness_page() -> FileResponse:
         return FileResponse(
             STATIC_DIR / "mrz-robustness.html",
+            headers={
+                "Cache-Control": "no-store, max-age=0",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
+
+    @application.get("/diagnostics/mrz-robustness-report", include_in_schema=False)
+    def mrz_robustness_report_page() -> FileResponse:
+        return FileResponse(
+            STATIC_DIR / "mrz-robustness-report.html",
             headers={
                 "Cache-Control": "no-store, max-age=0",
                 "Pragma": "no-cache",
@@ -275,6 +287,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @application.get("/api/diagnostics/mrz-robustness")
     def mrz_robustness() -> JSONResponse:
         service = MRZRobustnessService(repository.mrz_robustness_inputs)
+        return JSONResponse(
+            service.generate_report(),
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
+    @application.get("/api/diagnostics/mrz-robustness-report")
+    def mrz_robustness_report() -> JSONResponse:
+        service = MRZRobustnessReportService(repository.schema_43_observations)
         return JSONResponse(
             service.generate_report(),
             headers={"Cache-Control": "no-store, max-age=0"},

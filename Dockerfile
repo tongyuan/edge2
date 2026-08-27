@@ -38,4 +38,4 @@ COPY infra ./infra
 COPY ops ./ops
 RUN chown -R edge2:edge2 /app
 USER edge2
-CMD ["sh", "-c", "node tests/test_operator_time.js && node tests/test_heatmap_state.js && node tests/test_monitor_presentation.js && node tests/test_diagnostics_navigation.js && node tests/test_activation_feasibility.js && node tests/test_mrz_robustness.js && python3 -m unittest discover -s tests -v"]
+CMD ["sh", "-c", "node tests/test_operator_time.js && node tests/test_heatmap_state.js && node tests/test_monitor_presentation.js && node tests/test_diagnostics_navigation.js && node tests/test_activation_feasibility.js && node tests/test_mrz_robustness.js && node tests/test_mrz_robustness_report.js && python3 -m unittest discover -s tests -v"]

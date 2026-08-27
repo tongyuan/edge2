@@ -102,7 +102,7 @@ class MRZRobustnessService:
             observations_by_symbol.setdefault(observation.symbol, []).append(observation)
 
         reports = [
-            self._active_mrz_report(
+            self.active_mrz_report(
                 active,
                 observations_by_symbol.get(active.symbol, []),
                 generated_at,
@@ -144,7 +144,7 @@ class MRZRobustnessService:
             return tuple(item for item in ordered if item.order_key > activation.order_key)
         return tuple(item for item in ordered if item.observed_at > active.activated_at)
 
-    def _active_mrz_report(
+    def active_mrz_report(
         self,
         active: ActiveMRZ,
         observations: Sequence[Observation],
