@@ -38,11 +38,19 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn(f'/static/app.js?v={version}', HTML)
         self.assertLess(HTML.index("heatmap-state.js"), HTML.index("app.js"))
         self.assertLess(HTML.index("monitor-presentation.js"), HTML.index("app.js"))
+        self.assertIn(
+            "/static/diagnostics-nav.css?v=diagnostics-menu-20260827", HTML
+        )
+        self.assertIn(
+            "/static/diagnostics-nav.js?v=diagnostics-menu-20260827", HTML
+        )
 
-    def test_monitor_links_to_both_read_only_diagnostics(self) -> None:
-        self.assertIn('href="/diagnostics/activation-feasibility">Activation Feasibility</a>', HTML)
-        self.assertIn('href="/diagnostics/mrz-robustness">MRZ Operation Card</a>', HTML)
-        self.assertIn('aria-label="Diagnostic navigation"', HTML)
+    def test_monitor_consolidates_diagnostic_links_in_shared_dropdown(self) -> None:
+        self.assertIn('href="/diagnostics/activation-feasibility"', HTML)
+        self.assertIn('href="/diagnostics/mrz-robustness"', HTML)
+        self.assertIn('href="/diagnostics/trading-window-feasibility"', HTML)
+        self.assertIn('aria-label="Operator navigation"', HTML)
+        self.assertIn('data-diagnostics-trigger', HTML)
 
     def test_source_and_active_mrz_replace_who_and_where(self) -> None:
         self.assertIn(">SOURCE<", HTML)

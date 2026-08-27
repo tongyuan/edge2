@@ -114,18 +114,15 @@ class APIIntegrationTests(unittest.TestCase):
             "/diagnostics/trading-window-feasibility"
         ).text
 
-        self.assertIn('href="/diagnostics/activation-feasibility">Activation Feasibility</a>', monitor)
-        self.assertIn('href="/diagnostics/mrz-robustness">MRZ Operation Card</a>', monitor)
-        self.assertIn('href="/diagnostics/trading-window-feasibility">Trading Window Feasibility</a>', monitor)
-        self.assertIn('href="/">MRZ Monitor</a>', feasibility)
-        self.assertIn('href="/diagnostics/mrz-robustness">MRZ Operation Card</a>', feasibility)
-        self.assertIn('href="/diagnostics/trading-window-feasibility">Trading Window Feasibility</a>', feasibility)
-        self.assertIn('href="/">MRZ Monitor</a>', robustness)
-        self.assertIn('href="/diagnostics/activation-feasibility">Activation Feasibility</a>', robustness)
-        self.assertIn('href="/diagnostics/trading-window-feasibility">Trading Window Feasibility</a>', robustness)
-        self.assertIn('href="/">MRZ Monitor</a>', trading_window)
-        self.assertIn('href="/diagnostics/activation-feasibility">Activation Feasibility</a>', trading_window)
-        self.assertIn('href="/diagnostics/mrz-robustness">MRZ Operation Card</a>', trading_window)
+        pages = (monitor, feasibility, robustness, trading_window)
+        for page in pages:
+            self.assertIn("Diagnostics", page)
+            self.assertIn('data-diagnostics-trigger', page)
+            self.assertIn('href="/diagnostics/activation-feasibility"', page)
+            self.assertIn('href="/diagnostics/mrz-robustness"', page)
+            self.assertIn('href="/diagnostics/trading-window-feasibility"', page)
+        for page in (feasibility, robustness, trading_window):
+            self.assertIn('href="/">MRZ Monitor</a>', page)
 
     def test_trading_window_api_reconstructs_episodes_without_mutating_state(self) -> None:
         for index, price in enumerate(("110", "110.2", "110.4", "110.6", "120"), 1):

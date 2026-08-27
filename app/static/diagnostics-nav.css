@@ -1,0 +1,131 @@
+.operator-navigation {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.operator-navigation > a,
+.diagnostics-trigger {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 0.78rem;
+  font-weight: 680;
+}
+
+.operator-navigation > a[aria-current="page"] {
+  color: var(--text);
+}
+
+.diagnostics-menu {
+  position: relative;
+}
+
+.diagnostics-trigger {
+  gap: 7px;
+  padding: 8px 11px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: #c9d4e2;
+  cursor: pointer;
+}
+
+.diagnostics-trigger:hover,
+.diagnostics-trigger[aria-expanded="true"],
+.diagnostics-menu.has-current-page .diagnostics-trigger {
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--accent);
+}
+
+.diagnostics-trigger:focus-visible,
+.diagnostics-dropdown a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.diagnostics-chevron {
+  display: inline-block;
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1;
+  transition: transform 120ms ease;
+}
+
+.diagnostics-trigger[aria-expanded="true"] .diagnostics-chevron {
+  transform: rotate(180deg);
+}
+
+.diagnostics-dropdown {
+  position: absolute;
+  z-index: 1200;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 250px;
+  max-width: calc(100vw - 32px);
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-strong);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.42);
+}
+
+.diagnostics-dropdown[hidden] {
+  display: none;
+}
+
+.diagnostics-dropdown a,
+.diagnostics-disabled-item {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  color: #c9d4e2;
+  font-size: 0.8rem;
+  font-weight: 620;
+  line-height: 1.25;
+  text-decoration: none;
+}
+
+.diagnostics-dropdown a:hover {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.diagnostics-dropdown a[aria-current="page"] {
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
+  color: var(--accent);
+}
+
+.diagnostics-disabled-item {
+  color: var(--muted);
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.diagnostics-disabled-item::after {
+  content: "Unavailable";
+  margin-left: auto;
+  padding-left: 12px;
+  font-size: 0.64rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 680px) {
+  .operator-navigation {
+    justify-content: flex-start;
+    max-width: 100%;
+  }
+
+  .diagnostics-dropdown {
+    right: auto;
+    left: 0;
+  }
+}

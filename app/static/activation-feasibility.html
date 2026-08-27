@@ -6,6 +6,7 @@
     <meta name="description" content="EDGE 2.0 activation feasibility diagnostic" />
     <title>EDGE 2.0 · Activation Feasibility</title>
     <link rel="stylesheet" href="/static/activation-feasibility.css?v=report-navigation-20260824" />
+    <link rel="stylesheet" href="/static/diagnostics-nav.css?v=diagnostics-menu-20260827" />
   </head>
   <body>
     <main class="report-shell">
@@ -16,10 +17,19 @@
           <p class="subtitle">Live read-only replay of stored route observations</p>
         </div>
         <div class="header-actions">
-          <nav class="page-nav" aria-label="Diagnostic navigation">
+          <nav class="page-nav operator-navigation" aria-label="Operator navigation" data-diagnostics-nav>
             <a href="/">MRZ Monitor</a>
-            <a href="/diagnostics/mrz-robustness">MRZ Operation Card</a>
-            <a href="/diagnostics/trading-window-feasibility">Trading Window Feasibility</a>
+            <div class="diagnostics-menu has-current-page">
+              <button class="diagnostics-trigger" type="button" aria-expanded="false" aria-haspopup="menu" aria-controls="activation-diagnostics-menu" data-diagnostics-trigger>
+                Diagnostics <span class="diagnostics-chevron" aria-hidden="true">▾</span>
+              </button>
+              <div class="diagnostics-dropdown" id="activation-diagnostics-menu" role="menu" data-diagnostics-menu hidden>
+                <a href="/diagnostics/mrz-robustness" role="menuitem">MRZ Operation Card</a>
+                <a href="/diagnostics/activation-feasibility" role="menuitem" aria-current="page">Activation Feasibility</a>
+                <span class="diagnostics-disabled-item" role="menuitem" aria-disabled="true">MRZ Robustness</span>
+                <a href="/diagnostics/trading-window-feasibility" role="menuitem">Trading Window Feasibility</a>
+              </div>
+            </div>
           </nav>
           <button type="button" id="refreshReport">Refresh report</button>
         </div>
@@ -102,6 +112,7 @@
         </section>
       </div>
     </main>
+    <script src="/static/diagnostics-nav.js?v=diagnostics-menu-20260827" defer></script>
     <script src="/static/operator-time.js?v=operator-clarity-20260824" defer></script>
     <script src="/static/activation-feasibility.js?v=report-navigation-20260824" defer></script>
   </body>

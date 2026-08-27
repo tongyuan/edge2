@@ -7,6 +7,7 @@
     <title>EDGE 2.0 · MRZ Trading Window Feasibility</title>
     <link rel="stylesheet" href="/static/styles.css?v=trading-window-20260826" />
     <link rel="stylesheet" href="/static/feasibility.css?v=trading-window-20260826" />
+    <link rel="stylesheet" href="/static/diagnostics-nav.css?v=diagnostics-menu-20260827" />
   </head>
   <body>
     <main class="shell report-shell">
@@ -17,10 +18,19 @@
           <p class="subtitle">Activation episodes, structural checkpoints, and candidate timing diagnosis.</p>
         </div>
         <div class="report-actions">
-          <nav class="page-nav" aria-label="Diagnostic navigation">
+          <nav class="page-nav operator-navigation" aria-label="Operator navigation" data-diagnostics-nav>
             <a href="/">MRZ Monitor</a>
-            <a href="/diagnostics/activation-feasibility">Activation Feasibility</a>
-            <a href="/diagnostics/mrz-robustness">MRZ Operation Card</a>
+            <div class="diagnostics-menu has-current-page">
+              <button class="diagnostics-trigger" type="button" aria-expanded="false" aria-haspopup="menu" aria-controls="trading-window-diagnostics-menu" data-diagnostics-trigger>
+                Diagnostics <span class="diagnostics-chevron" aria-hidden="true">▾</span>
+              </button>
+              <div class="diagnostics-dropdown" id="trading-window-diagnostics-menu" role="menu" data-diagnostics-menu hidden>
+                <a href="/diagnostics/mrz-robustness" role="menuitem">MRZ Operation Card</a>
+                <a href="/diagnostics/activation-feasibility" role="menuitem">Activation Feasibility</a>
+                <span class="diagnostics-disabled-item" role="menuitem" aria-disabled="true">MRZ Robustness</span>
+                <a href="/diagnostics/trading-window-feasibility" role="menuitem" aria-current="page">Trading Window Feasibility</a>
+              </div>
+            </div>
           </nav>
           <div class="action-row">
             <span class="research-badge">RESEARCH ONLY</span>
@@ -39,6 +49,7 @@
       </section>
       <div id="report" hidden></div>
     </main>
+    <script src="/static/diagnostics-nav.js?v=diagnostics-menu-20260827" defer></script>
     <script src="/static/feasibility.js?v=trading-window-20260826" defer></script>
   </body>
 </html>
