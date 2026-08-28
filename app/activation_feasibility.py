@@ -314,7 +314,7 @@ class ActivationFeasibilityService:
             for allowance in ALLOWANCE_SETTINGS
         )
         outcomes = tuple(
-            self._evaluate_sequence(rows, scenario)
+            self.evaluate_sequence(rows, scenario)
             for scenario in scenarios
             for rows in ordered_groups.values()
         )
@@ -398,8 +398,8 @@ class ActivationFeasibilityService:
         report["diagnosis"] = self._diagnosis(report)
         return report
 
-    def _evaluate_sequence(
-        self,
+    @staticmethod
+    def evaluate_sequence(
         observations: Sequence[Observation],
         scenario: Scenario,
     ) -> SequenceOutcome:

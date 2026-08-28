@@ -228,11 +228,78 @@ dl.methodology dt, dl.methodology dd { padding-bottom: 12px; border-bottom: 1px 
 .research-assumptions { margin-top: 18px; }
 .methodology-section details { padding: 15px 17px; border: 1px solid var(--line); border-radius: 11px; background: rgba(8, 11, 16, 0.3); }
 
+.formation-comparison {
+  border-color: #4d6f65;
+  background: linear-gradient(135deg, rgba(98, 230, 181, 0.07), rgba(16, 21, 29, 0.94) 34%);
+}
+.formation-comparison > .research-question { margin-bottom: 8px; }
+.comparison-primary { margin: 26px 0 20px; }
+.arrival-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.arrival-card {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: rgba(8, 11, 16, 0.48);
+}
+.arrival-card > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+.arrival-card > div span { color: var(--muted); font-size: 0.66rem; font-weight: 760; letter-spacing: 0.07em; }
+.arrival-card > div strong { font-size: 1.08rem; }
+.formation-summary-table th:first-child { position: sticky; left: 0; z-index: 1; }
+.formation-summary-table td { min-width: 185px; text-align: left; }
+.comparison-sample { color: var(--warning); font-size: 0.68rem; font-weight: 800; letter-spacing: 0.08em; }
+.route-comparison {
+  margin-top: 18px;
+  padding: 15px 17px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(8, 11, 16, 0.3);
+}
+.route-comparison section { margin-top: 20px; }
+.near-miss-details { margin-top: 30px; padding-top: 26px; border-top: 1px solid var(--line); }
+.near-miss-window-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.near-miss-window-card {
+  padding: 18px;
+  border: 1px solid #4d6f65;
+  border-left: 4px solid var(--accent);
+  border-radius: 13px;
+  background: var(--surface-strong);
+}
+.near-miss-window-card.pending { border-color: #7a6840; border-left-color: var(--warning); }
+.near-miss-window-card header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
+.near-miss-window-card h3 { margin: 0; font-size: 1.12rem; }
+.near-miss-window-card header > span { max-width: 170px; color: var(--muted); font-size: 0.68rem; line-height: 1.4; text-align: right; }
+.near-miss-window-card dl { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; margin: 18px 0 0; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--line); }
+.near-miss-window-card dl div { min-height: 72px; padding: 12px; background: rgba(8, 11, 16, 0.5); }
+.near-miss-window-card dt { color: var(--muted); font-size: 0.65rem; }
+.near-miss-window-card dd { margin: 7px 0 0; font-size: 0.82rem; font-weight: 700; line-height: 1.4; }
+.comparison-interpretation {
+  margin-top: 22px;
+  padding: 18px;
+  border: 1px solid #7a6840;
+  border-left: 4px solid var(--warning);
+  border-radius: 12px;
+  background: rgba(255, 210, 122, 0.07);
+}
+.comparison-interpretation span { color: var(--warning); font-size: 0.68rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+.comparison-interpretation p { margin: 8px 0 0; line-height: 1.55; }
+
 @media (max-width: 800px) {
   .report-shell .masthead { align-items: flex-start; flex-direction: column; }
   .report-actions { align-items: flex-start; }
   .page-nav, .action-row { justify-content: flex-start; }
   .summary-grid, .identity-grid, .outcome-grid, .policy-grid, .diagnosis-grid, .interpretation-grid { grid-template-columns: 1fr 1fr; }
+  .arrival-grid, .near-miss-window-grid { grid-template-columns: 1fr; }
   .outcome-row { grid-template-columns: 1fr; }
   .outcome-row > p { justify-content: space-between; text-align: left; }
   dl.methodology { grid-template-columns: 1fr; gap: 4px; }
@@ -241,4 +308,5 @@ dl.methodology dt, dl.methodology dd { padding-bottom: 12px; border-bottom: 1px 
 @media (max-width: 520px) {
   .summary-grid, .identity-grid, .outcome-grid, .policy-grid, .diagnosis-grid, .interpretation-grid, .candidate-facts { grid-template-columns: 1fr; }
   .report-intro, .report-loading, .report-section, .cohort-body, .cohort-header { padding: 20px; }
+  .near-miss-window-card dl { grid-template-columns: 1fr; }
 }

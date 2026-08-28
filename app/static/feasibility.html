@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="EDGE 2.0 MRZ Trading Window Feasibility research report" />
     <title>EDGE 2.0 · MRZ Trading Window Feasibility</title>
-    <link rel="stylesheet" href="/static/styles.css?v=trading-window-outcomes-20260827" />
-    <link rel="stylesheet" href="/static/feasibility.css?v=trading-window-outcomes-20260827" />
+    <link rel="stylesheet" href="/static/styles.css?v=near-miss-windows-20260828" />
+    <link rel="stylesheet" href="/static/feasibility.css?v=near-miss-windows-20260828" />
     <link rel="stylesheet" href="/static/diagnostics-nav.css?v=diagnostics-menu-20260827" />
   </head>
   <body>
@@ -15,7 +15,7 @@
         <div>
           <p class="eyebrow">EDGE 2.0 · READ-ONLY RESEARCH</p>
           <h1>MRZ Trading Window Feasibility</h1>
-          <p class="subtitle">Continuation vs reversal after MRZ activation, with completed outcomes separated from unresolved lifecycle behavior.</p>
+          <p class="subtitle">Trading-window behavior after production MRZ activation and rejected near-miss concentration candidates.</p>
         </div>
         <div class="report-actions">
           <nav class="page-nav operator-navigation" aria-label="Operator navigation" data-diagnostics-nav>
@@ -39,7 +39,7 @@
       </header>
 
       <section class="report-intro">
-        <p>At each MRZ structural location, does activation historically lead more often to adverse continuation or route-supportive reversal—and does waiting improve clarity?</p>
+        <p>Do production-qualified MRZs produce better trading windows than concentrations rejected by the current 1.00% allowance?</p>
         <p class="notice">Measurement and diagnosis only. No production trading-window behavior is changed.</p>
       </section>
 
@@ -49,6 +49,8 @@
       <div id="report" hidden></div>
     </main>
     <script src="/static/diagnostics-nav.js?v=diagnostics-menu-20260827" defer></script>
-    <script src="/static/feasibility.js?v=trading-window-outcomes-20260827" defer></script>
+    <script src="/static/operator-time.js?v=near-miss-windows-20260828" defer></script>
+    <script src="/static/formation-comparison.js?v=near-miss-windows-20260828" defer></script>
+    <script src="/static/feasibility.js?v=near-miss-windows-20260828" defer></script>
   </body>
 </html>

@@ -7,6 +7,12 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Any, Iterable, Mapping, Sequence
 
+from app.activation_feasibility import (
+    ALGORITHM_A,
+    ActivationFeasibilityService,
+    ClosestEvaluation,
+    Scenario,
+)
 from app.concentration import (
     CONCENTRATION_SPAN_THRESHOLD,
     ConcentrationResult,
@@ -22,6 +28,9 @@ from app.structure import classify_structural_location
 MAX_CHECKPOINT = 8
 MIN_DIAGNOSTIC_EPISODES = 8
 MEANINGFUL_RATE_GAP = Decimal("0.15")
+PRODUCTION_ALLOWANCE_PERCENT = Decimal("1.00")
+TIGHT_NEAR_MISS_MAX_PERCENT = Decimal("1.50")
+WIDER_NEAR_MISS_MAX_PERCENT = Decimal("2.00")
 
 
 class Cohort(StrEnum):
@@ -29,6 +38,12 @@ class Cohort(StrEnum):
     BTD_SHALLOW_DISCOUNT = "BTD_SHALLOW_DISCOUNT"
     STR_DEEP_PREMIUM = "STR_DEEP_PREMIUM"
     STR_SHALLOW_PREMIUM = "STR_SHALLOW_PREMIUM"
+
+
+class FormationCohort(StrEnum):
+    PRODUCTION = "PRODUCTION"
+    TIGHT_NEAR_MISS = "TIGHT_NEAR_MISS"
+    WIDER_NEAR_MISS = "WIDER_NEAR_MISS"
 
 
 COHORT_METADATA: dict[Cohort, dict[str, str]] = {
@@ -109,6 +124,33 @@ class Episode:
 class Reconstruction:
     episodes: tuple[Episode, ...]
     exclusions: tuple[dict[str, str], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class FormationWindowCase:
+    symbol: str
+    route: Route
+    cohort: FormationCohort
+    source: str
+    lower: Decimal
+    upper: Decimal
+    midpoint: Decimal
+    anchor_observation: Observation
+    post_anchor_observations: tuple[Observation, ...]
+    minimum_required_allowance_pct: Decimal | None
+    candidate_observation_count: int
+
+
+def classify_formation_cohort(
+    minimum_required_allowance_pct: Decimal,
+) -> FormationCohort | None:
+    if minimum_required_allowance_pct <= PRODUCTION_ALLOWANCE_PERCENT:
+        return FormationCohort.PRODUCTION
+    if minimum_required_allowance_pct <= TIGHT_NEAR_MISS_MAX_PERCENT:
+        return FormationCohort.TIGHT_NEAR_MISS
+    if minimum_required_allowance_pct <= WIDER_NEAR_MISS_MAX_PERCENT:
+        return FormationCohort.WIDER_NEAR_MISS
+    return None
 
 
 def cohort_for(active: ActiveMRZ) -> Cohort | None:
@@ -1083,6 +1125,458 @@ def overall_diagnosis(reports: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _formation_case_from_episode(episode: Episode) -> FormationWindowCase:
+    active = episode.active_mrz
+    return FormationWindowCase(
+        symbol=episode.symbol,
+        route=active.route_owner,
+        cohort=FormationCohort.PRODUCTION,
+        source="AUTHORITATIVE_MRZ",
+        lower=active.core_mrz_lower,
+        upper=active.core_mrz_upper,
+        midpoint=active.core_mrz_midpoint,
+        anchor_observation=episode.activation_observation,
+        post_anchor_observations=episode.post_activation_observations,
+        minimum_required_allowance_pct=None,
+        candidate_observation_count=active.confirming_observation_count,
+    )
+
+
+def _near_miss_case(
+    *,
+    symbol: str,
+    route: Route,
+    source: str,
+    evaluation: ClosestEvaluation,
+    route_observations: Sequence[Observation],
+    symbol_observations: Sequence[Observation],
+) -> FormationWindowCase | None:
+    required = evaluation.minimum_required_allowance_pct
+    cohort = classify_formation_cohort(required)
+    if cohort not in {
+        FormationCohort.TIGHT_NEAR_MISS,
+        FormationCohort.WIDER_NEAR_MISS,
+    }:
+        return None
+    if evaluation.structural_eligibility_passed is not True:
+        return None
+    anchor = route_observations[evaluation.ordinal - 1]
+    if anchor.observed_at != evaluation.timestamp:
+        raise RuntimeError("candidate ordinal and timestamp do not identify the same observation")
+    return FormationWindowCase(
+        symbol=symbol,
+        route=route,
+        cohort=cohort,
+        source=source,
+        lower=evaluation.candidate_lower_boundary,
+        upper=evaluation.candidate_upper_boundary,
+        midpoint=(
+            evaluation.candidate_lower_boundary
+            + evaluation.candidate_upper_boundary
+        )
+        / Decimal("2"),
+        anchor_observation=anchor,
+        post_anchor_observations=tuple(
+            item for item in symbol_observations if item.order_key > anchor.order_key
+        ),
+        minimum_required_allowance_pct=required,
+        candidate_observation_count=evaluation.candidate_observation_count,
+    )
+
+
+def reconstruct_near_miss_cases(
+    observations: Sequence[Observation],
+) -> tuple[FormationWindowCase, ...]:
+    """Reconstruct exact current/closest production near misses without state writes."""
+    by_symbol: dict[str, list[Observation]] = defaultdict(list)
+    by_symbol_route: dict[tuple[str, Route], list[Observation]] = defaultdict(list)
+    for observation in observations:
+        by_symbol[observation.symbol].append(observation)
+        by_symbol_route[(observation.symbol, observation.route)].append(observation)
+    ordered_symbols = {
+        symbol: tuple(sorted(rows, key=lambda item: item.order_key))
+        for symbol, rows in by_symbol.items()
+    }
+    production_scenario = Scenario(
+        ALGORITHM_A,
+        MIN_CLUSTER_OBSERVATIONS,
+        CONCENTRATION_SPAN_THRESHOLD,
+    )
+    cases_by_key: dict[
+        tuple[str, Route, datetime, Decimal, Decimal, Decimal],
+        tuple[FormationWindowCase, set[str]],
+    ] = {}
+    for (symbol, route), rows in sorted(
+        by_symbol_route.items(),
+        key=lambda item: (item[0][0], item[0][1].value),
+    ):
+        ordered_route = tuple(sorted(rows, key=lambda item: item.order_key))
+        outcome = ActivationFeasibilityService.evaluate_sequence(
+            ordered_route,
+            production_scenario,
+        )
+        if not outcome.eligible or outcome.activated:
+            continue
+        for source, evaluation in (
+            ("HISTORICAL_CLOSEST", outcome.closest_evaluation),
+            ("CURRENT", outcome.current_evaluation),
+        ):
+            if evaluation is None:
+                continue
+            case = _near_miss_case(
+                symbol=symbol,
+                route=route,
+                source=source,
+                evaluation=evaluation,
+                route_observations=ordered_route,
+                symbol_observations=ordered_symbols[symbol],
+            )
+            if case is None or case.minimum_required_allowance_pct is None:
+                continue
+            key = (
+                case.symbol,
+                case.route,
+                case.anchor_observation.observed_at,
+                case.lower,
+                case.upper,
+                case.minimum_required_allowance_pct,
+            )
+            if key in cases_by_key:
+                cases_by_key[key][1].add(source)
+            else:
+                cases_by_key[key] = (case, {source})
+
+    cases = []
+    for case, sources in cases_by_key.values():
+        scope = (
+            "CURRENT_AND_HISTORICAL_CLOSEST"
+            if sources == {"CURRENT", "HISTORICAL_CLOSEST"}
+            else next(iter(sources))
+        )
+        cases.append(
+            FormationWindowCase(
+                symbol=case.symbol,
+                route=case.route,
+                cohort=case.cohort,
+                source=scope,
+                lower=case.lower,
+                upper=case.upper,
+                midpoint=case.midpoint,
+                anchor_observation=case.anchor_observation,
+                post_anchor_observations=case.post_anchor_observations,
+                minimum_required_allowance_pct=case.minimum_required_allowance_pct,
+                candidate_observation_count=case.candidate_observation_count,
+            )
+        )
+    return tuple(
+        sorted(
+            cases,
+            key=lambda item: (
+                item.cohort.value,
+                item.minimum_required_allowance_pct or Decimal("0"),
+                item.symbol,
+                item.route.value,
+                item.anchor_observation.order_key,
+            ),
+        )
+    )
+
+
+def formation_case_timings(
+    case: FormationWindowCase,
+) -> dict[str, tuple[int, Decimal] | None]:
+    collected: dict[str, tuple[int, Decimal] | None] = {
+        "first_supportive": None,
+        "first_adverse": None,
+    }
+    for index, observation in enumerate(case.post_anchor_observations, 1):
+        displacement = (
+            observation.observation_price - case.midpoint
+        ) / case.anchor_observation.ipda_width
+        interpretation = route_interpretation(case.route, displacement)
+        elapsed = Decimal(
+            str(
+                (
+                    observation.observed_at
+                    - case.anchor_observation.observed_at
+                ).total_seconds()
+            )
+        ) / Decimal("3600")
+        if (
+            interpretation == "ROUTE_SUPPORTIVE"
+            and collected["first_supportive"] is None
+        ):
+            collected["first_supportive"] = (index, elapsed)
+        if (
+            interpretation == "ROUTE_ADVERSE"
+            and collected["first_adverse"] is None
+        ):
+            collected["first_adverse"] = (index, elapsed)
+    return collected
+
+
+def formation_case_record(case: FormationWindowCase) -> dict[str, Any]:
+    timings = formation_case_timings(case)
+    supportive = timings["first_supportive"]
+    adverse = timings["first_adverse"]
+    if not case.post_anchor_observations:
+        outcome = "PENDING_FOLLOW_THROUGH"
+        outcome_label = "Pending follow-through"
+    elif supportive is not None and (
+        adverse is None or supportive[0] < adverse[0]
+    ):
+        outcome = "SUPPORTIVE_FIRST"
+        outcome_label = "Supportive behavior arrived first"
+    elif adverse is not None and (
+        supportive is None or adverse[0] < supportive[0]
+    ):
+        outcome = "ADVERSE_FIRST"
+        outcome_label = "Adverse behavior arrived first"
+    else:
+        outcome = "UNRESOLVED"
+        outcome_label = "Post-anchor evidence unresolved"
+
+    supportive_window_hours: Decimal | None = None
+    supportive_window_censored = False
+    if outcome == "SUPPORTIVE_FIRST" and supportive is not None:
+        supportive_observation = case.post_anchor_observations[supportive[0] - 1]
+        if adverse is not None:
+            end = case.post_anchor_observations[adverse[0] - 1].observed_at
+        else:
+            end = case.post_anchor_observations[-1].observed_at
+            supportive_window_censored = True
+        supportive_window_hours = Decimal(
+            str((end - supportive_observation.observed_at).total_seconds())
+        ) / Decimal("3600")
+
+    labels = {
+        FormationCohort.PRODUCTION: "Production",
+        FormationCohort.TIGHT_NEAR_MISS: "Tight near miss",
+        FormationCohort.WIDER_NEAR_MISS: "Wider near miss",
+    }
+    return {
+        "symbol": case.symbol,
+        "route": case.route.value,
+        "cohort": case.cohort.value,
+        "candidate_class": labels[case.cohort],
+        "source": case.source,
+        "is_active_mrz": case.cohort is FormationCohort.PRODUCTION,
+        "production_allowance_pct": numeric(PRODUCTION_ALLOWANCE_PERCENT),
+        "minimum_required_allowance_pct": numeric(
+            case.minimum_required_allowance_pct
+        ),
+        "candidate_lower": numeric(case.lower),
+        "candidate_upper": numeric(case.upper),
+        "candidate_midpoint": numeric(case.midpoint),
+        "candidate_observation_count": case.candidate_observation_count,
+        "anchor_at": iso(case.anchor_observation.observed_at),
+        "anchor_label": (
+            "Activated"
+            if case.cohort is FormationCohort.PRODUCTION
+            else "Candidate observed"
+        ),
+        "post_anchor_observations": len(case.post_anchor_observations),
+        "has_follow_through": bool(case.post_anchor_observations),
+        "first_supportive_observation": supportive[0] if supportive else None,
+        "first_supportive_hours": numeric(supportive[1]) if supportive else None,
+        "first_adverse_observation": adverse[0] if adverse else None,
+        "first_adverse_hours": numeric(adverse[1]) if adverse else None,
+        "supportive_window_hours": numeric(supportive_window_hours),
+        "supportive_window_censored": supportive_window_censored,
+        "outcome": outcome,
+        "outcome_label": outcome_label,
+    }
+
+
+def _ordinal_distribution(
+    records: Sequence[Mapping[str, Any]], key: str
+) -> dict[str, int]:
+    return {
+        str(index): count
+        for index, count in sorted(
+            Counter(
+                int(record[key])
+                for record in records
+                if record[key] is not None
+            ).items()
+        )
+    }
+
+
+def _formation_cohort_summary(
+    cohort: FormationCohort,
+    records: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    follow_through = [item for item in records if item["has_follow_through"]]
+    supportive_first = [
+        item for item in records if item["outcome"] == "SUPPORTIVE_FIRST"
+    ]
+    adverse_first = [
+        item for item in records if item["outcome"] == "ADVERSE_FIRST"
+    ]
+    pending = [
+        item for item in records if item["outcome"] == "PENDING_FOLLOW_THROUGH"
+    ]
+    resolved = len(supportive_first) + len(adverse_first)
+    unresolved = len(records) - resolved
+    supportive_lags = [
+        Decimal(str(item["first_supportive_hours"]))
+        for item in records
+        if item["first_supportive_hours"] is not None
+    ]
+    adverse_lags = [
+        Decimal(str(item["first_adverse_hours"]))
+        for item in records
+        if item["first_adverse_hours"] is not None
+    ]
+    labels = {
+        FormationCohort.PRODUCTION: "≤1.00% Production",
+        FormationCohort.TIGHT_NEAR_MISS: "1.00–1.50% Near Miss",
+        FormationCohort.WIDER_NEAR_MISS: "1.50–2.00% Near Miss",
+    }
+    return {
+        "cohort": cohort.value,
+        "label": labels[cohort],
+        "candidates": len(records),
+        "with_follow_through": len(follow_through),
+        "resolved": resolved,
+        "pending": len(pending),
+        "unresolved": unresolved,
+        "supportive_first": {
+            "numerator": len(supportive_first),
+            "denominator": resolved,
+            "percentage": percentage_value(len(supportive_first), resolved),
+        },
+        "adverse_first": {
+            "numerator": len(adverse_first),
+            "denominator": resolved,
+            "percentage": percentage_value(len(adverse_first), resolved),
+        },
+        "median_supportive_lag_hours": numeric(decimal_median(supportive_lags)),
+        "median_adverse_lag_hours": numeric(decimal_median(adverse_lags)),
+        "supportive_ordinal_distribution": _ordinal_distribution(
+            records, "first_supportive_observation"
+        ),
+        "adverse_ordinal_distribution": _ordinal_distribution(
+            records, "first_adverse_observation"
+        ),
+        "supportive_first_windows": {
+            "numerator": len(supportive_first),
+            "denominator": resolved,
+        },
+        "sample_state": (
+            "PRELIMINARY"
+            if resolved < MIN_DIAGNOSTIC_EPISODES
+            else "DESCRIPTIVE SAMPLE"
+        ),
+    }
+
+
+def _formation_interpretation(
+    summaries: Sequence[Mapping[str, Any]],
+) -> dict[str, str]:
+    by_cohort = {item["cohort"]: item for item in summaries}
+    production = by_cohort[FormationCohort.PRODUCTION.value]
+    near = [
+        by_cohort[FormationCohort.TIGHT_NEAR_MISS.value],
+        by_cohort[FormationCohort.WIDER_NEAR_MISS.value],
+    ]
+    if int(production["resolved"]) < MIN_DIAGNOSTIC_EPISODES or any(
+        int(item["resolved"]) < MIN_DIAGNOSTIC_EPISODES for item in near
+    ):
+        return {
+            "status": "Preliminary",
+            "text": (
+                "The current sample is insufficient to determine whether near-miss "
+                "candidates provide trading windows comparable to production MRZs."
+            ),
+        }
+
+    production_rate = Decimal(
+        str(production["supportive_first"]["percentage"])
+    )
+    statements = []
+    for item in near:
+        rate = Decimal(str(item["supportive_first"]["percentage"]))
+        gap = rate - production_rate
+        if abs(gap) <= Decimal("15"):
+            statements.append(
+                f"{item['label']} showed supportive-first behavior at a rate "
+                "similar to production MRZs in the current sample."
+            )
+        elif gap > 0:
+            statements.append(
+                f"{item['label']} showed supportive-first behavior more often "
+                "than production MRZs in the current sample."
+            )
+        else:
+            statements.append(
+                f"{item['label']} showed adverse-first behavior more often than "
+                "production MRZs in the current sample."
+            )
+    return {"status": "Descriptive evidence", "text": " ".join(statements)}
+
+
+def formation_strictness_comparison(
+    observations: Sequence[Observation],
+    production_episodes: Sequence[Episode],
+) -> dict[str, Any]:
+    cases = [
+        *(_formation_case_from_episode(item) for item in production_episodes),
+        *reconstruct_near_miss_cases(observations),
+    ]
+    records = [formation_case_record(item) for item in cases]
+    summaries = []
+    route_summaries: dict[str, list[dict[str, Any]]] = {
+        Route.BTD.value: [],
+        Route.STR.value: [],
+    }
+    for cohort in FormationCohort:
+        cohort_records = [item for item in records if item["cohort"] == cohort.value]
+        summaries.append(_formation_cohort_summary(cohort, cohort_records))
+        for route in Route:
+            route_summaries[route.value].append(
+                _formation_cohort_summary(
+                    cohort,
+                    [item for item in cohort_records if item["route"] == route.value],
+                )
+            )
+    return {
+        "title": "Production vs Near-Miss Windows",
+        "research_question": (
+            "After the structural candidate appears, does supportive behavior tend "
+            "to arrive before adverse behavior?"
+        ),
+        "cohort_definitions": {
+            FormationCohort.PRODUCTION.value: "minimum allowance required ≤ 1.00%; authoritative production MRZ",
+            FormationCohort.TIGHT_NEAR_MISS.value: "minimum allowance required > 1.00% and ≤ 1.50%",
+            FormationCohort.WIDER_NEAR_MISS.value: "minimum allowance required > 1.50% and ≤ 2.00%",
+            "EXCLUDED": "minimum allowance required > 2.00%",
+        },
+        "follow_through_definition": (
+            "At least one canonical symbol observation strictly after the activation "
+            "or candidate anchor."
+        ),
+        "outcome_denominator": (
+            "Supportive-first and adverse-first percentages use resolved cases only; "
+            "pending and unresolved cases remain visible and excluded from the rate."
+        ),
+        "summaries": summaries,
+        "by_route": route_summaries,
+        "cases": records,
+        "near_miss_details": [
+            item for item in records if not item["is_active_mrz"]
+        ],
+        "evidence_interpretation": _formation_interpretation(summaries),
+        "invariants": {
+            "candidate_geometry": "actual evaluator-selected bounds; never widened to a cohort ceiling",
+            "candidate_anchor": "candidate observed_at; never labeled as activation",
+            "production_state": "read-only; no active MRZ or MRZ event is created",
+            "classifier": "shared BTD/STR route_interpretation semantics",
+        },
+    }
+
+
 def build_feasibility_report(
     observations: Sequence[Observation],
     event_rows: Sequence[Mapping[str, Any]] = (),
@@ -1094,6 +1588,10 @@ def build_feasibility_report(
         for cohort in Cohort
     }
     reports = [cohort_report(cohort, grouped[cohort]) for cohort in Cohort]
+    production_vs_near_miss = formation_strictness_comparison(
+        observations,
+        reconstruction.episodes,
+    )
     reconciliation = audit_reconciliation(observations, event_rows, active_rows)
     completed = sum(not item.is_ongoing for item in reconstruction.episodes)
     ongoing = sum(item.is_ongoing for item in reconstruction.episodes)
@@ -1130,6 +1628,15 @@ def build_feasibility_report(
             ),
             "route_supportive": "movement or terminal direction consistent with the current route owner",
             "route_adverse": "movement or terminal direction inconsistent with the current route owner",
+            "near_miss_candidate": (
+                "the exact structurally eligible Algorithm A / four-observation candidate "
+                "selected by the production concentration evaluator; cohort ceilings never "
+                "alter its observed bounds"
+            ),
+            "counterfactual_anchor": (
+                "candidate observed_at for a near miss; this is an analysis anchor and never "
+                "an activation timestamp"
+            ),
             "observed_outcome_rate": "completed historical MRZ generations only; ongoing generations remain unresolved",
             "intermediate_vs_final": (
                 "checkpoint pressure, displacement, tests, and sequences are intermediate behavior and never convert an ongoing episode into a final outcome"
@@ -1156,6 +1663,7 @@ def build_feasibility_report(
             ),
         },
         "cohorts": reports,
+        "production_vs_near_miss_windows": production_vs_near_miss,
         "cross_cohort_diagnosis": cross_cohort_diagnosis(reports),
         "overall_diagnosis": overall_diagnosis(reports),
         "data_limitations": [

@@ -7,17 +7,24 @@ from decimal import Decimal
 from app.domain import Route, StructuralLocation
 from app.feasibility import (
     Cohort,
+    FormationCohort,
+    FormationWindowCase,
     aggregate_checkpoint,
     build_feasibility_report,
     checkpoint_measurement,
+    classify_formation_cohort,
     cohort_report,
     containment,
     cross_cohort_diagnosis,
     diagnose_cohort,
+    formation_case_record,
+    formation_case_timings,
+    formation_strictness_comparison,
     migration_interpretation,
     operator_outcome_language,
     primary_outcome_summary,
     reconstruct_episodes,
+    reconstruct_near_miss_cases,
     route_interpretation,
     signed_displacement,
 )
@@ -165,6 +172,221 @@ class StructuralMeasurementTests(unittest.TestCase):
         self.assertTrue(measured["production_successor_evaluator_result"])
         self.assertEqual(measured["successor_candidate_lower"], Decimal("120"))
         self.assertEqual(measured["successor_candidate_upper"], Decimal("120.6"))
+
+
+class FormationStrictnessComparisonTests(unittest.TestCase):
+    def near_miss_rows(
+        self,
+        upper: str,
+        *,
+        symbol: str = "NEAR",
+        follow_through: tuple[str, ...] = (),
+    ):
+        rows = [
+            observation(
+                index,
+                price,
+                symbol=symbol,
+                observed_offset=index * 3600,
+                received_offset=index * 3600,
+            )
+            for index, price in enumerate(("110", "110.3", "110.7", upper), 1)
+        ]
+        rows.extend(
+            observation(
+                4 + index,
+                price,
+                symbol=symbol,
+                route=Route.STR,
+                observed_offset=(4 + index) * 3600,
+                received_offset=(4 + index) * 3600,
+            )
+            for index, price in enumerate(follow_through, 1)
+        )
+        return rows
+
+    def test_cohort_boundaries_are_exact_and_above_two_is_excluded(self) -> None:
+        self.assertEqual(
+            classify_formation_cohort(Decimal("1.00")),
+            FormationCohort.PRODUCTION,
+        )
+        self.assertEqual(
+            classify_formation_cohort(Decimal("1.0001")),
+            FormationCohort.TIGHT_NEAR_MISS,
+        )
+        self.assertEqual(
+            classify_formation_cohort(Decimal("1.50")),
+            FormationCohort.TIGHT_NEAR_MISS,
+        )
+        self.assertEqual(
+            classify_formation_cohort(Decimal("1.5001")),
+            FormationCohort.WIDER_NEAR_MISS,
+        )
+        self.assertEqual(
+            classify_formation_cohort(Decimal("2.00")),
+            FormationCohort.WIDER_NEAR_MISS,
+        )
+        self.assertIsNone(classify_formation_cohort(Decimal("2.0001")))
+
+    def test_production_cohort_uses_authoritative_episodes_and_activation_anchor(self) -> None:
+        rows = btd_migration()
+        episodes = reconstruct_episodes(rows).episodes
+        comparison = formation_strictness_comparison(rows, episodes)
+        production = next(
+            item for item in comparison["summaries"]
+            if item["cohort"] == FormationCohort.PRODUCTION.value
+        )
+        production_cases = [
+            item for item in comparison["cases"] if item["is_active_mrz"]
+        ]
+
+        self.assertEqual(production["candidates"], 2)
+        self.assertEqual(len(production_cases), 2)
+        self.assertTrue(all(item["anchor_label"] == "Activated" for item in production_cases))
+        self.assertEqual(production_cases[0]["candidate_lower"], 110.0)
+        self.assertEqual(production_cases[0]["candidate_upper"], 110.6)
+
+    def test_exact_candidate_geometry_and_counterfactual_anchor_are_preserved(self) -> None:
+        rows = self.near_miss_rows("111.29")
+        case = reconstruct_near_miss_cases(rows)[0]
+
+        self.assertEqual(case.cohort, FormationCohort.TIGHT_NEAR_MISS)
+        self.assertEqual(case.minimum_required_allowance_pct, Decimal("1.2900"))
+        self.assertEqual(case.lower, Decimal("110"))
+        self.assertEqual(case.upper, Decimal("111.29"))
+        self.assertEqual(case.midpoint, Decimal("110.645"))
+        self.assertNotEqual(case.upper, Decimal("111.5"))
+        self.assertEqual(case.anchor_observation, rows[3])
+        self.assertEqual(case.source, "CURRENT_AND_HISTORICAL_CLOSEST")
+
+        record = formation_case_record(case)
+        self.assertEqual(record["anchor_label"], "Candidate observed")
+        self.assertFalse(record["is_active_mrz"])
+
+    def test_historical_follow_through_pending_and_later_evaluation(self) -> None:
+        pending_rows = self.near_miss_rows("111.29")
+        pending = formation_case_record(reconstruct_near_miss_cases(pending_rows)[0])
+        self.assertEqual(pending["outcome"], "PENDING_FOLLOW_THROUGH")
+        self.assertEqual(pending["post_anchor_observations"], 0)
+
+        evaluated_rows = self.near_miss_rows("111.29", follow_through=("120",))
+        evaluated = formation_case_record(
+            reconstruct_near_miss_cases(evaluated_rows)[0]
+        )
+        self.assertEqual(evaluated["outcome"], "SUPPORTIVE_FIRST")
+        self.assertEqual(evaluated["first_supportive_observation"], 1)
+        self.assertEqual(evaluated["first_supportive_hours"], 1.0)
+
+    def test_supportive_adverse_classifier_timing_and_ordinals_are_shared(self) -> None:
+        anchor = observation(
+            4,
+            "111.29",
+            observed_offset=4 * 3600,
+            received_offset=4 * 3600,
+        )
+        adverse = observation(
+            5,
+            "109",
+            route=Route.STR,
+            observed_offset=5 * 3600,
+            received_offset=5 * 3600,
+        )
+        supportive = observation(
+            6,
+            "120",
+            route=Route.STR,
+            observed_offset=6 * 3600,
+            received_offset=6 * 3600,
+        )
+        case = FormationWindowCase(
+            symbol="NEAR",
+            route=Route.BTD,
+            cohort=FormationCohort.TIGHT_NEAR_MISS,
+            source="HISTORICAL_CLOSEST",
+            lower=Decimal("110"),
+            upper=Decimal("111.29"),
+            midpoint=Decimal("110.645"),
+            anchor_observation=anchor,
+            post_anchor_observations=(adverse, supportive),
+            minimum_required_allowance_pct=Decimal("1.29"),
+            candidate_observation_count=4,
+        )
+        timings = formation_case_timings(case)
+        record = formation_case_record(case)
+
+        self.assertEqual(timings["first_adverse"], (1, Decimal("1")))
+        self.assertEqual(timings["first_supportive"], (2, Decimal("2")))
+        self.assertEqual(record["outcome"], "ADVERSE_FIRST")
+        self.assertEqual(
+            route_interpretation(
+                Route.BTD,
+                (supportive.observation_price - case.midpoint)
+                / anchor.ipda_width,
+            ),
+            "ROUTE_SUPPORTIVE",
+        )
+
+    def test_btd_and_str_are_mirrored_in_the_same_counterfactual_classifier(self) -> None:
+        btd_rows = self.near_miss_rows("111.29", symbol="BTD", follow_through=("120",))
+        str_rows = [
+            observation(
+                index,
+                price,
+                symbol="STR",
+                route=Route.STR,
+                observed_offset=index * 3600,
+                received_offset=index * 3600,
+            )
+            for index, price in enumerate(("170", "170.3", "170.7", "171.29"), 1)
+        ]
+        str_rows.append(
+            observation(
+                5,
+                "160",
+                symbol="STR",
+                route=Route.BTD,
+                observed_offset=5 * 3600,
+                received_offset=5 * 3600,
+            )
+        )
+        btd = formation_case_record(reconstruct_near_miss_cases(btd_rows)[0])
+        st_r = formation_case_record(reconstruct_near_miss_cases(str_rows)[0])
+        self.assertEqual(btd["outcome"], "SUPPORTIVE_FIRST")
+        self.assertEqual(st_r["outcome"], "SUPPORTIVE_FIRST")
+
+    def test_summary_excludes_unresolved_cases_from_resolved_percentages(self) -> None:
+        rows = [
+            *self.near_miss_rows("111.29", symbol="SUP", follow_through=("120",)),
+            *self.near_miss_rows("111.29", symbol="PENDING"),
+        ]
+        comparison = formation_strictness_comparison(rows, ())
+        tight = next(
+            item for item in comparison["summaries"]
+            if item["cohort"] == FormationCohort.TIGHT_NEAR_MISS.value
+        )
+        self.assertEqual(tight["candidates"], 2)
+        self.assertEqual(tight["resolved"], 1)
+        self.assertEqual(tight["pending"], 1)
+        self.assertEqual(
+            tight["supportive_first"],
+            {"numerator": 1, "denominator": 1, "percentage": 100.0},
+        )
+        self.assertEqual(tight["unresolved"], 1)
+
+    def test_tight_wider_and_above_two_candidates_use_actual_required_allowance(self) -> None:
+        rows = [
+            *self.near_miss_rows("111.29", symbol="TIGHT"),
+            *self.near_miss_rows("111.57", symbol="WIDER"),
+            *self.near_miss_rows("112.01", symbol="EXCLUDED"),
+        ]
+        cases = reconstruct_near_miss_cases(rows)
+        self.assertEqual(
+            [(item.symbol, item.cohort) for item in cases],
+            [
+                ("TIGHT", FormationCohort.TIGHT_NEAR_MISS),
+                ("WIDER", FormationCohort.WIDER_NEAR_MISS),
+            ],
+        )
 
 
 class DiagnosisTests(unittest.TestCase):

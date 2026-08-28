@@ -274,6 +274,7 @@ function renderReport(report) {
       </dl>
       <p class="definition">Data as of ${escapeHtml(report.data_as_of)}. Audit match: ${reconstruction.event_history_matches_replay ? "yes" : "no"}. Active-state match: ${reconstruction.active_state_matches_replay ? "yes" : "no"}.</p>
     </section>
+    ${renderFormationComparison(report.production_vs_near_miss_windows)}
     ${report.cohorts.map((cohort) => renderCohort(cohort, report.methodology)).join("")}
     <section class="report-section">
       <h2>Cross-Cohort Diagnosis</h2>
