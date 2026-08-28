@@ -7,7 +7,7 @@
     <title>EDGE 2.0 · MRZ Robustness</title>
     <link rel="stylesheet" href="/static/activation-feasibility.css?v=robustness-report-20260827" />
     <link rel="stylesheet" href="/static/diagnostics-nav.css?v=diagnostics-menu-20260827" />
-    <link rel="stylesheet" href="/static/mrz-robustness-report.css?v=robustness-report-20260827" />
+    <link rel="stylesheet" href="/static/mrz-robustness-report.css?v=route-role-durability-20260828" />
   </head>
   <body>
     <main class="report-shell robustness-report-shell">
@@ -15,7 +15,7 @@
         <div>
           <p class="eyebrow">EDGE 2.0 · READ-ONLY RESEARCH</p>
           <h1>MRZ Robustness</h1>
-          <p class="subtitle">Post-activation durability across symbols and formation allowances.</p>
+          <p class="subtitle">Selectivity versus route-role durability across MRZ formation allowances.</p>
         </div>
         <div class="header-actions">
           <nav class="page-nav operator-navigation" aria-label="Operator navigation" data-diagnostics-nav>
@@ -39,6 +39,19 @@
       <aside class="notice">
         Research only. Replayed MRZs are transient and cannot activate, migrate, replace, or change ownership of an authoritative MRZ.
       </aside>
+      <section class="purpose-panel" aria-labelledby="purpose-title">
+        <p class="eyebrow">PURPOSE</p>
+        <h2 id="purpose-title">Do tighter criteria produce fewer, more structurally durable MRZs?</h2>
+        <p>Primary durability is measured by route-supportive versus route-adverse post-activation behavior. Lifecycle metrics such as containment and migration remain secondary context.</p>
+        <div class="hypothesis-flow" aria-label="Research hypothesis">
+          <span>Tighter formation concentration</span><b aria-hidden="true">→</b><span>Fewer formations</span><b aria-hidden="true">→</b><span>Potentially stronger route-role durability</span>
+        </div>
+        <div class="report-boundaries">
+          <p><strong>Activation Feasibility</strong> asks how often each policy can form an MRZ.</p>
+          <p><strong>MRZ Robustness</strong> asks how well a formed MRZ performs its route role.</p>
+          <p><strong>Trading Window Feasibility</strong> asks when supportive behavior becomes useful.</p>
+        </div>
+      </section>
       <section class="status-panel" id="reportStatus" aria-live="polite">
         Replaying post-activation durability…
       </section>
@@ -57,31 +70,25 @@
 
         <section class="report-section production-robustness" aria-labelledby="production-title">
           <div class="section-heading">
-            <div><p class="eyebrow">CURRENT PRODUCTION ROBUSTNESS</p><h2 id="production-title">4 observations · 1.00%</h2></div>
+            <div><p class="eyebrow">CURRENT PRODUCTION ROUTE-ROLE DURABILITY</p><h2 id="production-title">4 observations · 1.00%</h2></div>
           </div>
           <div id="productionSummary"></div>
         </section>
 
-        <section class="report-section" aria-labelledby="cross-symbol-title">
+        <section class="report-section primary-comparison" aria-labelledby="policy-title">
           <div class="section-heading">
-            <div><p class="eyebrow">CROSS-SYMBOL ROBUSTNESS SUMMARY</p><h2 id="cross-symbol-title">Production-policy formations</h2></div>
+            <div><p class="eyebrow">PRIMARY DURABILITY COMPARISON</p><h2 id="policy-title">1.00% · 1.50% · 2.00%</h2></div>
           </div>
-          <div class="table-wrap"><table id="crossSymbolTable"></table></div>
-        </section>
-
-        <section class="report-section" aria-labelledby="pressure-title">
-          <div class="section-heading">
-            <div><p class="eyebrow">MIGRATION PRESSURE SUMMARY</p><h2 id="pressure-title">Current production cohort state</h2></div>
-          </div>
-          <div id="pressureSummary"></div>
-        </section>
-
-        <section class="report-section" aria-labelledby="policy-title">
-          <div class="section-heading">
-            <div><p class="eyebrow">POLICY ROBUSTNESS COMPARISON</p><h2 id="policy-title">1.00% · 1.50% · 2.00%</h2></div>
-          </div>
-          <p class="section-note">Formation coverage is context, not a quality score. Observation count remains fixed at four.</p>
+          <p class="section-note">Observation count remains fixed at four. Formation coverage is selectivity context; resolved supportive and adverse outcomes are the primary evidence.</p>
           <div class="table-wrap"><table id="policyComparisonTable"></table></div>
+        </section>
+
+        <section class="report-section" aria-labelledby="route-breakdown-title">
+          <div class="section-heading">
+            <div><p class="eyebrow">BTD / STR BREAKDOWN</p><h2 id="route-breakdown-title">Route-relative durability by policy</h2></div>
+          </div>
+          <p class="section-note">BTD is supportive above its frozen midpoint; STR is supportive below it. Exact-midpoint observations remain neutral.</p>
+          <div class="table-wrap"><table id="routeBreakdownTable"></table></div>
         </section>
 
         <section class="report-section" aria-labelledby="cohort-title">
@@ -89,6 +96,28 @@
             <div><p class="eyebrow">INCREMENTAL COHORT ANALYSIS</p><h2 id="cohort-title">Durability of additional formations</h2></div>
           </div>
           <div class="cohort-grid" id="incrementalCohorts"></div>
+        </section>
+
+        <section class="report-section" aria-labelledby="cross-symbol-title">
+          <div class="section-heading">
+            <div><p class="eyebrow">PRODUCTION STRUCTURAL RESPONSE</p><h2 id="cross-symbol-title">Route-supportive and route-adverse outcomes by symbol</h2></div>
+          </div>
+          <div class="table-wrap"><table id="crossSymbolTable"></table></div>
+        </section>
+
+        <section class="report-section lifecycle-section" aria-labelledby="lifecycle-title">
+          <div class="section-heading">
+            <div><p class="eyebrow">SECONDARY LIFECYCLE DIAGNOSTICS</p><h2 id="lifecycle-title">Mechanical persistence / lifecycle</h2></div>
+          </div>
+          <aside class="geometry-note">
+            <strong>Geometry note</strong>
+            <p>Wider formation allowances may produce wider frozen MRZs and wider migration envelopes. Containment, lifespan and migration-pressure metrics are therefore partly influenced by MRZ geometry and are treated as secondary lifecycle diagnostics rather than primary durability measures.</p>
+          </aside>
+          <div class="table-wrap"><table id="lifecycleComparisonTable"></table></div>
+          <div class="lifecycle-pressure">
+            <h3>Production migration pressure and successor watch</h3>
+            <div id="pressureSummary"></div>
+          </div>
         </section>
 
         <section class="report-section" aria-labelledby="symbol-detail-title">
@@ -111,6 +140,6 @@
     </main>
     <script src="/static/diagnostics-nav.js?v=diagnostics-menu-20260827" defer></script>
     <script src="/static/operator-time.js?v=robustness-report-20260827" defer></script>
-    <script src="/static/mrz-robustness-report.js?v=robustness-report-20260827" defer></script>
+    <script src="/static/mrz-robustness-report.js?v=route-role-durability-20260828" defer></script>
   </body>
 </html>

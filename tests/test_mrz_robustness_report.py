@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from unittest.mock import patch
 
+from app.domain import Route
+from app.feasibility import route_interpretation as canonical_route_interpretation
 from app.mrz_robustness import MRZRobustnessService
 from app.mrz_robustness_report import MRZRobustnessReportService
 from app.state_engine import replay_symbol
@@ -19,12 +21,14 @@ def history(
     prices: tuple[str, ...],
     *,
     start: int = 0,
+    route: Route = Route.BTD,
 ):
     return tuple(
         observation(
             start + index,
             price,
             symbol=symbol,
+            route=route,
             event_id=f"{symbol}-{index}",
             observed_offset=start + index,
             received_offset=start + index,
@@ -49,6 +53,95 @@ def detail(report, history_id: str):
 
 
 class MRZRobustnessReportTests(unittest.TestCase):
+    def test_route_role_outcomes_reuse_canonical_btd_and_str_classifier(self) -> None:
+        btd = history(
+            "BTDROLE",
+            ("110", "110.2", "110.4", "110.6", "110.5", "110.1", "110.3"),
+        )
+        str_rows = history(
+            "STRROLE",
+            ("170", "170.2", "170.4", "170.6", "170.1", "170.5", "170.3"),
+            route=Route.STR,
+            start=20,
+        )
+        with patch(
+            "app.mrz_robustness_report.route_interpretation",
+            wraps=canonical_route_interpretation,
+        ) as classify:
+            report = report_for(btd, str_rows)
+
+        self.assertGreater(classify.call_count, 0)
+        for history_id in ("BTDROLE:BTD", "STRROLE:STR"):
+            response = detail(report, history_id)["policies"][0]["structural_response"]
+            self.assertEqual(response["supportive_outcome_count"], 1)
+            self.assertEqual(response["adverse_outcome_count"], 1)
+            self.assertEqual(response["neutral_unresolved_outcome_count"], 1)
+            self.assertEqual(response["resolved_outcome_count"], 2)
+            self.assertEqual(response["supportive_rate"], {
+                "numerator": 1,
+                "denominator": 2,
+                "percentage": "50.0",
+            })
+            self.assertEqual(response["adverse_rate"], {
+                "numerator": 1,
+                "denominator": 2,
+                "percentage": "50.0",
+            })
+            self.assertEqual(response["supportive_to_adverse_balance"], "1 : 1")
+            self.assertEqual(response["first_supportive"], {
+                "observation_number": 1,
+                "seconds_from_activation": "1",
+            })
+            self.assertEqual(response["first_adverse"], {
+                "observation_number": 2,
+                "seconds_from_activation": "2",
+            })
+            self.assertTrue(response["early_adverse"])
+            self.assertEqual(response["classifier"], "TRADING_WINDOW_SIGNED_DISPLACEMENT")
+
+        production = report["current_production_robustness"]
+        self.assertEqual(production["supportive_outcome_count"], 2)
+        self.assertEqual(production["adverse_outcome_count"], 2)
+        self.assertEqual(production["resolved_case_count"], 2)
+        self.assertEqual(production["unresolved_case_count"], 0)
+        self.assertEqual(production["median_time_to_first_supportive_seconds"], "1")
+        self.assertEqual(production["median_time_to_first_adverse_seconds"], "2")
+        self.assertEqual(
+            [(row["route"], row["supportive_outcome_count"], row["adverse_outcome_count"])
+             for row in production["route_breakdown"]],
+            [("BTD", 1, 1), ("STR", 1, 1)],
+        )
+
+    def test_neutral_and_missing_post_activation_evidence_remain_unresolved(self) -> None:
+        neutral = history(
+            "NEUTRAL",
+            ("110", "110.2", "110.4", "110.6", "110.3"),
+        )
+        no_post = history("NOPOST", ("110", "110.2", "110.4", "110.6"), start=20)
+        report = report_for(neutral, no_post)
+        production = report["current_production_robustness"]
+
+        self.assertEqual(production["formations_with_post_activation_evidence"], 1)
+        self.assertEqual(production["resolved_case_count"], 0)
+        self.assertEqual(production["unresolved_case_count"], 2)
+        self.assertEqual(production["supportive_rate"]["denominator"], 0)
+        self.assertIsNone(production["supportive_rate"]["percentage"])
+        self.assertEqual(production["neutral_unresolved_outcome_count"], 1)
+        self.assertEqual(production["early_adverse_incidence"]["denominator"], 1)
+        self.assertEqual(report["sample_confidence"]["production_resolved_case_count"], 0)
+        self.assertEqual(report["sample_confidence"]["production_unresolved_case_count"], 2)
+
+    def test_geometry_metrics_are_retained_only_as_secondary_methodology(self) -> None:
+        report = report_for(
+            history("GEOMETRY", ("110", "110.2", "110.4", "110.6", "110.5"))
+        )
+
+        self.assertIn("median_containment_percentage", report["current_production_robustness"])
+        self.assertIn("migration_pressure_incidence", report["current_production_robustness"])
+        self.assertIn("wider frozen MRZs", report["methodology"]["geometry_note"])
+        self.assertIn("secondary lifecycle diagnostics", report["methodology"]["geometry_note"])
+        self.assertIn("canonical signed-displacement classifier", report["methodology"]["structural_response"])
+
     def test_policy_replay_uses_same_histories_fixed_count_and_own_activation(self) -> None:
         rows = history("TIMING", ("110", "110.4", "110.8", "111.4", "110.6"))
         report = report_for(rows)

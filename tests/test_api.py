@@ -100,8 +100,10 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["cache-control"], "no-store, max-age=0")
         self.assertIn("MRZ Robustness", response.text)
-        self.assertIn("Post-activation durability", response.text)
+        self.assertIn("route-role durability", response.text)
         self.assertIn('id="policyComparisonTable"', response.text)
+        self.assertIn('id="routeBreakdownTable"', response.text)
+        self.assertIn('id="lifecycleComparisonTable"', response.text)
         self.assertIn('id="incrementalCohorts"', response.text)
         self.assertIn('id="symbolDetail"', response.text)
         self.assertNotIn('id="activeReports"', response.text)
@@ -192,6 +194,18 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertTrue(
             all(row["minimum_observations"] == 4 for row in payload["policy_robustness_comparison"])
         )
+        production = payload["current_production_robustness"]
+        self.assertIn("supportive_rate", production)
+        self.assertIn("adverse_rate", production)
+        self.assertEqual(
+            [row["route"] for row in production["route_breakdown"]],
+            ["BTD", "STR"],
+        )
+        self.assertEqual(
+            payload["cross_symbol_robustness"][0]["structural_response"]["classifier"],
+            "TRADING_WINDOW_SIGNED_DISPLACEMENT",
+        )
+        self.assertIn("secondary lifecycle diagnostics", payload["methodology"]["geometry_note"])
         self.assertEqual(payload["invariants"]["persistence"], "No replayed MRZ is persisted")
         self.assertIsNone(payload["evidence_interpretation"]["production_recommendation"])
         self.assertEqual(before_counts, after_counts)

@@ -8,7 +8,13 @@ from typing import Callable, Iterable, Mapping, Sequence
 from app.activation_feasibility import LOW_SAMPLE_SEQUENCE_THRESHOLD
 from app.concentration import MIN_CLUSTER_OBSERVATIONS
 from app.domain import MRZEventType, Observation, Route
-from app.feasibility import Episode, reconstruct_episodes
+from app.feasibility import (
+    Episode,
+    first_timing,
+    reconstruct_episodes,
+    route_interpretation,
+    signed_displacement,
+)
 from app.mrz_robustness import MRZRobustnessService, decimal_text, duration_seconds, iso, median_decimal
 
 
@@ -19,6 +25,7 @@ POLICY_ALLOWANCES = (
     Decimal("0.0200"),
 )
 EARLY_MIGRATION_MAX_POST_ACTIVATION_OBSERVATIONS = MIN_CLUSTER_OBSERVATIONS
+EARLY_BEHAVIOR_MAX_POST_ACTIVATION_OBSERVATIONS = MIN_CLUSTER_OBSERVATIONS
 
 ObservationReader = Callable[[], Sequence[Observation]]
 HistoryKey = tuple[str, Route]
@@ -108,6 +115,10 @@ class MRZRobustnessReportService:
             int(record["post_activation_observation_count"]) > 0
             for record in production_records.values()
         )
+        production_resolved = sum(
+            int(record["structural_response"]["resolved_outcome_count"]) > 0
+            for record in production_records.values()
+        )
         completed = int(production_summary["completed_lifecycle_count"])
 
         return {
@@ -133,6 +144,8 @@ class MRZRobustnessReportService:
                 "minimum_history_threshold": LOW_SAMPLE_SEQUENCE_THRESHOLD,
                 "production_mrz_formations": len(production_records),
                 "production_formations_with_post_activation_evidence": production_with_evidence,
+                "production_resolved_case_count": production_resolved,
+                "production_unresolved_case_count": len(production_records) - production_resolved,
                 "completed_migration_lifecycles": completed,
                 "production_formed_denominator": len(histories),
             },
@@ -165,6 +178,26 @@ class MRZRobustnessReportService:
                     "Only canonical observations strictly after that policy's activation "
                     "trigger are measured through migration or available history."
                 ),
+                "structural_response": (
+                    "Each post-activation observation reuses Trading Window Feasibility's "
+                    "canonical signed-displacement classifier: above the frozen midpoint "
+                    "supports BTD and is adverse to STR; below supports STR and is adverse "
+                    "to BTD; an exact midpoint observation is neutral/unresolved."
+                ),
+                "resolved_outcome": (
+                    "A resolved outcome is a post-activation observation classified as "
+                    "route-supportive or route-adverse. Neutral observations are excluded "
+                    "from both rate denominators."
+                ),
+                "overall_aggregation": (
+                    "BTD and STR are shown separately. Their overall counts may also be "
+                    "combined because both use the same route-relative supportive/adverse "
+                    "categories and the same resolved-outcome denominator."
+                ),
+                "early_adverse": (
+                    "Research-only: a formed MRZ has an adverse outcome within its first "
+                    f"{EARLY_BEHAVIOR_MAX_POST_ACTIVATION_OBSERVATIONS} post-activation observations."
+                ),
                 "containment": (
                     "post-activation observations inside the inclusive frozen MRZ divided "
                     "by total post-activation observations"
@@ -180,6 +213,11 @@ class MRZRobustnessReportService:
                 "early_migration": (
                     "migration confirmed by the fourth post-activation observation, the "
                     "earliest possible confirmation under the fixed four-observation rule"
+                ),
+                "geometry_note": (
+                    "Wider formation allowances may produce wider frozen MRZs and wider "
+                    "migration envelopes. Containment, lifespan, and migration-pressure "
+                    "metrics are therefore secondary lifecycle diagnostics."
                 ),
             },
             "invariants": {
@@ -245,6 +283,7 @@ class MRZRobustnessReportService:
         post_count = int(
             measurement["robustness_evidence"]["post_activation_observation_count"]
         )
+        structural_response = self._structural_response(episode)
         time_to_migration = (
             duration_seconds(episode.active_mrz.activated_at, episode.ended_at)
             if completed and episode.ended_at is not None
@@ -252,25 +291,25 @@ class MRZRobustnessReportService:
         )
         pressure_status = str(measurement["migration_pressure"]["status"])
         if completed or pressure_status == "MIGRATION_CANDIDATE":
-            durability_status = "MIGRATION_CANDIDATE"
-            durability_label = "Migration Candidate"
+            lifecycle_status = "MIGRATION_CANDIDATE"
+            lifecycle_label = "Migration Candidate"
         elif pressure_status == "UNDER_PRESSURE":
-            durability_status = "UNDER_PRESSURE"
-            durability_label = "Under Pressure"
+            lifecycle_status = "UNDER_PRESSURE"
+            lifecycle_label = "Under Pressure"
         elif pressure_status == "STABLE":
-            durability_status = "STABLE"
-            durability_label = "Stable"
+            lifecycle_status = "STABLE"
+            lifecycle_label = "Stable"
         else:
-            durability_status = "NOT_YET_ASSESSABLE"
-            durability_label = "Not yet assessable"
+            lifecycle_status = "NOT_YET_ASSESSABLE"
+            lifecycle_label = "Not yet assessable"
 
         return {
             "formed": True,
             "history_id": _history_id(key),
             "symbol": key[0],
             "route": key[1].value,
-            "durability_status": durability_status,
-            "durability_label": durability_label,
+            "mechanical_lifecycle_status": lifecycle_status,
+            "mechanical_lifecycle_label": lifecycle_label,
             "mrz": {
                 "lower": decimal_text(episode.active_mrz.core_mrz_lower),
                 "upper": decimal_text(episode.active_mrz.core_mrz_upper),
@@ -284,6 +323,7 @@ class MRZRobustnessReportService:
                 "allowance_percent": allowance_percent(allowance),
             },
             "post_activation_observation_count": post_count,
+            "structural_response": structural_response,
             "containment": dict(measurement["containment"]),
             "observed_lifespan_seconds": decimal_text(
                 duration_seconds(episode.active_mrz.activated_at, observed_end)
@@ -310,6 +350,74 @@ class MRZRobustnessReportService:
                 ),
             },
             "successor_watch": dict(measurement["successor_watch"]),
+        }
+
+    @staticmethod
+    def _structural_response(episode: Episode) -> dict[str, object]:
+        active = episode.active_mrz
+        classifications = tuple(
+            route_interpretation(
+                active.route_owner,
+                signed_displacement(active, observation),
+            )
+            for observation in episode.post_activation_observations
+        )
+        supportive_count = classifications.count("ROUTE_SUPPORTIVE")
+        adverse_count = classifications.count("ROUTE_ADVERSE")
+        neutral_count = classifications.count("NEUTRAL")
+        resolved_count = supportive_count + adverse_count
+        first_supportive = first_timing(
+            episode,
+            lambda _index, observation: route_interpretation(
+                active.route_owner,
+                signed_displacement(active, observation),
+            )
+            == "ROUTE_SUPPORTIVE",
+        )
+        first_adverse = first_timing(
+            episode,
+            lambda _index, observation: route_interpretation(
+                active.route_owner,
+                signed_displacement(active, observation),
+            )
+            == "ROUTE_ADVERSE",
+        )
+        early_classifications = classifications[
+            :EARLY_BEHAVIOR_MAX_POST_ACTIVATION_OBSERVATIONS
+        ]
+
+        def timing_payload(
+            timing: tuple[int, Decimal] | None,
+        ) -> dict[str, object]:
+            observed_at = (
+                episode.post_activation_observations[timing[0] - 1].observed_at
+                if timing
+                else None
+            )
+            return {
+                "observation_number": timing[0] if timing else None,
+                "seconds_from_activation": (
+                    decimal_text(
+                        duration_seconds(active.activated_at, observed_at)
+                    )
+                    if observed_at is not None
+                    else None
+                ),
+            }
+
+        return {
+            "supportive_outcome_count": supportive_count,
+            "adverse_outcome_count": adverse_count,
+            "neutral_unresolved_outcome_count": neutral_count,
+            "resolved_outcome_count": resolved_count,
+            "supportive_rate": rate_payload(supportive_count, resolved_count),
+            "adverse_rate": rate_payload(adverse_count, resolved_count),
+            "supportive_to_adverse_balance": f"{supportive_count} : {adverse_count}",
+            "first_supportive": timing_payload(first_supportive),
+            "first_adverse": timing_payload(first_adverse),
+            "early_adverse": "ROUTE_ADVERSE" in early_classifications,
+            "early_window_observation_count": EARLY_BEHAVIOR_MAX_POST_ACTIVATION_OBSERVATIONS,
+            "classifier": "TRADING_WINDOW_SIGNED_DISPLACEMENT",
         }
 
     def _first_pressure(
@@ -342,6 +450,7 @@ class MRZRobustnessReportService:
         eligible_history_count: int,
     ) -> dict[str, object]:
         metrics = self._durability_metrics(records.values())
+        rows = tuple(records.values())
         return {
             "algorithm": ALGORITHM,
             "minimum_observations": MIN_CLUSTER_OBSERVATIONS,
@@ -349,6 +458,15 @@ class MRZRobustnessReportService:
             "eligible_symbol_route_histories": eligible_history_count,
             "formed_mrz_count": len(records),
             "formation_coverage": rate_payload(len(records), eligible_history_count),
+            "route_breakdown": [
+                {
+                    "route": route.value,
+                    **self._durability_metrics(
+                        row for row in rows if row["route"] == route.value
+                    ),
+                }
+                for route in (Route.BTD, Route.STR)
+            ],
             **metrics,
         }
 
@@ -378,8 +496,65 @@ class MRZRobustnessReportService:
             if row["route_integrity"]["status"] == "MAINTAINED"
         ]
         early = [row for row in completed if row["lifecycle"]["early_migration"]]
+        resolved_cases = [
+            row
+            for row in rows
+            if int(row["structural_response"]["resolved_outcome_count"]) > 0
+        ]
+        supportive_count = sum(
+            int(row["structural_response"]["supportive_outcome_count"])
+            for row in rows
+        )
+        adverse_count = sum(
+            int(row["structural_response"]["adverse_outcome_count"])
+            for row in rows
+        )
+        neutral_count = sum(
+            int(row["structural_response"]["neutral_unresolved_outcome_count"])
+            for row in rows
+        )
+        resolved_count = supportive_count + adverse_count
+        early_adverse = [
+            row for row in with_evidence if row["structural_response"]["early_adverse"]
+        ]
         return {
             "formations_with_post_activation_evidence": len(with_evidence),
+            "resolved_case_count": len(resolved_cases),
+            "unresolved_case_count": len(rows) - len(resolved_cases),
+            "supportive_outcome_count": supportive_count,
+            "adverse_outcome_count": adverse_count,
+            "neutral_unresolved_outcome_count": neutral_count,
+            "resolved_outcome_count": resolved_count,
+            "supportive_rate": rate_payload(supportive_count, resolved_count),
+            "adverse_rate": rate_payload(adverse_count, resolved_count),
+            "supportive_to_adverse_balance": f"{supportive_count} : {adverse_count}",
+            "median_time_to_first_supportive_seconds": median_text(
+                Decimal(str(row["structural_response"]["first_supportive"]["seconds_from_activation"]))
+                for row in rows
+                if row["structural_response"]["first_supportive"]["seconds_from_activation"]
+                is not None
+            ),
+            "time_to_first_supportive_sample_count": sum(
+                row["structural_response"]["first_supportive"]["seconds_from_activation"]
+                is not None
+                for row in rows
+            ),
+            "median_time_to_first_adverse_seconds": median_text(
+                Decimal(str(row["structural_response"]["first_adverse"]["seconds_from_activation"]))
+                for row in rows
+                if row["structural_response"]["first_adverse"]["seconds_from_activation"]
+                is not None
+            ),
+            "time_to_first_adverse_sample_count": sum(
+                row["structural_response"]["first_adverse"]["seconds_from_activation"]
+                is not None
+                for row in rows
+            ),
+            "early_adverse_incidence": rate_payload(
+                len(early_adverse),
+                len(with_evidence),
+            ),
+            "early_adverse_window_observations": EARLY_BEHAVIOR_MAX_POST_ACTIVATION_OBSERVATIONS,
             "median_containment_percentage": median_text(
                 Decimal(str(row["containment"]["percentage"]))
                 for row in with_evidence
@@ -547,6 +722,7 @@ class MRZRobustnessReportService:
         cohorts: Sequence[Mapping[str, object]],
     ) -> dict[str, object]:
         baseline = policy_summaries[0]
+        baseline_cohort = cohorts[0]
         middle = cohorts[1]
         wide = cohorts[2]
         preliminary = eligible_history_count < LOW_SAMPLE_SEQUENCE_THRESHOLD
@@ -554,9 +730,9 @@ class MRZRobustnessReportService:
             code = "PRELIMINARY_INSUFFICIENT"
             heading = "Evidence remains preliminary"
             text = (
-                "Current durability evidence is insufficient to distinguish between "
-                "the three allowances. The incremental cohorts are worthy of further "
-                "monitoring; no production-policy conclusion is supported."
+                "The current sample does not yet support a reliable durability distinction "
+                "between 1.00%, 1.50%, and 2.00%. Formation selectivity and resolved "
+                "route-supportive versus route-adverse outcomes remain visible below."
             )
         elif middle["history_count"] == 0 and wide["history_count"] == 0:
             code = "NO_INCREMENTAL_FORMATIONS"
@@ -566,13 +742,49 @@ class MRZRobustnessReportService:
                 "the current sample. No durability distinction is available."
             )
         else:
+            cohort_rates = [
+                (
+                    cohort,
+                    Decimal(str(cohort["supportive_rate"]["percentage"]))
+                    if cohort["supportive_rate"]["percentage"] is not None
+                    else None,
+                )
+                for cohort in (baseline_cohort, middle, wide)
+            ]
+            resolved_rates = [(cohort, rate) for cohort, rate in cohort_rates if rate is not None]
+            baseline_rate = cohort_rates[0][1]
+            incremental_rates = [rate for _cohort, rate in cohort_rates[1:] if rate is not None]
             code = "OBSERVED_INCREMENTAL_COHORTS"
-            heading = "Incremental durability observed"
-            text = (
-                "The report exposes exact containment, lifespan, migration, successor, "
-                "and route-integrity denominators for each incremental cohort. These are "
-                "descriptive observations, not a production recommendation."
-            )
+            if not resolved_rates:
+                heading = "Durability outcomes remain unresolved"
+                text = (
+                    "Additional formations are present, but no route-supportive or "
+                    "route-adverse post-activation outcomes are resolved yet."
+                )
+            elif baseline_rate is not None and incremental_rates and all(
+                baseline_rate > rate for rate in incremental_rates
+            ):
+                heading = "Baseline route-supportive rate is currently higher"
+                text = (
+                    "The 1.00% baseline formed fewer MRZs than the wider policies and its "
+                    "resolved post-activation outcomes currently show a higher "
+                    "route-supportive rate than each resolved incremental cohort."
+                )
+            elif baseline_rate is not None and incremental_rates and any(
+                rate >= baseline_rate for rate in incremental_rates
+            ):
+                heading = "Additional formations preserve current route-role evidence"
+                text = (
+                    "At least one wider-policy incremental cohort currently matches or "
+                    "exceeds the 1.00% baseline route-supportive rate. The present evidence "
+                    "does not show that tighter selectivity alone buys greater durability."
+                )
+            else:
+                heading = "Selectivity and durability remain only partly resolved"
+                text = (
+                    "The current cohorts do not yet provide comparable resolved "
+                    "route-supportive and route-adverse evidence across all allowances."
+                )
         return {
             "code": code,
             "heading": heading,
@@ -584,6 +796,21 @@ class MRZRobustnessReportService:
                 ),
                 f"1.50% admitted {middle['history_count']} incremental histories.",
                 f"2.00% admitted {wide['history_count']} incremental histories.",
+                (
+                    f"1.00% baseline resolved outcomes: "
+                    f"{baseline_cohort['supportive_outcome_count']} supportive and "
+                    f"{baseline_cohort['adverse_outcome_count']} adverse."
+                ),
+                (
+                    f"Incremental 1.50% resolved outcomes: "
+                    f"{middle['supportive_outcome_count']} supportive and "
+                    f"{middle['adverse_outcome_count']} adverse."
+                ),
+                (
+                    f"Incremental 2.00% resolved outcomes: "
+                    f"{wide['supportive_outcome_count']} supportive and "
+                    f"{wide['adverse_outcome_count']} adverse."
+                ),
             ],
             "production_recommendation": None,
         }

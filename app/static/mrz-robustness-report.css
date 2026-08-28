@@ -5,6 +5,22 @@
 .sample-confidence h2 { font-size: 1.25rem; }
 .section-note { margin: 10px 0 18px; color: var(--muted); font-size: 0.82rem; line-height: 1.5; }
 
+.purpose-panel {
+  margin-top: 18px;
+  padding: 24px;
+  border: 1px solid rgba(98, 230, 181, 0.38);
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(20, 70, 57, 0.28), rgba(8, 11, 16, 0.38));
+}
+.purpose-panel h2 { max-width: 920px; margin: 7px 0 10px; color: var(--text); font-size: clamp(1.35rem, 2.6vw, 2rem); }
+.purpose-panel > p:not(.eyebrow) { max-width: 900px; margin: 0; color: #c7d3de; line-height: 1.6; }
+.hypothesis-flow { display: flex; align-items: center; gap: 10px; margin-top: 20px; }
+.hypothesis-flow span { padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: rgba(8, 11, 16, 0.4); color: var(--text); font-size: 0.76rem; font-weight: 700; }
+.hypothesis-flow b { color: var(--accent); }
+.report-boundaries { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 15px; }
+.report-boundaries p { margin: 0; padding: 11px; border-left: 2px solid var(--line); color: var(--muted); font-size: 0.74rem; line-height: 1.45; }
+.report-boundaries strong { color: var(--text); }
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -34,7 +50,13 @@
 .metric-card p { margin: 7px 0 0; color: var(--muted); font-size: 0.75rem; line-height: 1.45; }
 .metric-card.status-card { border-color: #665d43; background: var(--warning-soft); }
 .metric-card.status-card strong { color: var(--warning); font-size: 0.9rem; }
+.metric-card.supportive-card { border-color: rgba(98, 230, 181, 0.42); background: var(--accent-soft); }
+.metric-card.supportive-card strong, .supportive-value { color: var(--accent); }
+.metric-card.adverse-card { border-color: rgba(239, 190, 102, 0.4); background: var(--warning-soft); }
+.metric-card.adverse-card strong, .adverse-value { color: var(--warning); }
+.metric-card.context-card { border-style: dashed; opacity: 0.82; }
 .production-robustness { border-color: rgba(98, 230, 181, 0.42); }
+.primary-comparison { box-shadow: inset 0 0 0 1px rgba(98, 230, 181, 0.08); }
 
 .pressure-layout {
   display: grid;
@@ -58,6 +80,9 @@
 .compact-facts div { display: flex; justify-content: space-between; gap: 14px; padding: 7px 0; border-top: 1px solid rgba(37, 48, 65, 0.72); }
 .compact-facts dt { color: var(--muted); font-size: 0.72rem; }
 .compact-facts dd { margin: 0; color: var(--text); font-size: 0.74rem; font-weight: 700; text-align: right; }
+.lifecycle-details { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.lifecycle-details summary { cursor: pointer; color: var(--muted); font-size: 0.72rem; font-weight: 750; }
+.lifecycle-details[open] summary { margin-bottom: 9px; }
 
 .history-selector { display: block; width: min(420px, 100%); margin: 18px 0; color: var(--muted); font-size: 0.72rem; font-weight: 700; }
 .history-selector select { width: 100%; min-height: 44px; margin-top: 7px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-strong); color: var(--text); }
@@ -68,6 +93,11 @@
 .policy-detail-card h3 { margin: 0 0 13px; color: var(--accent); }
 .policy-detail-card.unformed { border-style: dashed; }
 .policy-detail-card.unformed p { margin: 0; color: var(--muted); font-size: 0.8rem; line-height: 1.5; }
+.response-balance { display: grid; grid-template-columns: 1fr auto; gap: 7px 12px; margin-bottom: 14px; padding: 11px; border: 1px solid rgba(37, 48, 65, 0.72); border-radius: 9px; }
+.response-balance span { color: var(--muted); font-size: 0.72rem; }
+.response-balance strong:first-of-type { color: var(--accent); }
+.response-balance strong:last-of-type { color: var(--warning); }
+.lifecycle-label { margin: 17px 0 4px; padding-top: 12px; border-top: 1px solid var(--line); }
 .status-badge { display: inline-flex; margin-bottom: 12px; padding: 5px 8px; border: 1px solid #486b61; border-radius: 999px; color: var(--accent); font-size: 0.65rem; font-weight: 760; letter-spacing: 0.06em; }
 .status-under-pressure, .status-migration-candidate { border-color: #665d43; color: var(--warning); }
 .status-not-yet-assessable { border-color: var(--line); color: var(--muted); }
@@ -77,15 +107,23 @@
 .interpretation-card p { margin: 0; color: #c5cedb; line-height: 1.6; }
 .interpretation-card ul { margin: 14px 0 0; padding-left: 20px; color: var(--muted); font-size: 0.8rem; line-height: 1.65; }
 
+.geometry-note { margin: 0 0 18px; padding: 15px 17px; border: 1px solid #665d43; border-radius: 10px; background: var(--warning-soft); }
+.geometry-note strong { color: var(--warning); font-size: 0.78rem; }
+.geometry-note p { margin: 6px 0 0; color: #d2c9b7; font-size: 0.8rem; line-height: 1.55; }
+.lifecycle-pressure { margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--line); }
+.lifecycle-pressure > h3 { margin: 0 0 13px; color: var(--muted); font-size: 0.76rem; letter-spacing: 0.05em; text-transform: uppercase; }
+
 #crossSymbolTable { min-width: 1160px; }
 #policyComparisonTable { min-width: 820px; }
-#policyComparisonTable .production-cell { background: var(--accent-soft); }
+#routeBreakdownTable, #lifecycleComparisonTable { min-width: 720px; }
+#policyComparisonTable .production-cell, #lifecycleComparisonTable .production-cell { background: var(--accent-soft); }
 .robustness-report-shell td .secondary { display: block; margin-top: 4px; color: var(--muted); font-size: 0.68rem; }
 
 @media (max-width: 1100px) {
   .metric-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .cohort-grid, .policy-detail-grid { grid-template-columns: 1fr; }
   .cohort-definition { min-height: 0; }
+  .report-boundaries { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 700px) {
@@ -94,6 +132,8 @@
   .pressure-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .symbol-detail-heading { align-items: flex-start; flex-direction: column; }
   .table-wrap { max-width: 100%; }
+  .hypothesis-flow { align-items: stretch; flex-direction: column; }
+  .hypothesis-flow b { align-self: center; transform: rotate(90deg); }
 }
 
 @media (max-width: 420px) {
