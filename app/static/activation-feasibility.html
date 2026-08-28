@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="EDGE 2.0 activation feasibility diagnostic" />
     <title>EDGE 2.0 · Activation Feasibility</title>
-    <link rel="stylesheet" href="/static/activation-feasibility.css?v=report-navigation-20260824" />
+    <link rel="stylesheet" href="/static/activation-feasibility.css?v=algorithm-a-only-20260828" />
     <link rel="stylesheet" href="/static/diagnostics-nav.css?v=diagnostics-menu-20260827" />
   </head>
   <body>
@@ -59,60 +59,55 @@
           <div class="section-heading">
             <div><p class="eyebrow">DETERMINISTIC DIAGNOSIS</p><h2 id="diagnosis-title">What the current sample says</h2></div>
           </div>
-          <div id="diagnosisContent"></div>
-        </section>
-
-        <section class="production-marker" aria-label="Current production rule">
-          <span>PRODUCTION</span>
-          <div id="productionContent">—</div>
+          <div id="diagnosisSummaryContent"></div>
         </section>
 
         <section class="report-section" aria-labelledby="overall-title">
           <div class="section-heading">
-            <div><p class="eyebrow">30 SCENARIOS</p><h2 id="overall-title">Overall scenario summary</h2></div>
+            <div><p class="eyebrow">15 SCENARIOS</p><h2 id="overall-title">Algorithm A scenario results</h2></div>
           </div>
           <h3>Algorithm A · Price-space recognition</h3>
           <div class="table-wrap"><table id="summaryA"></table></div>
-          <h3>Algorithm B · Recent chronological concentration</h3>
-          <div class="table-wrap"><table id="summaryB"></table></div>
         </section>
 
         <section class="report-section" aria-labelledby="matrix-title">
           <div class="section-heading">
             <div><p class="eyebrow">SENSITIVITY</p><h2 id="matrix-title">Activation matrices</h2></div>
           </div>
-          <div class="matrix-grid">
-            <article><h3>Algorithm A</h3><div class="table-wrap"><table id="matrixA"></table></div></article>
-            <article><h3>Algorithm B</h3><div class="table-wrap"><table id="matrixB"></table></div></article>
-          </div>
+          <h3>Algorithm A</h3>
+          <div class="table-wrap"><table id="matrixA" class="activation-matrix"></table></div>
         </section>
 
-        <section class="report-section" aria-labelledby="comparison-title">
+        <section class="report-section diagnosis-section" aria-labelledby="decision-support-title">
           <div class="section-heading">
-            <div><p class="eyebrow">15 MATCHED SETTINGS</p><h2 id="comparison-title">A/B comparison</h2></div>
+            <div><p class="eyebrow">DECISION SUPPORT</p><h2 id="decision-support-title">Candidate Policy Evaluation</h2></div>
           </div>
-          <div class="table-wrap"><table id="comparisonTable"></table></div>
+          <div id="decisionSupportContent"></div>
         </section>
 
         <section class="report-section" aria-labelledby="audit-title">
           <div class="section-heading">
-            <div><p class="eyebrow">AUDIT DETAIL</p><h2 id="audit-title">Symbol-route scenarios</h2></div>
+            <div><p class="eyebrow">AUDIT DETAIL</p><h2 id="audit-title">Algorithm A scenario detail</h2></div>
             <span id="auditCount">0 rows</span>
           </div>
           <form class="filters" id="auditFilters">
             <label>Symbol<select id="symbolFilter"><option value="">All</option></select></label>
             <label>Route<select id="routeFilter"><option value="">All</option><option>BTD</option><option>STR</option></select></label>
-            <label>Algorithm<select id="algorithmFilter"><option value="">All</option><option>A</option><option>B</option></select></label>
             <label>Minimum<select id="minimumFilter"><option value="">All</option><option>2</option><option>3</option><option>4</option></select></label>
             <label>Allowance<select id="allowanceFilter"><option value="">All</option><option value="1">1%</option><option value="2">2%</option><option value="3">3%</option><option value="4">4%</option><option value="5">5%</option></select></label>
             <label>Result<select id="classificationFilter"><option value="">All</option><option>QUALIFIED</option><option>NEAR_MISS</option><option>DISPERSED</option><option>INSUFFICIENT</option></select></label>
           </form>
           <div class="table-wrap audit-wrap"><table id="auditTable"></table></div>
         </section>
+
+        <section class="production-marker" aria-label="Production activation summary">
+          <span>PRODUCTION ACTIVATION SUMMARY</span>
+          <div id="productionContent">—</div>
+        </section>
       </div>
     </main>
     <script src="/static/diagnostics-nav.js?v=diagnostics-menu-20260827" defer></script>
     <script src="/static/operator-time.js?v=operator-clarity-20260824" defer></script>
-    <script src="/static/activation-feasibility.js?v=report-navigation-20260824" defer></script>
+    <script src="/static/activation-feasibility.js?v=algorithm-a-only-20260828" defer></script>
   </body>
 </html>

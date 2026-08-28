@@ -355,6 +355,12 @@ class ActivationFeasibilityTests(unittest.TestCase):
             interpretation,
         )
         self.assertIn(
+            "At 1.00% allowance, observed MRZ formations by minimum count were: "
+            "2 observations · 1 of 1; 3 observations · 1 of 1; "
+            "4 observations · 0 of 1",
+            interpretation,
+        )
+        self.assertIn(
             "increasing allowance to 2.00% materially improves formation coverage",
             interpretation,
         )
@@ -364,6 +370,16 @@ class ActivationFeasibilityTests(unittest.TestCase):
         )
         self.assertIn(
             "The 4-observation requirement remains the primary confidence control",
+            interpretation,
+        )
+        self.assertIn(
+            "identified 1 current production near miss and 1 closest historical "
+            "production near miss",
+            interpretation,
+        )
+        self.assertIn(
+            "observed historical frequencies and should not be interpreted as "
+            "predictive probabilities",
             interpretation,
         )
 

@@ -109,30 +109,6 @@ function matrixMarkup(rows) {
   return `<thead><tr><th>Minimum / Allowance</th>${allowances.map((value) => `<th>${value}%</th>`).join("")}</tr></thead><tbody>${body}</tbody>`;
 }
 
-function comparisonTableMarkup(rows) {
-  const body = rows.map((row) => `
-    <tr>
-      <td>${row.minimum_observations}</td><td>${row.allowance_percent}%${row.small_sample ? '<span class="low-sample">LOW SAMPLE</span>' : ""}</td>
-      <td>${frequencyText(row.algorithm_a_frequency)}</td>
-      <td>${frequencyText(row.algorithm_b_frequency)}</td>
-      <td>${decimalText(row.activation_frequency_difference_percentage_points_b_minus_a, 1)} pp</td>
-      <td>${row.both_activated}</td><td>${row.algorithm_a_only}</td><td>${row.algorithm_b_only}</td><td>${row.neither_activated}</td>
-      <td>${durationText(row.median_activation_timestamp_difference_seconds_b_minus_a)}</td>
-      <td>${decimalText(row.median_ordinal_observation_difference_b_minus_a, 1)}</td>
-      <td>${decimalText(row.median_proposed_span_difference_b_minus_a, 5)}</td>
-      <td>${decimalText(row.median_algorithm_a_qualification_ratio, 3)}</td>
-      <td>${decimalText(row.median_algorithm_b_qualification_ratio, 3)}</td>
-      <td>${percentageText(row.median_algorithm_a_minimum_required_allowance_pct)}</td>
-      <td>${percentageText(row.median_algorithm_b_minimum_required_allowance_pct)}</td>
-    </tr>`).join("");
-  return `<thead><tr>
-    <th>Minimum</th><th>Allowance</th><th>A formation frequency</th><th>B formation frequency</th><th>B − A</th>
-    <th>Both</th><th>A only</th><th>B only</th><th>Neither</th>
-    <th>Median time B − A</th><th>Median ordinal B − A</th><th>Median span B − A</th>
-    <th>Median A ratio</th><th>Median B ratio</th><th>Median A required</th><th>Median B required</th>
-  </tr></thead><tbody>${body}</tbody>`;
-}
-
 function auditTableMarkup(rows, timestampFormatter) {
   const body = rows.map((row) => {
     const activated = row.activated ? "First activated" : (row.eligible ? "Never qualified" : "Insufficient observations");
@@ -207,66 +183,73 @@ function candidatePolicyMarkup(evaluation) {
   </article>`;
 }
 
-function diagnosisMarkup(diagnosis, timestampFormatter = (value) => value) {
+function diagnosisSummaryMarkup(diagnosis) {
   if (!diagnosis) return "";
   const sections = [
     diagnosis.sample_assessment,
     diagnosis.production_feasibility,
     diagnosis.count_sensitivity,
     diagnosis.allowance_sensitivity,
-    diagnosis.algorithm_comparison,
   ].filter(Boolean);
   const cards = sections.map((item) => `
     <article class="diagnosis-card">
       <h3>${escapeHtml(item.heading)}</h3>
       <p>${escapeHtml(item.text)}</p>
     </article>`).join("");
-  function nearMissSection(items, heading, timeLabel, emptyText) {
-    const uniqueItems = (items || []).filter((item) => !item.matches_current_candidate);
-    const sharedItems = (items || []).filter((item) => item.matches_current_candidate);
-    const cards = uniqueItems.map((item) => {
-      const timestamp = timestampFormatter(item.candidate_timestamp || item.closest_timestamp) || "—";
-      return `<article class="near-miss-card">
-        <h3>${escapeHtml(item.heading)}</h3>
-        <p>${escapeHtml(item.text)}</p>
-        <dl>
-          <div><dt>Candidate range</dt><dd>${decimalText(item.candidate_lower_boundary, 6)}–${decimalText(item.candidate_upper_boundary, 6)}</dd></div>
-          <div><dt>Observations</dt><dd>${item.candidate_observation_count} of ${item.total_stored_route_observations}</dd></div>
-          <div><dt>${timeLabel}</dt><dd>${escapeHtml(timestamp)}</dd></div>
-        </dl>
-      </article>`;
-    }).join("");
-    const shared = sharedItems.map((item) =>
-      `<p class="near-miss-shared"><strong>${escapeHtml(item.heading)}</strong> · Current candidate is also the closest historical near miss.</p>`
-    ).join("");
-    return cards || shared
-      ? `<div class="diagnosis-subsection"><h3>${heading}</h3>${cards ? `<div class="near-miss-grid">${cards}</div>` : ""}${shared}</div>`
-      : `<div class="diagnosis-subsection"><h3>${heading}</h3><p class="neutral">${emptyText}</p></div>`;
-  }
-  const currentNearMissSection = nearMissSection(
+  return `<div class="diagnosis-grid">${cards}</div>`;
+}
+
+function nearMissSectionMarkup(items, heading, timeLabel, emptyText, timestampFormatter) {
+  const uniqueItems = (items || []).filter((item) => !item.matches_current_candidate);
+  const sharedItems = (items || []).filter((item) => item.matches_current_candidate);
+  const cards = uniqueItems.map((item) => {
+    const timestamp = timestampFormatter(item.candidate_timestamp || item.closest_timestamp) || "—";
+    return `<article class="near-miss-card">
+      <h3>${escapeHtml(item.heading)}</h3>
+      <p>${escapeHtml(item.text)}</p>
+      <dl>
+        <div><dt>Candidate range</dt><dd>${decimalText(item.candidate_lower_boundary, 6)}–${decimalText(item.candidate_upper_boundary, 6)}</dd></div>
+        <div><dt>Observations</dt><dd>${item.candidate_observation_count} of ${item.total_stored_route_observations}</dd></div>
+        <div><dt>${timeLabel}</dt><dd>${escapeHtml(timestamp)}</dd></div>
+      </dl>
+    </article>`;
+  }).join("");
+  const shared = sharedItems.map((item) =>
+    `<p class="near-miss-shared"><strong>${escapeHtml(item.heading)}</strong> · Current candidate is also the closest historical near miss.</p>`
+  ).join("");
+  return cards || shared
+    ? `<div class="diagnosis-subsection"><h3>${heading}</h3>${cards ? `<div class="near-miss-grid">${cards}</div>` : ""}${shared}</div>`
+    : `<div class="diagnosis-subsection"><h3>${heading}</h3><p class="neutral">${emptyText}</p></div>`;
+}
+
+function decisionSupportMarkup(diagnosis, timestampFormatter = (value) => value) {
+  if (!diagnosis) return "";
+  const currentNearMissSection = nearMissSectionMarkup(
     diagnosis.current_production_near_misses,
     "Current production near misses",
     "Current candidate time",
     "No current structurally eligible production near miss falls above 1% and at or below 2%.",
+    timestampFormatter,
   );
-  const historicalNearMissSection = nearMissSection(
+  const historicalNearMissSection = nearMissSectionMarkup(
     diagnosis.closest_production_near_misses,
     "Closest historical production near misses",
     "Closest historical time",
     "No historical structurally eligible production near miss fell above 1% and at or below 2%.",
+    timestampFormatter,
   );
   const interpretation = diagnosis.evidence_interpretation
     ? `<article class="diagnosis-card interpretation-card"><h3>${escapeHtml(diagnosis.evidence_interpretation.heading)}</h3><p>${escapeHtml(diagnosis.evidence_interpretation.text)}</p></article>`
     : "";
   const candidatePolicy = candidatePolicyMarkup(diagnosis.candidate_policy_evaluation);
-  return `<div class="diagnosis-grid">${cards}</div>${candidatePolicy}${currentNearMissSection}${historicalNearMissSection}${interpretation}`;
+  return `${candidatePolicy}${currentNearMissSection}${historicalNearMissSection}${interpretation}`;
 }
 
 function filterAuditRows(rows, filters) {
   return rows.filter((row) => (
-    (!filters.symbol || row.symbol === filters.symbol)
+    row.algorithm === "A"
+    && (!filters.symbol || row.symbol === filters.symbol)
     && (!filters.route || row.route === filters.route)
-    && (!filters.algorithm || row.algorithm === filters.algorithm)
     && (!filters.minimum || String(row.minimum_observations) === filters.minimum)
     && (!filters.allowance || String(row.allowance_percent) === filters.allowance)
     && (!filters.classification || row.classification === filters.classification)
@@ -279,7 +262,7 @@ if (typeof document !== "undefined") {
     const status = document.getElementById("reportStatus");
     const content = document.getElementById("reportContent");
     const sampleWarning = document.getElementById("sampleWarning");
-    const filterIds = ["symbolFilter", "routeFilter", "algorithmFilter", "minimumFilter", "allowanceFilter", "classificationFilter"];
+    const filterIds = ["symbolFilter", "routeFilter", "minimumFilter", "allowanceFilter", "classificationFilter"];
     let report = null;
 
     function renderAudit() {
@@ -287,7 +270,6 @@ if (typeof document !== "undefined") {
       const filters = {
         symbol: document.getElementById("symbolFilter").value,
         route: document.getElementById("routeFilter").value,
-        algorithm: document.getElementById("algorithmFilter").value,
         minimum: document.getElementById("minimumFilter").value,
         allowance: document.getElementById("allowanceFilter").value,
         classification: document.getElementById("classificationFilter").value,
@@ -307,7 +289,8 @@ if (typeof document !== "undefined") {
       document.getElementById("totalSymbols").textContent = value.total_normalized_symbols;
       document.getElementById("totalSequences").textContent = value.total_symbol_route_sequences;
       sampleWarning.hidden = !value.diagnosis?.sample_assessment?.small_sample;
-      document.getElementById("diagnosisContent").innerHTML = diagnosisMarkup(
+      document.getElementById("diagnosisSummaryContent").innerHTML = diagnosisSummaryMarkup(value.diagnosis);
+      document.getElementById("decisionSupportContent").innerHTML = decisionSupportMarkup(
         value.diagnosis,
         formatOperatorTimestampUtcMinus4,
       );
@@ -317,16 +300,14 @@ if (typeof document !== "undefined") {
         formatOperatorTimestampUtcMinus4,
       );
       const rowsA = value.scenarios.filter((row) => row.algorithm === "A");
-      const rowsB = value.scenarios.filter((row) => row.algorithm === "B");
       document.getElementById("summaryA").innerHTML = summaryTableMarkup(rowsA);
-      document.getElementById("summaryB").innerHTML = summaryTableMarkup(rowsB);
       document.getElementById("matrixA").innerHTML = matrixMarkup(rowsA);
-      document.getElementById("matrixB").innerHTML = matrixMarkup(rowsB);
-      document.getElementById("comparisonTable").innerHTML = comparisonTableMarkup(value.comparisons);
 
       const symbolFilter = document.getElementById("symbolFilter");
       const selectedSymbol = symbolFilter.value;
-      const symbols = [...new Set(value.sequence_details.map((row) => row.symbol))].sort();
+      const symbols = [...new Set(
+        value.sequence_details.filter((row) => row.algorithm === "A").map((row) => row.symbol),
+      )].sort();
       symbolFilter.innerHTML = `<option value="">All</option>${symbols.map((symbol) => `<option value="${escapeHtml(symbol)}">${escapeHtml(symbol)}</option>`).join("")}`;
       if (symbols.includes(selectedSymbol)) symbolFilter.value = selectedSymbol;
       renderAudit();
@@ -363,11 +344,11 @@ if (typeof module === "object" && module.exports) {
   module.exports = {
     auditTableMarkup,
     candidatePolicyMarkup,
-    comparisonTableMarkup,
+    decisionSupportMarkup,
+    diagnosisSummaryMarkup,
     filterAuditRows,
     frequencyText,
     frequencyPercentageText,
-    diagnosisMarkup,
     matrixMarkup,
     percentageText,
     productionMarkup,

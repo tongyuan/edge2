@@ -1,9 +1,11 @@
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const {
   auditTableMarkup,
   candidatePolicyMarkup,
-  comparisonTableMarkup,
-  diagnosisMarkup,
+  decisionSupportMarkup,
+  diagnosisSummaryMarkup,
   filterAuditRows,
   frequencyText,
   matrixMarkup,
@@ -46,31 +48,6 @@ assert.match(summary, /LOW SAMPLE/);
 const matrix = matrixMarkup(scenarios);
 assert.match(matrix, /Minimum \/ Allowance/);
 assert.equal((matrix.match(/3 of 8 · 37\.5%/g) || []).length, 15);
-
-const comparison = comparisonTableMarkup([{
-  minimum_observations: 4,
-  allowance_percent: 1,
-  small_sample: true,
-  algorithm_a_frequency: { numerator: 3, denominator: 8, percentage: "37.5" },
-  algorithm_b_frequency: { numerator: 2, denominator: 8, percentage: "25.0" },
-  activation_frequency_difference_percentage_points_b_minus_a: "-12.5",
-  both_activated: 2,
-  algorithm_a_only: 1,
-  algorithm_b_only: 0,
-  neither_activated: 5,
-  median_activation_timestamp_difference_seconds_b_minus_a: "60",
-  median_ordinal_observation_difference_b_minus_a: "1",
-  median_proposed_span_difference_b_minus_a: "0.2",
-  median_algorithm_a_qualification_ratio: "0.8",
-  median_algorithm_b_qualification_ratio: "0.9",
-  median_algorithm_a_minimum_required_allowance_pct: "0.8",
-  median_algorithm_b_minimum_required_allowance_pct: "0.9",
-}]);
-assert.match(comparison, /B − A/);
-assert.match(comparison, /A only/);
-assert.match(comparison, /Neither/);
-assert.match(comparison, /Median A required/);
-assert.match(comparison, /0\.80%/);
 
 const production = productionMarkup({
   algorithm: "A",
@@ -127,11 +104,24 @@ const details = [
     minimum_required_allowance_pct: "0.2", closest_minimum_required_allowance_pct: "0.2",
     closest_qualification_ratio: "0.1", structural_location: "deep_discount",
   },
+  {
+    symbol: "LTCUSDT", route: "BTD", algorithm: "A", minimum_observations: 2,
+    allowance_percent: 3, classification: "QUALIFIED", activated: true, eligible: true,
+    total_stored_route_observations: 4, first_qualifying_timestamp: "2026-08-21T01:30:00Z",
+    ordinal_route_observation_number: 2, formation_duration_seconds: "60",
+    proposed_lower_boundary: "110", proposed_upper_boundary: "110.2", normalized_span: "0.002",
+    minimum_required_allowance_pct: "0.2", closest_minimum_required_allowance_pct: "0.2",
+    closest_qualification_ratio: "0.1", structural_location: "deep_discount",
+  },
 ];
 assert.deepEqual(filterAuditRows(details, {
-  symbol: "ETHUSDT", route: "STR", algorithm: "A", minimum: "4", allowance: "1", classification: "NEAR_MISS",
+  symbol: "ETHUSDT", route: "STR", minimum: "4", allowance: "1", classification: "NEAR_MISS",
 }), [details[0]]);
-const audit = auditTableMarkup(details, () => "20 Aug 2026 · 21:30 UTC−4");
+const operatorDetails = filterAuditRows(details, {
+  symbol: "", route: "", minimum: "", allowance: "", classification: "",
+});
+assert.deepEqual(operatorDetails, [details[0], details[2]]);
+const audit = auditTableMarkup(operatorDetails, () => "20 Aug 2026 · 21:30 UTC−4");
 assert.match(audit, /First activated/);
 assert.match(audit, /Never qualified/);
 assert.match(audit, /20 Aug 2026 · 21:30 UTC−4/);
@@ -139,6 +129,8 @@ assert.match(audit, /Closest ratio/);
 assert.match(audit, /Minimum allowance required/);
 assert.match(audit, /Closest · 1\.50%/);
 assert.match(audit, /First · 0\.20%/);
+assert.doesNotMatch(audit, /BTCUSDT/);
+assert.doesNotMatch(audit, />B ·/);
 
 const suppliedDiagnosis = {
   sample_assessment: { heading: "Sample confidence · Preliminary", text: "Backend sample text 7." },
@@ -189,33 +181,36 @@ const suppliedDiagnosis = {
   }],
   evidence_interpretation: { heading: "Evidence interpretation", text: "Backend interpretation only." },
 };
-const diagnosis = diagnosisMarkup(suppliedDiagnosis, () => "20 Aug 2026 · 21:30 UTC−4");
-assert.match(diagnosis, /Backend sample text 7\./);
-assert.match(diagnosis, /Backend interpretation only\./);
-assert.match(diagnosis, /Candidate Policy Evaluation/);
-assert.match(diagnosis, /Algorithm A/);
-assert.match(diagnosis, /Minimum observations/);
-assert.match(diagnosis, /4 observations · 1\.00%/);
-assert.match(diagnosis, /4 observations · 2\.00%/);
-assert.match(diagnosis, /1 of 5 histories formed an MRZ/);
-assert.match(diagnosis, /4 of 5 histories formed an MRZ/);
-assert.match(diagnosis, /SELECTION BASIS/);
-assert.match(diagnosis, /WLDUSDT · BTD/);
-assert.match(diagnosis, /20 Aug 2026 · 21:30 UTC−4/);
-assert.match(diagnosis, /Current production near misses/);
-assert.match(diagnosis, /Closest historical production near misses/);
-assert.match(diagnosis, /Current minimum allowance required · 1\.59%/);
-assert.match(diagnosis, /Current candidate is also the closest historical near miss\./);
-assert.equal((diagnosis.match(/2\.7–2\.8/g) || []).length, 1);
-assert.doesNotMatch(diagnosis, />Activated</);
-assert.doesNotMatch(diagnosis, /7 of 11/);
-assert.doesNotMatch(diagnosis, /recommended/i);
+const diagnosisSummary = diagnosisSummaryMarkup(suppliedDiagnosis);
+assert.match(diagnosisSummary, /Backend sample text 7\./);
+assert.match(diagnosisSummary, /Backend production text 11\./);
+assert.match(diagnosisSummary, /Backend count text\./);
+assert.match(diagnosisSummary, /Backend allowance text\./);
+assert.doesNotMatch(diagnosisSummary, /Algorithm comparison/);
+assert.doesNotMatch(diagnosisSummary, /Backend comparison text\./);
+
+const decisionSupport = decisionSupportMarkup(suppliedDiagnosis, () => "20 Aug 2026 · 21:30 UTC−4");
+assert.match(decisionSupport, /Backend interpretation only\./);
+assert.match(decisionSupport, /Candidate Policy Evaluation/);
+assert.match(decisionSupport, /Algorithm A/);
+assert.match(decisionSupport, /Minimum observations/);
+assert.match(decisionSupport, /4 observations · 1\.00%/);
+assert.match(decisionSupport, /4 observations · 2\.00%/);
+assert.match(decisionSupport, /1 of 5 histories formed an MRZ/);
+assert.match(decisionSupport, /4 of 5 histories formed an MRZ/);
+assert.match(decisionSupport, /SELECTION BASIS/);
+assert.match(decisionSupport, /WLDUSDT · BTD/);
+assert.match(decisionSupport, /20 Aug 2026 · 21:30 UTC−4/);
+assert.match(decisionSupport, /Current production near misses/);
+assert.match(decisionSupport, /Closest historical production near misses/);
+assert.match(decisionSupport, /Current minimum allowance required · 1\.59%/);
+assert.match(decisionSupport, /Current candidate is also the closest historical near miss\./);
+assert.equal((decisionSupport.match(/2\.7–2\.8/g) || []).length, 1);
+assert.doesNotMatch(decisionSupport, />Activated</);
+assert.doesNotMatch(decisionSupport, /7 of 11/);
+assert.doesNotMatch(decisionSupport, /recommended/i);
 assert.ok(
-  diagnosis.indexOf("Algorithm comparison") < diagnosis.indexOf("Candidate Policy Evaluation"),
-  "candidate policy follows algorithm comparison",
-);
-assert.ok(
-  diagnosis.indexOf("Candidate Policy Evaluation") < diagnosis.indexOf("Current production near misses"),
+  decisionSupport.indexOf("Candidate Policy Evaluation") < decisionSupport.indexOf("Current production near misses"),
   "candidate policy precedes current production near misses",
 );
 
@@ -224,7 +219,23 @@ assert.match(standaloneCandidate, /CURRENT/);
 assert.match(standaloneCandidate, /CANDIDATE/);
 assert.match(standaloneCandidate, /PRELIMINARY/);
 
-const operatorFacingMarkup = [summary, matrix, comparison, audit, production, zeroProduction, diagnosis].join("\n");
+const pageHtml = fs.readFileSync(path.join(__dirname, "../app/static/activation-feasibility.html"), "utf8");
+for (const retiredTarget of ["summaryB", "matrixB", "comparisonTable", "algorithmFilter", "Algorithm B", "A/B comparison"]) {
+  assert.doesNotMatch(pageHtml, new RegExp(retiredTarget.replace("/", "\\/")));
+}
+assert.match(pageHtml, /Algorithm A scenario results/);
+assert.match(pageHtml, /id="summaryA"/);
+assert.match(pageHtml, /id="matrixA"/);
+assert.match(pageHtml, /Candidate Policy Evaluation/);
+assert.match(pageHtml, /PRODUCTION ACTIVATION SUMMARY/);
+assert.ok(pageHtml.indexOf("diagnosisSummaryContent") < pageHtml.indexOf("summaryA"));
+assert.ok(pageHtml.indexOf("summaryA") < pageHtml.indexOf("matrixA"));
+assert.ok(pageHtml.indexOf("matrixA") < pageHtml.indexOf("decisionSupportContent"));
+assert.ok(pageHtml.indexOf("decisionSupportContent") < pageHtml.indexOf("auditTable"));
+assert.ok(pageHtml.indexOf("auditTable") < pageHtml.indexOf("productionContent"));
+
+const operatorFacingMarkup = [summary, matrix, audit, production, zeroProduction, diagnosisSummary, decisionSupport, pageHtml].join("\n");
+assert.doesNotMatch(operatorFacingMarkup, /Algorithm B|A\/B comparison|B − A/);
 assert.doesNotMatch(operatorFacingMarkup, /\bsequences?\b/i);
 
 console.log("activation feasibility presentation tests passed");

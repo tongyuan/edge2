@@ -1222,6 +1222,18 @@ class ActivationFeasibilityService:
                 f"{'history' if production_eligible == 1 else 'histories'}."
             )
 
+        interpretation_parts.append(
+            f"At {Decimal(production['allowance_percent']):.2f}% allowance, observed "
+            "MRZ formations by minimum count were: "
+            + "; ".join(
+                f"{row['minimum_observations']} observations · "
+                f"{row['activation_frequency']['numerator']} of "
+                f"{row['activation_frequency']['denominator']}"
+                for row in count_rows
+            )
+            + "."
+        )
+
         candidate = candidate_policy_evaluation["candidate"]
         if candidate is not None:
             wider_rows = [
@@ -1258,9 +1270,22 @@ class ActivationFeasibilityService:
             f"The {production['minimum_observations']}-observation requirement remains the "
             "primary confidence control."
         )
+        current_near_miss_count = len(current_near_misses)
+        historical_near_miss_count = len(historical_near_misses)
+        interpretation_parts.append(
+            f"The report identified {current_near_miss_count} current production "
+            f"near {'miss' if current_near_miss_count == 1 else 'misses'} and "
+            f"{historical_near_miss_count} closest historical production near "
+            f"{'miss' if historical_near_miss_count == 1 else 'misses'} within the "
+            "tested 1.00%–2.00% range."
+        )
         interpretation_parts.append(
             "More eligible symbol-route histories are required before considering any "
             "production-policy change."
+        )
+        interpretation_parts.append(
+            "These are observed historical frequencies and should not be interpreted "
+            "as predictive probabilities."
         )
         evidence_interpretation = {
             "code": "EVIDENCE_INTERPRETATION_PRELIMINARY" if preliminary else "EVIDENCE_INTERPRETATION_OBSERVED",
