@@ -10,7 +10,7 @@ const {
   routeBreakdownMarkup,
   sampleConfidenceMarkup,
   symbolDetailMarkup,
-} = require("../app/static/mrz-robustness-report.js");
+} = require("../app/dormant/mrz-robustness-report.js");
 
 const rate = (numerator, denominator, percentage) => ({ numerator, denominator, percentage });
 const metric = {
@@ -165,9 +165,9 @@ const interpretation = interpretationMarkup({
 });
 assert.match(interpretation, /worthy of further monitoring/);
 
-const html = fs.readFileSync(require.resolve("../app/static/mrz-robustness-report.html"), "utf8");
-const css = fs.readFileSync(require.resolve("../app/static/mrz-robustness-report.css"), "utf8");
-const source = fs.readFileSync(require.resolve("../app/static/mrz-robustness-report.js"), "utf8");
+const html = fs.readFileSync(require.resolve("../app/dormant/mrz-robustness-report.html"), "utf8");
+const css = fs.readFileSync(require.resolve("../app/dormant/mrz-robustness-report.css"), "utf8");
+const source = fs.readFileSync(require.resolve("../app/dormant/mrz-robustness-report.js"), "utf8");
 assert.match(html, /SAMPLE CONFIDENCE \/ SCOPE/);
 assert.match(html, /PURPOSE/);
 assert.match(html, /PRIMARY DURABILITY COMPARISON/);

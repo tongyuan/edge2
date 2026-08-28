@@ -11,7 +11,6 @@ PAGES = {
     "monitor": (STATIC / "index.html").read_text(encoding="utf-8"),
     "operation_card": (STATIC / "mrz-robustness.html").read_text(encoding="utf-8"),
     "activation": (STATIC / "activation-feasibility.html").read_text(encoding="utf-8"),
-    "robustness": (STATIC / "mrz-robustness-report.html").read_text(encoding="utf-8"),
     "trading_window": (STATIC / "feasibility.html").read_text(encoding="utf-8"),
 }
 JAVASCRIPT = (STATIC / "diagnostics-nav.js").read_text(encoding="utf-8")
@@ -20,7 +19,6 @@ CSS = (STATIC / "diagnostics-nav.css").read_text(encoding="utf-8")
 IMPLEMENTED_ITEMS = [
     ("/diagnostics/mrz-robustness", "MRZ Operation Card"),
     ("/diagnostics/activation-feasibility", "Activation Feasibility"),
-    ("/diagnostics/mrz-robustness-report", "MRZ Robustness"),
     ("/diagnostics/trading-window-feasibility", "Trading Window Feasibility"),
 ]
 
@@ -74,11 +72,10 @@ class DiagnosticsNavigationContractTests(unittest.TestCase):
                 )
                 self.assertEqual(links, IMPLEMENTED_ITEMS)
 
-    def test_menu_order_includes_active_robustness_report(self) -> None:
+    def test_menu_order_excludes_hidden_robustness_report(self) -> None:
         expected = [
             "MRZ Operation Card",
             "Activation Feasibility",
-            "MRZ Robustness",
             "Trading Window Feasibility",
         ]
         for name, html in PAGES.items():
@@ -89,12 +86,13 @@ class DiagnosticsNavigationContractTests(unittest.TestCase):
                 self.assertNotIn("diagnostics-disabled-item", menu)
                 self.assertNotIn("UNAVAILABLE", menu)
                 self.assertNotIn("Migration Path", menu)
+                self.assertNotIn("MRZ Robustness", menu)
+                self.assertNotIn("/diagnostics/mrz-robustness-report", menu)
 
     def test_each_existing_diagnostic_page_marks_its_current_child(self) -> None:
         expected_active_label = {
             "operation_card": "MRZ Operation Card",
             "activation": "Activation Feasibility",
-            "robustness": "MRZ Robustness",
             "trading_window": "Trading Window Feasibility",
         }
         self.assertNotIn('aria-current="page"', menu_fragment(PAGES["monitor"]))

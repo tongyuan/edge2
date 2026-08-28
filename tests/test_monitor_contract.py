@@ -48,7 +48,7 @@ class MonitorContractTests(unittest.TestCase):
     def test_monitor_consolidates_diagnostic_links_in_shared_dropdown(self) -> None:
         self.assertIn('href="/diagnostics/activation-feasibility"', HTML)
         self.assertIn('href="/diagnostics/mrz-robustness"', HTML)
-        self.assertIn('href="/diagnostics/mrz-robustness-report"', HTML)
+        self.assertNotIn('href="/diagnostics/mrz-robustness-report"', HTML)
         self.assertIn('href="/diagnostics/trading-window-feasibility"', HTML)
         self.assertIn('aria-label="Operator navigation"', HTML)
         self.assertIn('data-diagnostics-trigger', HTML)

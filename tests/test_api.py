@@ -94,20 +94,15 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertIn('id="activeReports"', response.text)
         self.assertNotIn('id="summaryA"', response.text)
 
-    def test_mrz_robustness_report_page_is_separate_policy_diagnostic(self) -> None:
+    def test_mrz_robustness_report_page_is_hidden(self) -> None:
         response = self.client.get("/diagnostics/mrz-robustness-report")
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.headers["cache-control"], "no-store, max-age=0")
-        self.assertIn("MRZ Robustness", response.text)
-        self.assertIn("route-role durability", response.text)
-        self.assertIn('id="policyComparisonTable"', response.text)
-        self.assertIn('id="routeBreakdownTable"', response.text)
-        self.assertIn('id="lifecycleComparisonTable"', response.text)
-        self.assertIn('id="incrementalCohorts"', response.text)
-        self.assertIn('id="symbolDetail"', response.text)
-        self.assertNotIn('id="activeReports"', response.text)
-        self.assertNotIn("UNAVAILABLE", response.text)
+        self.assertEqual(response.status_code, 404)
+
+    def test_mrz_robustness_report_static_shell_is_hidden(self) -> None:
+        response = self.client.get("/static/mrz-robustness-report.html")
+
+        self.assertEqual(response.status_code, 404)
 
     def test_trading_window_feasibility_is_a_separate_research_tab(self) -> None:
         response = self.client.get("/diagnostics/trading-window-feasibility")
@@ -125,91 +120,25 @@ class APIIntegrationTests(unittest.TestCase):
         monitor = self.client.get("/").text
         feasibility = self.client.get("/diagnostics/activation-feasibility").text
         robustness = self.client.get("/diagnostics/mrz-robustness").text
-        robustness_report = self.client.get(
-            "/diagnostics/mrz-robustness-report"
-        ).text
         trading_window = self.client.get(
             "/diagnostics/trading-window-feasibility"
         ).text
 
-        pages = (monitor, feasibility, robustness, robustness_report, trading_window)
+        pages = (monitor, feasibility, robustness, trading_window)
         for page in pages:
             self.assertIn("Diagnostics", page)
             self.assertIn('data-diagnostics-trigger', page)
             self.assertIn('href="/diagnostics/activation-feasibility"', page)
             self.assertIn('href="/diagnostics/mrz-robustness"', page)
-            self.assertIn('href="/diagnostics/mrz-robustness-report"', page)
+            self.assertNotIn('href="/diagnostics/mrz-robustness-report"', page)
             self.assertIn('href="/diagnostics/trading-window-feasibility"', page)
-        for page in (feasibility, robustness, robustness_report, trading_window):
+        for page in (feasibility, robustness, trading_window):
             self.assertIn('href="/">MRZ Monitor</a>', page)
 
-    def test_mrz_robustness_report_api_replays_without_mutating_state(self) -> None:
-        prices = (
-            "110", "110.2", "110.4", "110.6",
-            "120", "120.2", "120.4", "120.6",
-        )
-        for index, price in enumerate(prices, 1):
-            self.assertEqual(
-                self.client.post(
-                    "/webhook/tradingview",
-                    json=webhook_payload(index, price),
-                ).status_code,
-                201,
-            )
-
-        before_symbol = self.client.get("/api/symbols/SPXUSDT").json()
-        with connect(self.database_url) as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """SELECT
-                         (SELECT COUNT(*) FROM observations WHERE schema_version = '4.3'),
-                         (SELECT COUNT(*) FROM active_mrz),
-                         (SELECT COUNT(*) FROM mrz_events),
-                         (SELECT COUNT(*) FROM ingestion_metrics)"""
-                )
-                before_counts = cursor.fetchone()
-
+    def test_mrz_robustness_report_api_is_hidden(self) -> None:
         response = self.client.get("/api/diagnostics/mrz-robustness-report")
-        payload = response.json()
 
-        with connect(self.database_url) as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """SELECT
-                         (SELECT COUNT(*) FROM observations WHERE schema_version = '4.3'),
-                         (SELECT COUNT(*) FROM active_mrz),
-                         (SELECT COUNT(*) FROM mrz_events),
-                         (SELECT COUNT(*) FROM ingestion_metrics)"""
-                )
-                after_counts = cursor.fetchone()
-        after_symbol = self.client.get("/api/symbols/SPXUSDT").json()
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.headers["cache-control"], "no-store, max-age=0")
-        self.assertEqual(payload["title"], "MRZ Robustness")
-        self.assertEqual(
-            [row["allowance_percent"] for row in payload["policy_robustness_comparison"]],
-            ["1.00", "1.50", "2.00"],
-        )
-        self.assertTrue(
-            all(row["minimum_observations"] == 4 for row in payload["policy_robustness_comparison"])
-        )
-        production = payload["current_production_robustness"]
-        self.assertIn("supportive_rate", production)
-        self.assertIn("adverse_rate", production)
-        self.assertEqual(
-            [row["route"] for row in production["route_breakdown"]],
-            ["BTD", "STR"],
-        )
-        self.assertEqual(
-            payload["cross_symbol_robustness"][0]["structural_response"]["classifier"],
-            "TRADING_WINDOW_SIGNED_DISPLACEMENT",
-        )
-        self.assertIn("secondary lifecycle diagnostics", payload["methodology"]["geometry_note"])
-        self.assertEqual(payload["invariants"]["persistence"], "No replayed MRZ is persisted")
-        self.assertIsNone(payload["evidence_interpretation"]["production_recommendation"])
-        self.assertEqual(before_counts, after_counts)
-        self.assertEqual(before_symbol, after_symbol)
+        self.assertEqual(response.status_code, 404)
 
     def test_trading_window_api_reconstructs_episodes_without_mutating_state(self) -> None:
         for index, price in enumerate(("110", "110.2", "110.4", "110.6", "120"), 1):
