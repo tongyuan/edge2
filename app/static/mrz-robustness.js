@@ -86,7 +86,7 @@ function successorDetailsMarkup(successor) {
       <div><dt>Normalized span</dt><dd>${normalizedSpanText(successor.normalized_span)}</dd></div>
       <div><dt>Production allowance</dt><dd>${normalizedSpanText(successor.production_allowance)}</dd></div>
       <div><dt>Concentration</dt><dd>${escapeHtml(titleWords(successor.production_evaluation_result))}</dd></div>
-      <div><dt>Operational migration eligibility</dt><dd>${escapeHtml(successor.operational_migration_eligibility_label)}</dd></div>`;
+      <div><dt>Candidate rule eligibility</dt><dd>${escapeHtml(successor.operational_migration_eligibility_label)}</dd></div>`;
   }
 
   if (successor.status === "NO_QUALIFYING_SUCCESSOR") {

@@ -429,7 +429,8 @@ assert.match(successorMarkup, /Evidence<\/dt><dd>4 observations/);
 assert.match(successorMarkup, /0\.1%/);
 assert.match(successorMarkup, /Production allowance<\/dt><dd>1\.0%/);
 assert.match(successorMarkup, /Qualifies/);
-assert.match(successorMarkup, /Operational migration eligibility<\/dt><dd>Satisfied/);
+assert.match(successorMarkup, /Candidate rule eligibility<\/dt><dd>Satisfied/);
+assert.doesNotMatch(successorMarkup, /Operational migration eligibility/);
 assert.match(successorMarkup, /operational migration remains controlled by the production state engine/);
 
 const tooDispersedMarkup = successorDetailsMarkup({

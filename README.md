@@ -120,6 +120,15 @@ The tick comes from an authoritative `EDGE2_SYMBOL_TICKS_JSON` override when con
 
 Observations are immutable and ordered by `observed_at`, then `received_at`, then database insertion ID. Event ID text is never used as chronology. After every accepted event, the affected symbol is replayed from durable observations and its derived active row plus transition audit are atomically reconciled. Late delivery, process restart, and deterministic replay therefore converge to the same state.
 
+Derived-state maintenance after an intentional production-rule change is manual only:
+
+```text
+python3 scripts/reconcile_derived_state.py --dry-run
+python3 scripts/reconcile_derived_state.py --apply --expected-plan-digest <dry-run-plan-digest>
+```
+
+The dry run is read-only. Apply replays canonical observations through the production state engine, takes per-symbol advisory locks, replaces only differing `active_mrz` and `mrz_events` state in one verified transaction, and never modifies observations. This command is not called by startup, deployment, scheduling, or the UI.
+
 ## API and MRZ Monitor
 
 ```text
