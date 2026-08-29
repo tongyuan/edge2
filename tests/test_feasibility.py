@@ -45,6 +45,18 @@ def str_migration(symbol: str = "BTCUSDT"):
     ]
 
 
+def route_change_migration(symbol: str = "ROUTEUSDT"):
+    rows = [
+        observation(index, price, symbol=symbol)
+        for index, price in enumerate(("110", "110.2", "110.4", "110.6"), 1)
+    ]
+    rows.extend(
+        observation(index, price, symbol=symbol, route=Route.STR)
+        for index, price in enumerate(("180", "180.2", "180.4", "180.6"), 5)
+    )
+    return rows
+
+
 def source_rows(rows):
     grouped = {}
     for row in rows:
@@ -92,6 +104,21 @@ class EpisodeReconstructionTests(unittest.TestCase):
         episodes = reconstruct_episodes(btd_migration()).episodes
         self.assertEqual([item.symbol for item in episodes], ["SPXUSDT", "SPXUSDT"])
         self.assertEqual([item.generation for item in episodes], [1, 2])
+
+    def test_route_changed_audit_companion_is_not_a_duplicate_generation(self) -> None:
+        rows = route_change_migration()
+        replay = replay_symbol(rows)
+        episodes = reconstruct_episodes(rows).episodes
+
+        self.assertEqual(
+            [transition.event_type.value for transition in replay.transitions],
+            ["MRZ_ACTIVATED", "MRZ_MIGRATED", "ROUTE_CHANGED"],
+        )
+        self.assertEqual(len(episodes), 2)
+        self.assertEqual(episodes[0].active_mrz.route_owner, Route.BTD)
+        self.assertEqual(episodes[0].termination_event_id, "event-8")
+        self.assertEqual(episodes[1].active_mrz.route_owner, Route.STR)
+        self.assertEqual(episodes[1].activation_observation.event_id, "event-8")
 
     def test_deep_and_shallow_cohort_classification(self) -> None:
         rows = []
@@ -588,7 +615,10 @@ class DiagnosisTests(unittest.TestCase):
         events, active = source_rows(rows)
         report = build_feasibility_report(rows, events, active)
         self.assertEqual(report["invariants"]["schema_version"], "4.3 unchanged")
-        self.assertEqual(report["invariants"]["mrz_engine_behavior"], "unchanged")
+        self.assertEqual(
+            report["invariants"]["mrz_engine_behavior"],
+            "structure-first external successor migration",
+        )
         self.assertEqual(report["invariants"]["operation_card_trading_window_state"], "not implemented")
         self.assertNotIn("trading_window", report["cohorts"][0]["episodes"][0])
 

@@ -95,9 +95,9 @@
       </div></article>
       <article class="pressure-group"><h3>SUCCESSOR WATCH</h3><div class="pressure-counts">
         <div><span>No successor</span><strong>${successor.no_successor ?? 0}</strong></div>
-        <div><span>Candidate forming</span><strong>${successor.candidate_forming ?? 0}</strong></div>
-        <div><span>Awaiting confirmation</span><strong>${successor.awaiting_confirmation ?? 0}</strong></div>
-        <div><span>Confirmed</span><strong>${successor.confirmed ?? 0}</strong></div>
+        <div><span>External observations</span><strong>${successor.external_observations ?? 0}</strong></div>
+        <div><span>No qualifying successor</span><strong>${successor.no_qualifying_successor ?? 0}</strong></div>
+        <div><span>Candidate detected</span><strong>${successor.candidate_detected ?? 0}</strong></div>
       </div></article>
     </div>`;
   }

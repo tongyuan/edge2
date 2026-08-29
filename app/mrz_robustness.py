@@ -1,12 +1,20 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Callable, Mapping, Sequence
 
-from app.concentration import ConcentrationResult, evaluate_concentration, latest_route_window
+from app.concentration import (
+    CONCENTRATION_SPAN_THRESHOLD,
+    MIN_CLUSTER_OBSERVATIONS,
+    ConcentrationEvaluation,
+    ConcentrationResult,
+    evaluate_concentration,
+    latest_route_window,
+)
 from app.domain import ActiveMRZ, Observation, Route
-from app.state_engine import successor_eligible
+from app.state_engine import build_successor_mrz
 from app.structure import classify_structural_location
 
 
@@ -80,6 +88,72 @@ def displacement_evidence(
     if displayed_value < 0:
         return "BELOW", "Median displacement below midpoint"
     return "CENTERED", "Centered around midpoint"
+
+
+@dataclass(frozen=True, slots=True)
+class DiagnosticSuccessorGroup:
+    side: str
+    side_label: str
+    route: Route
+    observations: tuple[Observation, ...]
+    evaluation: ConcentrationEvaluation
+
+    @property
+    def newest_order_key(self) -> tuple[object, ...]:
+        return self.observations[-1].order_key
+
+
+def diagnostic_successor_groups(
+    active: ActiveMRZ,
+    post_activation: Sequence[Observation],
+) -> tuple[DiagnosticSuccessorGroup, ...]:
+    """Evaluate every external side/route pool without applying migration gates."""
+    groups: list[DiagnosticSuccessorGroup] = []
+    for route in Route:
+        route_window = tuple(
+            latest_route_window(
+                tuple(item for item in post_activation if item.route is route)
+            )
+        )
+        for side, side_label, predicate in (
+            (
+                "UP",
+                "Higher",
+                lambda item: item.observation_price > active.upper_migration_boundary,
+            ),
+            (
+                "DOWN",
+                "Lower",
+                lambda item: item.observation_price < active.lower_migration_boundary,
+            ),
+        ):
+            pool = tuple(item for item in route_window if predicate(item))
+            if not pool:
+                continue
+            groups.append(
+                DiagnosticSuccessorGroup(
+                    side=side,
+                    side_label=side_label,
+                    route=route,
+                    observations=pool,
+                    evaluation=evaluate_concentration(pool, route),
+                )
+            )
+    return tuple(groups)
+
+
+def latest_diagnostic_group(
+    groups: Sequence[DiagnosticSuccessorGroup],
+) -> DiagnosticSuccessorGroup | None:
+    return max(
+        groups,
+        key=lambda item: (
+            item.newest_order_key,
+            item.route.value,
+            item.side,
+        ),
+        default=None,
+    )
 
 
 class MRZRobustnessService:
@@ -238,62 +312,110 @@ class MRZRobustnessService:
             route_integrity_status = "MIXED"
             route_integrity_label = "Mixed route structure observed"
 
-        owner_window = tuple(latest_route_window(route_aligned))
-        successor_pool = tuple(
-            observation
-            for observation in owner_window
-            if successor_eligible(active, observation)
+        successor_groups = diagnostic_successor_groups(active, post_activation)
+        qualifying_successor_groups = tuple(
+            group
+            for group in successor_groups
+            if group.evaluation.result is ConcentrationResult.QUALIFIES
+            and group.evaluation.cluster is not None
         )
-        successor_evaluation = evaluate_concentration(
-            successor_pool,
-            active.route_owner,
+        evaluated_successor_groups = tuple(
+            group
+            for group in successor_groups
+            if len(group.observations) >= MIN_CLUSTER_OBSERVATIONS
         )
-        successor_confirmed = (
-            successor_evaluation.result is ConcentrationResult.QUALIFIES
-            and successor_evaluation.cluster is not None
-        )
-        if not successor_pool:
+        successor_group = latest_diagnostic_group(qualifying_successor_groups)
+        failed_successor_group = latest_diagnostic_group(evaluated_successor_groups)
+        successor_candidate_detected = successor_group is not None
+
+        if successor_candidate_detected:
+            successor_status = "SUCCESSOR_CANDIDATE"
+            successor_label = "Qualifying successor candidate"
+            successor_reason = (
+                "A canonical external concentration qualifies. The current MRZ "
+                "remains authoritative until the production migration engine changes it."
+            )
+        elif failed_successor_group is not None:
+            successor_status = "NO_QUALIFYING_SUCCESSOR"
+            successor_label = "No qualifying successor"
+            if (
+                failed_successor_group.evaluation.result
+                is ConcentrationResult.TOO_DISPERSED
+            ):
+                successor_reason = (
+                    "External observations meet the minimum count but are too dispersed "
+                    "for the production concentration allowance."
+                )
+            else:
+                successor_reason = (
+                    "External observations produced no structurally eligible qualifying "
+                    "concentration."
+                )
+        elif outside_envelope:
+            successor_status = "EXTERNAL_OBSERVATIONS"
+            successor_label = "External observations detected"
+            successor_reason = (
+                "External observations exist, but no side-and-route pool has enough "
+                "evidence for a qualifying concentration."
+            )
+        else:
             successor_status = "NO_SUCCESSOR_CANDIDATE"
             successor_label = "No successor candidate"
-        elif successor_confirmed:
-            successor_status = "CONFIRMED_SUCCESSOR"
-            successor_label = "Confirmed successor"
-        elif len(successor_pool) >= 3:
-            successor_status = "AWAITING_CONFIRMATION"
-            successor_label = "Awaiting confirmation"
-        else:
-            successor_status = "CANDIDATE_FORMING"
-            successor_label = "Candidate forming"
+            successor_reason = "No qualifying external concentration exists."
 
-        diagnostic = successor_evaluation.diagnostic
-        if successor_evaluation.cluster is not None:
-            candidate_lower = successor_evaluation.cluster.lower
-            candidate_upper = successor_evaluation.cluster.upper
-        elif diagnostic.selected_lower is not None:
-            candidate_lower = diagnostic.selected_lower
-            candidate_upper = diagnostic.selected_upper
-        elif successor_pool:
-            candidate_lower = min(item.observation_price for item in successor_pool)
-            candidate_upper = max(item.observation_price for item in successor_pool)
+        selected_successor_group = successor_group or failed_successor_group
+        selected_evaluation = (
+            selected_successor_group.evaluation
+            if selected_successor_group is not None
+            else None
+        )
+        selected_diagnostic = (
+            selected_evaluation.diagnostic
+            if selected_evaluation is not None
+            else None
+        )
+        successor_cluster = (
+            successor_group.evaluation.cluster
+            if successor_group is not None
+            else None
+        )
+        if successor_group is not None and successor_cluster is not None:
+            candidate_lower = successor_cluster.lower
+            candidate_upper = successor_cluster.upper
+            successor_direction = successor_group.side
+            successor_direction_label = successor_group.side_label
+            successor_route = successor_group.route.value
+            successor_evidence_count = successor_cluster.observation_count
+            confirming_observation = max(
+                successor_cluster.members,
+                key=lambda item: item.order_key,
+            )
+            operational_migration_eligible = (
+                build_successor_mrz(
+                    active,
+                    confirming_observation,
+                    successor_cluster,
+                )
+                is not None
+            )
+            operational_migration_eligibility_label = (
+                "Satisfied"
+                if operational_migration_eligible
+                else "Not satisfied"
+            )
         else:
             candidate_lower = None
             candidate_upper = None
-
-        if successor_pool and all(
-            item.observation_price > active.upper_migration_boundary
-            for item in successor_pool
-        ):
-            successor_direction = "UP"
-            successor_direction_label = "Higher MRZ"
-        elif successor_pool and all(
-            item.observation_price < active.lower_migration_boundary
-            for item in successor_pool
-        ):
-            successor_direction = "DOWN"
-            successor_direction_label = "Lower MRZ"
-        else:
             successor_direction = None
             successor_direction_label = None
+            successor_route = None
+            successor_evidence_count = (
+                len(selected_successor_group.observations)
+                if selected_successor_group is not None
+                else 0
+            )
+            operational_migration_eligible = None
+            operational_migration_eligibility_label = "Not assessed"
 
         if total == 0:
             pressure_status = "NO_EVIDENCE"
@@ -301,19 +423,11 @@ class MRZRobustnessService:
             pressure_reason = (
                 "No post-activation observations are available to assess migration pressure."
             )
-        elif successor_confirmed:
-            pressure_status = "MIGRATION_CANDIDATE"
-            pressure_label = "Migration Candidate"
-            pressure_reason = (
-                "A same-route successor concentration satisfies the existing production "
-                "confirmation rule. The persisted active MRZ remains authoritative."
-            )
         elif outside_envelope:
             pressure_status = "UNDER_PRESSURE"
             pressure_label = "Under Pressure"
             pressure_reason = (
-                "External observations were detected outside the active MRZ envelope. "
-                "No successor MRZ is confirmed."
+                "External observations were detected outside the active MRZ envelope."
             )
         else:
             pressure_status = "STABLE"
@@ -347,10 +461,14 @@ class MRZRobustnessService:
             "Supportive" if active.route_owner is Route.BTD else "Resistive"
         )
         successor_summary_status = (
-            "CONFIRMED" if successor_confirmed else "NOT_CONFIRMED"
+            "CANDIDATE_DETECTED"
+            if successor_candidate_detected
+            else "NOT_DETECTED"
         )
         successor_summary_label = (
-            "Confirmed" if successor_confirmed else "Not confirmed"
+            "Candidate detected"
+            if successor_candidate_detected
+            else "Not detected"
         )
         if displacement_direction == "ABOVE":
             displacement_statement = (
@@ -375,29 +493,36 @@ class MRZRobustnessService:
             )
         elif pressure_direction == "UP":
             summary_detail = (
-                "Post-activation observations are exerting upward pressure, but no "
-                "successor MRZ is confirmed."
-                if not successor_confirmed
-                else "Upward evidence has produced a successor that satisfies the production check."
+                "Post-activation observations are exerting upward pressure. "
+                + (
+                    "A qualifying successor candidate is detected."
+                    if successor_candidate_detected
+                    else "No qualifying successor candidate is detected."
+                )
             )
         elif pressure_direction == "DOWN":
             summary_detail = (
-                "Post-activation observations are exerting downward pressure, but no "
-                "successor MRZ is confirmed."
-                if not successor_confirmed
-                else "Downward evidence has produced a successor that satisfies the production check."
+                "Post-activation observations are exerting downward pressure. "
+                + (
+                    "A qualifying successor candidate is detected."
+                    if successor_candidate_detected
+                    else "No qualifying successor candidate is detected."
+                )
             )
         elif outside_envelope:
             summary_detail = (
                 "Post-activation observations are beyond both sides of the migration "
-                "envelope without a dominant direction, but no successor MRZ is confirmed."
-                if not successor_confirmed
-                else "A successor satisfies the production check without a dominant pressure direction."
+                "envelope without a dominant pressure direction. "
+                + (
+                    "A qualifying successor candidate is detected."
+                    if successor_candidate_detected
+                    else "No qualifying successor candidate is detected."
+                )
             )
         else:
             summary_detail = (
                 "No post-activation observation is beyond the migration envelope, and "
-                "no successor MRZ is confirmed."
+                "no qualifying successor candidate is detected."
             )
 
         return {
@@ -523,16 +648,36 @@ class MRZRobustnessService:
             "successor_watch": {
                 "status": successor_status,
                 "label": successor_label,
-                "symbol": active.symbol if successor_pool else None,
-                "route": active.route_owner.value if successor_pool else None,
+                "reason": successor_reason,
+                "symbol": active.symbol if successor_candidate_detected else None,
+                "route": successor_route,
                 "candidate_lower": decimal_text(candidate_lower),
                 "candidate_upper": decimal_text(candidate_upper),
                 "direction": successor_direction,
                 "direction_label": successor_direction_label,
-                "evidence_observation_count": len(successor_pool),
-                "required_observation_count": diagnostic.minimum_required_count,
-                "normalized_span": decimal_text(diagnostic.normalized_span),
-                "production_evaluation_result": diagnostic.result.value,
+                "evidence_observation_count": successor_evidence_count,
+                "required_observation_count": MIN_CLUSTER_OBSERVATIONS,
+                "normalized_span": decimal_text(
+                    selected_diagnostic.normalized_span
+                    if selected_diagnostic is not None
+                    else None
+                ),
+                "production_allowance": decimal_text(
+                    CONCENTRATION_SPAN_THRESHOLD
+                ),
+                "production_evaluation_result": (
+                    selected_evaluation.result.value
+                    if selected_evaluation is not None
+                    else ConcentrationResult.INSUFFICIENT_OBSERVATIONS.value
+                ),
+                "external_observation_count": len(outside_envelope),
+                "higher_external_observation_count": len(above_upper_envelope),
+                "lower_external_observation_count": len(below_lower_envelope),
+                "operational_migration_eligible": operational_migration_eligible,
+                "operational_migration_eligibility_label": (
+                    operational_migration_eligibility_label
+                ),
+                "current_mrz_remains_authoritative": True,
                 "diagnostic_only": True,
             },
             "mrz_age": {

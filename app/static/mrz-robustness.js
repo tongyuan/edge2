@@ -67,6 +67,41 @@ function titleWords(value) {
     .replace(/^./, (letter) => letter.toUpperCase());
 }
 
+function successorDetailsMarkup(successor) {
+  const higherExternal = successor.higher_external_observation_count ?? 0;
+  const lowerExternal = successor.lower_external_observation_count ?? 0;
+  const externalCounts = `
+    <div><dt>Higher external</dt><dd>${higherExternal}</dd></div>
+    <div><dt>Lower external</dt><dd>${lowerExternal}</dd></div>`;
+
+  if (successor.status === "SUCCESSOR_CANDIDATE") {
+    const candidateRange = successor.candidate_lower !== null
+      ? `${priceText(successor.candidate_lower)} – ${priceText(successor.candidate_upper)}`
+      : "—";
+    return `${externalCounts}
+      <div><dt>Side</dt><dd>${escapeHtml(directionText(successor.direction, successor.direction_label))}</dd></div>
+      <div><dt>Route</dt><dd>${escapeHtml(successor.route || "—")}</dd></div>
+      <div><dt>Candidate range</dt><dd>${candidateRange}</dd></div>
+      <div><dt>Evidence</dt><dd>${successor.evidence_observation_count} observations</dd></div>
+      <div><dt>Normalized span</dt><dd>${normalizedSpanText(successor.normalized_span)}</dd></div>
+      <div><dt>Production allowance</dt><dd>${normalizedSpanText(successor.production_allowance)}</dd></div>
+      <div><dt>Concentration</dt><dd>${escapeHtml(titleWords(successor.production_evaluation_result))}</dd></div>
+      <div><dt>Operational migration eligibility</dt><dd>${escapeHtml(successor.operational_migration_eligibility_label)}</dd></div>`;
+  }
+
+  if (successor.status === "NO_QUALIFYING_SUCCESSOR") {
+    return `${externalCounts}
+      <div><dt>Observation count</dt><dd>${successor.evidence_observation_count}</dd></div>
+      <div><dt>Concentration</dt><dd>${normalizedSpanText(successor.normalized_span)}</dd></div>
+      <div><dt>Production allowance</dt><dd>${normalizedSpanText(successor.production_allowance)}</dd></div>
+      <div><dt>Result</dt><dd>${escapeHtml(titleWords(successor.production_evaluation_result))}</dd></div>`;
+  }
+
+  return `${externalCounts}
+    <div><dt>Minimum evidence</dt><dd>${successor.required_observation_count} observations</dd></div>
+    <div><dt>Concentration</dt><dd>${escapeHtml(titleWords(successor.production_evaluation_result))}</dd></div>`;
+}
+
 function migrationProvenanceMarkup(migration, timestampFormatter = (value) => value) {
   if (!migration?.has_migrated) return "";
   const downward = migration.direction === "DOWN";
@@ -100,15 +135,6 @@ function robustnessCardMarkup(report, timestampFormatter = (value) => value) {
   const successor = report.successor_watch;
   const age = report.mrz_age;
   const summary = report.structural_summary;
-  const candidateRange = successor.candidate_lower !== null
-    ? `${priceText(successor.candidate_lower)} – ${priceText(successor.candidate_upper)}`
-    : "—";
-  const successorIdentity = successor.symbol
-    ? `${escapeHtml(successor.symbol)} · ${escapeHtml(successor.route)}`
-    : "None";
-  const successorDirection = successor.direction
-    ? directionText(successor.direction, successor.direction_label)
-    : "None";
   const relevantBoundary = pressure.relevant_boundary_label
     ? `<dt>${escapeHtml(pressure.relevant_boundary_label)}</dt><dd>${priceText(pressure.relevant_boundary)}</dd>`
     : "<dt>Relevant boundary</dt><dd>—</dd>";
@@ -190,17 +216,12 @@ function robustnessCardMarkup(report, timestampFormatter = (value) => value) {
 
     <section class="operation-section successor-section" aria-label="Successor Watch">
       <div class="operation-section-heading"><span class="section-label">5 · SUCCESSOR WATCH</span></div>
-      <div class="detail-card successor">
+      <div class="detail-card successor ${statusClass(successor.status)}">
         <div class="detail-status"><span>STATUS</span><strong>${escapeHtml(successor.label)}</strong></div>
         <dl class="detail-grid">
-          <div><dt>Direction</dt><dd>${escapeHtml(successorDirection)}</dd></div>
-          <div><dt>Candidate</dt><dd>${successorIdentity}</dd></div>
-          <div><dt>Candidate range</dt><dd>${candidateRange}</dd></div>
-          <div><dt>Eligible observations</dt><dd>${successor.evidence_observation_count} / ${successor.required_observation_count}</dd></div>
-          <div><dt>Normalized span</dt><dd>${normalizedSpanText(successor.normalized_span)}</dd></div>
-          <div><dt>Production check</dt><dd>${escapeHtml(titleWords(successor.production_evaluation_result))}</dd></div>
+          ${successorDetailsMarkup(successor)}
         </dl>
-        <p>Diagnostic only. Successor confirmation remains controlled by the production evaluator and MRZ engine.</p>
+        <p>${escapeHtml(successor.reason)} Diagnostic only; operational migration remains controlled by the production state engine.</p>
       </div>
     </section>
 
@@ -270,5 +291,6 @@ if (typeof module === "object" && module.exports) {
     percentageText,
     reportMarkup,
     robustnessCardMarkup,
+    successorDetailsMarkup,
   };
 }

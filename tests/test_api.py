@@ -180,7 +180,10 @@ class APIIntegrationTests(unittest.TestCase):
                 for cohort in payload["cohorts"]
             )
         )
-        self.assertEqual(payload["invariants"]["mrz_engine_behavior"], "unchanged")
+        self.assertEqual(
+            payload["invariants"]["mrz_engine_behavior"],
+            "structure-first external successor migration",
+        )
         self.assertEqual(before, after)
 
     def test_near_miss_window_analysis_is_transient_and_preserves_activation_evaluation(self) -> None:
@@ -314,7 +317,20 @@ class APIIntegrationTests(unittest.TestCase):
             "9.700",
         )
         self.assertEqual(report["mrz_displacement"]["direction"], "ABOVE")
-        self.assertEqual(report["successor_watch"]["status"], "CANDIDATE_FORMING")
+        successor = report["successor_watch"]
+        self.assertEqual(successor["status"], "EXTERNAL_OBSERVATIONS")
+        self.assertEqual(successor["higher_external_observation_count"], 1)
+        self.assertEqual(successor["lower_external_observation_count"], 0)
+        self.assertIsNone(successor["candidate_lower"])
+        self.assertIsNone(successor["candidate_upper"])
+        self.assertIsNone(successor["route"])
+        self.assertIsNone(successor["direction"])
+        self.assertEqual(successor["production_allowance"], "0.01")
+        self.assertEqual(
+            successor["production_evaluation_result"],
+            "INSUFFICIENT_OBSERVATIONS",
+        )
+        self.assertTrue(successor["current_mrz_remains_authoritative"])
         self.assertEqual(before, after)
 
     def test_monitor_and_robustness_share_current_migration_provenance(self) -> None:
@@ -345,6 +361,50 @@ class APIIntegrationTests(unittest.TestCase):
             report["successor_watch"]["status"],
             "NO_SUCCESSOR_CANDIDATE",
         )
+
+    def test_route_changing_successor_updates_monitor_who_where_and_timestamp(self) -> None:
+        for index, price in enumerate(("110", "110.2", "110.4", "110.6"), 1):
+            self.assertEqual(
+                self.client.post(
+                    "/webhook/tradingview",
+                    json=webhook_payload(index, price),
+                ).status_code,
+                201,
+            )
+        final_response = None
+        for index, price in enumerate(("180", "180.2", "180.4", "180.6"), 5):
+            final_response = self.client.post(
+                "/webhook/tradingview",
+                json=webhook_payload(
+                    index,
+                    price,
+                    route="STR",
+                    observation_type="rejection",
+                ),
+            )
+            self.assertEqual(final_response.status_code, 201)
+
+        monitor = self.client.get("/api/symbols/SPXUSDT").json()
+        overview = self.client.get("/api/symbols").json()["symbols"][0]
+        operation_card = self.client.get(
+            "/api/diagnostics/mrz-robustness"
+        ).json()["active_mrzs"][0]
+
+        self.assertEqual(final_response.json()["state"]["route_owner"], "STR")
+        self.assertEqual(monitor["route_owner"], "STR")
+        self.assertEqual(monitor["core_mrz_lower"], 180.0)
+        self.assertEqual(monitor["core_mrz_upper"], 180.6)
+        self.assertEqual(monitor["structural_location"], "deep_premium_core_mrz")
+        self.assertEqual(monitor["activated_at"], "2026-08-20T12:00:08Z")
+        self.assertEqual(monitor["activation_event_id"], "api-event-8")
+        self.assertEqual(monitor["migration"]["route_owner"], "STR")
+        self.assertEqual(monitor["migration"]["previous_lower"], 110.0)
+        self.assertEqual(monitor["migration"]["current_lower"], 180.0)
+        self.assertEqual(overview["route_owner"], "STR")
+        self.assertEqual(overview["structural_location"], "deep_premium_core_mrz")
+        self.assertEqual(operation_card["route_owner"], "STR")
+        self.assertEqual(operation_card["active_mrz"]["lower"], "180")
+        self.assertEqual(operation_card["active_mrz"]["activated_at"], "2026-08-20T12:00:08Z")
 
     def test_activation_feasibility_api_empty_and_refreshes_without_stale_results(self) -> None:
         first = self.client.get("/api/diagnostics/activation-feasibility")

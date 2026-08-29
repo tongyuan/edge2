@@ -9,6 +9,7 @@ const {
   percentageText,
   reportMarkup,
   robustnessCardMarkup,
+  successorDetailsMarkup,
 } = require("../app/static/mrz-robustness.js");
 
 assert.equal(durationText("219600"), "2d 13h");
@@ -30,6 +31,7 @@ const operationCardSource = fs.readFileSync(
 );
 assert.doesNotMatch(operationCardSource, /bb_mrz_(?:discount|premium)/);
 assert.doesNotMatch(operationCardSource, /trade recommendation/i);
+assert.doesNotMatch(operationCardSource, /Candidate forming|Awaiting confirmation/i);
 
 const btcReport = {
   symbol: "BTCUSDT",
@@ -108,8 +110,9 @@ const btcReport = {
     current_mrz_remains_authoritative: true,
   },
   successor_watch: {
-    status: "NO_SUCCESSOR_CANDIDATE",
-    label: "No successor candidate",
+    status: "EXTERNAL_OBSERVATIONS",
+    label: "External observations detected",
+    reason: "External observations exist, but no side-and-route pool has enough evidence for a qualifying concentration.",
     direction: null,
     direction_label: null,
     symbol: null,
@@ -119,7 +122,15 @@ const btcReport = {
     evidence_observation_count: 0,
     required_observation_count: 4,
     normalized_span: null,
+    production_allowance: "0.01",
     production_evaluation_result: "INSUFFICIENT_OBSERVATIONS",
+    external_observation_count: 3,
+    higher_external_observation_count: 3,
+    lower_external_observation_count: 0,
+    operational_migration_eligible: null,
+    operational_migration_eligibility_label: "Not assessed",
+    current_mrz_remains_authoritative: true,
+    diagnostic_only: true,
   },
   mrz_age: {
     active_duration_seconds: "219600",
@@ -132,8 +143,8 @@ const btcReport = {
     pressure_direction_label: "Upward",
     structural_role: "RESISTIVE",
     structural_role_label: "Resistive",
-    successor_status: "NOT_CONFIRMED",
-    successor_label: "Not confirmed",
+    successor_status: "NOT_DETECTED",
+    successor_label: "Not detected",
     authority_statement: "The current MRZ remains authoritative.",
     displacement_statement: "Post-activation observations are centered above the active MRZ midpoint.",
     detail_statement: "Observed post-activation evidence is exerting upward pressure.",
@@ -179,9 +190,12 @@ assert.match(btcMarkup, /↑ \+6\.2%/);
 assert.match(btcMarkup, /Median displacement above midpoint/);
 assert.match(btcMarkup, /centered above the active MRZ midpoint/);
 assert.match(btcMarkup, /Normalized by full IPDA 20W width stored at activation/);
-assert.match(btcMarkup, /No successor candidate/);
-assert.match(btcMarkup, /0 \/ 4/);
+assert.match(btcMarkup, /External observations detected/);
+assert.match(btcMarkup, /Higher external<\/dt><dd>3/);
+assert.match(btcMarkup, /Lower external<\/dt><dd>0/);
+assert.match(btcMarkup, /Minimum evidence<\/dt><dd>4 observations/);
 assert.match(btcMarkup, /Insufficient observations/);
+assert.match(btcMarkup, /no side-and-route pool has enough evidence/i);
 assert.match(btcMarkup, /2d 13h/);
 assert.doesNotMatch(btcMarkup, /Midpoint Stability/);
 assert.doesNotMatch(btcMarkup, /Distance From MRZ Midpoint/);
@@ -286,6 +300,15 @@ const wldReport = {
     observations_beyond_envelope: 0,
     above_upper_envelope_observation_count: 0,
   },
+  successor_watch: {
+    ...btcReport.successor_watch,
+    status: "NO_SUCCESSOR_CANDIDATE",
+    label: "No successor candidate",
+    reason: "No qualifying external concentration exists.",
+    external_observation_count: 0,
+    higher_external_observation_count: 0,
+    lower_external_observation_count: 0,
+  },
   structural_summary: {
     ...btcReport.structural_summary,
     current_authority: "BTD · Shallow Discount",
@@ -383,26 +406,54 @@ const successorReport = {
   ...btcReport,
   successor_watch: {
     ...btcReport.successor_watch,
-    status: "CANDIDATE_FORMING",
-    label: "Candidate forming",
+    status: "SUCCESSOR_CANDIDATE",
+    label: "Qualifying successor candidate",
+    reason: "A canonical external concentration qualifies. The current MRZ remains authoritative until the production migration engine changes it.",
     direction: "UP",
-    direction_label: "Higher MRZ",
+    direction_label: "Higher",
     symbol: "BTCUSDT",
     route: "STR",
     candidate_lower: "78100",
     candidate_upper: "78250",
-    evidence_observation_count: 2,
+    evidence_observation_count: 4,
     normalized_span: "0.0012",
-    production_evaluation_result: "TOO_DISPERSED",
+    production_evaluation_result: "QUALIFIES",
+    operational_migration_eligible: true,
+    operational_migration_eligibility_label: "Satisfied",
   },
 };
 const successorMarkup = robustnessCardMarkup(successorReport);
-assert.match(successorMarkup, /↑ Higher MRZ/);
+assert.match(successorMarkup, /↑ Higher/);
 assert.match(successorMarkup, /78,100 – 78,250/);
-assert.match(successorMarkup, /2 \/ 4/);
+assert.match(successorMarkup, /Evidence<\/dt><dd>4 observations/);
 assert.match(successorMarkup, /0\.1%/);
-assert.match(successorMarkup, /Too dispersed/);
-assert.match(successorMarkup, /production evaluator and MRZ engine/);
+assert.match(successorMarkup, /Production allowance<\/dt><dd>1\.0%/);
+assert.match(successorMarkup, /Qualifies/);
+assert.match(successorMarkup, /Operational migration eligibility<\/dt><dd>Satisfied/);
+assert.match(successorMarkup, /operational migration remains controlled by the production state engine/);
+
+const tooDispersedMarkup = successorDetailsMarkup({
+  ...btcReport.successor_watch,
+  status: "NO_QUALIFYING_SUCCESSOR",
+  evidence_observation_count: 5,
+  normalized_span: "0.023",
+  production_evaluation_result: "TOO_DISPERSED",
+  higher_external_observation_count: 5,
+});
+assert.match(tooDispersedMarkup, /Observation count<\/dt><dd>5/);
+assert.match(tooDispersedMarkup, /Concentration<\/dt><dd>2\.3%/);
+assert.match(tooDispersedMarkup, /Production allowance<\/dt><dd>1\.0%/);
+assert.match(tooDispersedMarkup, /Result<\/dt><dd>Too dispersed/);
+assert.doesNotMatch(tooDispersedMarkup, /Candidate range|Awaiting confirmation/);
+
+const isolatedExternalMarkup = successorDetailsMarkup({
+  ...btcReport.successor_watch,
+  higher_external_observation_count: 1,
+  lower_external_observation_count: 0,
+});
+assert.match(isolatedExternalMarkup, /Higher external<\/dt><dd>1/);
+assert.match(isolatedExternalMarkup, /Minimum evidence<\/dt><dd>4 observations/);
+assert.doesNotMatch(isolatedExternalMarkup, /Candidate|Direction|Eligible observations/);
 
 const empty = reportMarkup([]);
 assert.match(empty, /No active MRZ is available for an operation card/);

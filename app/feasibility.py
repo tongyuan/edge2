@@ -21,7 +21,11 @@ from app.concentration import (
     latest_route_window,
 )
 from app.domain import ActiveMRZ, MRZEventType, Observation, Route, StructuralLocation
-from app.state_engine import replay_symbol, successor_eligible
+from app.state_engine import (
+    build_successor_mrz,
+    replay_symbol,
+    successor_observation_pool,
+)
 from app.structure import classify_structural_location
 
 
@@ -189,7 +193,11 @@ def reconstruct_episodes(
             minimum_required_count=minimum_required_count,
             concentration_threshold=concentration_threshold,
         )
-        transitions = replay.transitions
+        transitions = tuple(
+            transition
+            for transition in replay.transitions
+            if transition.event_type in {MRZEventType.ACTIVATED, MRZEventType.MIGRATED}
+        )
         for transition_index, transition in enumerate(transitions):
             activation_index = by_event_id.get(transition.trigger_event_id)
             if activation_index is None:
@@ -218,20 +226,17 @@ def reconstruct_episodes(
             migration_direction: str | None = None
             outcome = "ONGOING"
             if next_transition is not None:
-                if next_transition.event_type is MRZEventType.ROUTE_CHANGED:
-                    outcome = "ROUTE_CHANGED_OR_REPLACED"
+                old_midpoint = transition.new_mrz.core_mrz_midpoint
+                new_midpoint = next_transition.new_mrz.core_mrz_midpoint
+                if new_midpoint > old_midpoint:
+                    migration_direction = "UPWARD"
+                    outcome = "MIGRATED_UPWARD"
+                elif new_midpoint < old_midpoint:
+                    migration_direction = "DOWNWARD"
+                    outcome = "MIGRATED_DOWNWARD"
                 else:
-                    old_midpoint = transition.new_mrz.core_mrz_midpoint
-                    new_midpoint = next_transition.new_mrz.core_mrz_midpoint
-                    if new_midpoint > old_midpoint:
-                        migration_direction = "UPWARD"
-                        outcome = "MIGRATED_UPWARD"
-                    elif new_midpoint < old_midpoint:
-                        migration_direction = "DOWNWARD"
-                        outcome = "MIGRATED_DOWNWARD"
-                    else:
-                        migration_direction = "LATERAL"
-                        outcome = "MIGRATED_LATERAL"
+                    migration_direction = "LATERAL"
+                    outcome = "MIGRATED_LATERAL"
 
             episode = Episode(
                 symbol=symbol,
@@ -338,19 +343,25 @@ def checkpoint_measurement(episode: Episode, checkpoint: int) -> dict[str, Any] 
         tuple(
             item
             for item in history_through_checkpoint
-            if item.route is active.route_owner
+            if item.route is current.route
         )
     )
-    eligible_pool = tuple(item for item in route_window if successor_eligible(active, item))
+    eligible_pool = successor_observation_pool(
+        active,
+        route_window,
+        current,
+    )
     evaluation = (
-        evaluate_concentration(eligible_pool, active.route_owner)
-        if successor_eligible(active, current)
+        evaluate_concentration(eligible_pool, current.route)
+        if eligible_pool
         else None
     )
     candidate = (
         evaluation.cluster
         if evaluation is not None
         and evaluation.result is ConcentrationResult.QUALIFIES
+        and evaluation.cluster is not None
+        and build_successor_mrz(active, current, evaluation.cluster) is not None
         else None
     )
     return {
@@ -792,8 +803,8 @@ def diagnose_cohort(
             )
 
     limitation = (
-        "Production successor rules only encode upward BTD and downward STR migrations; "
-        "adverse migration frequency is therefore not an independent outcome measure."
+        "Production successors are structure-first: either route may qualify on either "
+        "external side when its own route/location rules pass."
     )
     if total < MIN_DIAGNOSTIC_EPISODES:
         status = "Insufficient sample"
@@ -1654,8 +1665,8 @@ def build_feasibility_report(
                 "production ActiveMRZ boundaries: effective width=max(core width,instrument tick), then ±2 widths"
             ),
             "successor": (
-                "production successor_eligible, rolling 20-route window, four-observation minimum, "
-                "and evaluate_concentration evaluator"
+                "incoming route plus external side, rolling latest-20 route "
+                "window, four-observation minimum, and evaluate_concentration evaluator"
             ),
             "diagnosis_rubric": (
                 "descriptive only: at least 8 eligible episodes; a 15 percentage-point route-supportive "
@@ -1668,15 +1679,15 @@ def build_feasibility_report(
         "overall_diagnosis": overall_diagnosis(reports),
         "data_limitations": [
             "MRZ event rows omit historical activation IPDA frame, tick, and normalized span; deterministic replay supplies them.",
-            "BTD production successors migrate only upward and STR successors only downward, so adverse migration frequency is structurally censored.",
-            "No production route-change replacement trigger currently exists.",
+            "Successor direction and route are determined by the confirming external concentration, not the prior MRZ.",
+            "ROUTE_CHANGED is an audit companion to MRZ_MIGRATED and is not a separate authority generation.",
             "Ongoing episodes contribute checkpoint measurements but no final outcome.",
             *reconciliation["limitations"],
         ],
         "invariants": {
             "schema_version": "4.3 unchanged",
             "payload_structure": "unchanged",
-            "mrz_engine_behavior": "unchanged",
+            "mrz_engine_behavior": "structure-first external successor migration",
             "operation_card_trading_window_state": "not implemented",
             "production_status": "NOT APPROVED",
         },

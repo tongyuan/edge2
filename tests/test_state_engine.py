@@ -234,15 +234,210 @@ class ActiveMRZStateTests(unittest.TestCase):
         self.assertEqual(active.lower_migration_boundary, Decimal("109.98"))
         self.assertEqual(active.upper_migration_boundary, Decimal("110.02"))
 
-    def test_opposite_route_concentration_does_not_invent_route_change(self) -> None:
+    def test_btd_migrates_to_higher_structurally_valid_str_candidate(self) -> None:
         rows = [observation(i, price) for i, price in enumerate(("110", "110.2", "110.4", "110.6"), 1)]
         rows.extend(
             observation(i, price, route=Route.STR)
             for i, price in enumerate(("180", "180.2", "180.4", "180.6"), 5)
         )
         result = replay_symbol(rows)
+
+        self.assertEqual(result.active_mrz.route_owner, Route.STR)
+        self.assertEqual(result.active_mrz.core_mrz_lower, Decimal("180"))
+        self.assertEqual(result.active_mrz.core_mrz_upper, Decimal("180.6"))
+        self.assertEqual(result.active_mrz.structural_location, StructuralLocation.DEEP_PREMIUM)
+        self.assertEqual(result.active_mrz.activated_at, rows[-1].observed_at)
+        self.assertEqual(result.active_mrz.activation_event_id, "event-8")
+        self.assertEqual(
+            [transition.event_type for transition in result.transitions],
+            [MRZEventType.ACTIVATED, MRZEventType.MIGRATED, MRZEventType.ROUTE_CHANGED],
+        )
+        migration, route_change = result.transitions[1:]
+        self.assertEqual(migration.previous_route_owner, Route.BTD)
+        self.assertEqual(migration.route_owner, Route.STR)
+        self.assertEqual(migration.details["external_side"], "UP")
+        self.assertEqual(route_change.previous_route_owner, Route.BTD)
+        self.assertEqual(route_change.route_owner, Route.STR)
+        self.assertEqual(route_change.trigger_event_id, migration.trigger_event_id)
+
+    def test_str_migrates_to_lower_structurally_valid_btd_candidate(self) -> None:
+        rows = [
+            observation(i, price, route=Route.STR)
+            for i, price in enumerate(("180", "180.2", "180.4", "180.6"), 1)
+        ]
+        rows.extend(
+            observation(i, price, route=Route.BTD)
+            for i, price in enumerate(("110", "110.2", "110.4", "110.6"), 5)
+        )
+        result = replay_symbol(rows)
+
         self.assertEqual(result.active_mrz.route_owner, Route.BTD)
-        self.assertEqual(len(result.transitions), 1)
+        self.assertEqual(result.active_mrz.core_mrz_lower, Decimal("110"))
+        self.assertEqual(result.active_mrz.structural_location, StructuralLocation.DEEP_DISCOUNT)
+        self.assertEqual(
+            [transition.event_type for transition in result.transitions],
+            [MRZEventType.ACTIVATED, MRZEventType.MIGRATED, MRZEventType.ROUTE_CHANGED],
+        )
+        self.assertEqual(result.transitions[1].details["external_side"], "DOWN")
+
+    def test_route_changed_successor_bounds_remain_frozen(self) -> None:
+        rows = [observation(i, price) for i, price in enumerate(("110", "110.2", "110.4", "110.6"), 1)]
+        rows.extend(
+            observation(i, price, route=Route.STR)
+            for i, price in enumerate(("180", "180.2", "180.4", "180.6"), 5)
+        )
+        successor = replay_symbol(rows).active_mrz
+        rows.extend(
+            (
+                observation(9, "180.3", route=Route.STR),
+                observation(10, "181", route=Route.STR),
+            )
+        )
+        later = replay_symbol(rows).active_mrz
+
+        self.assertEqual(
+            (later.core_mrz_lower, later.core_mrz_upper),
+            (successor.core_mrz_lower, successor.core_mrz_upper),
+        )
+        self.assertEqual(later.activation_event_id, "event-8")
+        self.assertEqual(later.supporting_observation_count, 5)
+
+    def test_btd_can_migrate_lower_when_candidate_remains_discount(self) -> None:
+        rows = [observation(i, price) for i, price in enumerate(("130", "130.2", "130.4", "130.6"), 1)]
+        rows.extend(
+            observation(i, price)
+            for i, price in enumerate(("110", "110.2", "110.4", "110.6"), 5)
+        )
+        result = replay_symbol(rows)
+
+        self.assertEqual(result.active_mrz.route_owner, Route.BTD)
+        self.assertEqual(result.active_mrz.core_mrz_lower, Decimal("110"))
+        self.assertEqual(result.transitions[-1].event_type, MRZEventType.MIGRATED)
+        self.assertEqual(result.transitions[-1].details["external_side"], "DOWN")
+        self.assertEqual(len(result.transitions), 2)
+
+    def test_str_can_migrate_higher_when_candidate_remains_premium(self) -> None:
+        rows = [
+            observation(i, price, route=Route.STR)
+            for i, price in enumerate(("170", "170.2", "170.4", "170.6"), 1)
+        ]
+        rows.extend(
+            observation(i, price, route=Route.STR)
+            for i, price in enumerate(("180", "180.2", "180.4", "180.6"), 5)
+        )
+        result = replay_symbol(rows)
+
+        self.assertEqual(result.active_mrz.route_owner, Route.STR)
+        self.assertEqual(result.active_mrz.core_mrz_lower, Decimal("180"))
+        self.assertEqual(result.transitions[-1].event_type, MRZEventType.MIGRATED)
+        self.assertEqual(result.transitions[-1].details["external_side"], "UP")
+        self.assertEqual(len(result.transitions), 2)
+
+    def test_external_candidate_must_pass_its_own_route_location_rule(self) -> None:
+        str_in_discount = [observation(i, price) for i, price in enumerate(("110", "110.2", "110.4", "110.6"), 1)]
+        str_in_discount.extend(
+            observation(i, price, route=Route.STR)
+            for i, price in enumerate(("140", "140.2", "140.4", "140.6"), 5)
+        )
+        btd_in_premium = [
+            observation(i, price, route=Route.STR)
+            for i, price in enumerate(("180", "180.2", "180.4", "180.6"), 1)
+        ]
+        btd_in_premium.extend(
+            observation(i, price)
+            for i, price in enumerate(("160", "160.2", "160.4", "160.6"), 5)
+        )
+
+        discount_result = replay_symbol(str_in_discount)
+        premium_result = replay_symbol(btd_in_premium)
+        self.assertEqual(discount_result.active_mrz.route_owner, Route.BTD)
+        self.assertEqual(discount_result.active_mrz.core_mrz_lower, Decimal("110"))
+        self.assertEqual(len(discount_result.transitions), 1)
+        self.assertEqual(premium_result.active_mrz.route_owner, Route.STR)
+        self.assertEqual(premium_result.active_mrz.core_mrz_lower, Decimal("180"))
+        self.assertEqual(len(premium_result.transitions), 1)
+
+    def test_external_observations_must_be_concentrated_and_on_one_side(self) -> None:
+        base = [observation(i, price) for i, price in enumerate(("130", "130.2", "130.4", "130.6"), 1)]
+        dispersed = base + [
+            observation(i, price)
+            for i, price in enumerate(("119", "120", "120.5", "121", "122.3"), 5)
+        ]
+        mixed_side = base + [
+            observation(5, "140"),
+            observation(6, "110"),
+            observation(7, "140.2"),
+            observation(8, "110.2"),
+        ]
+
+        self.assertEqual(len(replay_symbol(dispersed).transitions), 1)
+        self.assertEqual(len(replay_symbol(mixed_side).transitions), 1)
+
+    def test_newest_external_observation_must_confirm_its_own_pool(self) -> None:
+        base = [observation(i, price) for i, price in enumerate(("110", "110.2", "110.4", "110.6"), 1)]
+        old_cluster_with_new_outlier = base + [
+            observation(5, "120"),
+            observation(6, "120.2"),
+            observation(7, "120.4"),
+            observation(8, "130"),
+        ]
+        confirmed_on_newest = old_cluster_with_new_outlier + [observation(9, "120.6")]
+
+        self.assertEqual(len(replay_symbol(old_cluster_with_new_outlier).transitions), 1)
+        self.assertEqual(replay_symbol(confirmed_on_newest).active_mrz.core_mrz_lower, Decimal("120"))
+
+    def test_latest_twenty_route_window_is_preserved_after_route_change(self) -> None:
+        rows = [observation(i, price) for i, price in enumerate(("110", "110.2", "110.4", "110.6"), 1)]
+        rows.extend(
+            observation(i, price, route=Route.STR)
+            for i, price in enumerate(("180", "180.2", "180.4", "180.6"), 5)
+        )
+        rows.append(observation(9, "110.3"))
+        result = replay_symbol(rows)
+
+        self.assertEqual(result.active_mrz.route_owner, Route.BTD)
+        self.assertEqual(result.active_mrz.activation_event_id, "event-9")
+        self.assertEqual(
+            [transition.event_type for transition in result.transitions],
+            [
+                MRZEventType.ACTIVATED,
+                MRZEventType.MIGRATED,
+                MRZEventType.ROUTE_CHANGED,
+                MRZEventType.MIGRATED,
+                MRZEventType.ROUTE_CHANGED,
+            ],
+        )
+
+    def test_competing_pools_resolve_by_canonical_event_order(self) -> None:
+        rows = [observation(i, price) for i, price in enumerate(("130", "130.2", "130.4", "130.6"), 1)]
+        rows.extend(
+            (
+                observation(5, "110"),
+                observation(6, "180", route=Route.STR),
+                observation(7, "110.2"),
+                observation(8, "180.2", route=Route.STR),
+                observation(9, "110.4"),
+                observation(10, "180.4", route=Route.STR),
+                observation(11, "180.6", route=Route.STR),
+                observation(12, "110.6"),
+            )
+        )
+        result = replay_symbol(rows)
+
+        self.assertEqual(result.transitions[1].new_mrz.route_owner, Route.STR)
+        self.assertEqual(result.transitions[1].trigger_event_id, "event-11")
+        self.assertEqual(result.active_mrz.route_owner, Route.BTD)
+        self.assertEqual(result.active_mrz.activation_event_id, "event-12")
+        self.assertEqual(
+            [transition.event_type for transition in result.transitions],
+            [
+                MRZEventType.ACTIVATED,
+                MRZEventType.MIGRATED,
+                MRZEventType.ROUTE_CHANGED,
+                MRZEventType.MIGRATED,
+                MRZEventType.ROUTE_CHANGED,
+            ],
+        )
 
     def test_replay_uses_timestamps_not_event_id_names(self) -> None:
         rows = [

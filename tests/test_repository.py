@@ -191,6 +191,42 @@ class RepositoryIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(robustness_migrations["SPXUSDT"], detail["migration"])
 
+    def test_route_changing_migration_events_and_authority_persist_atomically_across_restart(self) -> None:
+        for index, price in enumerate(("110", "110.2", "110.4", "110.6"), 1):
+            self.ingest(index, price)
+        outcome = None
+        for index, price in enumerate(("180", "180.2", "180.4", "180.6"), 5):
+            outcome = self.ingest(index, price, route="STR")
+
+        detail = self.repository.symbol_detail("SPXUSDT")
+        events = self.repository.audit_events("SPXUSDT")
+        self.assertEqual(
+            [transition.event_type.value for transition in outcome.triggered_transitions],
+            ["MRZ_MIGRATED", "ROUTE_CHANGED"],
+        )
+        self.assertEqual(
+            [event["event_type"] for event in events],
+            ["MRZ_ACTIVATED", "MRZ_MIGRATED", "ROUTE_CHANGED"],
+        )
+        self.assertEqual([event["sequence"] for event in events], [1, 2, 3])
+        self.assertEqual(events[1]["trigger_event_id"], "db-event-8")
+        self.assertEqual(events[2]["trigger_event_id"], "db-event-8")
+        self.assertEqual(events[1]["previous_route_owner"], "BTD")
+        self.assertEqual(events[1]["route_owner"], "STR")
+        self.assertEqual(events[2]["previous_route_owner"], "BTD")
+        self.assertEqual(events[2]["route_owner"], "STR")
+        self.assertEqual(detail["route_owner"], "STR")
+        self.assertEqual(detail["core_mrz_lower"], 180.0)
+        self.assertEqual(detail["core_mrz_upper"], 180.6)
+        self.assertEqual(detail["structural_location"], "deep_premium_core_mrz")
+        self.assertEqual(detail["activated_at"], "2026-08-20T12:00:08Z")
+        self.assertEqual(detail["activation_event_id"], "db-event-8")
+        self.assertEqual(detail["migration"]["route_owner"], "STR")
+
+        restarted = EdgeRepository(self.database_url)
+        self.assertEqual(restarted.symbol_detail("SPXUSDT"), detail)
+        self.assertEqual(restarted.audit_events("SPXUSDT"), events)
+
     def test_current_provenance_uses_only_the_latest_migration_that_created_the_active_mrz(self) -> None:
         prices = (
             "110", "110.2", "110.4", "110.6",
@@ -281,7 +317,7 @@ class RepositoryIntegrationTests(unittest.TestCase):
         self.assertEqual(after["confirming_observation_count"], original["confirming_observation_count"])
         self.assertEqual(after["supporting_observation_count"], original["supporting_observation_count"])
 
-    def test_one_active_row_per_symbol_enforces_singular_owner(self) -> None:
+    def test_one_active_row_per_symbol_tracks_route_changed_owner(self) -> None:
         for index, price in enumerate(("110", "110.2", "110.4", "110.6"), 1):
             self.ingest(index, price)
         for index, price in enumerate(("180", "180.2", "180.4", "180.6"), 5):
@@ -294,4 +330,4 @@ class RepositoryIntegrationTests(unittest.TestCase):
         finally:
             connection.close()
         self.assertEqual(count, 1)
-        self.assertEqual((minimum, maximum), ("BTD", "BTD"))
+        self.assertEqual((minimum, maximum), ("STR", "STR"))

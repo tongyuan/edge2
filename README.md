@@ -17,9 +17,7 @@ Every symbol begins as `NO_ACTIVE_MRZ`. A route becomes authoritative only when 
 SOURCE = active_mrz.route_owner
 ```
 
-The active bounds are frozen. Later observations cannot resize them. Only a confirmed same-route successor concentration can atomically replace them.
-
-Cross-route replacement has no unambiguous trigger in the frozen first-build doctrine. It is isolated in `evaluate_cross_route_replacement()` and deliberately returns no replacement.
+The active bounds are frozen. Later observations cannot resize them. A confirmed external successor concentration can atomically replace them using its own BTD/STR route and structural validity, independently of the previous authority's route or direction. A route-changing migration records `MRZ_MIGRATED` followed by the `ROUTE_CHANGED` audit companion.
 
 ## Schema 4.3 webhook contract
 
@@ -111,10 +109,10 @@ upper boundary = core upper + 2 * effective_W
 
 The tick comes from an authoritative `EDGE2_SYMBOL_TICKS_JSON` override when configured; otherwise it is the smallest decimal quantum carried by the confirming prices.
 
-- Same-route observations inside the inclusive envelope are volatility and do not change state.
-- BTD successor evidence must be strictly above the upper boundary.
-- STR successor evidence must be strictly below the lower boundary.
-- Successor evidence is filtered from the route's rolling 20-event window and uses the identical concentration algorithm.
+- Observations inside the inclusive envelope do not trigger migration.
+- An incoming external observation evaluates only its own higher/lower side and BTD/STR route pool.
+- Either route may succeed on either external side when the candidate passes its own structural-validity rule: BTD in Discount or STR in Premium.
+- Successor evidence is filtered from the incoming route's rolling 20-event window and uses the identical concentration algorithm, including newest-observation participation.
 - Inside-envelope events still age older successor evidence out of that window.
 - Migration replaces `active_mrz` and writes the old/new bounds to `mrz_events` in one database transaction.
 

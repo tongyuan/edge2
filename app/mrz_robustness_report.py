@@ -207,8 +207,8 @@ class MRZRobustnessReportService:
                     "at the latest available observation and reported separately"
                 ),
                 "migration_pressure": (
-                    "existing migration envelope, successor_eligible rule, rolling route "
-                    "window, and production concentration evaluator"
+                    "post-activation observations outside the existing frozen migration "
+                    "envelope; successor concentration is reported separately"
                 ),
                 "early_migration": (
                     "migration confirmed by the fourth post-activation observation, the "
@@ -488,7 +488,7 @@ class MRZRobustnessReportService:
         successor_pressure = [
             row
             for row in with_evidence
-            if row["successor_watch"]["status"] != "NO_SUCCESSOR_CANDIDATE"
+            if row["successor_watch"]["status"] == "SUCCESSOR_CANDIDATE"
         ]
         maintained = [
             row
@@ -709,9 +709,9 @@ class MRZRobustnessReportService:
             "not_yet_assessable": statuses["NO_EVIDENCE"],
             "successor_watch": {
                 "no_successor": successors["NO_SUCCESSOR_CANDIDATE"],
-                "candidate_forming": successors["CANDIDATE_FORMING"],
-                "awaiting_confirmation": successors["AWAITING_CONFIRMATION"],
-                "confirmed": successors["CONFIRMED_SUCCESSOR"],
+                "external_observations": successors["EXTERNAL_OBSERVATIONS"],
+                "no_qualifying_successor": successors["NO_QUALIFYING_SUCCESSOR"],
+                "candidate_detected": successors["SUCCESSOR_CANDIDATE"],
             },
         }
 

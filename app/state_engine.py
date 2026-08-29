@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import replace
 from decimal import Decimal
-from typing import Iterable, Sequence
+from typing import Iterable, Literal, Sequence
 
 from app.concentration import (
     CONCENTRATION_SPAN_THRESHOLD,
@@ -62,12 +62,56 @@ def build_active_mrz(observation: Observation, cluster: Cluster) -> ActiveMRZ | 
     )
 
 
+SuccessorSide = Literal["UP", "DOWN"]
+
+
+def successor_external_side(
+    active: ActiveMRZ,
+    observation: Observation,
+) -> SuccessorSide | None:
+    if observation.observation_price > active.upper_migration_boundary:
+        return "UP"
+    if observation.observation_price < active.lower_migration_boundary:
+        return "DOWN"
+    return None
+
+
 def successor_eligible(active: ActiveMRZ, observation: Observation) -> bool:
-    if observation.route is not active.route_owner:
-        return False
-    if active.route_owner is Route.BTD:
-        return observation.observation_price > active.upper_migration_boundary
-    return observation.observation_price < active.lower_migration_boundary
+    """Return whether an observation is external to the current authority."""
+    return successor_external_side(active, observation) is not None
+
+
+def successor_observation_pool(
+    active: ActiveMRZ,
+    route_window: Sequence[Observation],
+    incoming: Observation,
+) -> tuple[Observation, ...]:
+    """Select the incoming observation's route and external-side pool."""
+    incoming_side = successor_external_side(active, incoming)
+    if incoming_side is None:
+        return ()
+    return tuple(
+        item
+        for item in route_window
+        if item.route is incoming.route
+        and successor_external_side(active, item) == incoming_side
+    )
+
+
+def build_successor_mrz(
+    active: ActiveMRZ,
+    incoming: Observation,
+    cluster: Cluster,
+) -> ActiveMRZ | None:
+    """Build a structurally valid successor wholly external on one side."""
+    incoming_side = successor_external_side(active, incoming)
+    if incoming_side is None or any(
+        item.route is not incoming.route
+        or successor_external_side(active, item) != incoming_side
+        for item in cluster.members
+    ):
+        return None
+    return build_active_mrz(incoming, cluster)
 
 
 def supports_active_core_mrz(active: ActiveMRZ, observation: Observation) -> bool:
@@ -84,20 +128,6 @@ def supports_active_core_mrz(active: ActiveMRZ, observation: Observation) -> boo
         )
         is not None
     )
-
-
-def evaluate_cross_route_replacement(
-    active: ActiveMRZ,
-    incoming: Observation,
-    route_window: Sequence[Observation],
-) -> ActiveMRZ | None:
-    """Frozen 4.3 doctrine defines no cross-route replacement trigger.
-
-    This explicit boundary keeps route replacement architecturally isolated without
-    inventing a handover, recommendation, or opposite-route authority rule.
-    """
-    del active, incoming, route_window
-    return None
 
 
 def replay_symbol(
@@ -155,27 +185,6 @@ def replay_symbol(
             )
             continue
 
-        if incoming.route is not active.route_owner:
-            replacement = evaluate_cross_route_replacement(active, incoming, tuple(route_window))
-            if replacement is not None:
-                previous = active
-                active = replacement
-                transitions.append(
-                    MRZTransition(
-                        sequence=len(transitions) + 1,
-                        event_type=MRZEventType.ROUTE_CHANGED,
-                        symbol=symbol,
-                        route_owner=active.route_owner,
-                        previous_route_owner=previous.route_owner,
-                        occurred_at=incoming.observed_at,
-                        trigger_event_id=incoming.event_id,
-                        old_mrz=previous,
-                        new_mrz=active,
-                        details={"reason": "cross_route_replacement"},
-                    )
-                )
-            continue
-
         if supports_active_core_mrz(active, incoming):
             active = replace(
                 active,
@@ -185,7 +194,11 @@ def replay_symbol(
 
         if not successor_eligible(active, incoming):
             continue
-        eligible_pool = tuple(item for item in route_window if successor_eligible(active, item))
+        eligible_pool = successor_observation_pool(
+            active,
+            tuple(route_window),
+            incoming,
+        )
         evaluation = evaluate_concentration(
             eligible_pool,
             incoming.route,
@@ -193,7 +206,7 @@ def replay_symbol(
             concentration_threshold=concentration_threshold,
         )
         successor = (
-            build_active_mrz(incoming, evaluation.cluster)
+            build_successor_mrz(active, incoming, evaluation.cluster)
             if evaluation.result is ConcentrationResult.QUALIFIES and evaluation.cluster
             else None
         )
@@ -201,6 +214,7 @@ def replay_symbol(
             continue
         previous = active
         active = successor
+        migration_side = successor_external_side(previous, incoming)
         transitions.append(
             MRZTransition(
                 sequence=len(transitions) + 1,
@@ -213,12 +227,32 @@ def replay_symbol(
                 old_mrz=previous,
                 new_mrz=active,
                 details={
-                    "reason": "same_route_successor_concentration_confirmed",
+                    "reason": "external_successor_concentration_confirmed",
+                    "external_side": migration_side,
+                    "candidate_route": active.route_owner.value,
                     "old_lower_migration_boundary": str(previous.lower_migration_boundary),
                     "old_upper_migration_boundary": str(previous.upper_migration_boundary),
                 },
             )
         )
+        if previous.route_owner is not active.route_owner:
+            transitions.append(
+                MRZTransition(
+                    sequence=len(transitions) + 1,
+                    event_type=MRZEventType.ROUTE_CHANGED,
+                    symbol=symbol,
+                    route_owner=active.route_owner,
+                    previous_route_owner=previous.route_owner,
+                    occurred_at=incoming.observed_at,
+                    trigger_event_id=incoming.event_id,
+                    old_mrz=previous,
+                    new_mrz=active,
+                    details={
+                        "reason": "successor_route_changed",
+                        "external_side": migration_side,
+                    },
+                )
+            )
 
     return ReplayResult(
         symbol=symbol,
