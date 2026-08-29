@@ -116,20 +116,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             },
         )
 
-    @application.get(
-        "/diagnostics/trading-window-feasibility",
-        include_in_schema=False,
-    )
-    def trading_window_feasibility_page() -> FileResponse:
-        return FileResponse(
-            STATIC_DIR / "feasibility.html",
-            headers={
-                "Cache-Control": "no-store, max-age=0",
-                "Pragma": "no-cache",
-                "Expires": "0",
-            },
-        )
-
     @application.get("/health")
     def health() -> JSONResponse:
         try:
@@ -277,13 +263,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         service = MRZRobustnessService(repository.mrz_robustness_inputs)
         return JSONResponse(
             service.generate_report(),
-            headers={"Cache-Control": "no-store, max-age=0"},
-        )
-
-    @application.get("/api/diagnostics/trading-window-feasibility")
-    def trading_window_feasibility() -> JSONResponse:
-        return JSONResponse(
-            repository.trading_window_feasibility_report(),
             headers={"Cache-Control": "no-store, max-age=0"},
         )
 

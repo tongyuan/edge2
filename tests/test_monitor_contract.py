@@ -49,7 +49,8 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn('href="/diagnostics/activation-feasibility"', HTML)
         self.assertIn('href="/diagnostics/mrz-robustness"', HTML)
         self.assertNotIn('href="/diagnostics/mrz-robustness-report"', HTML)
-        self.assertIn('href="/diagnostics/trading-window-feasibility"', HTML)
+        self.assertNotIn('href="/diagnostics/trading-window-feasibility"', HTML)
+        self.assertNotIn("Trading Window Feasibility", HTML)
         self.assertIn('aria-label="Operator navigation"', HTML)
         self.assertIn('data-diagnostics-trigger', HTML)
 

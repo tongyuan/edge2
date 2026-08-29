@@ -6,7 +6,7 @@ from decimal import Decimal
 from unittest.mock import patch
 
 from app.domain import Route
-from app.feasibility import route_interpretation as canonical_route_interpretation
+from app.episode_replay import route_interpretation as canonical_route_interpretation
 from app.mrz_robustness import MRZRobustnessService
 from app.mrz_robustness_report import MRZRobustnessReportService
 from app.state_engine import replay_symbol
@@ -97,7 +97,7 @@ class MRZRobustnessReportTests(unittest.TestCase):
                 "seconds_from_activation": "2",
             })
             self.assertTrue(response["early_adverse"])
-            self.assertEqual(response["classifier"], "TRADING_WINDOW_SIGNED_DISPLACEMENT")
+            self.assertEqual(response["classifier"], "ROUTE_ROLE_SIGNED_DISPLACEMENT")
 
         production = report["current_production_robustness"]
         self.assertEqual(production["supportive_outcome_count"], 2)
@@ -178,7 +178,7 @@ class MRZRobustnessReportTests(unittest.TestCase):
             ("110", "110.2", "110.4", "110.6", "120", "120.2", "120.4", "120.6"),
         )
         with patch(
-            "app.feasibility.replay_symbol",
+            "app.episode_replay.replay_symbol",
             wraps=replay_symbol,
         ) as replay, patch.object(
             MRZRobustnessService,

@@ -8,7 +8,7 @@ from typing import Callable, Iterable, Mapping, Sequence
 from app.activation_feasibility import LOW_SAMPLE_SEQUENCE_THRESHOLD
 from app.concentration import MIN_CLUSTER_OBSERVATIONS
 from app.domain import MRZEventType, Observation, Route
-from app.feasibility import (
+from app.episode_replay import (
     Episode,
     first_timing,
     reconstruct_episodes,
@@ -179,8 +179,8 @@ class MRZRobustnessReportService:
                     "trigger are measured through migration or available history."
                 ),
                 "structural_response": (
-                    "Each post-activation observation reuses Trading Window Feasibility's "
-                    "canonical signed-displacement classifier: above the frozen midpoint "
+                    "Each post-activation observation reuses the shared canonical "
+                    "signed-displacement classifier: above the frozen midpoint "
                     "supports BTD and is adverse to STR; below supports STR and is adverse "
                     "to BTD; an exact midpoint observation is neutral/unresolved."
                 ),
@@ -417,7 +417,7 @@ class MRZRobustnessReportService:
             "first_adverse": timing_payload(first_adverse),
             "early_adverse": "ROUTE_ADVERSE" in early_classifications,
             "early_window_observation_count": EARLY_BEHAVIOR_MAX_POST_ACTIVATION_OBSERVATIONS,
-            "classifier": "TRADING_WINDOW_SIGNED_DISPLACEMENT",
+            "classifier": "ROUTE_ROLE_SIGNED_DISPLACEMENT",
         }
 
     def _first_pressure(

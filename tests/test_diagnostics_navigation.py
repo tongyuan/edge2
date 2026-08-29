@@ -11,7 +11,6 @@ PAGES = {
     "monitor": (STATIC / "index.html").read_text(encoding="utf-8"),
     "operation_card": (STATIC / "mrz-robustness.html").read_text(encoding="utf-8"),
     "activation": (STATIC / "activation-feasibility.html").read_text(encoding="utf-8"),
-    "trading_window": (STATIC / "feasibility.html").read_text(encoding="utf-8"),
 }
 JAVASCRIPT = (STATIC / "diagnostics-nav.js").read_text(encoding="utf-8")
 CSS = (STATIC / "diagnostics-nav.css").read_text(encoding="utf-8")
@@ -19,7 +18,6 @@ CSS = (STATIC / "diagnostics-nav.css").read_text(encoding="utf-8")
 IMPLEMENTED_ITEMS = [
     ("/diagnostics/mrz-robustness", "MRZ Operation Card"),
     ("/diagnostics/activation-feasibility", "Activation Feasibility"),
-    ("/diagnostics/trading-window-feasibility", "Trading Window Feasibility"),
 ]
 
 
@@ -76,7 +74,6 @@ class DiagnosticsNavigationContractTests(unittest.TestCase):
         expected = [
             "MRZ Operation Card",
             "Activation Feasibility",
-            "Trading Window Feasibility",
         ]
         for name, html in PAGES.items():
             menu = menu_fragment(html)
@@ -88,12 +85,13 @@ class DiagnosticsNavigationContractTests(unittest.TestCase):
                 self.assertNotIn("Migration Path", menu)
                 self.assertNotIn("MRZ Robustness", menu)
                 self.assertNotIn("/diagnostics/mrz-robustness-report", menu)
+                self.assertNotIn("Trading Window Feasibility", menu)
+                self.assertNotIn("/diagnostics/trading-window-feasibility", menu)
 
     def test_each_existing_diagnostic_page_marks_its_current_child(self) -> None:
         expected_active_label = {
             "operation_card": "MRZ Operation Card",
             "activation": "Activation Feasibility",
-            "trading_window": "Trading Window Feasibility",
         }
         self.assertNotIn('aria-current="page"', menu_fragment(PAGES["monitor"]))
         for name, label in expected_active_label.items():

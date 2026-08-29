@@ -112,157 +112,40 @@ class APIIntegrationTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 404)
 
-    def test_trading_window_feasibility_is_a_separate_research_tab(self) -> None:
-        response = self.client.get("/diagnostics/trading-window-feasibility")
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.headers["cache-control"], "no-store, max-age=0")
-        self.assertIn("MRZ Trading Window Feasibility", response.text)
-        self.assertIn("RESEARCH ONLY", response.text)
-        self.assertIn("MRZ Monitor", response.text)
-        self.assertIn("Activation Feasibility", response.text)
-        self.assertIn("MRZ Operation Card", response.text)
-        self.assertIn('id="refreshReport"', response.text)
-        self.assertIn("production-qualified MRZs", response.text)
-        self.assertIn("/static/operator-time.js?v=near-miss-windows-20260828", response.text)
-        self.assertIn("/static/formation-comparison.js?v=near-miss-windows-20260828", response.text)
+    def test_trading_window_feasibility_routes_are_removed(self) -> None:
+        paths = (
+            "/diagnostics/trading-window-feasibility",
+            "/api/diagnostics/trading-window-feasibility",
+            "/static/feasibility.html",
+            "/static/feasibility.js",
+            "/static/feasibility.css",
+            "/static/formation-comparison.js",
+        )
+        for path in paths:
+            with self.subTest(path=path):
+                self.assertEqual(self.client.get(path).status_code, 404)
 
     def test_operator_page_navigation_is_reciprocal(self) -> None:
         monitor = self.client.get("/").text
         feasibility = self.client.get("/diagnostics/activation-feasibility").text
         robustness = self.client.get("/diagnostics/mrz-robustness").text
-        trading_window = self.client.get(
-            "/diagnostics/trading-window-feasibility"
-        ).text
 
-        pages = (monitor, feasibility, robustness, trading_window)
+        pages = (monitor, feasibility, robustness)
         for page in pages:
             self.assertIn("Diagnostics", page)
             self.assertIn('data-diagnostics-trigger', page)
             self.assertIn('href="/diagnostics/activation-feasibility"', page)
             self.assertIn('href="/diagnostics/mrz-robustness"', page)
             self.assertNotIn('href="/diagnostics/mrz-robustness-report"', page)
-            self.assertIn('href="/diagnostics/trading-window-feasibility"', page)
-        for page in (feasibility, robustness, trading_window):
+            self.assertNotIn('href="/diagnostics/trading-window-feasibility"', page)
+            self.assertNotIn("Trading Window Feasibility", page)
+        for page in (feasibility, robustness):
             self.assertIn('href="/">MRZ Monitor</a>', page)
 
     def test_mrz_robustness_report_api_is_hidden(self) -> None:
         response = self.client.get("/api/diagnostics/mrz-robustness-report")
 
         self.assertEqual(response.status_code, 404)
-
-    def test_trading_window_api_reconstructs_episodes_without_mutating_state(self) -> None:
-        for index, price in enumerate(("110", "110.2", "110.4", "110.6", "120"), 1):
-            self.assertEqual(
-                self.client.post(
-                    "/webhook/tradingview",
-                    json=webhook_payload(index, price),
-                ).status_code,
-                201,
-            )
-
-        before = self.client.get("/api/symbols/SPXUSDT").json()
-        response = self.client.get(
-            "/api/diagnostics/trading-window-feasibility"
-        )
-        after = self.client.get("/api/symbols/SPXUSDT").json()
-        payload = response.json()
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.headers["cache-control"], "no-store, max-age=0")
-        self.assertEqual(payload["reconstruction"]["total_episodes"], 1)
-        self.assertEqual(payload["reconstruction"]["ongoing_episodes"], 1)
-        self.assertTrue(payload["reconstruction"]["fully_reconstructable"])
-        self.assertEqual(len(payload["cohorts"]), 4)
-        self.assertTrue(
-            all(
-                cohort["candidate_policy"]["production_status"] == "NOT APPROVED"
-                for cohort in payload["cohorts"]
-            )
-        )
-        self.assertEqual(
-            payload["invariants"]["mrz_engine_behavior"],
-            "structure-first external successor migration",
-        )
-        self.assertEqual(before, after)
-
-    def test_near_miss_window_analysis_is_transient_and_preserves_activation_evaluation(self) -> None:
-        for index, price in enumerate(("110", "110.3", "110.7", "111.29"), 1):
-            self.assertEqual(
-                self.client.post(
-                    "/webhook/tradingview",
-                    json=webhook_payload(index, price),
-                ).status_code,
-                201,
-            )
-        self.assertEqual(
-            self.client.post(
-                "/webhook/tradingview",
-                json=webhook_payload(
-                    5,
-                    "120",
-                    route="STR",
-                    observation_type="rejection",
-                ),
-            ).status_code,
-            201,
-        )
-
-        activation_before = self.client.get(
-            "/api/diagnostics/activation-feasibility"
-        ).json()
-        symbol_before = self.client.get("/api/symbols/SPXUSDT").json()
-        with connect(self.database_url) as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """SELECT
-                         (SELECT COUNT(*) FROM observations),
-                         (SELECT COUNT(*) FROM active_mrz),
-                         (SELECT COUNT(*) FROM mrz_events),
-                         (SELECT COUNT(*) FROM ingestion_metrics)"""
-                )
-                counts_before = cursor.fetchone()
-
-        response = self.client.get(
-            "/api/diagnostics/trading-window-feasibility"
-        )
-        payload = response.json()
-
-        with connect(self.database_url) as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """SELECT
-                         (SELECT COUNT(*) FROM observations),
-                         (SELECT COUNT(*) FROM active_mrz),
-                         (SELECT COUNT(*) FROM mrz_events),
-                         (SELECT COUNT(*) FROM ingestion_metrics)"""
-                )
-                counts_after = cursor.fetchone()
-        activation_after = self.client.get(
-            "/api/diagnostics/activation-feasibility"
-        ).json()
-        symbol_after = self.client.get("/api/symbols/SPXUSDT").json()
-
-        detail = payload["production_vs_near_miss_windows"][
-            "near_miss_details"
-        ][0]
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(detail["symbol"], "SPXUSDT")
-        self.assertEqual(detail["route"], "BTD")
-        self.assertEqual(detail["candidate_class"], "Tight near miss")
-        self.assertEqual(detail["minimum_required_allowance_pct"], 1.29)
-        self.assertEqual(detail["candidate_lower"], 110.0)
-        self.assertEqual(detail["candidate_upper"], 111.29)
-        self.assertEqual(detail["outcome"], "SUPPORTIVE_FIRST")
-        self.assertFalse(detail["is_active_mrz"])
-        self.assertIsNone(symbol_before["route_owner"])
-        self.assertEqual(symbol_before, symbol_after)
-        self.assertEqual(counts_before, counts_after)
-        self.assertEqual(counts_before[1:3], (0, 0))
-        self.assertEqual(
-            activation_before["sequence_details"],
-            activation_after["sequence_details"],
-        )
 
     def test_mrz_robustness_api_uses_authoritative_state_without_mutation(self) -> None:
         for index, price in enumerate(("110", "110.2", "110.4", "110.6", "120"), 1):

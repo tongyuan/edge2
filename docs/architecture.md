@@ -1,5 +1,16 @@
 # Deterministic state architecture
 
+## Product surfaces
+
+- **MRZ Monitor** exposes production WHO + WHERE and the current authoritative
+  active MRZ.
+- **Activation Feasibility** replays initial formation and pre-activation near
+  misses without changing production state.
+- **MRZ Operation Card** presents post-activation robustness, migration pressure,
+  successor evidence, and discretionary operator context.
+- **Pine strategy tool** remains the execution layer after an operator selects a
+  strategy to arm.
+
 ## Transaction path
 
 1. Parse JSON and authenticate using constant-time secret comparison.

@@ -139,18 +139,20 @@ GET  /api/symbols/{symbol}
 GET  /api/symbols/{symbol}/mrz
 GET  /api/diagnostics/activation-feasibility
 GET  /api/diagnostics/mrz-robustness
-GET  /api/diagnostics/trading-window-feasibility
 GET  /
 GET  /diagnostics/activation-feasibility
 GET  /diagnostics/mrz-robustness
-GET  /diagnostics/trading-window-feasibility
 ```
 
-The Trading Window Feasibility tab is a separate, read-only research report.
-It reconstructs every MRZ activation generation, keeps completed and ongoing
-episodes distinct, and measures activation through post-activation checkpoints.
-Its candidate policies are always marked `NOT APPROVED`; it does not change the
-schema 4.3 payload, production MRZ engine, or MRZ Operation Card state.
+The product surfaces have deliberately separate responsibilities:
+
+- **MRZ Monitor** shows production WHO + WHERE and the current authoritative MRZ.
+- **Activation Feasibility** studies initial formation, historical qualification,
+  and pre-activation near misses without changing production state.
+- **MRZ Operation Card** explains post-activation robustness, migration pressure,
+  successor watch, and discretionary operator evidence.
+- **Pine strategy tool** handles execution only after the operator chooses which
+  strategy to arm.
 
 MRZ Monitor fetches one latest-row overview and fetches detail only after
 selection. Its Location Heatmap groups every symbol by `current_price_location`
@@ -256,7 +258,7 @@ containers, Redis, and data remain unchanged. See [Remote operations](docs/opera
 
 ## Deliberately removed 4.2 features
 
-EDGE 2.0 has no EQM workflow payload, behavior tracking, chronology product, lifecycle tracking, MFE/MAE, excursion analysis, acceptance scoring, readiness, recommendations, suggested or operator handover, approval, manual MRZ activation, allocation mandate, research queue/diagnostics, candidate engine, macro or sector gate, Athena interpretation, historical behavior comparison, or post-activation behavior tracking.
+EDGE 2.0 has no EQM workflow payload, chronology product, MFE/MAE, excursion analysis, acceptance scoring, readiness, recommendations, suggested or operator handover, approval, manual MRZ activation, allocation mandate, research queue, candidate engine, macro or sector gate, or Athena interpretation.
 
 ## Environment
 
