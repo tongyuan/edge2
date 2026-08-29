@@ -159,6 +159,14 @@ class MRZRobustnessService:
             <= active.core_mrz_upper
             for observation in post_activation
         )
+        above_active_mrz = sum(
+            observation.observation_price > active.core_mrz_upper
+            for observation in post_activation
+        )
+        below_active_mrz = sum(
+            observation.observation_price < active.core_mrz_lower
+            for observation in post_activation
+        )
         containment_percentage = (
             Decimal(contained) * Decimal("100") / Decimal(total)
             if total
@@ -434,6 +442,16 @@ class MRZRobustnessService:
                 "label": robustness_label,
                 "reason": robustness_reason,
                 "post_activation_observation_count": total,
+            },
+            "observation_position": {
+                "above_active_mrz_observation_count": above_active_mrz,
+                "inside_active_mrz_observation_count": contained,
+                "below_active_mrz_observation_count": below_active_mrz,
+                "total_observation_count": total,
+                "definition": (
+                    "Mutually exclusive post-activation observation counts relative "
+                    "to the inclusive frozen active MRZ bounds."
+                ),
             },
             "containment": {
                 "inside_observation_count": contained,

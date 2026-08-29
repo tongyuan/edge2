@@ -63,6 +63,12 @@ const btcReport = {
     reason: "Post-activation observations have moved outside the frozen migration envelope.",
     post_activation_observation_count: 4,
   },
+  observation_position: {
+    above_active_mrz_observation_count: 3,
+    inside_active_mrz_observation_count: 1,
+    below_active_mrz_observation_count: 0,
+    total_observation_count: 4,
+  },
   containment: {
     inside_observation_count: 1,
     total_observation_count: 4,
@@ -155,13 +161,19 @@ for (const section of orderedSections) {
 assert.match(btcMarkup, /BTCUSDT · STR/);
 assert.match(btcMarkup, /Deep Premium/);
 assert.match(btcMarkup, /Authoritative/);
-assert.match(btcMarkup, /Resistive/);
 assert.match(btcMarkup, /77,309\.19 – 77,436\.91/);
 assert.match(btcMarkup, /23 Aug 2026 · 22:21 UTC−4/);
 assert.match(btcMarkup, /Under Pressure/);
 assert.match(btcMarkup, /↑ Upward/);
 assert.match(btcMarkup, /Upper migration boundary/);
 assert.match(btcMarkup, /Still authoritative/);
+assert.match(btcMarkup, /Observation Position/);
+assert.match(btcMarkup, /Above MRZ<\/dt><dd>3/);
+assert.match(btcMarkup, /Inside MRZ<\/dt><dd>1/);
+assert.match(btcMarkup, /Below MRZ<\/dt><dd>0/);
+assert.match(btcMarkup, /Migration Envelope/);
+assert.match(btcMarkup, /Above envelope<\/dt><dd>3/);
+assert.match(btcMarkup, /Below envelope<\/dt><dd>0/);
 assert.match(btcMarkup, /MRZ Displacement/);
 assert.match(btcMarkup, /↑ \+6\.2%/);
 assert.match(btcMarkup, /Median displacement above midpoint/);
@@ -177,6 +189,9 @@ assert.doesNotMatch(btcMarkup, /bb_mrz/);
 assert.doesNotMatch(btcMarkup, /\b(?:buy|sell|long|short)\b/i);
 assert.doesNotMatch(btcMarkup, /Healthy|Weak|Good|Bad/);
 assert.doesNotMatch(btcMarkup, /MIGRATED UPWARD|MIGRATED DOWNWARD/);
+assert.doesNotMatch(btcMarkup, /Structural Role|Route Integrity|Containment/i);
+assert.doesNotMatch(btcMarkup, /Boundary Behavior|Upper tests|Lower tests/i);
+assert.doesNotMatch(btcMarkup, /Resistive|Supportive/i);
 
 const wldMigration = {
   has_migrated: true,
@@ -227,6 +242,12 @@ const wldReport = {
     label: "Stable",
     reason: "The observed post-activation sample remains within the frozen migration envelope.",
     post_activation_observation_count: 1,
+  },
+  observation_position: {
+    above_active_mrz_observation_count: 0,
+    inside_active_mrz_observation_count: 1,
+    below_active_mrz_observation_count: 0,
+    total_observation_count: 1,
   },
   containment: {
     inside_observation_count: 1,
@@ -284,7 +305,6 @@ const wldMarkup = robustnessCardMarkup(
 );
 assert.match(wldMarkup, /WLDUSDT · BTD/);
 assert.match(wldMarkup, /Shallow Discount/);
-assert.match(wldMarkup, /Supportive/);
 assert.match(wldMarkup, /↑ MIGRATED UPWARD/);
 assert.match(wldMarkup, /Stable/);
 assert.match(wldMarkup, /Neutral/);
@@ -304,6 +324,12 @@ const zeroEvidenceReport = {
     label: "Not yet assessable",
     reason: "No post-activation observations are available.",
     post_activation_observation_count: 0,
+  },
+  observation_position: {
+    above_active_mrz_observation_count: 0,
+    inside_active_mrz_observation_count: 0,
+    below_active_mrz_observation_count: 0,
+    total_observation_count: 0,
   },
   containment: {
     inside_observation_count: 0,

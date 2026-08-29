@@ -72,6 +72,19 @@ class MRZRobustnessTests(unittest.TestCase):
         self.assertEqual(report["containment"]["inside_observation_count"], 3)
         self.assertEqual(report["containment"]["total_observation_count"], 4)
         self.assertEqual(report["containment"]["percentage"], "75")
+        self.assertEqual(
+            report["observation_position"],
+            {
+                "above_active_mrz_observation_count": 1,
+                "inside_active_mrz_observation_count": 3,
+                "below_active_mrz_observation_count": 0,
+                "total_observation_count": 4,
+                "definition": (
+                    "Mutually exclusive post-activation observation counts relative "
+                    "to the inclusive frozen active MRZ bounds."
+                ),
+            },
+        )
         self.assertEqual(report["boundary_pressure"]["upper_boundary_test_count"], 2)
         self.assertEqual(report["boundary_pressure"]["lower_boundary_test_count"], 1)
         self.assertEqual(report["boundary_pressure"]["outside_envelope_observation_count"], 0)

@@ -295,6 +295,19 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(report["structural_authority"]["label"], "Authoritative")
         self.assertEqual(report["structural_authority"]["structural_location_label"], "Deep Discount")
         self.assertEqual(
+            report["observation_position"],
+            {
+                "above_active_mrz_observation_count": 1,
+                "inside_active_mrz_observation_count": 0,
+                "below_active_mrz_observation_count": 0,
+                "total_observation_count": 1,
+                "definition": (
+                    "Mutually exclusive post-activation observation counts relative "
+                    "to the inclusive frozen active MRZ bounds."
+                ),
+            },
+        )
+        self.assertEqual(
             report["mrz_displacement"][
                 "median_signed_displacement_percentage_of_activation_ipda"
             ],

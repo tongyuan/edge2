@@ -93,10 +93,9 @@ function robustnessCardMarkup(report, timestampFormatter = (value) => value) {
   const formation = report.formation_evidence;
   const robustness = report.robustness_evidence;
   const behavior = report.post_activation_robustness;
-  const containment = report.containment;
+  const position = report.observation_position;
   const boundary = report.boundary_pressure;
   const displacement = report.mrz_displacement;
-  const route = report.route_integrity;
   const pressure = report.migration_pressure;
   const successor = report.successor_watch;
   const age = report.mrz_age;
@@ -127,7 +126,6 @@ function robustnessCardMarkup(report, timestampFormatter = (value) => value) {
         <article class="authority-range"><span>ACTIVE MRZ</span><strong>${priceText(active.lower)} – ${priceText(active.upper)}</strong></article>
         <article><span>MIDPOINT</span><strong>${priceText(active.midpoint)}</strong></article>
         <article><span>AUTHORITY</span><strong>${escapeHtml(authority.label)}</strong></article>
-        <article><span>STRUCTURAL ROLE</span><strong>${escapeHtml(authority.structural_role_label)}</strong></article>
         <article><span>ACTIVATED</span><strong>${escapeHtml(timestampFormatter(active.activated_at) || "—")}</strong></article>
         <article><span>MRZ AGE</span><strong>${durationText(age.active_duration_seconds)}</strong></article>
       </div>
@@ -151,28 +149,19 @@ function robustnessCardMarkup(report, timestampFormatter = (value) => value) {
       </div>
       <div class="evidence-grid">
       <article class="metric-card">
-        <h3>Containment</h3>
-        <strong class="metric-primary">${containment.inside_observation_count} / ${containment.total_observation_count}</strong>
-        <span class="metric-secondary">inside active MRZ</span>
-        <p class="metric-note">${percentageText(containment.percentage)} of the post-activation sample.</p>
+        <h3>Observation Position</h3>
+        <dl>
+          <div><dt>Above MRZ</dt><dd>${position.above_active_mrz_observation_count}</dd></div>
+          <div><dt>Inside MRZ</dt><dd>${position.inside_active_mrz_observation_count}</dd></div>
+          <div><dt>Below MRZ</dt><dd>${position.below_active_mrz_observation_count}</dd></div>
+        </dl>
+        <p class="metric-note">Relative to the frozen active MRZ bounds.</p>
       </article>
       <article class="metric-card">
-        <h3>Boundary Behavior</h3>
-        <dl><div><dt>Upper tests</dt><dd>${boundary.upper_boundary_test_count}</dd></div><div><dt>Lower tests</dt><dd>${boundary.lower_boundary_test_count}</dd></div></dl>
-        <p class="metric-note">Tests are at or beyond the frozen core boundaries.</p>
-      </article>
-      <article class="metric-card">
-        <h3>Envelope</h3>
+        <h3>Migration Envelope</h3>
         <strong class="metric-primary">${boundary.outside_envelope_observation_count}</strong>
         <span class="metric-secondary">outside envelope</span>
-        <dl><div><dt>Above upper</dt><dd>${boundary.above_upper_envelope_observation_count}</dd></div><div><dt>Below lower</dt><dd>${boundary.below_lower_envelope_observation_count}</dd></div></dl>
-      </article>
-      <article class="metric-card">
-        <h3>Route Integrity</h3>
-        <strong class="metric-primary compact">${route.route_aligned_observation_count} / ${route.total_observation_count}</strong>
-        <span class="metric-secondary">route aligned</span>
-        <dl><div><dt>Structurally aligned</dt><dd>${route.structurally_aligned_observation_count}</dd></div></dl>
-        <p class="metric-note">${escapeHtml(route.label)}</p>
+        <dl><div><dt>Above envelope</dt><dd>${boundary.above_upper_envelope_observation_count}</dd></div><div><dt>Below envelope</dt><dd>${boundary.below_lower_envelope_observation_count}</dd></div></dl>
       </article>
       <article class="metric-card">
         <h3>MRZ Displacement</h3>
@@ -221,7 +210,6 @@ function robustnessCardMarkup(report, timestampFormatter = (value) => value) {
         <div><dt>Current authority</dt><dd>${escapeHtml(summary.current_authority)}</dd></div>
         <div><dt>Robustness</dt><dd>${escapeHtml(summary.robustness_label)}</dd></div>
         <div><dt>Pressure</dt><dd>${escapeHtml(directionText(summary.pressure_direction, summary.pressure_direction_label))}</dd></div>
-        <div><dt>Structural role</dt><dd>${escapeHtml(summary.structural_role_label)}</dd></div>
         <div><dt>Successor</dt><dd>${escapeHtml(summary.successor_label)}</dd></div>
       </dl>
       <p class="summary-authority">${escapeHtml(summary.authority_statement)}</p>
