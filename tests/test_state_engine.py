@@ -30,6 +30,7 @@ class ActiveMRZStateTests(unittest.TestCase):
 
         self.assertEqual(active.formation_started_at, BASE_TIME)
         self.assertEqual(active.formation_completed_at, BASE_TIME.replace(hour=15, minute=15))
+        self.assertEqual(active.activated_at, rows[-1].observed_at)
         self.assertEqual(active.formation_duration_seconds, Decimal("11700"))
 
     def test_non_selected_observations_do_not_affect_formation_duration(self) -> None:
@@ -154,8 +155,28 @@ class ActiveMRZStateTests(unittest.TestCase):
         self.assertEqual(activation.new_mrz.formation_duration_seconds, Decimal("180"))
         self.assertEqual(migration.old_mrz.formation_duration_seconds, Decimal("180"))
         self.assertEqual(migration.new_mrz.formation_duration_seconds, Decimal("10800"))
+        self.assertEqual(migration.old_mrz.formation_started_at, rows[0].observed_at)
         self.assertEqual(result.active_mrz.formation_started_at, rows[4].observed_at)
         self.assertEqual(result.active_mrz.formation_completed_at, rows[7].observed_at)
+        self.assertEqual(result.active_mrz.activated_at, rows[7].observed_at)
+
+    def test_str_formation_timestamp_uses_selected_rejection_cluster(self) -> None:
+        rows = [
+            observation(1, "140", route=Route.STR, observed_offset=0),
+            observation(2, "180", route=Route.STR, observed_offset=3600),
+            observation(3, "148", route=Route.STR, observed_offset=4000),
+            observation(4, "180.2", route=Route.STR, observed_offset=7200),
+            observation(5, "180.4", route=Route.STR, observed_offset=10800),
+            observation(6, "180.6", route=Route.STR, observed_offset=14400),
+        ]
+        active = replay_symbol(rows).active_mrz
+
+        self.assertEqual(active.route_owner, Route.STR)
+        self.assertEqual(active.confirming_observation_count, 4)
+        self.assertEqual(active.formation_started_at, rows[1].observed_at)
+        self.assertEqual(active.formation_completed_at, rows[-1].observed_at)
+        self.assertEqual(active.activated_at, rows[-1].observed_at)
+        self.assertEqual(active.formation_duration_seconds, Decimal("10800"))
 
     def test_replay_order_does_not_change_formation_metadata(self) -> None:
         rows = [

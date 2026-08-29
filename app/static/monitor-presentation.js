@@ -91,10 +91,14 @@
     if (state.mrz_status === "active") {
       const count = countValue(state.supporting_observation_count);
       const type = state.route_owner === "STR" ? "rejection" : "reclaim";
+      const formationFirst = timestampFormatter(state.formation_started_at);
       const duration = formatFormationDuration(state.formation_duration_seconds);
+      const secondary = [];
+      if (formationFirst) secondary.push(`First ${type} · ${formationFirst}`);
+      if (duration) secondary.push(`Formation duration · ${duration}`);
       return {
         primary: `${count} qualifying ${type} observation${count === 1 ? "" : "s"}`,
-        secondary: duration ? [`Formation duration · ${duration}`] : [],
+        secondary,
         checks: [],
       };
     }

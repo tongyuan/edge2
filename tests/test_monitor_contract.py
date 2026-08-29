@@ -265,6 +265,8 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn("state.supporting_observation_count", MONITOR_PRESENTATION)
         self.assertIn('state.route_owner === "STR" ? "rejection" : "reclaim"', MONITOR_PRESENTATION)
         self.assertIn("qualifying ${type} observation", MONITOR_PRESENTATION)
+        self.assertIn("timestampFormatter(state.formation_started_at)", MONITOR_PRESENTATION)
+        self.assertIn("First ${type} · ${formationFirst}", MONITOR_PRESENTATION)
         self.assertIn("Formation duration · ${duration}", MONITOR_PRESENTATION)
         self.assertNotIn("confirming_observation_count", MONITOR_PRESENTATION)
         self.assertIn(".fact-primary { display: block; color: var(--text); }", CSS)

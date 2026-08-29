@@ -148,12 +148,17 @@ assert.deepEqual(
     mrz_status: "active",
     route_owner: "BTD",
     supporting_observation_count: 4,
+    formation_started_at: "2026-08-24T18:31:00Z",
+    activated_at: "2026-08-28T19:31:00Z",
     formation_duration_seconds: 11700,
     btd_window_started_at: "2026-08-20T18:05:00Z",
   }, formatOperatorTimestampUtcMinus4),
   {
     primary: "4 qualifying reclaim observations",
-    secondary: ["Formation duration · 3h 15m"],
+    secondary: [
+      "First reclaim · 24 Aug 2026 · 14:31 UTC−4",
+      "Formation duration · 3h 15m",
+    ],
     checks: [],
   },
 );
@@ -163,11 +168,15 @@ assert.deepEqual(
     mrz_status: "active",
     route_owner: "STR",
     supporting_observation_count: 6,
+    formation_started_at: "2026-08-25T05:45:00Z",
     formation_duration_seconds: 280800,
-  }),
+  }, formatOperatorTimestampUtcMinus4),
   {
     primary: "6 qualifying rejection observations",
-    secondary: ["Formation duration · 3d 6h"],
+    secondary: [
+      "First rejection · 25 Aug 2026 · 01:45 UTC−4",
+      "Formation duration · 3d 6h",
+    ],
     checks: [],
   },
 );
