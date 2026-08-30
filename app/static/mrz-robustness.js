@@ -167,10 +167,6 @@ function robustnessCardMarkup(report, timestampFormatter = (value) => value) {
     ? `<dt>${escapeHtml(pressure.relevant_boundary_label)}</dt><dd>${priceText(pressure.relevant_boundary)}</dd>`
     : "<dt>Relevant boundary</dt><dd>—</dd>";
 
-  const evidenceContent = `<div class="evidence-split formation-evidence">
-    <article><span class="section-label">FORMATION</span><strong>${formation.confirming_observation_count} qualifying ${qualifyingObservationName} observations</strong><dl class="formation-provenance"><div><dt>${escapeHtml(firstQualifyingLabel)}</dt><dd>${escapeHtml(formationStartedAt)}</dd></div><div><dt>Formation duration</dt><dd>${escapeHtml(formationDuration)}</dd></div></dl></article>
-  </div>`;
-
   const postActivationContent = `<div class="robustness-panel ${statusClass(behavior.status)}">
     <strong class="robustness-state">${escapeHtml(behavior.label)}</strong>
     <span>${behavior.post_activation_observation_count} post-activation observations</span>
@@ -258,12 +254,6 @@ function robustnessCardMarkup(report, timestampFormatter = (value) => value) {
     </header>
 
     <div class="operator-disclosures">
-      ${disclosureMarkup(
-    "evidence",
-    "Evidence",
-    `${formation.confirming_observation_count} qualifying ${qualifyingObservationName} observations`,
-    evidenceContent,
-  )}
       ${disclosureMarkup(
     "post-activation",
     "Post-activation observations",

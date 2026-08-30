@@ -166,12 +166,7 @@ const btcMarkup = robustnessCardMarkup(
     : "26 Aug 2026 · 01:37 UTC−4",
 );
 const btcCompactSummary = btcMarkup.slice(0, btcMarkup.indexOf("</header>") + 9);
-const btcEvidence = btcMarkup.slice(
-  btcMarkup.indexOf('data-section="evidence"'),
-  btcMarkup.indexOf('data-section="post-activation"'),
-);
 const orderedDisclosures = [
-  'data-section="evidence"',
   'data-section="post-activation"',
   'data-section="successor-watch"',
   'data-section="migration-history"',
@@ -203,13 +198,10 @@ for (const summaryValue of [
   );
 }
 assert.match(btcMarkup, /<header class="compact-authority"/);
-assert.match(btcMarkup, /<details class="operator-disclosure evidence-disclosure"/);
 assert.match(btcMarkup, /<summary>/);
 assert.doesNotMatch(btcMarkup, /<details[^>]*\sopen(?:\s|>)/);
-assert.match(
-  btcMarkup,
-  /data-section="evidence"[\s\S]*First qualifying rejection[\s\S]*<\/details>/,
-);
+assert.doesNotMatch(btcMarkup, /data-section="evidence"/);
+assert.doesNotMatch(btcMarkup, /evidence-disclosure/);
 assert.match(
   btcMarkup,
   /data-section="post-activation"[\s\S]*Observation Position[\s\S]*<\/details>/,
@@ -224,16 +216,12 @@ assert.match(btcMarkup, /Authoritative/);
 assert.match(btcMarkup, /77,309\.19 – 77,436\.91/);
 assert.match(btcMarkup, /26 Aug 2026 · 01:37 UTC−4/);
 assert.match(btcMarkup, /Formation duration<\/dt><dd>1d 15h/);
-assert.match(btcMarkup, /4 qualifying rejection observations/);
+assert.doesNotMatch(btcMarkup, /4 qualifying rejection observations/);
 assert.match(btcMarkup, /First qualifying rejection/);
 assert.match(btcMarkup, /24 Aug 2026 · 10:25 UTC−4/);
 assert.match(btcMarkup, /Formation duration<\/dt><dd>1d 15h/);
 assert.match(
   btcCompactSummary,
-  /First qualifying rejection<\/dt><dd>24 Aug 2026 · 10:25 UTC−4<\/dd>/,
-);
-assert.match(
-  btcEvidence,
   /First qualifying rejection<\/dt><dd>24 Aug 2026 · 10:25 UTC−4<\/dd>/,
 );
 assert.doesNotMatch(btcCompactSummary, /<dt>Robustness<\/dt>/);
@@ -427,10 +415,6 @@ const wldMarkup = robustnessCardMarkup(
       : "24 Aug 2026 · 12:00 UTC−4",
 );
 const wldCompactSummary = wldMarkup.slice(0, wldMarkup.indexOf("</header>") + 9);
-const wldEvidence = wldMarkup.slice(
-  wldMarkup.indexOf('data-section="evidence"'),
-  wldMarkup.indexOf('data-section="post-activation"'),
-);
 assert.match(wldMarkup, /WLDUSDT · BTD/);
 assert.match(wldMarkup, /Shallow Discount/);
 assert.match(wldMarkup, /↑ MIGRATED UPWARD/);
@@ -439,14 +423,10 @@ assert.match(wldMarkup, /Neutral/);
 assert.match(wldMarkup, /↓ -1\.0%/);
 assert.match(wldMarkup, /Median displacement below midpoint/);
 assert.match(wldMarkup, /No successor candidate/);
-assert.match(wldMarkup, /4 qualifying reclaim observations/);
+assert.doesNotMatch(wldMarkup, /4 qualifying reclaim observations/);
 assert.match(wldMarkup, /First qualifying reclaim/);
 assert.match(
   wldCompactSummary,
-  /First qualifying reclaim<\/dt><dd>28 Aug 2026 · 21:13 UTC−4<\/dd>/,
-);
-assert.match(
-  wldEvidence,
   /First qualifying reclaim<\/dt><dd>28 Aug 2026 · 21:13 UTC−4<\/dd>/,
 );
 assert.doesNotMatch(wldCompactSummary, /<dt>Robustness<\/dt>/);
