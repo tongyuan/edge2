@@ -54,7 +54,7 @@ const btcReport = {
     lower: "77309.19",
     upper: "77436.91",
     midpoint: "77373.05",
-    activated_at: "2026-08-24T02:21:00Z",
+    activated_at: "2026-08-26T05:37:00Z",
   },
   formation_evidence: {
     confirming_observation_count: 4,
@@ -163,7 +163,12 @@ const btcMarkup = robustnessCardMarkup(
   btcReport,
   (value) => value === "2026-08-24T14:25:00Z"
     ? "24 Aug 2026 · 10:25 UTC−4"
-    : "23 Aug 2026 · 22:21 UTC−4",
+    : "26 Aug 2026 · 01:37 UTC−4",
+);
+const btcCompactSummary = btcMarkup.slice(0, btcMarkup.indexOf("</header>") + 9);
+const btcEvidence = btcMarkup.slice(
+  btcMarkup.indexOf('data-section="evidence"'),
+  btcMarkup.indexOf('data-section="post-activation"'),
 );
 const orderedDisclosures = [
   'data-section="evidence"',
@@ -186,7 +191,7 @@ for (const summaryValue of [
   "Activated",
   "Formation duration",
   "MRZ age",
-  "Robustness",
+  "First qualifying rejection",
   "Pressure",
   "Successor",
 ]) {
@@ -217,12 +222,36 @@ assert.match(btcMarkup, /BTCUSDT · STR/);
 assert.match(btcMarkup, /Deep Premium/);
 assert.match(btcMarkup, /Authoritative/);
 assert.match(btcMarkup, /77,309\.19 – 77,436\.91/);
-assert.match(btcMarkup, /23 Aug 2026 · 22:21 UTC−4/);
+assert.match(btcMarkup, /26 Aug 2026 · 01:37 UTC−4/);
 assert.match(btcMarkup, /Formation duration<\/dt><dd>1d 15h/);
 assert.match(btcMarkup, /4 qualifying rejection observations/);
 assert.match(btcMarkup, /First qualifying rejection/);
 assert.match(btcMarkup, /24 Aug 2026 · 10:25 UTC−4/);
 assert.match(btcMarkup, /Formation duration<\/dt><dd>1d 15h/);
+assert.match(
+  btcCompactSummary,
+  /First qualifying rejection<\/dt><dd>24 Aug 2026 · 10:25 UTC−4<\/dd>/,
+);
+assert.match(
+  btcEvidence,
+  /First qualifying rejection<\/dt><dd>24 Aug 2026 · 10:25 UTC−4<\/dd>/,
+);
+assert.doesNotMatch(btcCompactSummary, /<dt>Robustness<\/dt>/);
+assert.match(btcCompactSummary, /<dt>Pressure<\/dt>/);
+assert.match(btcCompactSummary, /<dt>Successor<\/dt>/);
+assert.match(
+  btcMarkup,
+  /data-section="post-activation"[\s\S]*Under Pressure[\s\S]*<\/details>/,
+);
+assert.equal(
+  btcReport.active_mrz.activated_at,
+  btcReport.formation_evidence.completed_at,
+);
+assert.equal(
+  (Date.parse(btcReport.active_mrz.activated_at)
+    - Date.parse(btcReport.formation_evidence.started_at)) / 1000,
+  Number(btcReport.formation_evidence.duration_seconds),
+);
 assert.match(btcMarkup, /Under Pressure/);
 assert.match(btcMarkup, /↑ Upward/);
 assert.match(btcMarkup, /Upper migration boundary/);
@@ -306,6 +335,13 @@ const wldReport = {
     lower: "0.4034",
     upper: "0.4083",
     midpoint: "0.40585",
+    activated_at: "2026-08-29T17:50:00Z",
+  },
+  formation_evidence: {
+    ...btcReport.formation_evidence,
+    started_at: "2026-08-29T01:13:00Z",
+    completed_at: "2026-08-29T17:50:00Z",
+    duration_seconds: "59820",
   },
   robustness_evidence: {
     ...btcReport.robustness_evidence,
@@ -384,7 +420,16 @@ const wldReport = {
 };
 const wldMarkup = robustnessCardMarkup(
   wldReport,
-  () => "24 Aug 2026 · 12:00 UTC−4",
+  (value) => value === "2026-08-29T01:13:00Z"
+    ? "28 Aug 2026 · 21:13 UTC−4"
+    : value === "2026-08-29T17:50:00Z"
+      ? "29 Aug 2026 · 13:50 UTC−4"
+      : "24 Aug 2026 · 12:00 UTC−4",
+);
+const wldCompactSummary = wldMarkup.slice(0, wldMarkup.indexOf("</header>") + 9);
+const wldEvidence = wldMarkup.slice(
+  wldMarkup.indexOf('data-section="evidence"'),
+  wldMarkup.indexOf('data-section="post-activation"'),
 );
 assert.match(wldMarkup, /WLDUSDT · BTD/);
 assert.match(wldMarkup, /Shallow Discount/);
@@ -396,6 +441,17 @@ assert.match(wldMarkup, /Median displacement below midpoint/);
 assert.match(wldMarkup, /No successor candidate/);
 assert.match(wldMarkup, /4 qualifying reclaim observations/);
 assert.match(wldMarkup, /First qualifying reclaim/);
+assert.match(
+  wldCompactSummary,
+  /First qualifying reclaim<\/dt><dd>28 Aug 2026 · 21:13 UTC−4<\/dd>/,
+);
+assert.match(
+  wldEvidence,
+  /First qualifying reclaim<\/dt><dd>28 Aug 2026 · 21:13 UTC−4<\/dd>/,
+);
+assert.doesNotMatch(wldCompactSummary, /<dt>Robustness<\/dt>/);
+assert.match(wldCompactSummary, /<dt>Pressure<\/dt>/);
+assert.match(wldCompactSummary, /<dt>Successor<\/dt>/);
 assert.doesNotMatch(wldMarkup, /<dt>First reclaim<\/dt>/);
 
 const unavailableFormationMarkup = robustnessCardMarkup({
@@ -413,6 +469,14 @@ assert.match(
 );
 assert.match(
   unavailableFormationMarkup,
+  /First qualifying rejection<\/dt><dd>Unavailable<\/dd>/,
+);
+const unavailableCompactSummary = unavailableFormationMarkup.slice(
+  0,
+  unavailableFormationMarkup.indexOf("</header>") + 9,
+);
+assert.match(
+  unavailableCompactSummary,
   /First qualifying rejection<\/dt><dd>Unavailable<\/dd>/,
 );
 

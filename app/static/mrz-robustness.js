@@ -251,7 +251,7 @@ function robustnessCardMarkup(report, timestampFormatter = (value) => value) {
         <div><dt>Activated</dt><dd>${escapeHtml(activeTimestamp)}</dd></div>
         <div><dt>Formation duration</dt><dd>${escapeHtml(formationDuration)}</dd></div>
         <div><dt>MRZ age</dt><dd>${escapeHtml(activeDuration)}</dd></div>
-        <div class="${statusClass(behavior.status)}"><dt>Robustness</dt><dd>${escapeHtml(behavior.label)}</dd></div>
+        <div><dt>${escapeHtml(firstQualifyingLabel)}</dt><dd>${escapeHtml(formationStartedAt)}</dd></div>
         <div class="${statusClass(pressure.status)}"><dt>Pressure</dt><dd>${escapeHtml(pressureSummary)}</dd></div>
         <div class="${statusClass(successor.status)}"><dt>Successor</dt><dd>${escapeHtml(successor.label)}</dd></div>
       </dl>
