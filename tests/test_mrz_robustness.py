@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timezone
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from app.db import connect
@@ -57,8 +58,125 @@ class MRZRobustnessTests(unittest.TestCase):
         self.assertEqual(active.activation_event_id, "event-4")
         self.assertEqual(report["active_mrz"]["activated_at"], "2026-08-20T12:00:04Z")
         self.assertEqual(report["formation_evidence"]["confirming_observation_count"], 4)
+        self.assertEqual(report["formation_evidence"]["started_at"], "2026-08-20T12:00:01Z")
+        self.assertEqual(report["formation_evidence"]["completed_at"], "2026-08-20T12:00:04Z")
+        self.assertEqual(report["formation_evidence"]["duration_seconds"], "3")
         self.assertEqual(report["robustness_evidence"]["post_activation_observation_count"], 2)
         self.assertEqual(report["containment"]["total_observation_count"], 2)
+
+    def test_migrated_current_mrz_uses_its_own_formation_provenance(self) -> None:
+        rows = tuple(
+            observation(index, price, observed_offset=offset)
+            for index, (price, offset) in enumerate(
+                zip(
+                    (
+                        "110", "110.2", "110.4", "110.6",
+                        "120", "120.2", "120.4", "120.6",
+                    ),
+                    (0, 60, 120, 180, 3600, 7200, 10800, 14400),
+                ),
+                1,
+            )
+        )
+        replay = replay_symbol(rows)
+        report = MRZRobustnessService(
+            lambda: (
+                (replay.active_mrz,),
+                rows,
+                {replay.active_mrz.symbol: {"has_migrated": True}},
+            ),
+            clock=lambda: FIXED_NOW,
+        ).generate_report()["active_mrzs"][0]
+
+        self.assertEqual(report["active_mrz"]["lower"], "120")
+        self.assertEqual(
+            report["formation_evidence"]["started_at"],
+            "2026-08-20T13:00:00Z",
+        )
+        self.assertEqual(
+            report["formation_evidence"]["completed_at"],
+            "2026-08-20T16:00:00Z",
+        )
+        self.assertEqual(report["formation_evidence"]["duration_seconds"], "10800")
+        self.assertNotEqual(
+            report["formation_evidence"]["started_at"],
+            "2026-08-20T12:00:00Z",
+        )
+
+    def test_unavailable_formation_provenance_is_not_fabricated(self) -> None:
+        formation = tuple(
+            observation(index, price)
+            for index, price in enumerate(("110", "110.2", "110.4", "110.6"), 1)
+        )
+        active = replace(
+            replay_symbol(formation).active_mrz,
+            formation_started_at=None,
+            formation_completed_at=None,
+            formation_duration_seconds=None,
+        )
+        report = MRZRobustnessService(
+            lambda: ((active,), formation, {active.symbol: {"has_migrated": False}}),
+            clock=lambda: FIXED_NOW,
+        ).generate_report()["active_mrzs"][0]
+
+        self.assertEqual(
+            report["formation_evidence"],
+            {
+                "confirming_observation_count": 4,
+                "started_at": None,
+                "completed_at": None,
+                "duration_seconds": None,
+                "meaning": "Why the active MRZ was formed.",
+            },
+        )
+
+    def test_cards_order_by_shortest_formation_then_activation_then_symbol(self) -> None:
+        formation = tuple(
+            observation(index, price)
+            for index, price in enumerate(("110", "110.2", "110.4", "110.6"), 1)
+        )
+        base = replay_symbol(formation).active_mrz
+
+        def active(symbol: str, duration: int | None, activated_offset: int):
+            completed_at = BASE_TIME + timedelta(seconds=activated_offset)
+            return replace(
+                base,
+                symbol=symbol,
+                activated_at=completed_at,
+                activation_event_id=f"{symbol}-activation",
+                formation_started_at=(
+                    completed_at - timedelta(seconds=duration)
+                    if duration is not None
+                    else None
+                ),
+                formation_completed_at=(
+                    completed_at if duration is not None else None
+                ),
+                formation_duration_seconds=(
+                    Decimal(duration) if duration is not None else None
+                ),
+            )
+
+        active_mrzs = (
+            active("SLOW", 120, 500),
+            active("TIE_B", 60, 300),
+            active("UNAVAILABLE", None, 600),
+            active("RECENT", 60, 400),
+            active("TIE_A", 60, 300),
+        )
+        report = MRZRobustnessService(
+            lambda: (
+                active_mrzs,
+                (),
+                {item.symbol: {"has_migrated": False} for item in active_mrzs},
+            ),
+            clock=lambda: FIXED_NOW,
+        ).generate_report()
+
+        self.assertEqual(
+            [item["symbol"] for item in report["active_mrzs"]],
+            ["RECENT", "TIE_A", "TIE_B", "SLOW", "UNAVAILABLE"],
+        )
 
     def test_containment_boundary_pressure_and_signed_midpoint_displacement(self) -> None:
         post = (

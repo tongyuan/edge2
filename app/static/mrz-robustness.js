@@ -122,6 +122,17 @@ function migrationProvenanceMarkup(migration, timestampFormatter = (value) => va
   </aside>`;
 }
 
+function disclosureMarkup(section, title, synopsis, content) {
+  return `<details class="operator-disclosure ${escapeHtml(section)}-disclosure" data-section="${escapeHtml(section)}">
+    <summary>
+      <span class="disclosure-title">${escapeHtml(title)}</span>
+      <span class="disclosure-synopsis">${escapeHtml(synopsis)}</span>
+      <span class="disclosure-chevron" aria-hidden="true"></span>
+    </summary>
+    <div class="disclosure-content">${content}</div>
+  </details>`;
+}
+
 function robustnessCardMarkup(report, timestampFormatter = (value) => value) {
   const authority = report.structural_authority;
   const active = report.active_mrz;
@@ -134,109 +145,144 @@ function robustnessCardMarkup(report, timestampFormatter = (value) => value) {
   const pressure = report.migration_pressure;
   const successor = report.successor_watch;
   const age = report.mrz_age;
-  const summary = report.structural_summary;
+  const structuralSummary = report.structural_summary;
+  const qualifyingObservationName = report.route_owner === "BTD" ? "reclaim" : "rejection";
+  const firstQualifyingLabel = `First qualifying ${qualifyingObservationName}`;
+  const formationStartedAt = timestampFormatter(formation.started_at) || "Unavailable";
+  const formationDuration = formation.duration_seconds === null
+    || formation.duration_seconds === undefined
+    || formation.duration_seconds === ""
+    ? "Unavailable"
+    : durationText(formation.duration_seconds);
+  const activeTimestamp = timestampFormatter(active.activated_at) || "—";
+  const activeDuration = durationText(age.active_duration_seconds);
+  const pressureDirection = directionText(pressure.direction, pressure.direction_label);
+  const pressureSummary = pressure.direction === "NEUTRAL"
+    ? pressure.label
+    : `${pressure.label} · ${pressureDirection}`;
+  const migrationSummary = report.migration?.has_migrated
+    ? `Migrated ${String(report.migration.direction || "").toLowerCase()} · ${pressureSummary}`
+    : `No recorded migration · ${pressureSummary}`;
   const relevantBoundary = pressure.relevant_boundary_label
     ? `<dt>${escapeHtml(pressure.relevant_boundary_label)}</dt><dd>${priceText(pressure.relevant_boundary)}</dd>`
     : "<dt>Relevant boundary</dt><dd>—</dd>";
+
+  const evidenceContent = `<div class="evidence-split formation-evidence">
+    <article><span class="section-label">FORMATION</span><strong>${formation.confirming_observation_count} qualifying ${qualifyingObservationName} observations</strong><dl class="formation-provenance"><div><dt>${escapeHtml(firstQualifyingLabel)}</dt><dd>${escapeHtml(formationStartedAt)}</dd></div><div><dt>Formation duration</dt><dd>${escapeHtml(formationDuration)}</dd></div></dl></article>
+  </div>`;
+
+  const postActivationContent = `<div class="robustness-panel ${statusClass(behavior.status)}">
+    <strong class="robustness-state">${escapeHtml(behavior.label)}</strong>
+    <span>${behavior.post_activation_observation_count} post-activation observations</span>
+    <p>${escapeHtml(behavior.reason)}</p>
+  </div>
+  <div class="evidence-grid">
+    <article class="metric-card">
+      <h3>Observation Position</h3>
+      <dl>
+        <div><dt>Above MRZ</dt><dd>${position.above_active_mrz_observation_count}</dd></div>
+        <div><dt>Inside MRZ</dt><dd>${position.inside_active_mrz_observation_count}</dd></div>
+        <div><dt>Below MRZ</dt><dd>${position.below_active_mrz_observation_count}</dd></div>
+      </dl>
+      <p class="metric-note">Relative to the frozen active MRZ bounds.</p>
+    </article>
+    <article class="metric-card">
+      <h3>Migration Envelope</h3>
+      <strong class="metric-primary">${boundary.outside_envelope_observation_count}</strong>
+      <span class="metric-secondary">outside envelope</span>
+      <dl><div><dt>Above envelope</dt><dd>${boundary.above_upper_envelope_observation_count}</dd></div><div><dt>Below envelope</dt><dd>${boundary.below_lower_envelope_observation_count}</dd></div></dl>
+    </article>
+    <article class="metric-card">
+      <h3>MRZ Displacement</h3>
+      <strong class="metric-primary">${escapeHtml(displacementText(displacement.median_signed_displacement_percentage_of_activation_ipda, displacement.direction))}</strong>
+      <span class="metric-secondary">${escapeHtml(displacement.label)}</span>
+      <p class="metric-note">${escapeHtml(displacement.normalization)}</p>
+    </article>
+  </div>`;
+
+  const successorContent = `<div class="detail-card successor ${statusClass(successor.status)}">
+    <div class="detail-status"><span>STATUS</span><strong>${escapeHtml(successor.label)}</strong></div>
+    <dl class="detail-grid">
+      ${successorDetailsMarkup(successor)}
+    </dl>
+    <p>${escapeHtml(successor.reason)}</p>
+  </div>`;
+
+  const migrationContent = `${migrationProvenanceMarkup(report.migration, timestampFormatter)}
+    <div class="detail-card pressure ${statusClass(pressure.status)}">
+      <div class="detail-status"><span>DIRECTION</span><strong class="direction-value">${escapeHtml(pressureDirection)}</strong></div>
+      <div class="detail-status"><span>STATUS</span><strong>${escapeHtml(pressure.label)}</strong></div>
+      <dl class="detail-grid">
+        <div>${relevantBoundary}</div>
+        <div><dt>Observations beyond envelope</dt><dd>${pressure.observations_beyond_envelope}</dd></div>
+        <div><dt>Above upper envelope</dt><dd>${pressure.above_upper_envelope_observation_count}</dd></div>
+        <div><dt>Below lower envelope</dt><dd>${pressure.below_lower_envelope_observation_count}</dd></div>
+        <div><dt>Current MRZ</dt><dd>Still authoritative</dd></div>
+      </dl>
+      <p>${escapeHtml(pressure.reason)}</p>
+    </div>
+    <div class="structural-summary" aria-label="Structural Summary">
+      <dl class="summary-grid">
+        <div><dt>Current authority</dt><dd>${escapeHtml(structuralSummary.current_authority)}</dd></div>
+        <div><dt>Robustness</dt><dd>${escapeHtml(structuralSummary.robustness_label)}</dd></div>
+        <div><dt>Pressure</dt><dd>${escapeHtml(directionText(structuralSummary.pressure_direction, structuralSummary.pressure_direction_label))}</dd></div>
+        <div><dt>Successor</dt><dd>${escapeHtml(structuralSummary.successor_label)}</dd></div>
+      </dl>
+      <p class="summary-authority">${escapeHtml(structuralSummary.authority_statement)}</p>
+      <p>${escapeHtml(structuralSummary.displacement_statement)}</p>
+      <p>${escapeHtml(structuralSummary.detail_statement)}</p>
+    </div>`;
+
   return `<section class="mrz-report" data-symbol="${escapeHtml(report.symbol)}">
-    <section class="operation-section structural-authority" aria-label="Structural Authority">
+    <header class="compact-authority" aria-label="Current structural authority">
       <div class="mrz-heading">
         <div>
-          <span class="section-label">1 · STRUCTURAL AUTHORITY</span>
+          <span class="section-label">CURRENT STRUCTURAL AUTHORITY</span>
           <h2>${escapeHtml(report.symbol)} · ${escapeHtml(report.route_owner)}</h2>
           <p class="structural-location">${escapeHtml(authority.structural_location_label)}</p>
         </div>
         <strong class="status-pill authoritative">${escapeHtml(authority.label)}</strong>
       </div>
-      <div class="authority-grid">
-        <article class="authority-range"><span>ACTIVE MRZ</span><strong>${priceText(active.lower)} – ${priceText(active.upper)}</strong></article>
-        <article><span>MIDPOINT</span><strong>${priceText(active.midpoint)}</strong></article>
-        <article><span>AUTHORITY</span><strong>${escapeHtml(authority.label)}</strong></article>
-        <article><span>ACTIVATED</span><strong>${escapeHtml(timestampFormatter(active.activated_at) || "—")}</strong></article>
-        <article><span>MRZ AGE</span><strong>${durationText(age.active_duration_seconds)}</strong></article>
+      <div class="current-mrz">
+        <span>CURRENT AUTHORITATIVE MRZ</span>
+        <strong>${priceText(active.lower)} – ${priceText(active.upper)}</strong>
       </div>
-      ${migrationProvenanceMarkup(report.migration, timestampFormatter)}
-    </section>
-
-    <section class="operation-section robustness-section" aria-label="Post-Activation Robustness">
-      <div class="operation-section-heading"><span class="section-label">2 · POST-ACTIVATION ROBUSTNESS</span></div>
-      <div class="robustness-panel ${statusClass(behavior.status)}">
-        <strong class="robustness-state">${escapeHtml(behavior.label)}</strong>
-        <span>${behavior.post_activation_observation_count} post-activation observations</span>
-        <p>${escapeHtml(behavior.reason)}</p>
-      </div>
-    </section>
-
-    <section class="operation-section evidence-section" aria-label="Evidence">
-      <div class="operation-section-heading"><span class="section-label">3 · EVIDENCE</span></div>
-      <div class="evidence-split">
-        <article><span class="section-label">FORMATION</span><strong>${formation.confirming_observation_count} qualifying observations</strong><p>${escapeHtml(formation.meaning)}</p></article>
-        <article><span class="section-label">POST-ACTIVATION SAMPLE</span><strong>${robustness.post_activation_observation_count} observations</strong><p>${escapeHtml(robustness.meaning)}</p></article>
-      </div>
-      <div class="evidence-grid">
-      <article class="metric-card">
-        <h3>Observation Position</h3>
-        <dl>
-          <div><dt>Above MRZ</dt><dd>${position.above_active_mrz_observation_count}</dd></div>
-          <div><dt>Inside MRZ</dt><dd>${position.inside_active_mrz_observation_count}</dd></div>
-          <div><dt>Below MRZ</dt><dd>${position.below_active_mrz_observation_count}</dd></div>
-        </dl>
-        <p class="metric-note">Relative to the frozen active MRZ bounds.</p>
-      </article>
-      <article class="metric-card">
-        <h3>Migration Envelope</h3>
-        <strong class="metric-primary">${boundary.outside_envelope_observation_count}</strong>
-        <span class="metric-secondary">outside envelope</span>
-        <dl><div><dt>Above envelope</dt><dd>${boundary.above_upper_envelope_observation_count}</dd></div><div><dt>Below envelope</dt><dd>${boundary.below_lower_envelope_observation_count}</dd></div></dl>
-      </article>
-      <article class="metric-card">
-        <h3>MRZ Displacement</h3>
-        <strong class="metric-primary">${escapeHtml(displacementText(displacement.median_signed_displacement_percentage_of_activation_ipda, displacement.direction))}</strong>
-        <span class="metric-secondary">${escapeHtml(displacement.label)}</span>
-        <p class="metric-note">${escapeHtml(displacement.normalization)}</p>
-      </article>
-      </div>
-    </section>
-
-    <section class="operation-section pressure-section" aria-label="Migration Pressure">
-      <div class="operation-section-heading"><span class="section-label">4 · MIGRATION PRESSURE</span></div>
-      <div class="detail-card pressure ${statusClass(pressure.status)}">
-        <div class="detail-status"><span>DIRECTION</span><strong class="direction-value">${escapeHtml(directionText(pressure.direction, pressure.direction_label))}</strong></div>
-        <div class="detail-status"><span>STATUS</span><strong>${escapeHtml(pressure.label)}</strong></div>
-        <dl class="detail-grid">
-          <div>${relevantBoundary}</div>
-          <div><dt>Observations beyond envelope</dt><dd>${pressure.observations_beyond_envelope}</dd></div>
-          <div><dt>Above upper envelope</dt><dd>${pressure.above_upper_envelope_observation_count}</dd></div>
-          <div><dt>Below lower envelope</dt><dd>${pressure.below_lower_envelope_observation_count}</dd></div>
-          <div><dt>Current MRZ</dt><dd>Still authoritative</dd></div>
-        </dl>
-        <p>${escapeHtml(pressure.reason)}</p>
-      </div>
-    </section>
-
-    <section class="operation-section successor-section" aria-label="Successor Watch">
-      <div class="operation-section-heading"><span class="section-label">5 · SUCCESSOR WATCH</span></div>
-      <div class="detail-card successor ${statusClass(successor.status)}">
-        <div class="detail-status"><span>STATUS</span><strong>${escapeHtml(successor.label)}</strong></div>
-        <dl class="detail-grid">
-          ${successorDetailsMarkup(successor)}
-        </dl>
-        <p>${escapeHtml(successor.reason)} Diagnostic only; operational migration remains controlled by the production state engine.</p>
-      </div>
-    </section>
-
-    <section class="operation-section structural-summary" aria-label="Structural Summary">
-      <div class="operation-section-heading"><span class="section-label">6 · STRUCTURAL SUMMARY</span></div>
-      <dl class="summary-grid">
-        <div><dt>Current authority</dt><dd>${escapeHtml(summary.current_authority)}</dd></div>
-        <div><dt>Robustness</dt><dd>${escapeHtml(summary.robustness_label)}</dd></div>
-        <div><dt>Pressure</dt><dd>${escapeHtml(directionText(summary.pressure_direction, summary.pressure_direction_label))}</dd></div>
-        <div><dt>Successor</dt><dd>${escapeHtml(summary.successor_label)}</dd></div>
+      <dl class="compact-facts">
+        <div><dt>Activated</dt><dd>${escapeHtml(activeTimestamp)}</dd></div>
+        <div><dt>Formation duration</dt><dd>${escapeHtml(formationDuration)}</dd></div>
+        <div><dt>MRZ age</dt><dd>${escapeHtml(activeDuration)}</dd></div>
+        <div class="${statusClass(behavior.status)}"><dt>Robustness</dt><dd>${escapeHtml(behavior.label)}</dd></div>
+        <div class="${statusClass(pressure.status)}"><dt>Pressure</dt><dd>${escapeHtml(pressureSummary)}</dd></div>
+        <div class="${statusClass(successor.status)}"><dt>Successor</dt><dd>${escapeHtml(successor.label)}</dd></div>
       </dl>
-      <p class="summary-authority">${escapeHtml(summary.authority_statement)}</p>
-      <p>${escapeHtml(summary.displacement_statement)}</p>
-      <p>${escapeHtml(summary.detail_statement)}</p>
-    </section>
+    </header>
+
+    <div class="operator-disclosures">
+      ${disclosureMarkup(
+    "evidence",
+    "Evidence",
+    `${formation.confirming_observation_count} qualifying ${qualifyingObservationName} observations`,
+    evidenceContent,
+  )}
+      ${disclosureMarkup(
+    "post-activation",
+    "Post-activation observations",
+    `${behavior.label} · ${robustness.post_activation_observation_count} observations`,
+    postActivationContent,
+  )}
+      ${disclosureMarkup(
+    "successor-watch",
+    "Successor Watch",
+    successor.label,
+    successorContent,
+  )}
+      ${disclosureMarkup(
+    "migration-history",
+    "Migration / history",
+    migrationSummary,
+    migrationContent,
+  )}
+    </div>
   </section>`;
 }
 

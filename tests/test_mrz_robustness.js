@@ -29,9 +29,14 @@ const operationCardSource = fs.readFileSync(
   require.resolve("../app/static/mrz-robustness.js"),
   "utf8",
 );
+const operationCardCss = fs.readFileSync(
+  require.resolve("../app/static/mrz-robustness.css"),
+  "utf8",
+);
 assert.doesNotMatch(operationCardSource, /bb_mrz_(?:discount|premium)/);
 assert.doesNotMatch(operationCardSource, /trade recommendation/i);
 assert.doesNotMatch(operationCardSource, /Candidate forming|Awaiting confirmation/i);
+assert.doesNotMatch(operationCardSource, /Fast formation|Slow formation|High intent|Low intent/i);
 
 const btcReport = {
   symbol: "BTCUSDT",
@@ -53,6 +58,9 @@ const btcReport = {
   },
   formation_evidence: {
     confirming_observation_count: 4,
+    started_at: "2026-08-24T14:25:00Z",
+    completed_at: "2026-08-26T05:37:00Z",
+    duration_seconds: "141120",
     meaning: "Why the active MRZ was formed.",
   },
   robustness_evidence: {
@@ -153,27 +161,68 @@ const btcReport = {
 
 const btcMarkup = robustnessCardMarkup(
   btcReport,
-  () => "23 Aug 2026 · 22:21 UTC−4",
+  (value) => value === "2026-08-24T14:25:00Z"
+    ? "24 Aug 2026 · 10:25 UTC−4"
+    : "23 Aug 2026 · 22:21 UTC−4",
 );
-const orderedSections = [
-  "1 · STRUCTURAL AUTHORITY",
-  "2 · POST-ACTIVATION ROBUSTNESS",
-  "3 · EVIDENCE",
-  "4 · MIGRATION PRESSURE",
-  "5 · SUCCESSOR WATCH",
-  "6 · STRUCTURAL SUMMARY",
+const orderedDisclosures = [
+  'data-section="evidence"',
+  'data-section="post-activation"',
+  'data-section="successor-watch"',
+  'data-section="migration-history"',
 ];
 let previousIndex = -1;
-for (const section of orderedSections) {
+for (const section of orderedDisclosures) {
   const currentIndex = btcMarkup.indexOf(section);
   assert.ok(currentIndex > previousIndex, `${section} is rendered in sequence`);
   previousIndex = currentIndex;
 }
+const firstDisclosureIndex = btcMarkup.indexOf("<details");
+for (const summaryValue of [
+  "BTCUSDT · STR",
+  "Deep Premium",
+  "CURRENT AUTHORITATIVE MRZ",
+  "77,309.19 – 77,436.91",
+  "Activated",
+  "Formation duration",
+  "MRZ age",
+  "Robustness",
+  "Pressure",
+  "Successor",
+]) {
+  const summaryValueIndex = btcMarkup.indexOf(summaryValue);
+  assert.ok(summaryValueIndex >= 0, `${summaryValue} renders in the compact summary`);
+  assert.ok(
+    summaryValueIndex < firstDisclosureIndex,
+    `${summaryValue} remains visible before collapsed details`,
+  );
+}
+assert.match(btcMarkup, /<header class="compact-authority"/);
+assert.match(btcMarkup, /<details class="operator-disclosure evidence-disclosure"/);
+assert.match(btcMarkup, /<summary>/);
+assert.doesNotMatch(btcMarkup, /<details[^>]*\sopen(?:\s|>)/);
+assert.match(
+  btcMarkup,
+  /data-section="evidence"[\s\S]*First qualifying rejection[\s\S]*<\/details>/,
+);
+assert.match(
+  btcMarkup,
+  /data-section="post-activation"[\s\S]*Observation Position[\s\S]*<\/details>/,
+);
+assert.match(
+  btcMarkup,
+  /data-section="successor-watch"[\s\S]*Minimum evidence[\s\S]*<\/details>/,
+);
 assert.match(btcMarkup, /BTCUSDT · STR/);
 assert.match(btcMarkup, /Deep Premium/);
 assert.match(btcMarkup, /Authoritative/);
 assert.match(btcMarkup, /77,309\.19 – 77,436\.91/);
 assert.match(btcMarkup, /23 Aug 2026 · 22:21 UTC−4/);
+assert.match(btcMarkup, /Formation duration<\/dt><dd>1d 15h/);
+assert.match(btcMarkup, /4 qualifying rejection observations/);
+assert.match(btcMarkup, /First qualifying rejection/);
+assert.match(btcMarkup, /24 Aug 2026 · 10:25 UTC−4/);
+assert.match(btcMarkup, /Formation duration<\/dt><dd>1d 15h/);
 assert.match(btcMarkup, /Under Pressure/);
 assert.match(btcMarkup, /↑ Upward/);
 assert.match(btcMarkup, /Upper migration boundary/);
@@ -206,6 +255,17 @@ assert.doesNotMatch(btcMarkup, /MIGRATED UPWARD|MIGRATED DOWNWARD/);
 assert.doesNotMatch(btcMarkup, /Structural Role|Route Integrity|Containment/i);
 assert.doesNotMatch(btcMarkup, /Boundary Behavior|Upper tests|Lower tests/i);
 assert.doesNotMatch(btcMarkup, /Resistive|Supportive/i);
+assert.doesNotMatch(btcMarkup, /<dt>First rejection<\/dt>/);
+assert.match(operationCardCss, /\.operator-disclosure\[open\] > summary/);
+assert.match(operationCardCss, /\.operator-disclosure > summary:focus-visible/);
+assert.match(operationCardCss, /min-height:\s*64px/);
+assert.match(operationCardCss, /@media \(max-width: 460px\)/);
+assert.match(
+  operationCardCss,
+  /\.compact-facts\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\)/,
+);
+assert.match(operationCardCss, /\.current-mrz strong[^}]*overflow-wrap:\s*anywhere/);
+assert.doesNotMatch(operationCardCss, /overflow-x:\s*(?:auto|scroll)/);
 
 const wldMigration = {
   has_migrated: true,
@@ -334,6 +394,27 @@ assert.match(wldMarkup, /Neutral/);
 assert.match(wldMarkup, /↓ -1\.0%/);
 assert.match(wldMarkup, /Median displacement below midpoint/);
 assert.match(wldMarkup, /No successor candidate/);
+assert.match(wldMarkup, /4 qualifying reclaim observations/);
+assert.match(wldMarkup, /First qualifying reclaim/);
+assert.doesNotMatch(wldMarkup, /<dt>First reclaim<\/dt>/);
+
+const unavailableFormationMarkup = robustnessCardMarkup({
+  ...btcReport,
+  formation_evidence: {
+    ...btcReport.formation_evidence,
+    started_at: null,
+    completed_at: null,
+    duration_seconds: null,
+  },
+});
+assert.match(
+  unavailableFormationMarkup,
+  /Formation duration<\/dt><dd>Unavailable<\/dd>/,
+);
+assert.match(
+  unavailableFormationMarkup,
+  /First qualifying rejection<\/dt><dd>Unavailable<\/dd>/,
+);
 
 const zeroEvidenceReport = {
   ...wldReport,
@@ -431,7 +512,7 @@ assert.match(successorMarkup, /Production allowance<\/dt><dd>1\.0%/);
 assert.match(successorMarkup, /Qualifies/);
 assert.match(successorMarkup, /Candidate rule eligibility<\/dt><dd>Satisfied/);
 assert.doesNotMatch(successorMarkup, /Operational migration eligibility/);
-assert.match(successorMarkup, /operational migration remains controlled by the production state engine/);
+assert.match(successorMarkup, /current MRZ remains authoritative until the production migration engine changes it/i);
 
 const tooDispersedMarkup = successorDetailsMarkup({
   ...btcReport.successor_watch,

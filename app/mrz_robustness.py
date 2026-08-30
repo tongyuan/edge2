@@ -56,6 +56,36 @@ def duration_seconds(start: datetime, end: datetime) -> Decimal:
     )
 
 
+def current_formation_provenance(
+    active: ActiveMRZ,
+) -> tuple[datetime, datetime, Decimal] | None:
+    """Return validated formation provenance for the current authority only."""
+    started_at = active.formation_started_at
+    completed_at = active.formation_completed_at
+    persisted_duration = active.formation_duration_seconds
+    if started_at is None or completed_at is None or persisted_duration is None:
+        return None
+    if completed_at != active.activated_at or completed_at < started_at:
+        return None
+    derived_duration = duration_seconds(started_at, completed_at)
+    if persisted_duration != derived_duration:
+        return None
+    return started_at, completed_at, derived_duration
+
+
+def active_mrz_order_key(active: ActiveMRZ) -> tuple[object, ...]:
+    formation = current_formation_provenance(active)
+    activation_recency = datetime.max.replace(tzinfo=timezone.utc) - (
+        active.activated_at.astimezone(timezone.utc)
+    )
+    return (
+        formation is None,
+        formation[2] if formation is not None else Decimal("0"),
+        activation_recency,
+        active.symbol,
+    )
+
+
 def structural_location_label(value: str) -> str:
     labels = {
         "deep_discount_core_mrz": "Deep Discount",
@@ -185,7 +215,7 @@ class MRZRobustnessService:
                     {"has_migrated": False},
                 ),
             )
-            for active in sorted(active_mrzs, key=lambda item: item.symbol)
+            for active in sorted(active_mrzs, key=active_mrz_order_key)
         ]
         return {
             "generated_at": iso(generated_at),
@@ -225,6 +255,7 @@ class MRZRobustnessService:
         generated_at: datetime,
         migration: Mapping[str, object],
     ) -> dict[str, object]:
+        formation = current_formation_provenance(active)
         post_activation = self._post_activation_observations(active, observations)
         total = len(post_activation)
         contained = sum(
@@ -553,9 +584,11 @@ class MRZRobustnessService:
             },
             "formation_evidence": {
                 "confirming_observation_count": active.confirming_observation_count,
-                "started_at": iso(active.formation_started_at),
-                "completed_at": iso(active.formation_completed_at),
-                "duration_seconds": decimal_text(active.formation_duration_seconds),
+                "started_at": iso(formation[0]) if formation is not None else None,
+                "completed_at": iso(formation[1]) if formation is not None else None,
+                "duration_seconds": (
+                    decimal_text(formation[2]) if formation is not None else None
+                ),
                 "meaning": "Why the active MRZ was formed.",
             },
             "robustness_evidence": {
