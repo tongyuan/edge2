@@ -69,6 +69,7 @@ button:disabled { cursor: progress; opacity: 0.65; }
 .empty-report { margin-top: 20px; padding: 30px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface); color: var(--muted); text-align: center; }
 .mrz-report { margin-top: 18px; overflow: clip; border: 1px solid var(--line); border-radius: 17px; background: rgba(16, 21, 29, 0.94); box-shadow: 0 18px 70px rgba(0, 0, 0, 0.18); }
 .compact-authority { padding: 20px; background: linear-gradient(115deg, rgba(98, 230, 181, 0.075), transparent 55%); }
+.compact-group + .compact-group { margin-top: 16px; padding-top: 14px; border-top: 1px solid rgba(64, 95, 87, 0.65); }
 .mrz-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
 .mrz-heading h2 { margin: 0; font-size: clamp(1.5rem, 3vw, 2.15rem); letter-spacing: -0.03em; }
 .structural-location { margin: 7px 0 0; color: #d4deeb; font-size: 1rem; font-weight: 680; }
@@ -76,10 +77,13 @@ button:disabled { cursor: progress; opacity: 0.65; }
 .current-mrz { margin-top: 16px; padding: 15px 17px; border: 1px solid #405f57; border-radius: 11px; background: rgba(8, 11, 16, 0.34); }
 .current-mrz span { display: block; margin-bottom: 7px; color: var(--muted); font-size: 0.64rem; font-weight: 760; letter-spacing: 0.11em; }
 .current-mrz strong { display: block; font-size: clamp(1.35rem, 3vw, 2rem); letter-spacing: -0.035em; overflow-wrap: anywhere; }
-.compact-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 9px 0 0; }
+.compact-facts { display: grid; gap: 8px; margin: 9px 0 0; }
+.formation-facts { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.post-activation-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .compact-facts div { min-width: 0; min-height: 66px; padding: 11px 13px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-strong); }
 .compact-facts dt { color: var(--muted); font-size: 0.65rem; font-weight: 740; letter-spacing: 0.06em; }
 .compact-facts dd { margin: 7px 0 0; font-size: 0.78rem; font-weight: 720; line-height: 1.35; overflow-wrap: anywhere; }
+.formation-facts .formation-duration dd { font-size: 0.9rem; }
 .compact-facts .under-pressure dd, .compact-facts .no-qualifying-successor dd { color: var(--warning); }
 .compact-facts .successor-candidate dd { color: var(--candidate); }
 .operator-disclosures { border-top: 1px solid var(--line); }
@@ -178,7 +182,7 @@ button:disabled { cursor: progress; opacity: 0.65; }
 @media (max-width: 1050px) {
   .report-header { align-items: flex-start; flex-direction: column; }
   .header-actions { justify-content: flex-start; }
-  .compact-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .formation-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .evidence-grid { grid-template-columns: repeat(2, 1fr); }
   .detail-grid, .successor .detail-grid, .summary-grid { grid-template-columns: repeat(2, 1fr); }
 }
@@ -187,7 +191,7 @@ button:disabled { cursor: progress; opacity: 0.65; }
   .lifecycle { grid-template-columns: 1fr; }
   .report-meta, .migration-provenance, .migration-provenance dl, .robustness-panel, .evidence-grid, .detail-grid, .successor .detail-grid, .summary-grid { grid-template-columns: minmax(0, 1fr); }
   .compact-authority { padding: 16px; }
-  .compact-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .formation-facts, .post-activation-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .operator-disclosure > summary { grid-template-columns: minmax(0, 1fr) 24px; gap: 5px 12px; min-height: 64px; padding: 12px 16px; }
   .disclosure-title { grid-column: 1; grid-row: 1; }
   .disclosure-synopsis { grid-column: 1; grid-row: 2; }
@@ -196,6 +200,6 @@ button:disabled { cursor: progress; opacity: 0.65; }
 }
 @media (max-width: 460px) {
   .mrz-heading { flex-direction: column; gap: 12px; }
-  .compact-facts { grid-template-columns: minmax(0, 1fr); }
+  .formation-facts, .post-activation-facts { grid-template-columns: minmax(0, 1fr); }
   .current-mrz strong { font-size: 1.25rem; }
 }

@@ -231,26 +231,38 @@ function robustnessCardMarkup(report, timestampFormatter = (value) => value) {
 
   return `<section class="mrz-report" data-symbol="${escapeHtml(report.symbol)}">
     <header class="compact-authority" aria-label="Current structural authority">
-      <div class="mrz-heading">
-        <div>
-          <span class="section-label">CURRENT STRUCTURAL AUTHORITY</span>
-          <h2>${escapeHtml(report.symbol)} · ${escapeHtml(report.route_owner)}</h2>
-          <p class="structural-location">${escapeHtml(authority.structural_location_label)}</p>
+      <section class="compact-group structure-group" aria-label="Structure">
+        <span class="section-label">STRUCTURE</span>
+        <div class="mrz-heading">
+          <div>
+            <h2>${escapeHtml(report.symbol)} · ${escapeHtml(report.route_owner)}</h2>
+            <p class="structural-location">${escapeHtml(authority.structural_location_label)}</p>
+          </div>
+          <strong class="status-pill authoritative">${escapeHtml(authority.label)}</strong>
         </div>
-        <strong class="status-pill authoritative">${escapeHtml(authority.label)}</strong>
-      </div>
-      <div class="current-mrz">
-        <span>CURRENT AUTHORITATIVE MRZ</span>
-        <strong>${priceText(active.lower)} – ${priceText(active.upper)}</strong>
-      </div>
-      <dl class="compact-facts">
-        <div><dt>Activated</dt><dd>${escapeHtml(activeTimestamp)}</dd></div>
-        <div><dt>Formation duration</dt><dd>${escapeHtml(formationDuration)}</dd></div>
-        <div><dt>MRZ age</dt><dd>${escapeHtml(activeDuration)}</dd></div>
-        <div><dt>${escapeHtml(firstQualifyingLabel)}</dt><dd>${escapeHtml(formationStartedAt)}</dd></div>
-        <div class="${statusClass(pressure.status)}"><dt>Pressure</dt><dd>${escapeHtml(pressureSummary)}</dd></div>
-        <div class="${statusClass(successor.status)}"><dt>Successor</dt><dd>${escapeHtml(successor.label)}</dd></div>
-      </dl>
+        <div class="current-mrz">
+          <span>CURRENT AUTHORITATIVE MRZ</span>
+          <strong>${priceText(active.lower)} – ${priceText(active.upper)}</strong>
+        </div>
+      </section>
+
+      <section class="compact-group formation-group" aria-label="Formation">
+        <span class="section-label">FORMATION</span>
+        <dl class="compact-facts formation-facts">
+          <div><dt>${escapeHtml(firstQualifyingLabel)}</dt><dd>${escapeHtml(formationStartedAt)}</dd></div>
+          <div><dt>Activated</dt><dd>${escapeHtml(activeTimestamp)}</dd></div>
+          <div class="formation-duration"><dt>Formation duration</dt><dd>${escapeHtml(formationDuration)}</dd></div>
+          <div><dt>MRZ age</dt><dd>${escapeHtml(activeDuration)}</dd></div>
+        </dl>
+      </section>
+
+      <section class="compact-group post-activation-group" aria-label="Post-activation state">
+        <span class="section-label">POST-ACTIVATION STATE</span>
+        <dl class="compact-facts post-activation-facts">
+          <div class="${statusClass(pressure.status)}"><dt>Pressure</dt><dd>${escapeHtml(pressureSummary)}</dd></div>
+          <div class="${statusClass(successor.status)}"><dt>Successor</dt><dd>${escapeHtml(successor.label)}</dd></div>
+        </dl>
+      </section>
     </header>
 
     <div class="operator-disclosures">

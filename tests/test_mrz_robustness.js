@@ -33,10 +33,21 @@ const operationCardCss = fs.readFileSync(
   require.resolve("../app/static/mrz-robustness.css"),
   "utf8",
 );
+const operationCardHtml = fs.readFileSync(
+  require.resolve("../app/static/mrz-robustness.html"),
+  "utf8",
+);
 assert.doesNotMatch(operationCardSource, /bb_mrz_(?:discount|premium)/);
 assert.doesNotMatch(operationCardSource, /trade recommendation/i);
 assert.doesNotMatch(operationCardSource, /Candidate forming|Awaiting confirmation/i);
-assert.doesNotMatch(operationCardSource, /Fast formation|Slow formation|High intent|Low intent/i);
+assert.doesNotMatch(
+  operationCardSource,
+  /Fast formation|Slow formation|Strong intent|Weak intent|Bullish intent|Bearish intent|High conviction|Preferred|Better setup/i,
+);
+assert.doesNotMatch(
+  `${operationCardSource}\n${operationCardHtml}`,
+  /<select|type=["']search["']|data-sort|data-filter/i,
+);
 
 const btcReport = {
   symbol: "BTCUSDT",
@@ -166,6 +177,23 @@ const btcMarkup = robustnessCardMarkup(
     : "26 Aug 2026 · 01:37 UTC−4",
 );
 const btcCompactSummary = btcMarkup.slice(0, btcMarkup.indexOf("</header>") + 9);
+const compactGroupOrder = [
+  'class="compact-group structure-group"',
+  'class="compact-group formation-group"',
+  'class="compact-group post-activation-group"',
+];
+let previousGroupIndex = -1;
+for (const group of compactGroupOrder) {
+  const currentGroupIndex = btcCompactSummary.indexOf(group);
+  assert.ok(currentGroupIndex > previousGroupIndex, `${group} follows the inference sequence`);
+  previousGroupIndex = currentGroupIndex;
+}
+const structureGroupIndex = btcCompactSummary.indexOf(compactGroupOrder[0]);
+const formationGroupIndex = btcCompactSummary.indexOf(compactGroupOrder[1]);
+const postActivationGroupIndex = btcCompactSummary.indexOf(compactGroupOrder[2]);
+const structureGroupMarkup = btcCompactSummary.slice(structureGroupIndex, formationGroupIndex);
+const formationGroupMarkup = btcCompactSummary.slice(formationGroupIndex, postActivationGroupIndex);
+const postActivationGroupMarkup = btcCompactSummary.slice(postActivationGroupIndex);
 const orderedDisclosures = [
   'data-section="post-activation"',
   'data-section="successor-watch"',
@@ -183,10 +211,10 @@ for (const summaryValue of [
   "Deep Premium",
   "CURRENT AUTHORITATIVE MRZ",
   "77,309.19 – 77,436.91",
+  "First qualifying rejection",
   "Activated",
   "Formation duration",
   "MRZ age",
-  "First qualifying rejection",
   "Pressure",
   "Successor",
 ]) {
@@ -197,8 +225,36 @@ for (const summaryValue of [
     `${summaryValue} remains visible before collapsed details`,
   );
 }
+assert.match(structureGroupMarkup, /STRUCTURE/);
+assert.match(structureGroupMarkup, /BTCUSDT · STR/);
+assert.match(structureGroupMarkup, /Deep Premium/);
+assert.match(structureGroupMarkup, /CURRENT AUTHORITATIVE MRZ/);
+assert.match(formationGroupMarkup, /FORMATION/);
+assert.match(formationGroupMarkup, /First qualifying rejection/);
+assert.match(formationGroupMarkup, /Activated/);
+assert.match(formationGroupMarkup, /Formation duration/);
+assert.match(formationGroupMarkup, /MRZ age/);
+assert.match(postActivationGroupMarkup, /POST-ACTIVATION STATE/);
+assert.match(postActivationGroupMarkup, /Pressure/);
+assert.match(postActivationGroupMarkup, /Successor/);
+assert.ok(
+  formationGroupMarkup.indexOf("First qualifying rejection")
+    < formationGroupMarkup.indexOf("Activated"),
+  "first qualifying observation precedes activation",
+);
+assert.ok(
+  formationGroupMarkup.indexOf("Activated")
+    < formationGroupMarkup.indexOf("Formation duration"),
+  "activation precedes formation duration",
+);
+assert.ok(
+  formationGroupMarkup.indexOf("Formation duration")
+    < formationGroupMarkup.indexOf("MRZ age"),
+  "formation duration precedes MRZ age",
+);
 assert.match(btcMarkup, /<header class="compact-authority"/);
 assert.match(btcMarkup, /<summary>/);
+assert.equal((btcMarkup.match(/<details/g) || []).length, 3);
 assert.doesNotMatch(btcMarkup, /<details[^>]*\sopen(?:\s|>)/);
 assert.doesNotMatch(btcMarkup, /data-section="evidence"/);
 assert.doesNotMatch(btcMarkup, /evidence-disclosure/);
@@ -279,10 +335,19 @@ assert.match(operationCardCss, /min-height:\s*64px/);
 assert.match(operationCardCss, /@media \(max-width: 460px\)/);
 assert.match(
   operationCardCss,
-  /\.compact-facts\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\)/,
+  /\.formation-facts\s*\{\s*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)/,
+);
+assert.match(
+  operationCardCss,
+  /\.post-activation-facts\s*\{\s*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/,
+);
+assert.match(
+  operationCardCss,
+  /@media \(max-width: 460px\)[\s\S]*\.formation-facts, \.post-activation-facts\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\)/,
 );
 assert.match(operationCardCss, /\.current-mrz strong[^}]*overflow-wrap:\s*anywhere/);
 assert.doesNotMatch(operationCardCss, /overflow-x:\s*(?:auto|scroll)/);
+assert.doesNotMatch(operationCardCss, /\border\s*:/);
 
 const wldMigration = {
   has_migrated: true,
