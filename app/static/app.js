@@ -7,6 +7,12 @@ const heatmapEmpty = document.querySelector("#heatmapEmpty");
 const primaryLocationGroups = document.querySelector("#primaryLocationGroups");
 const secondaryLocationGroups = document.querySelector("#secondaryLocationGroups");
 const locationDistribution = document.querySelector("#locationDistribution");
+const groupTrackingToggle = document.querySelector("#groupTrackingToggle");
+const groupTrackingStateLabel = document.querySelector("#groupTrackingStateLabel");
+const selectedGroupPanel = document.querySelector("#selectedGroupPanel");
+const selectedGroupSymbols = document.querySelector("#selectedGroupSymbols");
+const showSelectedOnly = document.querySelector("#showSelectedOnly");
+const clearSelectedGroup = document.querySelector("#clearSelectedGroup");
 const {
   primaryLocationKeys,
   secondaryLocationKeys,
@@ -19,6 +25,14 @@ const {
   groupSymbolsByLocation,
   locationDistributionFromGroups,
   formatLocationPercentage,
+  createGroupTrackingState,
+  setGroupTrackingEnabled,
+  toggleGroupSymbol,
+  setShowSelectedOnly,
+  clearGroupSelection,
+  reconcileGroupTrackingState,
+  groupTrackingSummary,
+  visibleSymbolsForGroupTracking,
 } = globalThis.edgeHeatmapState;
 const {
   buildEvidencePresentation,
@@ -70,6 +84,23 @@ const distributionTotals = {
   discount: document.querySelector("#distributionDiscountTotal"),
   premium: document.querySelector("#distributionPremiumTotal"),
 };
+const selectedGroupFields = {
+  count: document.querySelector("#selectedGroupCount"),
+  btd: document.querySelector("#selectedGroupBtdCount"),
+  str: document.querySelector("#selectedGroupStrCount"),
+  active: document.querySelector("#selectedGroupActiveCount"),
+  migrated: document.querySelector("#selectedGroupMigratedCount"),
+  locations: {
+    deep_discount: document.querySelector("#selectedGroupDeepDiscountCount"),
+    shallow_discount: document.querySelector("#selectedGroupShallowDiscountCount"),
+    shallow_premium: document.querySelector("#selectedGroupShallowPremiumCount"),
+    deep_premium: document.querySelector("#selectedGroupDeepPremiumCount"),
+  },
+};
+
+let overviewSymbols = [];
+let minimumClusterObservations = null;
+let groupTrackingState = createGroupTrackingState();
 
 const formatPrice = (value) => value == null ? "—" : new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 12,
@@ -176,7 +207,11 @@ function createLocationGroup(key, symbols, minimumClusterObservations, secondary
       const button = document.createElement("button");
       button.type = "button";
       button.className = "symbol-chip";
+      const groupSelected = (
+        groupTrackingState.enabled && groupTrackingState.selectedSymbols.has(symbol)
+      );
       button.classList.toggle("active-mrz", active);
+      button.classList.toggle("group-selected", groupSelected);
       button.classList.toggle(
         "evidence-ready",
         concentrationCheckEligible(symbolState, minimumClusterObservations),
@@ -185,9 +220,13 @@ function createLocationGroup(key, symbols, minimumClusterObservations, secondary
         button.classList.add(`activity-${activity.tier}`);
       }
       button.dataset.symbol = symbol;
-      button.setAttribute("aria-pressed", "false");
+      button.setAttribute("aria-pressed", String(groupSelected));
       const locationLabel = key === "unavailable" ? "Unavailable" : formatLocation(key);
-      button.setAttribute("aria-label", accessibleChipLabel(symbolState, locationLabel));
+      const chipLabel = accessibleChipLabel(symbolState, locationLabel);
+      button.setAttribute(
+        "aria-label",
+        groupSelected ? `${chipLabel}, selected for group tracking` : chipLabel,
+      );
       const tooltipText = activity ? activityTooltipText(activity.count) : null;
       if (tooltipText) {
         button.addEventListener("mouseenter", () => showActivityTooltip(button, tooltipText));
@@ -201,10 +240,17 @@ function createLocationGroup(key, symbols, minimumClusterObservations, secondary
         indicator.setAttribute("aria-hidden", "true");
         button.append(indicator);
       }
+      if (groupSelected) {
+        const check = document.createElement("span");
+        check.className = "group-selection-check";
+        check.setAttribute("aria-hidden", "true");
+        check.textContent = "✓";
+        button.append(check);
+      }
       const label = document.createElement("span");
       label.textContent = symbol;
       button.append(label);
-      button.addEventListener("click", () => selectSymbol(symbol).catch(showError));
+      button.addEventListener("click", () => handleHeatmapChipClick(symbol).catch(showError));
       symbolList.append(button);
     });
   }
@@ -233,9 +279,31 @@ function renderLocationDistribution(groups) {
   );
 }
 
-function renderLocationHeatmap(symbols, minimumClusterObservations) {
-  const groups = groupSymbolsByLocation(symbols, minimumClusterObservations);
-  renderLocationDistribution(groups);
+function renderSelectedGroupPanel() {
+  const summary = groupTrackingSummary(overviewSymbols, groupTrackingState);
+  const visible = groupTrackingState.enabled && summary.selectedCount > 0;
+  selectedGroupPanel.hidden = !visible;
+  selectedGroupFields.count.textContent = String(summary.selectedCount);
+  selectedGroupSymbols.replaceChildren(...summary.selectedStates.map(({ symbol }) => {
+    const item = document.createElement("li");
+    item.textContent = symbol;
+    return item;
+  }));
+  selectedGroupFields.btd.textContent = String(summary.routeMix.BTD);
+  selectedGroupFields.str.textContent = String(summary.routeMix.STR);
+  primaryLocationKeys.forEach((key) => {
+    selectedGroupFields.locations[key].textContent = String(summary.locationMix[key]);
+  });
+  selectedGroupFields.active.textContent = (
+    `${summary.activeMrzCount} / ${summary.selectedCount}`
+  );
+  selectedGroupFields.migrated.textContent = (
+    `${summary.migratedCount} / ${summary.selectedCount}`
+  );
+  showSelectedOnly.checked = groupTrackingState.showSelectedOnly;
+}
+
+function renderLocationHeatmap(symbols, minimumObservations, groups) {
   if (symbols.length === 0) {
     locationHeatmap.hidden = true;
     heatmapEmpty.hidden = false;
@@ -245,13 +313,13 @@ function renderLocationHeatmap(symbols, minimumClusterObservations) {
 
   primaryLocationGroups.replaceChildren(
     ...primaryLocationKeys.map((key) => (
-      createLocationGroup(key, groups[key], minimumClusterObservations)
+      createLocationGroup(key, groups[key], minimumObservations)
     )),
   );
   const populatedSecondaryKeys = secondaryLocationKeys.filter((key) => groups[key].length > 0);
   secondaryLocationGroups.replaceChildren(
     ...populatedSecondaryKeys.map((key) => (
-      createLocationGroup(key, groups[key], minimumClusterObservations, true)
+      createLocationGroup(key, groups[key], minimumObservations, true)
     )),
   );
   secondaryLocationGroups.hidden = populatedSecondaryKeys.length === 0;
@@ -259,11 +327,30 @@ function renderLocationHeatmap(symbols, minimumClusterObservations) {
   locationHeatmap.hidden = false;
 }
 
+function renderMonitorOverview() {
+  const allGroups = groupSymbolsByLocation(overviewSymbols, minimumClusterObservations);
+  renderLocationDistribution(allGroups);
+  const visibleSymbols = visibleSymbolsForGroupTracking(overviewSymbols, groupTrackingState);
+  const visibleGroups = visibleSymbols === overviewSymbols
+    ? allGroups
+    : groupSymbolsByLocation(visibleSymbols, minimumClusterObservations);
+  renderLocationHeatmap(visibleSymbols, minimumClusterObservations, visibleGroups);
+  groupTrackingToggle.checked = groupTrackingState.enabled;
+  groupTrackingStateLabel.textContent = groupTrackingState.enabled ? "On" : "Off";
+  renderSelectedGroupPanel();
+  updateSelectedChip(select.value);
+}
+
 function updateSelectedChip(symbol) {
   document.querySelectorAll(".symbol-chip").forEach((chip) => {
-    const selected = chip.dataset.symbol === symbol;
-    chip.classList.toggle("selected", selected);
-    chip.setAttribute("aria-pressed", String(selected));
+    const singleSelected = !groupTrackingState.enabled && chip.dataset.symbol === symbol;
+    const groupSelected = (
+      groupTrackingState.enabled
+      && groupTrackingState.selectedSymbols.has(chip.dataset.symbol)
+    );
+    chip.classList.toggle("selected", singleSelected);
+    chip.classList.toggle("group-selected", groupSelected);
+    chip.setAttribute("aria-pressed", String(groupSelected || singleSelected));
   });
 }
 
@@ -283,12 +370,23 @@ async function loadSymbols() {
   if (!response.ok) throw new Error("Unable to load symbols");
   const payload = await response.json();
   const selectedSymbol = preservedSelectedSymbol(select.value, payload.symbols);
+  overviewSymbols = payload.symbols;
+  minimumClusterObservations = payload.minimum_cluster_observations;
+  groupTrackingState = reconcileGroupTrackingState(groupTrackingState, overviewSymbols);
   select.replaceChildren(new Option("Select a symbol", ""));
-  payload.symbols.forEach(({ symbol }) => select.add(new Option(symbol, symbol)));
-  select.disabled = payload.symbols.length === 0;
-  renderLocationHeatmap(payload.symbols, payload.minimum_cluster_observations);
+  overviewSymbols.forEach(({ symbol }) => select.add(new Option(symbol, symbol)));
+  select.disabled = overviewSymbols.length === 0;
   select.value = selectedSymbol;
-  updateSelectedChip(selectedSymbol);
+  renderMonitorOverview();
+}
+
+async function handleHeatmapChipClick(symbol) {
+  if (!groupTrackingState.enabled) {
+    await selectSymbol(symbol);
+    return;
+  }
+  groupTrackingState = toggleGroupSymbol(groupTrackingState, symbol);
+  renderMonitorOverview();
 }
 
 async function selectSymbol(symbol) {
@@ -353,6 +451,24 @@ function renderSymbol(state) {
 }
 
 select.addEventListener("change", () => selectSymbol(select.value).catch(showError));
+groupTrackingToggle.addEventListener("change", () => {
+  groupTrackingState = setGroupTrackingEnabled(
+    groupTrackingState,
+    groupTrackingToggle.checked,
+  );
+  renderMonitorOverview();
+});
+showSelectedOnly.addEventListener("change", () => {
+  groupTrackingState = setShowSelectedOnly(
+    groupTrackingState,
+    showSelectedOnly.checked,
+  );
+  renderMonitorOverview();
+});
+clearSelectedGroup.addEventListener("click", () => {
+  groupTrackingState = clearGroupSelection(groupTrackingState);
+  renderMonitorOverview();
+});
 
 function showError(error) {
   emptyState.hidden = false;

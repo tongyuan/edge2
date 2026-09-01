@@ -638,6 +638,18 @@ class EdgeRepository:
                         a.route_owner, a.core_mrz_lower, a.core_mrz_upper,
                         a.core_mrz_midpoint, a.structural_location,
                         a.confirming_observation_count,
+                        EXISTS (
+                            SELECT 1
+                            FROM mrz_events e
+                            WHERE e.symbol = a.symbol
+                              AND e.event_type = 'MRZ_MIGRATED'
+                              AND e.trigger_event_id = a.activation_event_id
+                              AND e.occurred_at = a.activated_at
+                              AND e.route_owner = a.route_owner
+                              AND e.new_core_mrz_lower = a.core_mrz_lower
+                              AND e.new_core_mrz_upper = a.core_mrz_upper
+                              AND e.new_core_mrz_midpoint = a.core_mrz_midpoint
+                        ) AS has_migrated,
                         w.id, w.event_id, w.schema_version,
                         w.route, w.observation_type,
                         w.observation_price, w.observation_price_tick,
@@ -703,6 +715,7 @@ class EdgeRepository:
                             "core_mrz_upper": number(anchor["core_mrz_upper"]),
                             "core_mrz_midpoint": number(anchor["core_mrz_midpoint"]),
                             "structural_location": anchor["structural_location"],
+                            "has_migrated": bool(anchor["has_migrated"]),
                             "confirming_observation_count": anchor[
                                 "confirming_observation_count"
                             ],

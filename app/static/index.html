@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="EDGE 2.0 operational MRZ Monitor" />
     <title>EDGE 2.0 · MRZ Monitor</title>
-    <link rel="stylesheet" href="/static/styles.css?v=location-distribution-20260901" />
+    <link rel="stylesheet" href="/static/styles.css?v=group-tracking-20260901" />
     <link rel="stylesheet" href="/static/diagnostics-nav.css?v=diagnostics-menu-20260827" />
   </head>
   <body>
@@ -62,14 +62,63 @@
 
       <section class="heatmap-panel" aria-labelledby="location-heatmap-title">
         <div class="section-heading">
-          <p class="eyebrow" id="location-heatmap-title">LOCATION HEATMAP</p>
-          <p class="section-support">Latest TradingView observation within the current IPDA 20W range</p>
+          <div class="heatmap-title-row">
+            <div>
+              <p class="eyebrow" id="location-heatmap-title">LOCATION HEATMAP</p>
+              <p class="section-support">Latest TradingView observation within the current IPDA 20W range</p>
+            </div>
+            <label class="group-tracking-toggle" for="groupTrackingToggle">
+              <span>Group Tracking</span>
+              <span class="toggle-state" id="groupTrackingStateLabel">Off</span>
+              <input type="checkbox" id="groupTrackingToggle" aria-describedby="groupTrackingStateLabel" />
+              <span class="toggle-switch" aria-hidden="true"></span>
+            </label>
+          </div>
           <div class="heatmap-legends" aria-label="Location Heatmap legend">
             <span class="heatmap-legend"><span class="active-mrz-dot" aria-hidden="true"></span>Active MRZ</span>
             <span class="heatmap-legend"><span class="activity-legend-swatch" aria-hidden="true"></span>Chip intensity · Observation activity</span>
             <span class="heatmap-legend"><span class="evidence-ready-legend-swatch" aria-hidden="true"></span>Bright outline · Concentration-check eligible</span>
           </div>
         </div>
+        <section class="selected-group-panel" id="selectedGroupPanel" aria-labelledby="selected-group-title" aria-live="polite" hidden>
+          <header class="selected-group-header">
+            <p class="eyebrow" id="selected-group-title">SELECTED GROUP · <span id="selectedGroupCount">0</span></p>
+            <div class="selected-group-actions">
+              <label class="show-selected-control" for="showSelectedOnly">
+                <input type="checkbox" id="showSelectedOnly" />
+                <span>Show selected only</span>
+              </label>
+              <button class="clear-group-button" id="clearSelectedGroup" type="button">Clear</button>
+            </div>
+          </header>
+          <ul class="selected-group-symbols" id="selectedGroupSymbols" aria-label="Selected symbols"></ul>
+          <div class="selected-group-metrics">
+            <section>
+              <h3>Route</h3>
+              <dl class="selected-group-pairs">
+                <div><dt>BTD</dt><dd id="selectedGroupBtdCount">0</dd></div>
+                <div><dt>STR</dt><dd id="selectedGroupStrCount">0</dd></div>
+              </dl>
+            </section>
+            <section class="selected-group-location-mix">
+              <h3>Location</h3>
+              <dl class="selected-group-locations">
+                <div><dt>Deep Discount</dt><dd id="selectedGroupDeepDiscountCount">0</dd></div>
+                <div><dt>Shallow Discount</dt><dd id="selectedGroupShallowDiscountCount">0</dd></div>
+                <div><dt>Shallow Premium</dt><dd id="selectedGroupShallowPremiumCount">0</dd></div>
+                <div><dt>Deep Premium</dt><dd id="selectedGroupDeepPremiumCount">0</dd></div>
+              </dl>
+            </section>
+            <section class="selected-group-ratio">
+              <h3>Active MRZ</h3>
+              <p id="selectedGroupActiveCount">0 / 0</p>
+            </section>
+            <section class="selected-group-ratio">
+              <h3>Migrated</h3>
+              <p id="selectedGroupMigratedCount">0 / 0</p>
+            </section>
+          </div>
+        </section>
         <div id="locationHeatmap" hidden>
           <div class="heatmap-grid" id="primaryLocationGroups"></div>
           <div class="heatmap-secondary" id="secondaryLocationGroups"></div>
@@ -151,9 +200,9 @@
     </main>
     <div class="activity-tooltip" id="heatmapActivityTooltip" role="tooltip" hidden></div>
     <script src="/static/diagnostics-nav.js?v=diagnostics-menu-20260827" defer></script>
-    <script src="/static/heatmap-state.js?v=location-distribution-20260901" defer></script>
-    <script src="/static/operator-time.js?v=location-distribution-20260901" defer></script>
-    <script src="/static/monitor-presentation.js?v=location-distribution-20260901" defer></script>
-    <script src="/static/app.js?v=location-distribution-20260901" defer></script>
+    <script src="/static/heatmap-state.js?v=group-tracking-20260901" defer></script>
+    <script src="/static/operator-time.js?v=group-tracking-20260901" defer></script>
+    <script src="/static/monitor-presentation.js?v=group-tracking-20260901" defer></script>
+    <script src="/static/app.js?v=group-tracking-20260901" defer></script>
   </body>
 </html>

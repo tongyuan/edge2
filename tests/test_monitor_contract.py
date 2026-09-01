@@ -30,7 +30,7 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("Symbol Lab", HTML)
 
     def test_monitor_assets_are_versioned_together(self) -> None:
-        version = "location-distribution-20260901"
+        version = "group-tracking-20260901"
         self.assertIn(f'/static/styles.css?v={version}', HTML)
         self.assertIn(f'/static/heatmap-state.js?v={version}', HTML)
         self.assertIn(f'/static/operator-time.js?v={version}', HTML)
@@ -139,16 +139,21 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("Bearish", HTML)
 
     def test_distribution_reuses_the_exact_grouped_heatmap_population(self) -> None:
-        render_heatmap = JAVASCRIPT.split("function renderLocationHeatmap", 1)[1].split(
+        render_overview = JAVASCRIPT.split("function renderMonitorOverview", 1)[1].split(
             "function updateSelectedChip", 1
         )[0]
         self.assertEqual(
-            render_heatmap.count(
-                "const groups = groupSymbolsByLocation(symbols, minimumClusterObservations);"
+            render_overview.count(
+                "const allGroups = groupSymbolsByLocation(overviewSymbols, minimumClusterObservations);"
             ),
             1,
         )
-        self.assertIn("renderLocationDistribution(groups);", render_heatmap)
+        self.assertIn("renderLocationDistribution(allGroups);", render_overview)
+        self.assertIn("visibleSymbolsForGroupTracking(overviewSymbols, groupTrackingState)", render_overview)
+        self.assertLess(
+            render_overview.index("renderLocationDistribution(allGroups);"),
+            render_overview.index("visibleSymbolsForGroupTracking"),
+        )
         self.assertIn("locationDistributionFromGroups(groups)", JAVASCRIPT)
         distribution_builder = HEATMAP_STATE.split(
             "function locationDistributionFromGroups(groups)", 1
@@ -205,7 +210,11 @@ class MonitorContractTests(unittest.TestCase):
         )[0]
         self.assertIn("preservedSelectedSymbol(select.value, payload.symbols)", load_symbols)
         self.assertIn("select.value = selectedSymbol;", load_symbols)
-        self.assertIn("updateSelectedChip(selectedSymbol);", load_symbols)
+        self.assertIn("renderMonitorOverview();", load_symbols)
+        render_overview = JAVASCRIPT.split("function renderMonitorOverview", 1)[1].split(
+            "function updateSelectedChip", 1
+        )[0]
+        self.assertIn("updateSelectedChip(select.value);", render_overview)
 
     def test_heatmap_active_indicator_uses_authoritative_status_and_is_accessible(self) -> None:
         self.assertIn('return symbolState.mrz_status === "active";', HEATMAP_STATE)
@@ -215,7 +224,7 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("confirming_observation_count", active_method)
         self.assertNotIn("route_owner", active_method)
         heatmap_group = JAVASCRIPT.split("function createLocationGroup", 1)[1].split(
-            "function renderLocationHeatmap", 1
+            "function renderLocationDistribution", 1
         )[0]
         self.assertIn("const active = hasActiveMrz(symbolState);", heatmap_group)
         self.assertIn('indicator.className = "active-mrz-dot";', heatmap_group)
@@ -225,7 +234,8 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("STR", heatmap_group)
 
     def test_heatmap_has_one_quiet_active_legend_without_animation(self) -> None:
-        self.assertEqual(HTML.count(">Active MRZ<"), 1)
+        legends = HTML.split('class="heatmap-legends"', 1)[1].split("</div>", 1)[0]
+        self.assertEqual(legends.count(">Active MRZ<"), 1)
         self.assertIn('class="heatmap-legend"', HTML)
         self.assertIn('class="active-mrz-dot" aria-hidden="true"', HTML)
         active_style = CSS.split(".active-mrz-dot", 1)[1].split(".heatmap-grid", 1)[0]
@@ -277,11 +287,133 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("CONCENTRATION_SPAN_THRESHOLD", HEATMAP_STATE + JAVASCRIPT)
         self.assertNotIn("selected_lower", HEATMAP_STATE + JAVASCRIPT)
 
-    def test_heatmap_click_reuses_selector_and_lazy_detail_loader(self) -> None:
-        self.assertIn('button.addEventListener("click", () => selectSymbol(symbol).catch(showError));', JAVASCRIPT)
+    def test_heatmap_click_preserves_detail_selection_when_group_tracking_is_off(self) -> None:
+        self.assertIn(
+            'button.addEventListener("click", () => handleHeatmapChipClick(symbol).catch(showError));',
+            JAVASCRIPT,
+        )
+        chip_handler = JAVASCRIPT.split("async function handleHeatmapChipClick", 1)[1].split(
+            "async function selectSymbol", 1
+        )[0]
+        self.assertIn("if (!groupTrackingState.enabled)", chip_handler)
+        self.assertIn("await selectSymbol(symbol);", chip_handler)
+        self.assertIn("toggleGroupSymbol(groupTrackingState, symbol)", chip_handler)
+        self.assertIn("renderMonitorOverview();", chip_handler)
         self.assertIn("select.value = symbol;", JAVASCRIPT)
         self.assertIn("await loadSymbol(symbol);", JAVASCRIPT)
         self.assertNotIn("window.location", JAVASCRIPT)
+
+    def test_group_tracking_defaults_off_and_uses_semantic_controls(self) -> None:
+        toggle = HTML.split('id="groupTrackingToggle"', 1)[0].rsplit("<input", 1)[1]
+        self.assertIn('type="checkbox"', toggle)
+        self.assertNotIn("checked", toggle)
+        self.assertIn('id="groupTrackingStateLabel">Off<', HTML)
+        self.assertIn('id="selectedGroupPanel"', HTML)
+        self.assertIn('aria-labelledby="selected-group-title" aria-live="polite" hidden', HTML)
+        self.assertIn('type="checkbox" id="showSelectedOnly"', HTML)
+        self.assertIn('id="clearSelectedGroup" type="button"', HTML)
+        initial_state = HEATMAP_STATE.split("function createGroupTrackingState", 1)[1].split(
+            "function setGroupTrackingEnabled", 1
+        )[0]
+        self.assertIn("enabled: false", initial_state)
+        self.assertIn("showSelectedOnly: false", initial_state)
+        self.assertIn("selectedSymbols: new Set()", initial_state)
+
+    def test_selected_group_panel_contains_only_requested_current_state_metrics(self) -> None:
+        self.assertIn(">SELECTED GROUP · <", HTML)
+        self.assertIn('id="selectedGroupSymbols"', HTML)
+        for field_id in (
+            "selectedGroupBtdCount",
+            "selectedGroupStrCount",
+            "selectedGroupDeepDiscountCount",
+            "selectedGroupShallowDiscountCount",
+            "selectedGroupShallowPremiumCount",
+            "selectedGroupDeepPremiumCount",
+            "selectedGroupActiveCount",
+            "selectedGroupMigratedCount",
+        ):
+            with self.subTest(field_id=field_id):
+                self.assertIn(f'id="{field_id}"', HTML)
+        combined = HTML + JAVASCRIPT + HEATMAP_STATE
+        for prohibited in (
+            "group bias",
+            "average formation",
+            "median formation",
+            "pressure score",
+            "performance statistics",
+        ):
+            self.assertNotIn(prohibited, combined.lower())
+
+    def test_group_selected_state_is_distinct_and_coexists_with_heatmap_encodings(self) -> None:
+        heatmap_group = JAVASCRIPT.split("function createLocationGroup", 1)[1].split(
+            "function renderLocationDistribution", 1
+        )[0]
+        self.assertIn('button.classList.toggle("active-mrz", active);', heatmap_group)
+        self.assertIn('button.classList.toggle("group-selected", groupSelected);', heatmap_group)
+        self.assertIn('"evidence-ready",', heatmap_group)
+        self.assertIn('button.classList.add(`activity-${activity.tier}`);', heatmap_group)
+        self.assertIn('check.textContent = "✓";', heatmap_group)
+        self.assertIn('check.setAttribute("aria-hidden", "true");', heatmap_group)
+        group_style = CSS.split(".symbol-chip.group-selected {", 1)[1].split("}", 1)[0]
+        self.assertIn("border-color: #83aef0;", group_style)
+        self.assertIn("box-shadow: 0 0 0 2px", group_style)
+        self.assertNotIn("background-color", group_style)
+        self.assertIn(".symbol-chip.evidence-ready.group-selected {", CSS)
+
+    def test_group_filters_clear_and_mode_transitions_are_session_only(self) -> None:
+        self.assertIn('showSelectedOnly.addEventListener("change",', JAVASCRIPT)
+        self.assertIn("setShowSelectedOnly(", JAVASCRIPT)
+        self.assertIn('clearSelectedGroup.addEventListener("click",', JAVASCRIPT)
+        self.assertIn("clearGroupSelection(groupTrackingState)", JAVASCRIPT)
+        self.assertIn('groupTrackingToggle.addEventListener("change",', JAVASCRIPT)
+        self.assertIn("setGroupTrackingEnabled(", JAVASCRIPT)
+        self.assertIn("if (!enabled) return createGroupTrackingState();", HEATMAP_STATE)
+        self.assertIn("selectedSymbols: new Set()", HEATMAP_STATE)
+        combined = HTML + JAVASCRIPT + HEATMAP_STATE
+        for persistence_api in (
+            "localStorage",
+            "sessionStorage",
+            "document.cookie",
+            "URLSearchParams",
+            "history.pushState",
+        ):
+            self.assertNotIn(persistence_api, combined)
+        self.assertNotIn("Save group", combined)
+        self.assertNotIn("Group name", combined)
+
+    def test_group_tracking_uses_canonical_overview_migration_provenance(self) -> None:
+        symbols_method = REPOSITORY.split("    def symbols(self)", 1)[1].split(
+            "    def health(self)", 1
+        )[0]
+        for predicate in (
+            "e.event_type = 'MRZ_MIGRATED'",
+            "e.trigger_event_id = a.activation_event_id",
+            "e.occurred_at = a.activated_at",
+            "e.route_owner = a.route_owner",
+            "e.new_core_mrz_lower = a.core_mrz_lower",
+            "e.new_core_mrz_upper = a.core_mrz_upper",
+            "e.new_core_mrz_midpoint = a.core_mrz_midpoint",
+        ):
+            with self.subTest(predicate=predicate):
+                self.assertIn(predicate, symbols_method)
+        self.assertIn('"has_migrated": bool(anchor["has_migrated"])', symbols_method)
+        group_summary = HEATMAP_STATE.split("function groupTrackingSummary", 1)[1].split(
+            "function visibleSymbolsForGroupTracking", 1
+        )[0]
+        self.assertIn("if (hasActiveMrz(symbolState))", group_summary)
+        self.assertIn("symbolState.has_migrated === true", group_summary)
+        self.assertNotIn("migration_pressure", group_summary)
+        self.assertNotIn("successor", group_summary)
+
+    def test_group_tracking_mobile_layout_wraps_without_horizontal_overflow(self) -> None:
+        self.assertIn("min-height: 44px;", CSS.split(".group-tracking-toggle", 1)[1])
+        self.assertIn("flex-wrap: wrap;", CSS.split(".selected-group-symbols", 1)[1])
+        self.assertIn("max-width: 100%;", CSS.split(".selected-group-symbols li", 1)[1])
+        self.assertIn(
+            ".selected-group-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }",
+            CSS,
+        )
+        self.assertIn(".selected-group-location-mix { grid-column: 1 / -1; }", CSS)
 
     def test_initial_overview_is_one_bounded_query_without_detail_requests(self) -> None:
         load_symbols = JAVASCRIPT.split("async function loadSymbols()", 1)[1].split(

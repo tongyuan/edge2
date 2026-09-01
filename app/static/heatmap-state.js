@@ -201,6 +201,98 @@
     return `${(Number.isFinite(percentage) ? percentage : 0).toFixed(1)}%`;
   }
 
+  function createGroupTrackingState() {
+    return {
+      enabled: false,
+      showSelectedOnly: false,
+      selectedSymbols: new Set(),
+    };
+  }
+
+  function setGroupTrackingEnabled(state, enabled) {
+    if (!enabled) return createGroupTrackingState();
+    return { ...state, enabled: true };
+  }
+
+  function toggleGroupSymbol(state, symbol) {
+    if (!state.enabled || !symbol) return state;
+    const selectedSymbols = new Set(state.selectedSymbols);
+    if (selectedSymbols.has(symbol)) selectedSymbols.delete(symbol);
+    else selectedSymbols.add(symbol);
+    return {
+      ...state,
+      selectedSymbols,
+      showSelectedOnly: selectedSymbols.size > 0 && state.showSelectedOnly,
+    };
+  }
+
+  function setShowSelectedOnly(state, showSelectedOnly) {
+    return {
+      ...state,
+      showSelectedOnly: Boolean(
+        state.enabled && showSelectedOnly && state.selectedSymbols.size > 0,
+      ),
+    };
+  }
+
+  function clearGroupSelection(state) {
+    return {
+      ...state,
+      selectedSymbols: new Set(),
+      showSelectedOnly: false,
+    };
+  }
+
+  function reconcileGroupTrackingState(state, symbols) {
+    const availableSymbols = new Set(symbols.map(({ symbol }) => symbol));
+    const selectedSymbols = new Set(
+      [...state.selectedSymbols].filter((symbol) => availableSymbols.has(symbol)),
+    );
+    return {
+      ...state,
+      selectedSymbols,
+      showSelectedOnly: selectedSymbols.size > 0 && state.showSelectedOnly,
+    };
+  }
+
+  function selectedGroupStates(symbols, selectedSymbols) {
+    const bySymbol = new Map(symbols.map((symbolState) => [symbolState.symbol, symbolState]));
+    return [...selectedSymbols].map((symbol) => bySymbol.get(symbol)).filter(Boolean);
+  }
+
+  function groupTrackingSummary(symbols, state) {
+    const selectedStates = selectedGroupStates(symbols, state.selectedSymbols);
+    const routeMix = { BTD: 0, STR: 0 };
+    const locationMix = Object.fromEntries(primaryLocationKeys.map((key) => [key, 0]));
+    let activeMrzCount = 0;
+    let migratedCount = 0;
+    selectedStates.forEach((symbolState) => {
+      if (symbolState.route_owner === "BTD" || symbolState.route_owner === "STR") {
+        routeMix[symbolState.route_owner] += 1;
+      }
+      if (Object.hasOwn(locationMix, symbolState.current_price_location)) {
+        locationMix[symbolState.current_price_location] += 1;
+      }
+      if (hasActiveMrz(symbolState)) {
+        activeMrzCount += 1;
+        if (symbolState.has_migrated === true) migratedCount += 1;
+      }
+    });
+    return {
+      selectedStates,
+      selectedCount: selectedStates.length,
+      routeMix,
+      locationMix,
+      activeMrzCount,
+      migratedCount,
+    };
+  }
+
+  function visibleSymbolsForGroupTracking(symbols, state) {
+    if (!state.enabled || !state.showSelectedOnly) return symbols;
+    return selectedGroupStates(symbols, state.selectedSymbols);
+  }
+
   const heatmapState = {
     primaryLocationKeys,
     secondaryLocationKeys,
@@ -218,6 +310,14 @@
     groupSymbolsByLocation,
     locationDistributionFromGroups,
     formatLocationPercentage,
+    createGroupTrackingState,
+    setGroupTrackingEnabled,
+    toggleGroupSymbol,
+    setShowSelectedOnly,
+    clearGroupSelection,
+    reconcileGroupTrackingState,
+    groupTrackingSummary,
+    visibleSymbolsForGroupTracking,
   };
 
   root.edgeHeatmapState = heatmapState;

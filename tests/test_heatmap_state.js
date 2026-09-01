@@ -16,6 +16,14 @@ const {
   groupSymbolsByLocation,
   locationDistributionFromGroups,
   formatLocationPercentage,
+  createGroupTrackingState,
+  setGroupTrackingEnabled,
+  toggleGroupSymbol,
+  setShowSelectedOnly,
+  clearGroupSelection,
+  reconcileGroupTrackingState,
+  groupTrackingSummary,
+  visibleSymbolsForGroupTracking,
 } = require("../app/static/heatmap-state.js");
 
 assert.deepEqual(primaryLocationKeys, [
@@ -145,6 +153,99 @@ assert.equal(emptyDistribution.classifiedTotal, 0, "zero-symbol total is safe");
 assert.deepEqual(emptyDistribution.discountTotal, { count: 0, percentage: 0 });
 assert.deepEqual(emptyDistribution.premiumTotal, { count: 0, percentage: 0 });
 assert.equal(formatLocationPercentage(emptyDistribution.buckets.deep_discount.percentage), "0.0%");
+
+const groupSymbols = [
+  {
+    symbol: "ALPHA",
+    mrz_status: "active",
+    route_owner: "BTD",
+    current_price_location: "deep_discount",
+    has_migrated: true,
+  },
+  {
+    symbol: "BETA",
+    mrz_status: "active",
+    route_owner: "STR",
+    current_price_location: "shallow_premium",
+    has_migrated: false,
+  },
+  {
+    symbol: "GAMMA",
+    mrz_status: "unestablished",
+    route_owner: null,
+    current_price_location: "shallow_discount",
+    has_migrated: true,
+  },
+  {
+    symbol: "DELTA",
+    mrz_status: "active",
+    route_owner: "BTD",
+    current_price_location: "deep_premium",
+    has_migrated: true,
+  },
+];
+let trackingState = createGroupTrackingState();
+assert.deepEqual(
+  { enabled: trackingState.enabled, showSelectedOnly: trackingState.showSelectedOnly },
+  { enabled: false, showSelectedOnly: false },
+  "group tracking defaults off",
+);
+assert.equal(trackingState.selectedSymbols.size, 0);
+trackingState = toggleGroupSymbol(trackingState, "ALPHA");
+assert.equal(trackingState.selectedSymbols.size, 0, "chip membership cannot change while off");
+trackingState = setGroupTrackingEnabled(trackingState, true);
+trackingState = toggleGroupSymbol(trackingState, "ALPHA");
+trackingState = toggleGroupSymbol(trackingState, "BETA");
+assert.deepEqual([...trackingState.selectedSymbols], ["ALPHA", "BETA"],
+  "enabled tracking adds multiple symbols in selection order");
+trackingState = toggleGroupSymbol(trackingState, "ALPHA");
+assert.deepEqual([...trackingState.selectedSymbols], ["BETA"],
+  "clicking a selected symbol removes it");
+trackingState = toggleGroupSymbol(trackingState, "ALPHA");
+trackingState = toggleGroupSymbol(trackingState, "GAMMA");
+trackingState = toggleGroupSymbol(trackingState, "DELTA");
+const groupSummary = groupTrackingSummary(groupSymbols, trackingState);
+assert.equal(groupSummary.selectedCount, 4);
+assert.deepEqual(groupSummary.routeMix, { BTD: 2, STR: 1 },
+  "route mix uses current owners and does not infer an unestablished route");
+assert.deepEqual(groupSummary.locationMix, {
+  deep_discount: 1,
+  shallow_discount: 1,
+  shallow_premium: 1,
+  deep_premium: 1,
+}, "location mix uses the existing canonical heatmap classifications");
+assert.equal(groupSummary.activeMrzCount, 3, "active count reuses authoritative active status");
+assert.equal(groupSummary.migratedCount, 2,
+  "migrated count requires active status and canonical current provenance");
+trackingState = setShowSelectedOnly(trackingState, true);
+assert.deepEqual(
+  visibleSymbolsForGroupTracking(groupSymbols, trackingState).map(({ symbol }) => symbol),
+  ["BETA", "ALPHA", "GAMMA", "DELTA"],
+  "show selected only keeps the temporary cohort without changing its order",
+);
+assert.equal(
+  locationDistributionFromGroups(groupSymbolsByLocation(groupSymbols, 4)).classifiedTotal,
+  4,
+  "filtering does not alter the global distribution source",
+);
+trackingState = setShowSelectedOnly(trackingState, false);
+assert.equal(visibleSymbolsForGroupTracking(groupSymbols, trackingState), groupSymbols,
+  "turning the filter off restores the full heatmap population");
+trackingState = reconcileGroupTrackingState(trackingState, groupSymbols.slice(0, 3));
+assert.deepEqual([...trackingState.selectedSymbols], ["BETA", "ALPHA", "GAMMA"],
+  "rerender reconciliation prunes only symbols no longer in the overview");
+trackingState = clearGroupSelection(trackingState);
+assert.equal(trackingState.enabled, true, "clear keeps Group Tracking enabled");
+assert.equal(trackingState.selectedSymbols.size, 0);
+assert.equal(trackingState.showSelectedOnly, false, "clear disables the empty selected-only filter");
+trackingState = setShowSelectedOnly(trackingState, true);
+assert.equal(trackingState.showSelectedOnly, false, "an empty group cannot hide the heatmap");
+trackingState = toggleGroupSymbol(trackingState, "ALPHA");
+trackingState = setShowSelectedOnly(trackingState, true);
+trackingState = setGroupTrackingEnabled(trackingState, false);
+assert.equal(trackingState.enabled, false);
+assert.equal(trackingState.selectedSymbols.size, 0, "turning Group Tracking off clears the cohort");
+assert.equal(trackingState.showSelectedOnly, false);
 
 const premiumActivity = routeAlignedActivity({
   symbol: "ETHUSDT",

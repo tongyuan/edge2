@@ -285,6 +285,7 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(monitor["migration"]["current_lower"], 180.0)
         self.assertEqual(overview["route_owner"], "STR")
         self.assertEqual(overview["structural_location"], "deep_premium_core_mrz")
+        self.assertTrue(overview["has_migrated"])
         self.assertEqual(operation_card["route_owner"], "STR")
         self.assertEqual(operation_card["active_mrz"]["lower"], "180")
         self.assertEqual(operation_card["active_mrz"]["activated_at"], "2026-08-20T12:00:08Z")
@@ -381,6 +382,7 @@ class APIIntegrationTests(unittest.TestCase):
         overview = self.client.get("/api/symbols").json()["symbols"]
         self.assertEqual(overview[0]["current_price_location"], "deep_discount")
         self.assertEqual(overview[0]["mrz_status"], "unestablished")
+        self.assertFalse(overview[0]["has_migrated"])
         self.assertEqual(overview[0]["btd_window_observation_count"], 1)
         self.assertEqual(overview[0]["str_window_observation_count"], 0)
         str_packet = webhook_payload(
