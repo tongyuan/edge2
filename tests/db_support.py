@@ -25,7 +25,14 @@ def clean(database_url: str) -> None:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                TRUNCATE TABLE mrz_events, active_mrz, observations, ingestion_rejections
+                TRUNCATE TABLE
+                    web_push_delivery_attempts,
+                    web_push_notifications,
+                    web_push_subscriptions,
+                    mrz_events,
+                    active_mrz,
+                    observations,
+                    ingestion_rejections
                 RESTART IDENTITY CASCADE
                 """
             )

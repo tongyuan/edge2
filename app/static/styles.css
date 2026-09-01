@@ -77,6 +77,73 @@ h2 { margin-bottom: 0; font-size: 1.55rem; letter-spacing: -0.02em; }
 }
 .status-dot.ok { color: var(--accent); }
 
+.notification-control {
+  display: flex;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 6px;
+}
+.notification-control button {
+  min-height: 44px;
+  padding: 9px 13px;
+  border: 1px solid #486b61;
+  border-radius: 9px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 720;
+}
+.notification-control button:hover { border-color: var(--accent); }
+.notification-control button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.notification-control button:disabled { cursor: default; opacity: 0.64; }
+.notification-control span {
+  max-width: 280px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1.3;
+  text-align: right;
+}
+.notification-control span[data-state="subscribed"] { color: var(--accent); }
+.notification-control span[data-state="denied"],
+.notification-control span[data-state="error"] { color: var(--str); }
+
+.notification-toast-host {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 1000;
+  display: grid;
+  width: min(390px, calc(100vw - 36px));
+  gap: 10px;
+}
+.notification-toast {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px;
+  border: 1px solid #4d8b79;
+  border-radius: 13px;
+  background: rgba(16, 21, 29, 0.98);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.45);
+}
+.notification-toast strong { color: var(--accent); }
+.notification-toast p {
+  margin: 5px 0 0;
+  color: var(--text);
+  font-size: 0.82rem;
+  line-height: 1.4;
+  white-space: pre-line;
+}
+.notification-toast a {
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 720;
+}
+
 .location-distribution-panel { margin-top: 42px; }
 .location-distribution-grid {
   display: grid;
@@ -566,6 +633,8 @@ dd { margin: 0; font-size: 0.95rem; font-weight: 620; }
   .shell { padding-top: 28px; }
   .masthead { align-items: flex-start; flex-direction: column; }
   .masthead-actions { align-items: flex-start; }
+  .notification-control { align-items: flex-start; }
+  .notification-control span { text-align: left; }
   .page-nav { justify-content: flex-start; }
   .heatmap-title-row { align-items: stretch; flex-direction: column; }
   .group-tracking-toggle { align-self: flex-start; }

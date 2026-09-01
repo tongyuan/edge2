@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Mapping
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
@@ -17,6 +17,12 @@ from app.concentration import MIN_CLUSTER_OBSERVATIONS
 from app.config import Settings
 from app.logging_config import configure_logging
 from app.mrz_robustness import MRZRobustnessService
+from app.notifications import (
+    NotificationRepository,
+    NotificationService,
+    PushSubscriptionDelete,
+    PushSubscriptionPayload,
+)
 from app.repository import EdgeRepository, json_diagnostics, sanitize_payload
 from app.validation import ObservationPayload
 
@@ -60,14 +66,25 @@ def validation_diagnostics(exc: ValidationError) -> dict[str, Any]:
     return {"errors": errors}
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    *,
+    web_push_sender: Any | None = None,
+) -> FastAPI:
     resolved = settings or Settings.from_env()
     configure_logging(resolved.log_level)
     repository = EdgeRepository(resolved.database_url)
+    notification_repository = NotificationRepository(resolved.database_url)
+    notification_service = NotificationService(
+        resolved,
+        notification_repository,
+        **({"sender": web_push_sender} if web_push_sender is not None else {}),
+    )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         LOGGER.info("EDGE 2.0 application started")
+        run_notification_recovery(notification_service)
         yield
         LOGGER.info("EDGE 2.0 application stopped")
 
@@ -81,7 +98,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     application.state.settings = resolved
     application.state.repository = repository
+    application.state.notification_repository = notification_repository
+    application.state.notification_service = notification_service
     application.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+    @application.get("/manifest.webmanifest", include_in_schema=False)
+    def web_app_manifest() -> FileResponse:
+        return FileResponse(
+            STATIC_DIR / "manifest.webmanifest",
+            media_type="application/manifest+json",
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
+
+    @application.get("/service-worker.js", include_in_schema=False)
+    def service_worker() -> FileResponse:
+        return FileResponse(
+            STATIC_DIR / "service-worker.js",
+            media_type="application/javascript",
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Service-Worker-Allowed": "/",
+            },
+        )
 
     @application.get("/", include_in_schema=False)
     def symbol_lab() -> FileResponse:
@@ -133,7 +171,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
 
     @application.post("/webhook/tradingview")
-    async def tradingview_webhook(request: Request) -> JSONResponse:
+    async def tradingview_webhook(
+        request: Request,
+        background_tasks: BackgroundTasks,
+    ) -> JSONResponse:
         raw_body = await request.body()
         if len(raw_body) > resolved.max_request_bytes:
             record_rejection(
@@ -214,6 +255,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "Duplicate webhook ignored",
                 extra={"event_id": outcome.event_id, "symbol": outcome.symbol},
             )
+            background_tasks.add_task(
+                run_notification_trigger,
+                notification_service,
+                payload.event_id,
+            )
             return JSONResponse(
                 {
                     "ok": True,
@@ -226,6 +272,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         for transition in outcome.triggered_transitions:
             log_transition(transition)
+        background_tasks.add_task(
+            run_notification_trigger,
+            notification_service,
+            payload.event_id,
+        )
         detail = repository.symbol_detail(outcome.symbol)
         LOGGER.info(
             "Webhook accepted",
@@ -249,6 +300,58 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "minimum_cluster_observations": MIN_CLUSTER_OBSERVATIONS,
             "symbols": repository.symbols(),
         }
+
+    @application.get("/api/notifications/config")
+    def notification_config() -> JSONResponse:
+        return JSONResponse(
+            {
+                "supported": notification_service.web_push_configured,
+                "vapid_public_key": (
+                    resolved.web_push_vapid_public_key
+                    if notification_service.web_push_configured
+                    else None
+                ),
+                "latest_notification_id": notification_repository.latest_notification_id(),
+            },
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
+    @application.post("/api/notifications/subscriptions", status_code=201)
+    def create_notification_subscription(
+        subscription: PushSubscriptionPayload,
+    ) -> JSONResponse:
+        if not notification_service.web_push_configured:
+            raise HTTPException(status_code=503, detail="web_push_not_configured")
+        stored = notification_repository.upsert_subscription(subscription)
+        if not stored["enabled"] and stored["disabled_reason"] == "expired":
+            raise HTTPException(status_code=410, detail="subscription_expired")
+        return JSONResponse(
+            {"ok": True, "subscribed": True},
+            status_code=201,
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
+    @application.delete("/api/notifications/subscriptions")
+    def delete_notification_subscription(
+        subscription: PushSubscriptionDelete,
+    ) -> JSONResponse:
+        notification_repository.disable_subscription(subscription.endpoint)
+        return JSONResponse(
+            {"ok": True, "subscribed": False},
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
+    @application.get("/api/notifications/events")
+    def notification_events(after: int = 0) -> JSONResponse:
+        if after < 0:
+            raise HTTPException(status_code=400, detail="after_must_be_non_negative")
+        return JSONResponse(
+            {
+                "events": notification_repository.site_events_after(after),
+                "latest_notification_id": notification_repository.latest_notification_id(),
+            },
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
 
     @application.get("/api/diagnostics/activation-feasibility")
     def activation_feasibility() -> JSONResponse:
@@ -295,6 +398,26 @@ def record_rejection(repository: EdgeRepository, **kwargs: Any) -> None:
             "reason_code": kwargs.get("reason_code"),
         },
     )
+
+
+def run_notification_trigger(
+    notification_service: NotificationService,
+    trigger_event_id: str,
+) -> None:
+    try:
+        notification_service.process_trigger_event(trigger_event_id)
+    except Exception:
+        LOGGER.exception(
+            "Notification processing failed after authoritative MRZ persistence",
+            extra={"trigger_event_id": trigger_event_id},
+        )
+
+
+def run_notification_recovery(notification_service: NotificationService) -> None:
+    try:
+        notification_service.recover()
+    except Exception:
+        LOGGER.exception("Notification recovery failed; MRZ authority is unaffected")
 
 
 def log_transition(transition: Any) -> None:

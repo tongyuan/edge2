@@ -61,6 +61,9 @@ class Settings:
     symbol_ticks: dict[str, Decimal]
     max_request_bytes: int
     log_level: str
+    web_push_vapid_public_key: str | None = None
+    web_push_vapid_private_key: str | None = None
+    web_push_vapid_subject: str | None = None
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -73,6 +76,17 @@ class Settings:
         require_secret = env_bool("REQUIRE_WEBHOOK_SECRET", True)
         if app_env == "production" and require_secret and not secret:
             raise ValueError("WEBHOOK_SECRET is required in production")
+        vapid_public_key = os.getenv("WEB_PUSH_VAPID_PUBLIC_KEY", "").strip() or None
+        vapid_private_key = os.getenv("WEB_PUSH_VAPID_PRIVATE_KEY", "").strip() or None
+        vapid_subject = os.getenv("WEB_PUSH_VAPID_SUBJECT", "").strip() or None
+        vapid_values = (vapid_public_key, vapid_private_key, vapid_subject)
+        if any(vapid_values) and not all(vapid_values):
+            raise ValueError(
+                "WEB_PUSH_VAPID_PUBLIC_KEY, WEB_PUSH_VAPID_PRIVATE_KEY, and "
+                "WEB_PUSH_VAPID_SUBJECT must be configured together"
+            )
+        if vapid_subject and not vapid_subject.startswith(("mailto:", "https://")):
+            raise ValueError("WEB_PUSH_VAPID_SUBJECT must use mailto: or https://")
         return cls(
             app_env=app_env,
             database_url=database_url,
@@ -81,4 +95,7 @@ class Settings:
             symbol_ticks=parse_symbol_ticks(os.getenv("EDGE2_SYMBOL_TICKS_JSON", "")),
             max_request_bytes=int(os.getenv("MAX_REQUEST_BYTES", "32768")),
             log_level=os.getenv("LOG_LEVEL", "INFO").strip().upper(),
+            web_push_vapid_public_key=vapid_public_key,
+            web_push_vapid_private_key=vapid_private_key,
+            web_push_vapid_subject=vapid_subject,
         )

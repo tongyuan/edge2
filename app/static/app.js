@@ -479,5 +479,18 @@ function showError(error) {
   }
 }
 
-loadHealth();
-loadSymbols().catch(showError);
+function requestedSymbolFromQuery(search = globalThis.location?.search || "") {
+  const symbol = new URLSearchParams(search).get("symbol");
+  return symbol && /^[A-Z0-9][A-Z0-9:._-]{0,39}$/.test(symbol) ? symbol : null;
+}
+
+async function initializeMonitor() {
+  loadHealth();
+  await loadSymbols();
+  const requestedSymbol = requestedSymbolFromQuery();
+  if (requestedSymbol && Array.from(select.options).some(({ value }) => value === requestedSymbol)) {
+    await selectSymbol(requestedSymbol);
+  }
+}
+
+initializeMonitor().catch(showError);

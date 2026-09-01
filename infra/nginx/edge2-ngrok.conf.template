@@ -28,6 +28,54 @@ server {
         proxy_read_timeout 15s;
     }
 
+    location = / {
+        proxy_pass $edge2_app/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 30s;
+    }
+
+    location = /manifest.webmanifest {
+        proxy_pass $edge2_app/manifest.webmanifest;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+    }
+
+    location = /service-worker.js {
+        proxy_pass $edge2_app/service-worker.js;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+    }
+
+    location /static/ {
+        proxy_pass $edge2_app$request_uri;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+    }
+
+    location /api/ {
+        proxy_pass $edge2_app$request_uri;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 30s;
+    }
+
+    location /diagnostics/ {
+        proxy_pass $edge2_app$request_uri;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 30s;
+    }
+
     location / {
         return 404;
     }

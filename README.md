@@ -139,6 +139,10 @@ GET  /api/symbols/{symbol}
 GET  /api/symbols/{symbol}/mrz
 GET  /api/diagnostics/activation-feasibility
 GET  /api/diagnostics/mrz-robustness
+GET  /api/notifications/config
+POST /api/notifications/subscriptions
+DELETE /api/notifications/subscriptions
+GET  /api/notifications/events
 GET  /
 GET  /diagnostics/activation-feasibility
 GET  /diagnostics/mrz-robustness
@@ -204,10 +208,15 @@ The PostgreSQL 16 database revolves around:
 - `mrz_events` — operational transition audit only.
 - `ingestion_rejections` — sanitized invalid-packet diagnostics.
 - `ingestion_metrics` — lightweight durable counters for health reporting.
+- `web_push_subscriptions` — single-operator browser Push subscriptions.
+- `web_push_notifications` — deduplicated logical activation notifications.
+- `web_push_delivery_attempts` — isolated per-subscription delivery outcomes.
 
 Migration `001_initial.sql` builds the isolated schema. Additive migrations
-`002–004` add the overview index, supporting count, and nullable immutable
-formation evidence. No 4.2 table or historical record is read.
+`002–005` add the overview index, supporting count, nullable immutable
+formation evidence, and downstream Web Push tables. No 4.2 table or historical
+record is read. See [`docs/web-push.md`](docs/web-push.md) for notification
+configuration, safety, deployment, and iPhone verification.
 
 ## Test
 

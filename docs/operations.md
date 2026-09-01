@@ -167,3 +167,9 @@ https://unretroactively-latticed-fidela.ngrok-free.dev/webhook/tradingview
 
 Do not expose the application port directly through ngrok. The Git migration
 does not change PineScript logic or live TradingView alerts.
+
+The same HTTPS ingress now serves the allowlisted EDGE website, static/PWA
+assets, diagnostics, and API paths required by the iPhone Home Screen web app.
+The webhook secret is still injected only on the exact TradingView path. Web
+Push VAPID setup, migration behavior, and device verification are documented in
+[web-push.md](web-push.md).

@@ -32,6 +32,30 @@ class IngressContractTests(unittest.TestCase):
         self.assertIn("limit_except POST", NGINX)
         self.assertRegex(NGINX, re.compile(r"location / \{\s+return 404;", re.MULTILINE))
 
+    def test_https_ingress_exposes_the_pwa_and_notification_api(self) -> None:
+        for location in (
+            "location = / {",
+            "location = /manifest.webmanifest {",
+            "location = /service-worker.js {",
+            "location /static/ {",
+            "location /api/ {",
+        ):
+            self.assertIn(location, NGINX)
+        self.assertIn("proxy_pass $edge2_app/manifest.webmanifest;", NGINX)
+        self.assertIn("proxy_pass $edge2_app/service-worker.js;", NGINX)
+        self.assertGreaterEqual(NGINX.count("proxy_pass $edge2_app$request_uri;"), 2)
+        self.assertNotIn("proxy_cache", NGINX)
+
+    def test_webhook_secret_remains_scoped_to_the_exact_webhook_location(self) -> None:
+        self.assertEqual(NGINX.count("X-EDGE2-Webhook-Secret"), 1)
+        webhook_block = re.search(
+            r"location = /webhook/tradingview \{(?P<body>.*?)\n    \}",
+            NGINX,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(webhook_block)
+        self.assertIn("X-EDGE2-Webhook-Secret", webhook_block.group("body"))
+
     def test_ingress_rediscovers_app_after_container_replacement(self) -> None:
         self.assertIn("resolver 127.0.0.11", NGINX)
         self.assertIn("proxy_pass $edge2_app/health;", NGINX)

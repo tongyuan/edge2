@@ -30,7 +30,7 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("Symbol Lab", HTML)
 
     def test_monitor_assets_are_versioned_together(self) -> None:
-        version = "group-tracking-20260901"
+        version = "web-push-20260902"
         self.assertIn(f'/static/styles.css?v={version}', HTML)
         self.assertIn(f'/static/heatmap-state.js?v={version}', HTML)
         self.assertIn(f'/static/operator-time.js?v={version}', HTML)
@@ -374,10 +374,10 @@ class MonitorContractTests(unittest.TestCase):
             "localStorage",
             "sessionStorage",
             "document.cookie",
-            "URLSearchParams",
             "history.pushState",
         ):
             self.assertNotIn(persistence_api, combined)
+        self.assertNotIn("URLSearchParams", HEATMAP_STATE)
         self.assertNotIn("Save group", combined)
         self.assertNotIn("Group name", combined)
 

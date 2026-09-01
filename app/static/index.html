@@ -4,8 +4,14 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="EDGE 2.0 operational MRZ Monitor" />
+    <meta name="theme-color" content="#080b10" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>EDGE 2.0 · MRZ Monitor</title>
-    <link rel="stylesheet" href="/static/styles.css?v=group-tracking-20260901" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/static/edge-mrz-icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/static/edge-mrz-icon-180.png" />
+    <link rel="stylesheet" href="/static/styles.css?v=web-push-20260902" />
     <link rel="stylesheet" href="/static/diagnostics-nav.css?v=diagnostics-menu-20260827" />
   </head>
   <body>
@@ -27,6 +33,10 @@
               </div>
             </div>
           </nav>
+          <div class="notification-control">
+            <button type="button" id="notificationButton" disabled>Checking notifications…</button>
+            <span id="notificationStatus" role="status">Checking browser support…</span>
+          </div>
           <span class="status-dot" id="healthState">Checking system</span>
         </div>
       </header>
@@ -199,10 +209,12 @@
       </section>
     </main>
     <div class="activity-tooltip" id="heatmapActivityTooltip" role="tooltip" hidden></div>
+    <div class="notification-toast-host" id="notificationToastHost" aria-live="polite"></div>
     <script src="/static/diagnostics-nav.js?v=diagnostics-menu-20260827" defer></script>
-    <script src="/static/heatmap-state.js?v=group-tracking-20260901" defer></script>
-    <script src="/static/operator-time.js?v=group-tracking-20260901" defer></script>
-    <script src="/static/monitor-presentation.js?v=group-tracking-20260901" defer></script>
-    <script src="/static/app.js?v=group-tracking-20260901" defer></script>
+    <script src="/static/heatmap-state.js?v=web-push-20260902" defer></script>
+    <script src="/static/operator-time.js?v=web-push-20260902" defer></script>
+    <script src="/static/monitor-presentation.js?v=web-push-20260902" defer></script>
+    <script src="/static/notifications.js?v=web-push-20260902" defer></script>
+    <script src="/static/app.js?v=web-push-20260902" defer></script>
   </body>
 </html>
