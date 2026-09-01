@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="EDGE 2.0 MRZ operation card" />
     <title>EDGE 2.0 · MRZ Operation Card</title>
-    <link rel="stylesheet" href="/static/mrz-robustness.css?v=compact-hierarchy-20260830" />
+    <link rel="stylesheet" href="/static/mrz-robustness.css?v=migration-focus-20260901" />
     <link rel="stylesheet" href="/static/diagnostics-nav.css?v=diagnostics-menu-20260827" />
   </head>
   <body>
@@ -55,11 +55,18 @@
           <article><span>ACTIVE MRZS</span><strong id="activeMrzCount">0</strong></article>
           <article><span>BEHAVIOR EVIDENCE</span><strong>Strictly after authoritative activation event</strong></article>
         </section>
+        <section class="card-filter" aria-label="Operator Card symbol filter">
+          <span>SHOW SYMBOLS</span>
+          <div class="filter-options" role="group" aria-label="Migration history filter">
+            <button class="filter-option active" id="filterAll" type="button" aria-pressed="true">All</button>
+            <button class="filter-option" id="filterMigrated" type="button" aria-pressed="false">Migrated only</button>
+          </div>
+        </section>
         <div id="activeReports"></div>
       </div>
     </main>
     <script src="/static/diagnostics-nav.js?v=diagnostics-menu-20260827" defer></script>
     <script src="/static/operator-time.js?v=operator-card-semantics-20260829" defer></script>
-    <script src="/static/mrz-robustness.js?v=compact-hierarchy-20260830" defer></script>
+    <script src="/static/mrz-robustness.js?v=migration-focus-20260901" defer></script>
   </body>
 </html>

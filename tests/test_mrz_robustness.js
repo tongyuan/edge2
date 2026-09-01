@@ -4,6 +4,10 @@ const {
   displacementText,
   durationText,
   directionText,
+  filterReports,
+  hasValidMigrationProvenance,
+  midpointValue,
+  migrationEqmValue,
   migrationProvenanceMarkup,
   normalizedSpanText,
   percentageText,
@@ -24,6 +28,8 @@ assert.equal(directionText("UP", "Upward"), "↑ Upward");
 assert.equal(directionText("DOWN", "Downward"), "↓ Downward");
 assert.equal(directionText("NEUTRAL", "Neutral"), "Neutral");
 assert.equal(normalizedSpanText("0.0012"), "0.1%");
+assert.equal(midpointValue("0.3936", "0.3966"), 0.3951);
+assert.equal(midpointValue(null, "0.3966"), null);
 
 const operationCardSource = fs.readFileSync(
   require.resolve("../app/static/mrz-robustness.js"),
@@ -47,6 +53,11 @@ assert.doesNotMatch(
 assert.doesNotMatch(
   `${operationCardSource}\n${operationCardHtml}`,
   /<select|type=["']search["']|data-sort|data-filter/i,
+);
+assert.match(operationCardHtml, /id="filterAll"[^>]*aria-pressed="true"[^>]*>All</);
+assert.match(
+  operationCardHtml,
+  /id="filterMigrated"[^>]*aria-pressed="false"[^>]*>Migrated only</,
 );
 
 const btcReport = {
@@ -345,7 +356,20 @@ assert.match(
   operationCardCss,
   /@media \(max-width: 460px\)[\s\S]*\.formation-facts, \.post-activation-facts\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\)/,
 );
+assert.match(
+  operationCardCss,
+  /\.migration-pair-grid\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(135px, 0\.65fr\) minmax\(0, 1fr\)/,
+);
+assert.match(
+  operationCardCss,
+  /@media \(max-width: 720px\)[\s\S]*\.report-meta, \.migration-pair-grid, \.post-migration-state, \.post-migration-state dl[^{]*\{\s*grid-template-columns:\s*minmax\(0, 1fr\)/,
+);
+assert.match(
+  operationCardCss,
+  /@media \(max-width: 720px\)[\s\S]*\.filter-option\s*\{[^}]*min-height:\s*44px/,
+);
 assert.match(operationCardCss, /\.current-mrz strong[^}]*overflow-wrap:\s*anywhere/);
+assert.match(operationCardCss, /\.migration-zone > strong, \.migration-eqm > strong[^}]*overflow-wrap:\s*anywhere/);
 assert.doesNotMatch(operationCardCss, /overflow-x:\s*(?:auto|scroll)/);
 assert.doesNotMatch(operationCardCss, /\border\s*:/);
 
@@ -360,14 +384,33 @@ const wldMigration = {
 };
 const migrationMarkup = migrationProvenanceMarkup(
   wldMigration,
+  {
+    currentMidpoint: "0.40585",
+    pressureLabel: "Stable",
+    successorLabel: "No successor candidate",
+  },
   () => "24 Aug 2026 · 12:00 UTC−4",
 );
 assert.match(migrationMarkup, /↑ MIGRATED UPWARD/);
 assert.match(migrationMarkup, /24 Aug 2026 · 12:00 UTC−4/);
 assert.match(migrationMarkup, /0\.3936 – 0\.3966/);
 assert.match(migrationMarkup, /0\.4034 – 0\.4083/);
+assert.match(migrationMarkup, /PREVIOUS MRZ/);
+assert.match(migrationMarkup, /Midpoint 0\.3951/);
+assert.match(migrationMarkup, /MIGRATION EQM/);
+assert.match(migrationMarkup, /0\.400475/);
+assert.match(migrationMarkup, /CURRENT MRZ/);
+assert.match(migrationMarkup, /Midpoint 0\.40585/);
+assert.match(migrationMarkup, /POST-MIGRATION/);
+assert.match(migrationMarkup, /Pressure<\/dt><dd>Stable/);
+assert.match(migrationMarkup, /Successor<\/dt><dd>No successor candidate/);
+assert.equal(migrationEqmValue(wldMigration, "0.40585"), 0.400475);
 assert.match(
-  migrationProvenanceMarkup({ ...wldMigration, direction: "DOWN" }, () => "timestamp"),
+  migrationProvenanceMarkup(
+    { ...wldMigration, direction: "DOWN" },
+    { currentMidpoint: "0.40585" },
+    () => "timestamp",
+  ),
   /↓ MIGRATED DOWNWARD/,
 );
 
@@ -488,6 +531,15 @@ assert.match(wldMarkup, /Neutral/);
 assert.match(wldMarkup, /↓ -1\.0%/);
 assert.match(wldMarkup, /Median displacement below midpoint/);
 assert.match(wldMarkup, /No successor candidate/);
+assert.match(wldMarkup, /Previous MRZ/);
+assert.match(wldMarkup, /Midpoint 0\.3951/);
+assert.match(wldMarkup, /MIGRATION EQM/);
+assert.match(wldMarkup, /0\.400475/);
+assert.match(wldMarkup, /Midpoint 0\.40585/);
+assert.doesNotMatch(
+  wldMarkup,
+  /Previous MRZ is (?:support|resistance)|Migration confirmed (?:bullish|bearish)|Long setup|Short setup/i,
+);
 assert.doesNotMatch(wldMarkup, /4 qualifying reclaim observations/);
 assert.match(wldMarkup, /First qualifying reclaim/);
 assert.match(
@@ -498,6 +550,81 @@ assert.doesNotMatch(wldCompactSummary, /<dt>Robustness<\/dt>/);
 assert.match(wldCompactSummary, /<dt>Pressure<\/dt>/);
 assert.match(wldCompactSummary, /<dt>Successor<\/dt>/);
 assert.doesNotMatch(wldMarkup, /<dt>First reclaim<\/dt>/);
+
+const secondMigratedReport = {
+  ...wldReport,
+  symbol: "XAGUSD",
+  migration: {
+    ...wldMigration,
+    direction: "DOWN",
+    previous_lower: "69.5",
+    previous_upper: "70",
+    current_lower: "68.995",
+    current_upper: "69.233",
+  },
+  active_mrz: {
+    ...wldReport.active_mrz,
+    lower: "68.995",
+    upper: "69.233",
+    midpoint: "69.114",
+  },
+};
+const migrationProxyReport = {
+  ...btcReport,
+  symbol: "PRESSUREONLY",
+  migration: { has_migrated: false },
+  migration_pressure: {
+    ...btcReport.migration_pressure,
+    status: "UNDER_PRESSURE",
+  },
+  successor_watch: {
+    ...btcReport.successor_watch,
+    status: "SUCCESSOR_CANDIDATE",
+  },
+};
+assert.equal(hasValidMigrationProvenance(wldReport), true);
+assert.equal(hasValidMigrationProvenance(btcReport), false);
+assert.equal(hasValidMigrationProvenance(migrationProxyReport), false);
+assert.equal(
+  hasValidMigrationProvenance({
+    ...wldReport,
+    migration: { ...wldMigration, previous_lower: null },
+  }),
+  false,
+);
+const backendOrderedReports = [btcReport, wldReport, migrationProxyReport, secondMigratedReport];
+assert.deepEqual(
+  filterReports(backendOrderedReports, "all").map((report) => report.symbol),
+  ["BTCUSDT", "WLDUSDT", "PRESSUREONLY", "XAGUSD"],
+);
+assert.deepEqual(
+  filterReports(backendOrderedReports, "migrated").map((report) => report.symbol),
+  ["WLDUSDT", "XAGUSD"],
+  "migrated filtering preserves the backend formation-duration order",
+);
+const allReportsMarkup = reportMarkup(backendOrderedReports);
+assert.match(allReportsMarkup, /BTCUSDT/);
+assert.match(allReportsMarkup, /WLDUSDT/);
+assert.match(allReportsMarkup, /PRESSUREONLY/);
+assert.match(allReportsMarkup, /XAGUSD/);
+const migratedReportsMarkup = reportMarkup(
+  backendOrderedReports,
+  (value) => value,
+  "migrated",
+);
+assert.doesNotMatch(migratedReportsMarkup, /BTCUSDT|PRESSUREONLY/);
+assert.ok(
+  migratedReportsMarkup.indexOf("WLDUSDT") < migratedReportsMarkup.indexOf("XAGUSD"),
+  "the filtered list keeps the existing relative order",
+);
+assert.match(
+  reportMarkup([btcReport, migrationProxyReport], (value) => value, "migrated"),
+  /No migrated MRZ pairs currently available/,
+);
+assert.match(
+  reportMarkup([], (value) => value, "migrated"),
+  /No migrated MRZ pairs currently available/,
+);
 
 const unavailableFormationMarkup = robustnessCardMarkup({
   ...btcReport,

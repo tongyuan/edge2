@@ -14,6 +14,51 @@ function priceText(value) {
   return number.toLocaleString("en-GB", { maximumFractionDigits: 8 });
 }
 
+function midpointValue(lower, upper) {
+  if (lower === null || lower === undefined || lower === ""
+    || upper === null || upper === undefined || upper === "") return null;
+  const lowerNumber = Number(lower);
+  const upperNumber = Number(upper);
+  if (!Number.isFinite(lowerNumber) || !Number.isFinite(upperNumber)) return null;
+  return (lowerNumber + upperNumber) / 2;
+}
+
+function migrationEqmValue(migration, currentMidpoint) {
+  const previousMidpoint = midpointValue(
+    migration?.previous_lower,
+    migration?.previous_upper,
+  );
+  if (currentMidpoint === null || currentMidpoint === undefined || currentMidpoint === "") {
+    return null;
+  }
+  const currentMidpointNumber = Number(currentMidpoint);
+  if (previousMidpoint === null || !Number.isFinite(currentMidpointNumber)) return null;
+  return (previousMidpoint + currentMidpointNumber) / 2;
+}
+
+function hasValidMigrationProvenance(report) {
+  const migration = report?.migration;
+  if (migration?.has_migrated !== true) return false;
+  if ([
+    migration.previous_lower,
+    migration.previous_upper,
+    migration.current_lower,
+    migration.current_upper,
+  ].some((value) => value === null || value === undefined || value === "")) return false;
+  const previousLower = Number(migration.previous_lower);
+  const previousUpper = Number(migration.previous_upper);
+  const currentLower = Number(migration.current_lower);
+  const currentUpper = Number(migration.current_upper);
+  return [previousLower, previousUpper, currentLower, currentUpper].every(Number.isFinite)
+    && previousLower <= previousUpper
+    && currentLower <= currentUpper;
+}
+
+function filterReports(reports, filterMode = "all") {
+  if (filterMode !== "migrated") return [...reports];
+  return reports.filter((report) => hasValidMigrationProvenance(report));
+}
+
 function percentageText(value) {
   if (value === null || value === undefined || value === "") return "—";
   const number = Number(value);
@@ -102,23 +147,51 @@ function successorDetailsMarkup(successor) {
     <div><dt>Concentration</dt><dd>${escapeHtml(titleWords(successor.production_evaluation_result))}</dd></div>`;
 }
 
-function migrationProvenanceMarkup(migration, timestampFormatter = (value) => value) {
+function migrationProvenanceMarkup(
+  migration,
+  currentState = {},
+  timestampFormatter = (value) => value,
+) {
   if (!migration?.has_migrated) return "";
   const downward = migration.direction === "DOWN";
   const arrow = downward ? "↓" : "↑";
   const direction = downward ? "DOWNWARD" : "UPWARD";
   const previousRange = `${priceText(migration.previous_lower)} – ${priceText(migration.previous_upper)}`;
   const currentRange = `${priceText(migration.current_lower)} – ${priceText(migration.current_upper)}`;
+  const previousMidpoint = midpointValue(migration.previous_lower, migration.previous_upper);
+  const currentMidpoint = currentState.currentMidpoint;
+  const migrationEqm = migrationEqmValue(migration, currentMidpoint);
   return `<aside class="migration-provenance" aria-label="Current MRZ migration provenance">
     <div class="migration-provenance-heading">
-      <span class="section-label">CURRENT MRZ PROVENANCE</span>
-      <strong>${arrow} MIGRATED ${direction}</strong>
+      <div>
+        <span class="section-label">CURRENT MRZ PROVENANCE</span>
+        <strong>${arrow} MIGRATED ${direction}</strong>
+      </div>
       <span class="migration-provenance-time">${escapeHtml(timestampFormatter(migration.migrated_at) || "—")}</span>
     </div>
-    <dl>
-      <div><dt>Previous</dt><dd>${previousRange}</dd></div>
-      <div><dt>Current</dt><dd>${currentRange}</dd></div>
-    </dl>
+    <div class="migration-pair-grid">
+      <section class="migration-zone previous-zone" aria-label="Previous MRZ">
+        <span>PREVIOUS MRZ</span>
+        <strong>${previousRange}</strong>
+        <small>Midpoint ${priceText(previousMidpoint)}</small>
+      </section>
+      <div class="migration-eqm">
+        <span>MIGRATION EQM</span>
+        <strong>${priceText(migrationEqm)}</strong>
+      </div>
+      <section class="migration-zone current-zone" aria-label="Current MRZ">
+        <span>CURRENT MRZ</span>
+        <strong>${currentRange}</strong>
+        <small>Midpoint ${priceText(currentMidpoint)}</small>
+      </section>
+    </div>
+    <div class="post-migration-state" aria-label="Post-migration state">
+      <span class="section-label">POST-MIGRATION</span>
+      <dl>
+        <div><dt>Pressure</dt><dd>${escapeHtml(currentState.pressureLabel || "—")}</dd></div>
+        <div><dt>Successor</dt><dd>${escapeHtml(currentState.successorLabel || "—")}</dd></div>
+      </dl>
+    </div>
   </aside>`;
 }
 
@@ -204,7 +277,15 @@ function robustnessCardMarkup(report, timestampFormatter = (value) => value) {
     <p>${escapeHtml(successor.reason)}</p>
   </div>`;
 
-  const migrationContent = `${migrationProvenanceMarkup(report.migration, timestampFormatter)}
+  const migrationContent = `${migrationProvenanceMarkup(
+    report.migration,
+    {
+      currentMidpoint: active.midpoint,
+      pressureLabel: pressureSummary,
+      successorLabel: successor.label,
+    },
+    timestampFormatter,
+  )}
     <div class="detail-card pressure ${statusClass(pressure.status)}">
       <div class="detail-status"><span>DIRECTION</span><strong class="direction-value">${escapeHtml(pressureDirection)}</strong></div>
       <div class="detail-status"><span>STATUS</span><strong>${escapeHtml(pressure.label)}</strong></div>
@@ -288,11 +369,17 @@ function robustnessCardMarkup(report, timestampFormatter = (value) => value) {
   </section>`;
 }
 
-function reportMarkup(reports, timestampFormatter = (value) => value) {
-  if (!reports.length) {
+function reportMarkup(reports, timestampFormatter = (value) => value, filterMode = "all") {
+  const visibleReports = filterReports(reports, filterMode);
+  if (filterMode === "migrated" && !visibleReports.length) {
+    return '<section class="empty-report">No migrated MRZ pairs currently available.</section>';
+  }
+  if (!visibleReports.length) {
     return '<section class="empty-report">No active MRZ is available for an operation card.</section>';
   }
-  return reports.map((report) => robustnessCardMarkup(report, timestampFormatter)).join("");
+  return visibleReports
+    .map((report) => robustnessCardMarkup(report, timestampFormatter))
+    .join("");
 }
 
 if (typeof document !== "undefined") {
@@ -300,6 +387,31 @@ if (typeof document !== "undefined") {
     const refreshButton = document.getElementById("refreshReport");
     const status = document.getElementById("reportStatus");
     const content = document.getElementById("reportContent");
+    const activeReports = document.getElementById("activeReports");
+    const allFilterButton = document.getElementById("filterAll");
+    const migratedFilterButton = document.getElementById("filterMigrated");
+    let reports = [];
+    let filterMode = "all";
+
+    function renderReports() {
+      activeReports.innerHTML = reportMarkup(
+        reports,
+        formatOperatorTimestampUtcMinus4,
+        filterMode,
+      );
+      allFilterButton.classList.toggle("active", filterMode === "all");
+      migratedFilterButton.classList.toggle("active", filterMode === "migrated");
+      allFilterButton.setAttribute("aria-pressed", String(filterMode === "all"));
+      migratedFilterButton.setAttribute(
+        "aria-pressed",
+        String(filterMode === "migrated"),
+      );
+    }
+
+    function selectFilter(nextFilterMode) {
+      filterMode = nextFilterMode === "migrated" ? "migrated" : "all";
+      renderReports();
+    }
 
     async function loadReport() {
       refreshButton.disabled = true;
@@ -313,7 +425,8 @@ if (typeof document !== "undefined") {
         const report = await response.json();
         document.getElementById("generatedAt").textContent = formatOperatorTimestampUtcMinus4(report.generated_at) || "—";
         document.getElementById("activeMrzCount").textContent = report.active_mrz_count;
-        document.getElementById("activeReports").innerHTML = reportMarkup(report.active_mrzs, formatOperatorTimestampUtcMinus4);
+        reports = report.active_mrzs;
+        renderReports();
         status.hidden = true;
         content.hidden = false;
       } catch (error) {
@@ -325,6 +438,8 @@ if (typeof document !== "undefined") {
     }
 
     refreshButton.addEventListener("click", loadReport);
+    allFilterButton.addEventListener("click", () => selectFilter("all"));
+    migratedFilterButton.addEventListener("click", () => selectFilter("migrated"));
     loadReport();
   });
 }
@@ -334,6 +449,10 @@ if (typeof module === "object" && module.exports) {
     displacementText,
     durationText,
     directionText,
+    filterReports,
+    hasValidMigrationProvenance,
+    midpointValue,
+    migrationEqmValue,
     migrationProvenanceMarkup,
     normalizedSpanText,
     percentageText,
