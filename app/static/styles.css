@@ -77,7 +77,63 @@ h2 { margin-bottom: 0; font-size: 1.55rem; letter-spacing: -0.02em; }
 }
 .status-dot.ok { color: var(--accent); }
 
-.heatmap-panel { margin-top: 42px; }
+.location-distribution-panel { margin-top: 42px; }
+.location-distribution-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  max-width: 100%;
+}
+.location-distribution-cell {
+  min-width: 0;
+  padding: 15px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.location-distribution-cell h3 {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+  line-height: 1.25;
+}
+.location-distribution-cell p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  white-space: nowrap;
+}
+.location-distribution-cell strong {
+  color: var(--text);
+  font-size: 1rem;
+}
+.location-distribution-totals {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+  padding: 11px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(16, 21, 29, 0.55);
+}
+.location-distribution-totals p {
+  display: flex;
+  min-width: 0;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+.location-distribution-totals strong {
+  color: var(--text);
+  font-weight: 680;
+  white-space: nowrap;
+}
+
+.heatmap-panel { margin-top: 28px; }
 .section-heading { margin-bottom: 18px; }
 .section-heading .eyebrow { margin-bottom: 7px; }
 .section-support { margin-bottom: 0; color: var(--muted); font-size: 0.86rem; }
@@ -354,6 +410,9 @@ dd { margin: 0; font-size: 0.95rem; font-weight: 620; }
   .masthead { align-items: flex-start; flex-direction: column; }
   .masthead-actions { align-items: flex-start; }
   .page-nav { justify-content: flex-start; }
+  .location-distribution-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .location-distribution-cell { padding: 13px 12px; }
+  .location-distribution-totals { padding: 10px 12px; }
   .heatmap-grid, .heatmap-secondary { grid-template-columns: 1fr; }
   .answer-grid, .context-grid, .facts { grid-template-columns: 1fr; }
   .answer-grid article + article, .context-grid article + article, .facts div + div { border-left: 0; border-top: 1px solid var(--line); }

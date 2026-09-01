@@ -14,6 +14,8 @@ const {
   compareSymbolsForHeatmap,
   preservedSelectedSymbol,
   groupSymbolsByLocation,
+  locationDistributionFromGroups,
+  formatLocationPercentage,
 } = require("../app/static/heatmap-state.js");
 
 assert.deepEqual(primaryLocationKeys, [
@@ -92,6 +94,57 @@ assert.deepEqual(groups.deep_discount, [active, inactive], "equal-count bucket t
 assert.deepEqual(groups.deep_premium, [], "MRZ location must not determine bucket");
 assert.deepEqual(groups.above_ipda_range, [secondary], "secondary bucket");
 assert.deepEqual(groups.unavailable, [unavailable], "unavailable bucket");
+
+const distributionSymbols = [
+  { symbol: "DD", mrz_status: "unestablished", current_price_location: "deep_discount" },
+  { symbol: "SD-A", mrz_status: "unestablished", current_price_location: "shallow_discount" },
+  { symbol: "SD-B", mrz_status: "unestablished", current_price_location: "shallow_discount" },
+  { symbol: "SP-A", mrz_status: "unestablished", current_price_location: "shallow_premium" },
+  { symbol: "SP-B", mrz_status: "unestablished", current_price_location: "shallow_premium" },
+  { symbol: "SP-C", mrz_status: "unestablished", current_price_location: "shallow_premium" },
+  { symbol: "DP-A", mrz_status: "active", current_price_location: "deep_premium" },
+  { symbol: "DP-B", mrz_status: "unestablished", current_price_location: "deep_premium" },
+  { symbol: "DP-C", mrz_status: "unestablished", current_price_location: "deep_premium" },
+  { symbol: "DP-D", mrz_status: "unestablished", current_price_location: "deep_premium" },
+  { symbol: "ABOVE", mrz_status: "active", current_price_location: "above_ipda_range" },
+  { symbol: "EQM", mrz_status: "unestablished", current_price_location: null },
+];
+const distributionGroups = groupSymbolsByLocation(distributionSymbols, 4);
+const distributionMembership = Object.fromEntries(Object.entries(distributionGroups).map(
+  ([key, symbolsInGroup]) => [key, symbolsInGroup.map(({ symbol }) => symbol)],
+));
+const distribution = locationDistributionFromGroups(distributionGroups);
+assert.deepEqual(distribution.buckets, {
+  deep_discount: { count: 1, percentage: 10 },
+  shallow_discount: { count: 2, percentage: 20 },
+  shallow_premium: { count: 3, percentage: 30 },
+  deep_premium: { count: 4, percentage: 40 },
+}, "distribution counts and percentages reuse the four classified heatmap groups");
+assert.equal(
+  distribution.classifiedTotal,
+  primaryLocationKeys.reduce((total, key) => total + distributionGroups[key].length, 0),
+  "classified total is exactly the primary heatmap population",
+);
+assert.deepEqual(distribution.discountTotal, { count: 3, percentage: 30 });
+assert.deepEqual(distribution.premiumTotal, { count: 7, percentage: 70 });
+assert.equal(distributionGroups.deep_premium.some(({ symbol }) => symbol === "DP-A"), true,
+  "active MRZ status does not affect distribution membership");
+assert.equal(distributionGroups.above_ipda_range.length, 1, "out-of-range heatmap behavior remains intact");
+assert.equal(distributionGroups.unavailable.length, 1, "unavailable heatmap behavior remains intact");
+assert.deepEqual(
+  Object.fromEntries(Object.entries(distributionGroups).map(
+    ([key, symbolsInGroup]) => [key, symbolsInGroup.map(({ symbol }) => symbol)],
+  )),
+  distributionMembership,
+  "deriving the distribution does not mutate heatmap membership or ordering",
+);
+assert.equal(formatLocationPercentage(100 / 3), "33.3%", "percentages display to one decimal");
+assert.equal(formatLocationPercentage(200 / 3), "66.7%", "percentages use standard rounding");
+const emptyDistribution = locationDistributionFromGroups(groupSymbolsByLocation([], 4));
+assert.equal(emptyDistribution.classifiedTotal, 0, "zero-symbol total is safe");
+assert.deepEqual(emptyDistribution.discountTotal, { count: 0, percentage: 0 });
+assert.deepEqual(emptyDistribution.premiumTotal, { count: 0, percentage: 0 });
+assert.equal(formatLocationPercentage(emptyDistribution.buckets.deep_discount.percentage), "0.0%");
 
 const premiumActivity = routeAlignedActivity({
   symbol: "ETHUSDT",

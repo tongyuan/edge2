@@ -164,6 +164,43 @@
     return groups;
   }
 
+  function locationDistributionFromGroups(groups) {
+    const bucketCounts = Object.fromEntries(primaryLocationKeys.map((key) => [
+      key,
+      Array.isArray(groups[key]) ? groups[key].length : 0,
+    ]));
+    const classifiedTotal = primaryLocationKeys.reduce(
+      (total, key) => total + bucketCounts[key],
+      0,
+    );
+    const percentage = (count) => (
+      classifiedTotal === 0 ? 0 : (count / classifiedTotal) * 100
+    );
+    const buckets = Object.fromEntries(primaryLocationKeys.map((key) => [key, {
+      count: bucketCounts[key],
+      percentage: percentage(bucketCounts[key]),
+    }]));
+    const discountCount = bucketCounts.deep_discount + bucketCounts.shallow_discount;
+    const premiumCount = bucketCounts.shallow_premium + bucketCounts.deep_premium;
+    return {
+      buckets,
+      classifiedTotal,
+      discountTotal: {
+        count: discountCount,
+        percentage: percentage(discountCount),
+      },
+      premiumTotal: {
+        count: premiumCount,
+        percentage: percentage(premiumCount),
+      },
+    };
+  }
+
+  function formatLocationPercentage(value) {
+    const percentage = Number(value);
+    return `${(Number.isFinite(percentage) ? percentage : 0).toFixed(1)}%`;
+  }
+
   const heatmapState = {
     primaryLocationKeys,
     secondaryLocationKeys,
@@ -179,6 +216,8 @@
     compareSymbolsForHeatmap,
     preservedSelectedSymbol,
     groupSymbolsByLocation,
+    locationDistributionFromGroups,
+    formatLocationPercentage,
   };
 
   root.edgeHeatmapState = heatmapState;

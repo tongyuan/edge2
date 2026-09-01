@@ -6,6 +6,7 @@ const locationHeatmap = document.querySelector("#locationHeatmap");
 const heatmapEmpty = document.querySelector("#heatmapEmpty");
 const primaryLocationGroups = document.querySelector("#primaryLocationGroups");
 const secondaryLocationGroups = document.querySelector("#secondaryLocationGroups");
+const locationDistribution = document.querySelector("#locationDistribution");
 const {
   primaryLocationKeys,
   secondaryLocationKeys,
@@ -16,6 +17,8 @@ const {
   accessibleChipLabel,
   preservedSelectedSymbol,
   groupSymbolsByLocation,
+  locationDistributionFromGroups,
+  formatLocationPercentage,
 } = globalThis.edgeHeatmapState;
 const {
   buildEvidencePresentation,
@@ -44,6 +47,29 @@ const fields = {
 };
 const activityTooltip = document.querySelector("#heatmapActivityTooltip");
 let activityTooltipOwner = null;
+
+const distributionFields = {
+  deep_discount: {
+    count: document.querySelector("#distributionDeepDiscountCount"),
+    percentage: document.querySelector("#distributionDeepDiscountPercentage"),
+  },
+  shallow_discount: {
+    count: document.querySelector("#distributionShallowDiscountCount"),
+    percentage: document.querySelector("#distributionShallowDiscountPercentage"),
+  },
+  shallow_premium: {
+    count: document.querySelector("#distributionShallowPremiumCount"),
+    percentage: document.querySelector("#distributionShallowPremiumPercentage"),
+  },
+  deep_premium: {
+    count: document.querySelector("#distributionDeepPremiumCount"),
+    percentage: document.querySelector("#distributionDeepPremiumPercentage"),
+  },
+};
+const distributionTotals = {
+  discount: document.querySelector("#distributionDiscountTotal"),
+  premium: document.querySelector("#distributionPremiumTotal"),
+};
 
 const formatPrice = (value) => value == null ? "—" : new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 12,
@@ -186,7 +212,30 @@ function createLocationGroup(key, symbols, minimumClusterObservations, secondary
   return group;
 }
 
+function renderLocationDistribution(groups) {
+  const distribution = locationDistributionFromGroups(groups);
+  primaryLocationKeys.forEach((key) => {
+    const bucket = distribution.buckets[key];
+    distributionFields[key].count.textContent = String(bucket.count);
+    distributionFields[key].percentage.textContent = formatLocationPercentage(
+      bucket.percentage,
+    );
+  });
+  distributionTotals.discount.textContent = (
+    `${distribution.discountTotal.count} · ${formatLocationPercentage(distribution.discountTotal.percentage)}`
+  );
+  distributionTotals.premium.textContent = (
+    `${distribution.premiumTotal.count} · ${formatLocationPercentage(distribution.premiumTotal.percentage)}`
+  );
+  locationDistribution.setAttribute(
+    "aria-label",
+    `Location distribution for ${distribution.classifiedTotal} classified symbols`,
+  );
+}
+
 function renderLocationHeatmap(symbols, minimumClusterObservations) {
+  const groups = groupSymbolsByLocation(symbols, minimumClusterObservations);
+  renderLocationDistribution(groups);
   if (symbols.length === 0) {
     locationHeatmap.hidden = true;
     heatmapEmpty.hidden = false;
@@ -194,7 +243,6 @@ function renderLocationHeatmap(symbols, minimumClusterObservations) {
     return;
   }
 
-  const groups = groupSymbolsByLocation(symbols, minimumClusterObservations);
   primaryLocationGroups.replaceChildren(
     ...primaryLocationKeys.map((key) => (
       createLocationGroup(key, groups[key], minimumClusterObservations)

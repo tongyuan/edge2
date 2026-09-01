@@ -30,7 +30,7 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("Symbol Lab", HTML)
 
     def test_monitor_assets_are_versioned_together(self) -> None:
-        version = "formation-evidence-20260829"
+        version = "location-distribution-20260901"
         self.assertIn(f'/static/styles.css?v={version}', HTML)
         self.assertIn(f'/static/heatmap-state.js?v={version}', HTML)
         self.assertIn(f'/static/operator-time.js?v={version}', HTML)
@@ -117,9 +117,59 @@ class MonitorContractTests(unittest.TestCase):
                 self.assertIn(f'{value}: "', JAVASCRIPT)
 
     def test_location_heatmap_precedes_selected_detail(self) -> None:
+        self.assertIn(">LOCATION DISTRIBUTION<", HTML)
         self.assertIn(">LOCATION HEATMAP<", HTML)
         self.assertIn(">SELECTED SYMBOL DETAIL<", HTML)
+        self.assertLess(HTML.index(">LOCATION DISTRIBUTION<"), HTML.index(">LOCATION HEATMAP<"))
         self.assertLess(HTML.index(">LOCATION HEATMAP<"), HTML.index(">SELECTED SYMBOL DETAIL<"))
+
+    def test_location_distribution_has_four_canonical_buckets_and_two_halves(self) -> None:
+        self.assertEqual(HTML.count('class="location-distribution-cell"'), 4)
+        for label in (
+            "Deep Discount",
+            "Shallow Discount",
+            "Shallow Premium",
+            "Deep Premium",
+        ):
+            with self.subTest(label=label):
+                self.assertIn(f"<h3>{label}</h3>", HTML)
+        self.assertIn('id="distributionDiscountTotal"', HTML)
+        self.assertIn('id="distributionPremiumTotal"', HTML)
+        self.assertNotIn("Bullish", HTML)
+        self.assertNotIn("Bearish", HTML)
+
+    def test_distribution_reuses_the_exact_grouped_heatmap_population(self) -> None:
+        render_heatmap = JAVASCRIPT.split("function renderLocationHeatmap", 1)[1].split(
+            "function updateSelectedChip", 1
+        )[0]
+        self.assertEqual(
+            render_heatmap.count(
+                "const groups = groupSymbolsByLocation(symbols, minimumClusterObservations);"
+            ),
+            1,
+        )
+        self.assertIn("renderLocationDistribution(groups);", render_heatmap)
+        self.assertIn("locationDistributionFromGroups(groups)", JAVASCRIPT)
+        distribution_builder = HEATMAP_STATE.split(
+            "function locationDistributionFromGroups(groups)", 1
+        )[1].split("function formatLocationPercentage", 1)[0]
+        self.assertIn("primaryLocationKeys", distribution_builder)
+        self.assertNotIn("current_price_location", distribution_builder)
+        self.assertNotIn("hasActiveMrz", distribution_builder)
+        self.assertNotIn("fetch(", distribution_builder)
+        self.assertNotIn("location_distribution", API)
+
+    def test_distribution_is_compact_and_mobile_safe(self) -> None:
+        self.assertIn(
+            ".location-distribution-grid {\n  display: grid;\n  grid-template-columns: repeat(4, minmax(0, 1fr));",
+            CSS,
+        )
+        self.assertIn(
+            ".location-distribution-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }",
+            CSS,
+        )
+        self.assertIn("max-width: 100%;", CSS.split(".location-distribution-grid", 1)[1])
+        self.assertIn("min-width: 0;", CSS.split(".location-distribution-cell", 1)[1])
 
     def test_heatmap_has_exactly_four_primary_and_three_fallback_keys(self) -> None:
         primary = HEATMAP_STATE.split("const primaryLocationKeys = [", 1)[1].split("];", 1)[0]
