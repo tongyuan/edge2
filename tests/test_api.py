@@ -236,6 +236,10 @@ class APIIntegrationTests(unittest.TestCase):
         ).json()["active_mrzs"][0]
 
         self.assertTrue(monitor["migration"]["has_migrated"])
+        self.assertEqual(
+            monitor["migration"]["previous_activated_at"],
+            "2026-08-20T12:00:04Z",
+        )
         self.assertEqual(report["migration"], monitor["migration"])
         self.assertEqual(report["migration_pressure"]["status"], "STABLE")
         self.assertEqual(report["migration_pressure"]["direction"], "NEUTRAL")

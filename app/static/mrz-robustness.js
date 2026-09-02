@@ -161,6 +161,10 @@ function migrationProvenanceMarkup(
   const previousMidpoint = midpointValue(migration.previous_lower, migration.previous_upper);
   const currentMidpoint = currentState.currentMidpoint;
   const migrationEqm = migrationEqmValue(migration, currentMidpoint);
+  const previousActivatedAt = timestampFormatter(migration.previous_activated_at);
+  const previousActivatedMarkup = previousActivatedAt
+    ? `<small>Activated ${escapeHtml(previousActivatedAt)}</small>`
+    : "";
   return `<aside class="migration-provenance" aria-label="Current MRZ migration provenance">
     <div class="migration-provenance-heading">
       <div>
@@ -174,6 +178,7 @@ function migrationProvenanceMarkup(
         <span>PREVIOUS MRZ</span>
         <strong>${previousRange}</strong>
         <small>Midpoint ${priceText(previousMidpoint)}</small>
+        ${previousActivatedMarkup}
       </section>
       <div class="migration-eqm">
         <span>MIGRATION EQM</span>

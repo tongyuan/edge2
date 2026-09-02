@@ -124,6 +124,7 @@ class RepositoryIntegrationTests(unittest.TestCase):
         self.assertEqual(after["formation_started_at"], "2026-08-20T12:00:01Z")
         self.assertEqual(after["formation_completed_at"], "2026-08-20T12:00:04Z")
         self.assertEqual(after["formation_duration_seconds"], 3.0)
+        self.assertEqual(after["migration"], {"has_migrated": False})
 
     def test_late_event_replays_in_canonical_timestamp_order(self) -> None:
         self.ingest(1, "110", observed_offset=1)
@@ -172,6 +173,7 @@ class RepositoryIntegrationTests(unittest.TestCase):
                 "has_migrated": True,
                 "direction": "UP",
                 "migrated_at": "2026-08-20T12:00:10Z",
+                "previous_activated_at": "2026-08-20T12:00:04Z",
                 "previous_lower": 110.0,
                 "previous_upper": 110.6,
                 "current_lower": 120.0,
@@ -222,6 +224,10 @@ class RepositoryIntegrationTests(unittest.TestCase):
         self.assertEqual(detail["activated_at"], "2026-08-20T12:00:08Z")
         self.assertEqual(detail["activation_event_id"], "db-event-8")
         self.assertEqual(detail["migration"]["route_owner"], "STR")
+        self.assertEqual(
+            detail["migration"]["previous_activated_at"],
+            "2026-08-20T12:00:04Z",
+        )
 
         restarted = EdgeRepository(self.database_url)
         self.assertEqual(restarted.symbol_detail("SPXUSDT"), detail)
@@ -249,6 +255,50 @@ class RepositoryIntegrationTests(unittest.TestCase):
         self.assertEqual(detail["migration"]["current_lower"], 130.0)
         self.assertEqual(detail["migration"]["current_upper"], 130.6)
         self.assertEqual(detail["migration"]["migration_event_id"], "db-event-12")
+        self.assertEqual(
+            detail["migration"]["previous_activated_at"],
+            "2026-08-20T12:00:08Z",
+        )
+        self.assertEqual(detail["migration"]["migrated_at"], "2026-08-20T12:00:12Z")
+
+    def test_previous_activation_uses_domain_chronology_after_event_recreation(self) -> None:
+        prices = (
+            "110", "110.2", "110.4", "110.6",
+            "120", "120.2", "120.4", "120.6",
+            "130", "130.2", "130.4", "130.6",
+        )
+        for index, price in enumerate(prices, 1):
+            self.ingest(index, price)
+
+        connection = connect(self.database_url)
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE mrz_events
+                    SET created_at = '2035-01-01T00:00:00Z'
+                    WHERE symbol = %s AND sequence = 2
+                    """,
+                    ("SPXUSDT",),
+                )
+            connection.commit()
+        finally:
+            connection.close()
+
+        detail = self.repository.symbol_detail("SPXUSDT")
+        self.assertEqual(
+            detail["migration"]["previous_activated_at"],
+            "2026-08-20T12:00:08Z",
+        )
+        self.assertEqual(detail["migration"]["migrated_at"], "2026-08-20T12:00:12Z")
+
+        self.ingest(13, "130.3")
+        replayed = EdgeRepository(self.database_url).symbol_detail("SPXUSDT")
+        self.assertEqual(
+            replayed["migration"]["previous_activated_at"],
+            "2026-08-20T12:00:08Z",
+        )
+        self.assertEqual(replayed["migration"]["migrated_at"], "2026-08-20T12:00:12Z")
 
     def test_downward_migration_provenance_is_derived_from_persisted_event_ranges(self) -> None:
         prices = (

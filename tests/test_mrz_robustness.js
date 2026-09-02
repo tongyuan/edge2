@@ -377,6 +377,7 @@ const wldMigration = {
   has_migrated: true,
   direction: "UP",
   migrated_at: "2026-08-24T16:00:00Z",
+  previous_activated_at: "2026-08-23T08:15:00Z",
   previous_lower: 0.3936,
   previous_upper: 0.3966,
   current_lower: 0.4034,
@@ -389,7 +390,9 @@ const migrationMarkup = migrationProvenanceMarkup(
     pressureLabel: "Stable",
     successorLabel: "No successor candidate",
   },
-  () => "24 Aug 2026 · 12:00 UTC−4",
+  (value) => value === "2026-08-23T08:15:00Z"
+    ? "23 Aug 2026 · 04:15 UTC−4"
+    : "24 Aug 2026 · 12:00 UTC−4",
 );
 assert.match(migrationMarkup, /↑ MIGRATED UPWARD/);
 assert.match(migrationMarkup, /24 Aug 2026 · 12:00 UTC−4/);
@@ -397,6 +400,17 @@ assert.match(migrationMarkup, /0\.3936 – 0\.3966/);
 assert.match(migrationMarkup, /0\.4034 – 0\.4083/);
 assert.match(migrationMarkup, /PREVIOUS MRZ/);
 assert.match(migrationMarkup, /Midpoint 0\.3951/);
+assert.match(migrationMarkup, /Activated 23 Aug 2026 · 04:15 UTC−4/);
+assert.ok(
+  migrationMarkup.indexOf("Midpoint 0.3951")
+    < migrationMarkup.indexOf("Activated 23 Aug 2026 · 04:15 UTC−4"),
+  "previous activation is rendered beneath the previous midpoint",
+);
+assert.notEqual(
+  migrationMarkup.indexOf("23 Aug 2026 · 04:15 UTC−4"),
+  migrationMarkup.indexOf("24 Aug 2026 · 12:00 UTC−4"),
+  "previous activation and current migration timestamps remain distinct",
+);
 assert.match(migrationMarkup, /MIGRATION EQM/);
 assert.match(migrationMarkup, /0\.400475/);
 assert.match(migrationMarkup, /CURRENT MRZ/);
@@ -413,6 +427,39 @@ assert.match(
   ),
   /↓ MIGRATED DOWNWARD/,
 );
+assert.doesNotMatch(
+  migrationProvenanceMarkup(
+    { ...wldMigration, previous_activated_at: null },
+    { currentMidpoint: "0.40585" },
+    () => null,
+  ),
+  /Activated/,
+);
+
+const btcMigrationChainMarkup = migrationProvenanceMarkup(
+  {
+    has_migrated: true,
+    direction: "UP",
+    migrated_at: "2026-08-31T17:50:00Z",
+    previous_activated_at: "2026-08-31T08:15:00Z",
+    previous_lower: 78040.41,
+    previous_upper: 78226.01,
+    current_lower: 78850.69,
+    current_upper: 79030,
+  },
+  {
+    currentMidpoint: "78940.345",
+    pressureLabel: "Stable",
+    successorLabel: "No successor candidate",
+  },
+  (value) => value === "2026-08-31T08:15:00Z"
+    ? "31 Aug 2026 · 04:15 UTC−4"
+    : "31 Aug 2026 · 13:50 UTC−4",
+);
+assert.match(btcMigrationChainMarkup, /78,040\.41 – 78,226\.01/);
+assert.match(btcMigrationChainMarkup, /Midpoint 78,133\.21/);
+assert.match(btcMigrationChainMarkup, /Activated 31 Aug 2026 · 04:15 UTC−4/);
+assert.match(btcMigrationChainMarkup, /31 Aug 2026 · 13:50 UTC−4/);
 
 const wldReport = {
   ...btcReport,

@@ -105,6 +105,7 @@ def migration_provenance_payload(
         "has_migrated": True,
         "direction": direction,
         "migrated_at": iso(row["occurred_at"]),
+        "previous_activated_at": iso(row.get("previous_activated_at")),
         "previous_lower": number(row["old_core_mrz_lower"]),
         "previous_upper": number(row["old_core_mrz_upper"]),
         "current_lower": number(row["new_core_mrz_lower"]),
@@ -123,19 +124,38 @@ def current_migration_provenance(
     cursor.execute(
         """
         SELECT
-            occurred_at, trigger_event_id, route_owner,
-            old_core_mrz_lower, old_core_mrz_upper,
-            new_core_mrz_lower, new_core_mrz_upper, new_core_mrz_midpoint
-        FROM mrz_events
-        WHERE symbol = %s
-          AND event_type = 'MRZ_MIGRATED'
-          AND trigger_event_id = %s
-          AND occurred_at = %s
-          AND route_owner = %s
-          AND new_core_mrz_lower = %s
-          AND new_core_mrz_upper = %s
-          AND new_core_mrz_midpoint = %s
-        ORDER BY sequence DESC
+            current_event.occurred_at,
+            current_event.trigger_event_id,
+            current_event.route_owner,
+            current_event.old_core_mrz_lower,
+            current_event.old_core_mrz_upper,
+            current_event.new_core_mrz_lower,
+            current_event.new_core_mrz_upper,
+            current_event.new_core_mrz_midpoint,
+            previous_authority.occurred_at AS previous_activated_at
+        FROM mrz_events current_event
+        LEFT JOIN LATERAL (
+            SELECT source_event.occurred_at
+            FROM mrz_events source_event
+            WHERE source_event.symbol = current_event.symbol
+              AND source_event.sequence < current_event.sequence
+              AND source_event.event_type IN ('MRZ_ACTIVATED', 'MRZ_MIGRATED')
+              AND source_event.route_owner = current_event.previous_route_owner
+              AND source_event.new_core_mrz_lower = current_event.old_core_mrz_lower
+              AND source_event.new_core_mrz_upper = current_event.old_core_mrz_upper
+              AND source_event.occurred_at <= current_event.occurred_at
+            ORDER BY source_event.sequence DESC
+            LIMIT 1
+        ) previous_authority ON TRUE
+        WHERE current_event.symbol = %s
+          AND current_event.event_type = 'MRZ_MIGRATED'
+          AND current_event.trigger_event_id = %s
+          AND current_event.occurred_at = %s
+          AND current_event.route_owner = %s
+          AND current_event.new_core_mrz_lower = %s
+          AND current_event.new_core_mrz_upper = %s
+          AND current_event.new_core_mrz_midpoint = %s
+        ORDER BY current_event.sequence DESC
         LIMIT 1
         """,
         (
@@ -565,7 +585,8 @@ class EdgeRepository:
                         e.symbol, e.occurred_at, e.trigger_event_id, e.route_owner,
                         e.old_core_mrz_lower, e.old_core_mrz_upper,
                         e.new_core_mrz_lower, e.new_core_mrz_upper,
-                        e.new_core_mrz_midpoint
+                        e.new_core_mrz_midpoint,
+                        previous_authority.occurred_at AS previous_activated_at
                     FROM mrz_events e
                     INNER JOIN active_mrz a
                         ON a.symbol = e.symbol
@@ -575,6 +596,19 @@ class EdgeRepository:
                        AND a.core_mrz_lower = e.new_core_mrz_lower
                        AND a.core_mrz_upper = e.new_core_mrz_upper
                        AND a.core_mrz_midpoint = e.new_core_mrz_midpoint
+                    LEFT JOIN LATERAL (
+                        SELECT source_event.occurred_at
+                        FROM mrz_events source_event
+                        WHERE source_event.symbol = e.symbol
+                          AND source_event.sequence < e.sequence
+                          AND source_event.event_type IN ('MRZ_ACTIVATED', 'MRZ_MIGRATED')
+                          AND source_event.route_owner = e.previous_route_owner
+                          AND source_event.new_core_mrz_lower = e.old_core_mrz_lower
+                          AND source_event.new_core_mrz_upper = e.old_core_mrz_upper
+                          AND source_event.occurred_at <= e.occurred_at
+                        ORDER BY source_event.sequence DESC
+                        LIMIT 1
+                    ) previous_authority ON TRUE
                     WHERE e.event_type = 'MRZ_MIGRATED'
                       AND e.symbol = ANY(%s)
                     ORDER BY e.symbol ASC, e.sequence DESC
