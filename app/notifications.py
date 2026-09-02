@@ -19,14 +19,6 @@ LOGGER = logging.getLogger("edge2.notifications")
 PERMANENT_SUBSCRIPTION_FAILURES = {404, 410}
 MAX_DELIVERY_ATTEMPTS = 3
 RETRYABLE_PROVIDER_FAILURES = {408, 425, 429}
-STRUCTURAL_LOCATION_LABELS = {
-    "deep_discount_core_mrz": "Deep Discount",
-    "shallow_discount_core_mrz": "Shallow Discount",
-    "shallow_premium_core_mrz": "Shallow Premium",
-    "deep_premium_core_mrz": "Deep Premium",
-}
-
-
 class PushSubscriptionKeys(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -128,37 +120,55 @@ class NotificationRepository:
                 )
                 return cursor.rowcount > 0
 
-    def reconcile_activated_events(self, trigger_event_id: str | None = None) -> list[int]:
+    def reconcile_notifiable_events(self, trigger_event_id: str | None = None) -> list[int]:
         query = """
             INSERT INTO web_push_notifications (
                 source_event_key,
                 source_trigger_event_id,
+                source_event_sequence,
                 event_type,
                 symbol,
                 route_owner,
+                previous_route_owner,
                 structural_location,
+                previous_core_mrz_lower,
+                previous_core_mrz_upper,
                 core_mrz_lower,
                 core_mrz_upper,
                 activated_at,
+                occurred_at,
                 deliverable
             )
             SELECT
-                event_key,
-                trigger_event_id,
-                event_type,
-                symbol,
-                route_owner,
-                structural_location,
-                new_core_mrz_lower,
-                new_core_mrz_upper,
-                occurred_at,
+                e.event_key,
+                e.trigger_event_id,
+                e.sequence,
+                e.event_type,
+                e.symbol,
+                e.route_owner,
+                e.previous_route_owner,
+                e.structural_location,
+                e.old_core_mrz_lower,
+                e.old_core_mrz_upper,
+                e.new_core_mrz_lower,
+                e.new_core_mrz_upper,
+                e.occurred_at,
+                e.occurred_at,
                 TRUE
-            FROM mrz_events
-            WHERE event_type = 'MRZ_ACTIVATED'
+            FROM mrz_events e
+            INNER JOIN observations o
+                ON o.event_id = e.trigger_event_id
+            LEFT JOIN web_push_notification_cutovers c
+                ON c.event_type = e.event_type
+            WHERE e.event_type IN ('MRZ_ACTIVATED', 'MRZ_MIGRATED')
+              AND (
+                  e.event_type = 'MRZ_ACTIVATED'
+                  OR o.received_at >= c.enabled_at
+              )
         """
         parameters: tuple[Any, ...] = ()
         if trigger_event_id is not None:
-            query += " AND trigger_event_id = %s"
+            query += " AND e.trigger_event_id = %s"
             parameters = (trigger_event_id,)
         query += " ON CONFLICT (source_event_key) DO NOTHING RETURNING id"
 
@@ -176,7 +186,7 @@ class NotificationRepository:
                     SELECT COALESCE(MAX(id), 0)
                     FROM web_push_notifications
                     WHERE deliverable = TRUE
-                      AND event_type = 'MRZ_ACTIVATED'
+                      AND event_type IN ('MRZ_ACTIVATED', 'MRZ_MIGRATED')
                     """
                 )
                 return int(cursor.fetchone()[0])
@@ -192,7 +202,7 @@ class NotificationRepository:
                     SELECT *
                     FROM web_push_notifications
                     WHERE deliverable = TRUE
-                      AND event_type = 'MRZ_ACTIVATED'
+                      AND event_type IN ('MRZ_ACTIVATED', 'MRZ_MIGRATED')
                       AND id > %s
                     ORDER BY id ASC
                     LIMIT %s
@@ -248,7 +258,7 @@ class NotificationRepository:
                           AND d.subscription_id = s.id
                     ) attempts ON TRUE
                     WHERE n.deliverable = TRUE
-                      AND n.event_type = 'MRZ_ACTIVATED'
+                      AND n.event_type IN ('MRZ_ACTIVATED', 'MRZ_MIGRATED')
                       AND s.enabled = TRUE
                       AND s.enabled_at <= n.created_at
                       AND attempts.attempt_count < {MAX_DELIVERY_ATTEMPTS}
@@ -397,7 +407,7 @@ class NotificationService:
         )
 
     def process_trigger_event(self, trigger_event_id: str) -> None:
-        self.repository.reconcile_activated_events(trigger_event_id)
+        self.repository.reconcile_notifiable_events(trigger_event_id)
         # Each accepted or duplicate webhook is a lightweight opportunity to
         # resume persisted transient deliveries. Claiming remains atomic and
         # bounded, so this sweep cannot resend successes or create new logical
@@ -405,7 +415,7 @@ class NotificationService:
         self.dispatch_pending()
 
     def recover(self) -> None:
-        self.repository.reconcile_activated_events()
+        self.repository.reconcile_notifiable_events()
         self.dispatch_pending()
 
     def dispatch_pending(self, notification_ids: Sequence[int] | None = None) -> None:
@@ -501,33 +511,81 @@ def is_retryable_push_failure(http_status: int | None) -> bool:
 def notification_payload(row: Mapping[str, Any]) -> dict[str, Any]:
     symbol = str(row["symbol"])
     route_owner = str(row["route_owner"])
+    previous_route_owner = row.get("previous_route_owner")
+    previous_route_owner = (
+        str(previous_route_owner) if previous_route_owner is not None else None
+    )
     structural_location = str(row["structural_location"])
     lower = decimal_text(row["core_mrz_lower"])
     upper = decimal_text(row["core_mrz_upper"])
-    location_label = STRUCTURAL_LOCATION_LABELS.get(structural_location, structural_location)
+    previous_lower_value = row.get("previous_core_mrz_lower")
+    previous_upper_value = row.get("previous_core_mrz_upper")
+    previous_lower = (
+        decimal_text(previous_lower_value) if previous_lower_value is not None else None
+    )
+    previous_upper = (
+        decimal_text(previous_upper_value) if previous_upper_value is not None else None
+    )
     event_key = str(row["source_event_key"])
-    return {
+    event_type = str(row["event_type"])
+    occurred_at = iso(row["occurred_at"])
+    if event_type == "MRZ_MIGRATED":
+        route_label = (
+            f"{previous_route_owner} → {route_owner}"
+            if previous_route_owner and previous_route_owner != route_owner
+            else route_owner
+        )
+        title = f"{symbol} MRZ Migrated"
+        body = (
+            f"{route_label} · {display_decimal(previous_lower_value)}–"
+            f"{display_decimal(previous_upper_value)} → "
+            f"{display_decimal(row['core_mrz_lower'])}–"
+            f"{display_decimal(row['core_mrz_upper'])}"
+        )
+    else:
+        title = f"{symbol} MRZ Activated"
+        body = (
+            f"{route_owner} · {display_decimal(row['core_mrz_lower'])}–"
+            f"{display_decimal(row['core_mrz_upper'])}"
+        )
+
+    payload = {
         "version": 1,
-        "event_type": "MRZ_ACTIVATED",
+        "event_type": event_type,
         "event_id": event_key,
-        "title": "EDGE MRZ",
-        "body": (
-            f"{symbol} · {route_owner} MRZ activated\n"
-            f"{location_label} · {lower}–{upper}"
-        ),
+        "source_event_key": event_key,
+        "source_trigger_event_id": str(row["source_trigger_event_id"]),
+        "event_sequence": row.get("source_event_sequence"),
+        "title": title,
+        "body": body,
         "symbol": symbol,
         "route_owner": route_owner,
+        "previous_route_owner": previous_route_owner,
         "structural_location": structural_location,
+        "previous_mrz_lower": previous_lower,
+        "previous_mrz_upper": previous_upper,
         "mrz_lower": lower,
         "mrz_upper": upper,
-        "activated_at": iso(row["activated_at"]),
+        "occurred_at": occurred_at,
         "url": f"/?symbol={quote(symbol, safe='')}",
     }
+    if event_type == "MRZ_ACTIVATED":
+        payload["activated_at"] = occurred_at
+    elif event_type == "MRZ_MIGRATED":
+        payload["migrated_at"] = occurred_at
+    return payload
 
 
 def decimal_text(value: Any) -> str:
     decimal_value = Decimal(value)
     text = format(decimal_value, "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text or "0"
+
+
+def display_decimal(value: Any) -> str:
+    text = format(Decimal(value), ",f")
     if "." in text:
         text = text.rstrip("0").rstrip(".")
     return text or "0"

@@ -174,6 +174,7 @@ async function testServiceWorkerPushAndClick() {
       json() {
         return {
           event_id: "WLDUSDT:1:MRZ_ACTIVATED:event-4",
+          event_type: "MRZ_ACTIVATED",
           title: "EDGE MRZ",
           body: "WLDUSDT · BTD MRZ activated\nShallow Discount · 0.3502–0.3541",
           symbol: "WLDUSDT",
@@ -189,6 +190,29 @@ async function testServiceWorkerPushAndClick() {
   assert.equal(shown[0].title, "EDGE MRZ");
   assert.match(shown[0].options.body, /WLDUSDT · BTD MRZ activated/);
   assert.equal(shown[0].options.data.url, "/?symbol=WLDUSDT");
+  assert.equal(shown[0].options.data.event_type, "MRZ_ACTIVATED");
+
+  let migrationPushWork;
+  listeners.push({
+    data: {
+      json() {
+        return {
+          event_id: "WLDUSDT:2:MRZ_MIGRATED:event-8",
+          event_type: "MRZ_MIGRATED",
+          title: "WLDUSDT MRZ Migrated",
+          body: "BTD → STR · 0.3502–0.3541 → 0.4001–0.4042",
+          symbol: "WLDUSDT",
+          url: "/?symbol=WLDUSDT",
+        };
+      },
+    },
+    waitUntil(promise) { migrationPushWork = promise; },
+  });
+  await migrationPushWork;
+
+  assert.equal(shown.length, 2);
+  assert.equal(shown[1].title, "WLDUSDT MRZ Migrated");
+  assert.equal(shown[1].options.data.event_type, "MRZ_MIGRATED");
 
   let clickWork;
   listeners.notificationclick({

@@ -209,12 +209,14 @@ The PostgreSQL 16 database revolves around:
 - `ingestion_rejections` — sanitized invalid-packet diagnostics.
 - `ingestion_metrics` — lightweight durable counters for health reporting.
 - `web_push_subscriptions` — single-operator browser Push subscriptions.
-- `web_push_notifications` — deduplicated logical activation notifications.
+- `web_push_notifications` — deduplicated logical activation and migration notifications.
 - `web_push_delivery_attempts` — isolated per-subscription delivery outcomes.
+- `web_push_notification_cutovers` — replay-safe migration notification cutover.
 
 Migration `001_initial.sql` builds the isolated schema. Additive migrations
-`002–005` add the overview index, supporting count, nullable immutable
-formation evidence, and downstream Web Push tables. No 4.2 table or historical
+`002–006` add the overview index, supporting count, nullable immutable
+formation evidence, downstream Web Push tables, and migration-notification
+provenance/cutover state. No 4.2 table or historical
 record is read. See [`docs/web-push.md`](docs/web-push.md) for notification
 configuration, safety, deployment, and iPhone verification.
 

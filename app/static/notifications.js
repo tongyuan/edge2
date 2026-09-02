@@ -185,7 +185,7 @@
         try {
           await persistSubscription(this.subscription, fetch.bind(globalObject));
           this.rememberRequested();
-          this.render("subscribed", "MRZ activation alerts are enabled on this device.");
+          this.render("subscribed", "MRZ activation and migration alerts are enabled on this device.");
         } catch (error) {
           if (error.code === "subscription_expired") {
             await this.subscription.unsubscribe();
@@ -214,7 +214,7 @@
             fetchImpl: fetch.bind(globalObject),
           });
           this.subscription = null;
-          this.render("ready", "MRZ activation alerts are off on this device.");
+          this.render("ready", "MRZ activation and migration alerts are off on this device.");
           return;
         }
         const result = await enableWebPush({
@@ -233,7 +233,7 @@
         }
         this.subscription = result.subscription;
         this.rememberRequested();
-        this.render("subscribed", "MRZ activation alerts are enabled on this device.");
+        this.render("subscribed", "MRZ activation and migration alerts are enabled on this device.");
       } catch (error) {
         this.render("error", error.message || "Unable to update notifications.");
       }
@@ -271,7 +271,7 @@
       const title = document.createElement("strong");
       title.textContent = event.title || "EDGE MRZ";
       const body = document.createElement("p");
-      body.textContent = event.body || "A new authoritative MRZ was activated.";
+      body.textContent = event.body || "An authoritative MRZ changed.";
       copy.append(title, body);
       const link = document.createElement("a");
       link.href = safeNotificationPath(event.url);

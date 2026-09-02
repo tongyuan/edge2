@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 
 from fastapi.testclient import TestClient
@@ -83,6 +84,48 @@ class NotificationIntegrationTests(unittest.TestCase):
                 json=webhook_payload(index, price),
             )
             self.assertEqual(response.status_code, 201)
+
+    def post_btc_observation(
+        self,
+        index: int,
+        price: str,
+        *,
+        route: str = "BTD",
+    ):
+        return self.client.post(
+            "/webhook/tradingview",
+            json=webhook_payload(
+                index,
+                price,
+                event_id=f"btc-event-{index}",
+                symbol="BTCUSDT",
+                route=route,
+                observation_type="reclaim" if route == "BTD" else "rejection",
+                ipda_20w_low="70000",
+                ipda_20w_high="90000",
+            ),
+        )
+
+    def post_btc_cluster(
+        self,
+        start_index: int,
+        prices: tuple[str, ...],
+        *,
+        route: str = "BTD",
+    ) -> None:
+        for offset, price in enumerate(prices):
+            response = self.post_btc_observation(
+                start_index + offset,
+                price,
+                route=route,
+            )
+            self.assertEqual(response.status_code, 201)
+
+    def activate_btc(self) -> None:
+        self.post_btc_cluster(
+            1,
+            ("77309.19", "77350", "77400", "77436.91"),
+        )
 
     def scalar(self, query: str):
         connection = connect(self.database_url)
@@ -310,18 +353,210 @@ class NotificationIntegrationTests(unittest.TestCase):
         for status in (400, 401, 403, 404, 410, 422):
             self.assertFalse(is_retryable_push_failure(status), status)
 
-    def test_migration_does_not_create_a_v1_notification(self) -> None:
-        self.activate()
-        for index, price in enumerate(("120", "120.2", "120.4", "120.6"), 5):
-            self.client.post(
-                "/webhook/tradingview",
-                json=webhook_payload(index, price),
-            )
+    def test_same_route_migration_uses_authoritative_provenance_and_timestamp(self) -> None:
+        self.client.post("/api/notifications/subscriptions", json=SUBSCRIPTION)
+        self.activate_btc()
+        self.post_btc_cluster(
+            5,
+            ("78919.34", "78950", "79000", "79030"),
+        )
 
-        self.assertEqual(self.scalar("SELECT COUNT(*) FROM web_push_notifications"), 1)
+        self.assertEqual(self.scalar("SELECT COUNT(*) FROM web_push_notifications"), 2)
         self.assertEqual(
             self.scalar("SELECT COUNT(*) FROM mrz_events WHERE event_type = 'MRZ_MIGRATED'"),
             1,
+        )
+        self.assertEqual(len(self.sender.calls), 2)
+        activated_payload = json.loads(self.sender.calls[0]["data"])
+        migrated_payload = json.loads(self.sender.calls[1]["data"])
+
+        self.assertEqual(activated_payload["title"], "BTCUSDT MRZ Activated")
+        self.assertEqual(activated_payload["body"], "BTD · 77,309.19–77,436.91")
+        self.assertEqual(migrated_payload["event_type"], "MRZ_MIGRATED")
+        self.assertEqual(migrated_payload["title"], "BTCUSDT MRZ Migrated")
+        self.assertEqual(
+            migrated_payload["body"],
+            "BTD · 77,309.19–77,436.91 → 78,919.34–79,030",
+        )
+        self.assertEqual(migrated_payload["previous_route_owner"], "BTD")
+        self.assertEqual(migrated_payload["route_owner"], "BTD")
+        self.assertEqual(migrated_payload["previous_mrz_lower"], "77309.19")
+        self.assertEqual(migrated_payload["previous_mrz_upper"], "77436.91")
+        self.assertEqual(migrated_payload["mrz_lower"], "78919.34")
+        self.assertEqual(migrated_payload["mrz_upper"], "79030")
+        self.assertEqual(migrated_payload["occurred_at"], "2026-08-20T12:00:08Z")
+        self.assertEqual(migrated_payload["migrated_at"], migrated_payload["occurred_at"])
+        self.assertEqual(migrated_payload["event_sequence"], 2)
+        self.assertEqual(
+            migrated_payload["source_event_key"],
+            "BTCUSDT:2:MRZ_MIGRATED:btc-event-8",
+        )
+
+        # Notification provenance is copied from the persisted migration event,
+        # not inferred later from mutable active_mrz presentation state.
+        connection = connect(self.database_url)
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE active_mrz
+                    SET core_mrz_lower = 88000, core_mrz_upper = 88100,
+                        core_mrz_midpoint = 88050
+                    WHERE symbol = 'BTCUSDT'
+                    """
+                )
+            connection.commit()
+        finally:
+            connection.close()
+        site_events = self.client.get("/api/notifications/events?after=0").json()["events"]
+        site_migration = next(
+            event for event in site_events if event["event_type"] == "MRZ_MIGRATED"
+        )
+        self.assertEqual(site_migration["previous_mrz_lower"], "77309.19")
+        self.assertEqual(site_migration["mrz_lower"], "78919.34")
+
+    def test_route_changing_migration_creates_one_migration_notification_only(self) -> None:
+        self.activate_btc()
+        self.post_btc_cluster(
+            5,
+            ("82040.41", "82100", "82150", "82226.01"),
+            route="STR",
+        )
+
+        self.assertEqual(
+            self.scalar("SELECT COUNT(*) FROM mrz_events WHERE event_type = 'MRZ_MIGRATED'"),
+            1,
+        )
+        self.assertEqual(
+            self.scalar("SELECT COUNT(*) FROM mrz_events WHERE event_type = 'ROUTE_CHANGED'"),
+            1,
+        )
+        self.assertEqual(self.scalar("SELECT COUNT(*) FROM web_push_notifications"), 2)
+        self.assertEqual(
+            self.scalar(
+                "SELECT COUNT(*) FROM web_push_notifications WHERE event_type = 'ROUTE_CHANGED'"
+            ),
+            0,
+        )
+        events = self.client.get("/api/notifications/events?after=0").json()["events"]
+        migration = next(event for event in events if event["event_type"] == "MRZ_MIGRATED")
+        self.assertEqual(
+            migration["body"],
+            "BTD → STR · 77,309.19–77,436.91 → 82,040.41–82,226.01",
+        )
+
+    def test_duplicate_migration_processing_keeps_one_logical_notification(self) -> None:
+        self.activate_btc()
+        self.post_btc_cluster(
+            5,
+            ("78919.34", "78950", "79000", "79030"),
+        )
+        migration_key = self.scalar(
+            "SELECT source_event_key FROM web_push_notifications WHERE event_type = 'MRZ_MIGRATED'"
+        )
+
+        duplicate = self.post_btc_observation(8, "79030")
+        self.assertEqual(duplicate.status_code, 200)
+        self.assertTrue(duplicate.json()["duplicate"])
+        self.client.app.state.notification_service.recover()
+
+        self.assertEqual(self.scalar("SELECT COUNT(*) FROM web_push_notifications"), 2)
+        self.assertEqual(
+            self.scalar(
+                "SELECT source_event_key FROM web_push_notifications WHERE event_type = 'MRZ_MIGRATED'"
+            ),
+            migration_key,
+        )
+
+    def test_distinct_migration_chain_creates_three_distinct_notifications(self) -> None:
+        self.activate_btc()
+        self.post_btc_cluster(
+            5,
+            ("78919.34", "78950", "79000", "79030"),
+        )
+        self.post_btc_cluster(
+            9,
+            ("78040.41", "78100", "78150", "78226.01"),
+        )
+        self.post_btc_cluster(
+            13,
+            ("78850.69", "78900", "78950", "79030"),
+        )
+
+        self.assertEqual(self.scalar("SELECT COUNT(*) FROM web_push_notifications"), 4)
+        self.assertEqual(
+            self.scalar(
+                "SELECT COUNT(*) FROM web_push_notifications WHERE event_type = 'MRZ_ACTIVATED'"
+            ),
+            1,
+        )
+        self.assertEqual(
+            self.scalar(
+                "SELECT COUNT(*) FROM web_push_notifications WHERE event_type = 'MRZ_MIGRATED'"
+            ),
+            3,
+        )
+        self.assertEqual(
+            self.scalar(
+                "SELECT COUNT(DISTINCT source_event_key) FROM web_push_notifications"
+            ),
+            4,
+        )
+        bodies = [
+            event["body"]
+            for event in self.client.get("/api/notifications/events?after=0").json()["events"]
+            if event["event_type"] == "MRZ_MIGRATED"
+        ]
+        self.assertEqual(
+            bodies,
+            [
+                "BTD · 77,309.19–77,436.91 → 78,919.34–79,030",
+                "BTD · 78,919.34–79,030 → 78,040.41–78,226.01",
+                "BTD · 78,040.41–78,226.01 → 78,850.69–79,030",
+            ],
+        )
+
+    def test_historical_migration_replay_is_not_made_deliverable(self) -> None:
+        self.activate_btc()
+        self.post_btc_cluster(
+            5,
+            ("78919.34", "78950", "79000", "79030"),
+        )
+        connection = connect(self.database_url)
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE observations
+                    SET received_at = (
+                        SELECT enabled_at - INTERVAL '1 second'
+                        FROM web_push_notification_cutovers
+                        WHERE event_type = 'MRZ_MIGRATED'
+                    )
+                    WHERE event_id = 'btc-event-8'
+                    """
+                )
+                cursor.execute(
+                    """
+                    DELETE FROM web_push_notifications
+                    WHERE event_type = 'MRZ_MIGRATED'
+                    """
+                )
+            connection.commit()
+        finally:
+            connection.close()
+
+        self.client.app.state.notification_service.recover()
+
+        self.assertEqual(
+            self.scalar("SELECT COUNT(*) FROM mrz_events WHERE event_type = 'MRZ_MIGRATED'"),
+            1,
+        )
+        self.assertEqual(
+            self.scalar(
+                "SELECT COUNT(*) FROM web_push_notifications WHERE event_type = 'MRZ_MIGRATED'"
+            ),
+            0,
         )
 
     def test_config_exposes_only_public_vapid_material(self) -> None:

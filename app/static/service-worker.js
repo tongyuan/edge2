@@ -27,16 +27,19 @@ self.addEventListener("push", (event) => {
     payload = {};
   }
   const eventId = typeof payload.event_id === "string" ? payload.event_id : "unknown";
+  const eventType = ["MRZ_ACTIVATED", "MRZ_MIGRATED"].includes(payload.event_type)
+    ? payload.event_type
+    : null;
   const url = safeNotificationPath(payload.url);
   event.waitUntil(self.registration.showNotification(payload.title || "EDGE MRZ", {
-    body: payload.body || "A new authoritative MRZ was activated.",
+    body: payload.body || "An authoritative MRZ changed.",
     icon: "/static/edge-mrz-icon-192.png",
     badge: "/static/edge-mrz-icon-192.png",
     tag: `edge-mrz:${eventId}`,
     renotify: false,
     data: {
       event_id: eventId,
-      event_type: "MRZ_ACTIVATED",
+      event_type: eventType,
       symbol: typeof payload.symbol === "string" ? payload.symbol : null,
       url,
     },

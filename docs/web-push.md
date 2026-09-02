@@ -1,22 +1,24 @@
-# MRZ activation Web Push
+# MRZ transition Web Push
 
 ## Scope and authority boundary
 
-Web Push is an operational output only. V1 consumes only an already-persisted
-`MRZ_ACTIVATED` row:
+Web Push is an operational output only. It consumes exactly the already-persisted
+`MRZ_ACTIVATED` and `MRZ_MIGRATED` event types:
 
 ```text
 TradingView observation
   -> unchanged MRZ engine
   -> active_mrz + mrz_events commit
-  -> notification background task re-reads persisted MRZ_ACTIVATED
+  -> notification background task re-reads the persisted transition
   -> logical notification deduplication
   -> active Web Push subscriptions
 ```
 
 The notification subsystem never evaluates concentration, qualification,
-migration, successor state, route ownership, or structural authority. The
-webhook response and MRZ commit do not depend on push delivery.
+migration eligibility, successor state, route ownership, or structural
+authority. It never notifies for `ROUTE_CHANGED`; a route transition is included
+in the corresponding migration notification. The webhook response and MRZ
+commit do not depend on push delivery.
 
 Migration `005_web_push_notifications.sql` is additive. It creates:
 
@@ -25,10 +27,14 @@ Migration `005_web_push_notifications.sql` is additive. It creates:
   `mrz_events.event_key`;
 - `web_push_delivery_attempts` for per-subscription outcomes.
 
-The migration records existing `MRZ_ACTIVATED` event keys as non-deliverable.
-This baseline prevents deployment, restart, or deterministic MRZ replay from
-sending historical activations. It does not update `observations`, `active_mrz`,
-or `mrz_events`.
+Migration `006_mrz_migration_notifications.sql` adds immutable old-range,
+previous-route, sequence, and domain-event timestamp provenance to logical
+notifications. It records existing `MRZ_MIGRATED` event keys as non-deliverable
+and stores a migration-notification cutover. Recovery accepts migrations only
+when the triggering observation was received after that cutover. Together with
+the activation baseline from migration 005, this prevents deployment, restart,
+or deterministic MRZ replay from sending historical transitions. Neither
+migration updates `observations`, `active_mrz`, or `mrz_events`.
 
 ## Configuration
 
@@ -86,8 +92,9 @@ or startup recovery; there is no tight retry loop and push work remains outside
 the authoritative webhook transaction.
 
 The in-site toast polls only logical notification records. It does not infer an
-activation by comparing symbol state. The service worker has no `fetch` handler
-and does not cache or intercept operational HTML or MRZ API responses.
+activation or migration by comparing symbol state. The service worker has no
+`fetch` handler and does not cache or intercept operational HTML or MRZ API
+responses.
 
 ## Payload and deep link
 
@@ -96,24 +103,32 @@ The compact JSON payload contains:
 ```json
 {
   "version": 1,
-  "event_type": "MRZ_ACTIVATED",
-  "event_id": "WLDUSDT:1:MRZ_ACTIVATED:event-4",
-  "title": "EDGE MRZ",
-  "body": "WLDUSDT · BTD MRZ activated\nShallow Discount · 0.3502–0.3541",
-  "symbol": "WLDUSDT",
-  "route_owner": "BTD",
-  "structural_location": "shallow_discount_core_mrz",
-  "mrz_lower": "0.3502",
-  "mrz_upper": "0.3541",
-  "activated_at": "2026-08-20T12:00:04Z",
-  "url": "/?symbol=WLDUSDT"
+  "event_type": "MRZ_MIGRATED",
+  "event_id": "BTCUSDT:2:MRZ_MIGRATED:event-8",
+  "source_event_key": "BTCUSDT:2:MRZ_MIGRATED:event-8",
+  "source_trigger_event_id": "event-8",
+  "event_sequence": 2,
+  "title": "BTCUSDT MRZ Migrated",
+  "body": "BTD → STR · 77,309.19–77,436.91 → 82,040.41–82,226.01",
+  "symbol": "BTCUSDT",
+  "previous_route_owner": "BTD",
+  "route_owner": "STR",
+  "previous_mrz_lower": "77309.19",
+  "previous_mrz_upper": "77436.91",
+  "mrz_lower": "82040.41",
+  "mrz_upper": "82226.01",
+  "occurred_at": "2026-08-20T12:00:08Z",
+  "migrated_at": "2026-08-20T12:00:08Z",
+  "url": "/?symbol=BTCUSDT"
 }
 ```
 
-All MRZ fields are copied from the persisted activation event. The service
-worker accepts only the existing same-origin `/` monitor route with a validated
-symbol query. It focuses and navigates an existing EDGE window when possible,
-or opens one new window. External or unexpected paths fall back to `/`.
+All MRZ fields are copied from the persisted authoritative event. Migration old
+bounds come from `MRZ_MIGRATED` provenance, never from current `active_mrz` UI
+state. The service worker accepts only the existing same-origin `/` monitor
+route with a validated symbol query. It focuses and navigates an existing EDGE
+window when possible, or opens one new window. External or unexpected paths
+fall back to `/`.
 
 ## Deployment
 
@@ -124,8 +139,8 @@ make test
 ./scripts/deploy-remote.sh
 ```
 
-Application startup applies migration `005` before Uvicorn starts. It is also
-safe to run the existing explicit migration command:
+Application startup applies migrations `005` and `006` before Uvicorn starts.
+It is also safe to run the existing explicit migration command:
 
 ```bash
 make migrate
@@ -147,7 +162,8 @@ Use development/test data only; do not manufacture production MRZ authority.
 
 1. Deploy the reviewed commit and VAPID environment values over the existing
    HTTPS origin.
-2. On iPhone with iOS 16.4 or later, open the EDGE root URL in Safari.
+2. On iPhone with iOS 16.4 or later, open the EDGE root URL in Safari or a
+   browser that offers Add to Home Screen.
 3. Use Share -> Add to Home Screen, then launch `EDGE MRZ` from its icon.
 4. Press `Enable MRZ Notifications` and allow notifications.
 5. Verify one enabled row exists without selecting private key material:
@@ -157,13 +173,15 @@ Use development/test data only; do not manufacture production MRZ authority.
    FROM web_push_subscriptions;
    ```
 
-6. In a development/test environment, submit the exact observation sequence
-   that produces one authoritative persisted `MRZ_ACTIVATED` event.
-7. Put EDGE in the background and verify one iOS system notification appears.
+6. In a development/test environment, submit exact observation sequences that
+   produce one authoritative `MRZ_ACTIVATED` event and one later
+   `MRZ_MIGRATED` event.
+7. Put EDGE in the background and verify one iOS system notification appears
+   for each transition, with no separate `ROUTE_CHANGED` alert.
 8. Tap it and verify EDGE focuses/opens the correct `/?symbol=...` monitor
    detail.
-9. Retry the confirming webhook event and restart the service. Confirm that no
-   second logical notification or system alert is produced for that activation.
+9. Retry each confirming webhook event and restart the service. Confirm that no
+   duplicate logical notification or system alert is produced.
 
 On iPhone/iPad, Web Push is available to Home Screen web apps on iOS/iPadOS
 16.4 or later, and permission must be requested from a direct operator gesture.
