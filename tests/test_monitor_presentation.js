@@ -6,6 +6,7 @@ const {
   buildMigrationPresentation,
   formatActivatedAt,
   formatLatestObservationContext,
+  operatorCardHref,
   percentageText,
 } = require("../app/static/monitor-presentation.js");
 const {
@@ -29,6 +30,16 @@ assert.equal(formatFormationDuration(30), "<1m");
 assert.equal(formatFormationDuration(0), "0m");
 assert.equal(formatFormationDuration(null), null);
 assert.equal(percentageText("1.126789"), "1.13");
+assert.equal(
+  operatorCardHref({ mrz_status: "active", symbol: "BTCUSDT" }),
+  "/diagnostics/mrz-robustness?symbol=BTCUSDT",
+);
+assert.equal(
+  operatorCardHref({ mrz_status: "active", symbol: "NASDAQ:NDX" }),
+  "/diagnostics/mrz-robustness?symbol=NASDAQ%3ANDX",
+);
+assert.equal(operatorCardHref({ mrz_status: "unestablished", symbol: "BTCUSDT" }), null);
+assert.equal(operatorCardHref({ mrz_status: "active", symbol: "" }), null);
 assert.equal(
   buildMigrationPresentation(
     { mrz_status: "active", migration: { has_migrated: false } },

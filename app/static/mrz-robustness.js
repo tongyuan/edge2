@@ -211,7 +211,11 @@ function disclosureMarkup(section, title, synopsis, content) {
   </details>`;
 }
 
-function robustnessCardMarkup(report, timestampFormatter = (value) => value) {
+function robustnessCardMarkup(
+  report,
+  timestampFormatter = (value) => value,
+  focusedSymbol = null,
+) {
   const authority = report.structural_authority;
   const active = report.active_mrz;
   const formation = report.formation_evidence;
@@ -315,7 +319,9 @@ function robustnessCardMarkup(report, timestampFormatter = (value) => value) {
       <p>${escapeHtml(structuralSummary.detail_statement)}</p>
     </div>`;
 
-  return `<section class="mrz-report" data-symbol="${escapeHtml(report.symbol)}">
+  const focusedClass = report.symbol === focusedSymbol ? " focused-operator-card" : "";
+  const focusAttribute = report.symbol === focusedSymbol ? ' tabindex="-1"' : "";
+  return `<section class="mrz-report${focusedClass}" data-symbol="${escapeHtml(report.symbol)}"${focusAttribute}>
     <header class="compact-authority" aria-label="Current structural authority">
       <section class="compact-group structure-group" aria-label="Structure">
         <span class="section-label">STRUCTURE</span>
@@ -374,7 +380,12 @@ function robustnessCardMarkup(report, timestampFormatter = (value) => value) {
   </section>`;
 }
 
-function reportMarkup(reports, timestampFormatter = (value) => value, filterMode = "all") {
+function reportMarkup(
+  reports,
+  timestampFormatter = (value) => value,
+  filterMode = "all",
+  focusedSymbol = null,
+) {
   const visibleReports = filterReports(reports, filterMode);
   if (filterMode === "migrated" && !visibleReports.length) {
     return '<section class="empty-report">No migrated MRZ pairs currently available.</section>';
@@ -383,8 +394,22 @@ function reportMarkup(reports, timestampFormatter = (value) => value, filterMode
     return '<section class="empty-report">No active MRZ is available for an operation card.</section>';
   }
   return visibleReports
-    .map((report) => robustnessCardMarkup(report, timestampFormatter))
+    .map((report) => robustnessCardMarkup(report, timestampFormatter, focusedSymbol))
     .join("");
+}
+
+function operatorCardSymbolFromSearch(search = "") {
+  return new URLSearchParams(search).get("symbol") || null;
+}
+
+function focusOperatorCard(container, symbol) {
+  if (!container || !symbol) return false;
+  const card = Array.from(container.querySelectorAll(".mrz-report"))
+    .find((item) => item.dataset.symbol === symbol);
+  if (!card) return false;
+  card.scrollIntoView({ block: "start" });
+  card.focus({ preventScroll: true });
+  return true;
 }
 
 if (typeof document !== "undefined") {
@@ -395,14 +420,17 @@ if (typeof document !== "undefined") {
     const activeReports = document.getElementById("activeReports");
     const allFilterButton = document.getElementById("filterAll");
     const migratedFilterButton = document.getElementById("filterMigrated");
+    const requestedSymbol = operatorCardSymbolFromSearch(window.location.search);
     let reports = [];
     let filterMode = "all";
+    let requestedCardFocused = false;
 
     function renderReports() {
       activeReports.innerHTML = reportMarkup(
         reports,
         formatOperatorTimestampUtcMinus4,
         filterMode,
+        requestedSymbol,
       );
       allFilterButton.classList.toggle("active", filterMode === "all");
       migratedFilterButton.classList.toggle("active", filterMode === "migrated");
@@ -411,6 +439,9 @@ if (typeof document !== "undefined") {
         "aria-pressed",
         String(filterMode === "migrated"),
       );
+      if (!requestedCardFocused) {
+        requestedCardFocused = focusOperatorCard(activeReports, requestedSymbol);
+      }
     }
 
     function selectFilter(nextFilterMode) {
@@ -460,6 +491,8 @@ if (typeof module === "object" && module.exports) {
     migrationEqmValue,
     migrationProvenanceMarkup,
     normalizedSpanText,
+    operatorCardSymbolFromSearch,
+    focusOperatorCard,
     percentageText,
     reportMarkup,
     robustnessCardMarkup,

@@ -30,7 +30,7 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("Symbol Lab", HTML)
 
     def test_monitor_assets_are_versioned_together(self) -> None:
-        version = "location-migration-20260902"
+        version = "operator-card-link-20260903"
         self.assertIn(f'/static/styles.css?v={version}', HTML)
         self.assertIn(f'/static/heatmap-state.js?v={version}', HTML)
         self.assertIn(f'/static/operator-time.js?v={version}', HTML)
@@ -85,11 +85,40 @@ class MonitorContractTests(unittest.TestCase):
 
     def test_mrz_and_current_price_locations_are_separate(self) -> None:
         self.assertIn(">MRZ LOCATION<", HTML)
-        self.assertIn(">CURRENT LOCATION<", HTML)
-        self.assertNotIn(">CURRENT PRICE LOCATION<", HTML)
+        self.assertIn(">CURRENT PRICE LOCATION<", HTML)
+        self.assertNotIn(">CURRENT LOCATION<", HTML)
         self.assertIn('id="structuralLocation"', HTML)
         self.assertIn('id="currentPriceLocation"', HTML)
         self.assertIn("formatLocation(state.current_price_location)", JAVASCRIPT)
+
+        detail_payload = REPOSITORY.split("def detail_payload", 1)[1].split(
+            "def current_price_location_value", 1
+        )[0]
+        current_price_classifier = REPOSITORY.split(
+            "def current_price_location_value", 1
+        )[1].split("def sanitize_payload", 1)[0]
+        self.assertIn('"structural_location": active.structural_location.value', detail_payload)
+        self.assertIn('"current_price_location": current_price_location_value(latest)', detail_payload)
+        self.assertIn('Decimal(latest["observation_price"])', current_price_classifier)
+        self.assertNotIn("active.core_mrz_midpoint", current_price_classifier)
+
+    def test_symbol_header_links_active_authority_to_its_exact_operator_card(self) -> None:
+        self.assertIn('id="operatorCardLink" hidden>Operator Card</a>', HTML)
+        self.assertIn("operatorCardHref(state)", JAVASCRIPT)
+        self.assertIn("fields.operatorCard.hidden = operatorCardUrl === null;", JAVASCRIPT)
+        self.assertIn("fields.operatorCard.href = operatorCardUrl;", JAVASCRIPT)
+        self.assertIn('state?.mrz_status !== "active"', MONITOR_PRESENTATION)
+        self.assertIn("encodeURIComponent(state.symbol)", MONITOR_PRESENTATION)
+        self.assertIn("/diagnostics/mrz-robustness?symbol=", MONITOR_PRESENTATION)
+
+    def test_operator_card_link_is_navigation_only_and_mobile_safe(self) -> None:
+        self.assertNotIn('/api/diagnostics/mrz-robustness', JAVASCRIPT)
+        self.assertNotIn("preventDefault", JAVASCRIPT)
+        self.assertNotIn("window.history", JAVASCRIPT)
+        self.assertNotIn("globalThis.history", JAVASCRIPT)
+        self.assertIn(".operator-card-link[hidden] { display: none; }", CSS)
+        responsive = CSS.split("@media (max-width: 680px)", 1)[1]
+        self.assertIn(".symbol-header-actions { justify-content: flex-start; width: 100%; }", responsive)
 
     def test_empty_source_and_mrz_values_are_neutral(self) -> None:
         self.assertIn('class="answer route unestablished"', HTML)

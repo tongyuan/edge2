@@ -141,6 +141,11 @@
     return timestampFormatter(state.activated_at);
   }
 
+  function operatorCardHref(state) {
+    if (state?.mrz_status !== "active" || !state.symbol) return null;
+    return `/diagnostics/mrz-robustness?symbol=${encodeURIComponent(state.symbol)}`;
+  }
+
   function buildMigrationPresentation(
     state,
     timestampFormatter = () => null,
@@ -165,6 +170,7 @@
     buildMigrationPresentation,
     formatLatestObservationContext,
     formatActivatedAt,
+    operatorCardHref,
   };
 
   root.edgeMonitorPresentation = monitorPresentation;

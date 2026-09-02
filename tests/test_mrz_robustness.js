@@ -10,6 +10,7 @@ const {
   migrationEqmValue,
   migrationProvenanceMarkup,
   normalizedSpanText,
+  operatorCardSymbolFromSearch,
   percentageText,
   reportMarkup,
   robustnessCardMarkup,
@@ -30,6 +31,9 @@ assert.equal(directionText("NEUTRAL", "Neutral"), "Neutral");
 assert.equal(normalizedSpanText("0.0012"), "0.1%");
 assert.equal(midpointValue("0.3936", "0.3966"), 0.3951);
 assert.equal(midpointValue(null, "0.3966"), null);
+assert.equal(operatorCardSymbolFromSearch("?symbol=BTCUSDT"), "BTCUSDT");
+assert.equal(operatorCardSymbolFromSearch("?symbol=NASDAQ%3ANDX"), "NASDAQ:NDX");
+assert.equal(operatorCardSymbolFromSearch(""), null);
 
 const operationCardSource = fs.readFileSync(
   require.resolve("../app/static/mrz-robustness.js"),
@@ -654,6 +658,22 @@ assert.match(allReportsMarkup, /BTCUSDT/);
 assert.match(allReportsMarkup, /WLDUSDT/);
 assert.match(allReportsMarkup, /PRESSUREONLY/);
 assert.match(allReportsMarkup, /XAGUSD/);
+assert.doesNotMatch(allReportsMarkup, /focused-operator-card/);
+const focusedReportsMarkup = reportMarkup(
+  backendOrderedReports,
+  (value) => value,
+  "all",
+  "BTCUSDT",
+);
+assert.match(
+  focusedReportsMarkup,
+  /class="mrz-report focused-operator-card" data-symbol="BTCUSDT" tabindex="-1"/,
+);
+assert.doesNotMatch(
+  focusedReportsMarkup,
+  /class="mrz-report focused-operator-card" data-symbol="(?:WLDUSDT|PRESSUREONLY|XAGUSD)"/,
+  "a symbol-level link cannot focus another symbol's card",
+);
 const migratedReportsMarkup = reportMarkup(
   backendOrderedReports,
   (value) => value,

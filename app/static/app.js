@@ -40,11 +40,13 @@ const {
   buildMigrationPresentation,
   formatLatestObservationContext,
   formatActivatedAt,
+  operatorCardHref,
 } = globalThis.edgeMonitorPresentation;
 
 const fields = {
   symbol: document.querySelector("#symbolName"),
   status: document.querySelector("#mrzStatus"),
+  operatorCard: document.querySelector("#operatorCardLink"),
   owner: document.querySelector("#routeOwner"),
   bounds: document.querySelector("#mrzBounds"),
   activation: document.querySelector("#mrzActivation"),
@@ -441,6 +443,15 @@ function renderSymbol(state) {
   fields.symbol.textContent = state.symbol;
   fields.status.textContent = active ? "ACTIVE" : "UNESTABLISHED";
   fields.status.classList.toggle("unestablished", !active);
+  const operatorCardUrl = operatorCardHref(state);
+  fields.operatorCard.hidden = operatorCardUrl === null;
+  if (operatorCardUrl) {
+    fields.operatorCard.href = operatorCardUrl;
+    fields.operatorCard.setAttribute("aria-label", `Operator Card for ${state.symbol}`);
+  } else {
+    fields.operatorCard.removeAttribute("href");
+    fields.operatorCard.removeAttribute("aria-label");
+  }
   fields.owner.textContent = active ? state.route_owner : "—";
   fields.owner.classList.toggle("unestablished", !active);
   fields.owner.classList.toggle("btd", active && state.route_owner === "BTD");
