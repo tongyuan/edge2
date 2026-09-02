@@ -16,6 +16,7 @@ const {
   groupSymbolsByLocation,
   locationDistributionFromGroups,
   formatLocationPercentage,
+  migrationTendencyPresentation,
   createGroupTrackingState,
   setGroupTrackingEnabled,
   toggleGroupSymbol,
@@ -153,6 +154,38 @@ assert.equal(emptyDistribution.classifiedTotal, 0, "zero-symbol total is safe");
 assert.deepEqual(emptyDistribution.discountTotal, { count: 0, percentage: 0 });
 assert.deepEqual(emptyDistribution.premiumTotal, { count: 0, percentage: 0 });
 assert.equal(formatLocationPercentage(emptyDistribution.buckets.deep_discount.percentage), "0.0%");
+
+assert.deepEqual(migrationTendencyPresentation({
+  migration_samples: 3,
+  higher_count: 2,
+  lower_count: 1,
+  higher_pct: 200 / 3,
+  lower_pct: 100 / 3,
+}), {
+  hasHistory: true,
+  higherLabel: "66.7%",
+  lowerLabel: "33.3%",
+  sampleLabel: "n = 3",
+}, "historical migration percentages use the existing one-decimal formatter");
+assert.deepEqual(migrationTendencyPresentation({
+  migration_samples: 0,
+  higher_count: 0,
+  lower_count: 0,
+  higher_pct: null,
+  lower_pct: null,
+}), {
+  hasHistory: false,
+  higherLabel: "—",
+  lowerLabel: "—",
+  sampleLabel: "n = 0",
+}, "zero history renders neutrally without misleading zero percentages");
+assert.equal(migrationTendencyPresentation({
+  migration_samples: 2,
+  higher_count: 2,
+  lower_count: 1,
+  higher_pct: 100,
+  lower_pct: 0,
+}).hasHistory, false, "inconsistent historical denominators are not presented");
 
 const groupSymbols = [
   {

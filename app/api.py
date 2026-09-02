@@ -298,6 +298,7 @@ def create_app(
     def symbols() -> dict[str, Any]:
         return {
             "minimum_cluster_observations": MIN_CLUSTER_OBSERVATIONS,
+            "location_migration_tendency": repository.location_migration_tendency(),
             "symbols": repository.symbols(),
         }
 

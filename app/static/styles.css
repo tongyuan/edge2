@@ -159,21 +159,72 @@ h2 { margin-bottom: 0; font-size: 1.55rem; letter-spacing: -0.02em; }
   background: var(--surface);
 }
 .location-distribution-cell h3 {
-  margin: 0 0 10px;
+  margin: 0 0 12px;
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 650;
   line-height: 1.25;
 }
-.location-distribution-cell p {
+.location-distribution-current {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 11px;
+  border-bottom: 1px solid var(--line);
+}
+.location-distribution-current > span {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+.location-distribution-current p {
   margin: 0;
   color: var(--muted);
   font-size: 0.86rem;
   white-space: nowrap;
 }
-.location-distribution-cell strong {
+.location-distribution-current strong {
   color: var(--text);
   font-size: 1rem;
+}
+.location-migration-history { margin-top: 11px; }
+.location-migration-label {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 650;
+}
+.location-migration-directions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.location-migration-directions[hidden] { display: none; }
+.location-migration-directions p {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 4px;
+  margin: 0;
+  color: #c7d0dc;
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+.location-migration-directions strong {
+  margin-left: auto;
+  color: var(--text);
+  font-size: 0.78rem;
+}
+.location-migration-empty {
+  margin: 0;
+  color: #8490a3;
+  font-size: 0.7rem;
+}
+.location-migration-empty[hidden] { display: none; }
+.location-migration-sample {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 0.68rem;
 }
 .location-distribution-totals {
   display: grid;
@@ -645,6 +696,7 @@ dd { margin: 0; font-size: 0.95rem; font-weight: 620; }
   .selected-group-location-mix { grid-column: 1 / -1; }
   .location-distribution-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .location-distribution-cell { padding: 13px 12px; }
+  .location-migration-directions { grid-template-columns: 1fr; gap: 4px; }
   .location-distribution-totals { padding: 10px 12px; }
   .heatmap-grid, .heatmap-secondary { grid-template-columns: 1fr; }
   .answer-grid, .context-grid, .facts { grid-template-columns: 1fr; }

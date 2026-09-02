@@ -30,7 +30,7 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("Symbol Lab", HTML)
 
     def test_monitor_assets_are_versioned_together(self) -> None:
-        version = "web-push-20260902"
+        version = "location-migration-20260902"
         self.assertIn(f'/static/styles.css?v={version}', HTML)
         self.assertIn(f'/static/heatmap-state.js?v={version}', HTML)
         self.assertIn(f'/static/operator-time.js?v={version}', HTML)
@@ -135,6 +135,20 @@ class MonitorContractTests(unittest.TestCase):
                 self.assertIn(f"<h3>{label}</h3>", HTML)
         self.assertIn('id="distributionDiscountTotal"', HTML)
         self.assertIn('id="distributionPremiumTotal"', HTML)
+        self.assertEqual(HTML.count(">Current<"), 4)
+        self.assertEqual(HTML.count(">Historical migration<"), 4)
+        self.assertEqual(HTML.count(">No migration history<"), 4)
+        for prefix in (
+            "DeepDiscount",
+            "ShallowDiscount",
+            "ShallowPremium",
+            "DeepPremium",
+        ):
+            with self.subTest(prefix=prefix):
+                self.assertIn(f'id="distribution{prefix}History" hidden', HTML)
+                self.assertIn(f'id="distribution{prefix}Higher"', HTML)
+                self.assertIn(f'id="distribution{prefix}Lower"', HTML)
+                self.assertIn(f'id="distribution{prefix}Samples">n = 0<', HTML)
         self.assertNotIn("Bullish", HTML)
         self.assertNotIn("Bearish", HTML)
 
@@ -148,10 +162,15 @@ class MonitorContractTests(unittest.TestCase):
             ),
             1,
         )
-        self.assertIn("renderLocationDistribution(allGroups);", render_overview)
+        self.assertIn(
+            "renderLocationDistribution(allGroups, locationMigrationTendency);",
+            render_overview,
+        )
         self.assertIn("visibleSymbolsForGroupTracking(overviewSymbols, groupTrackingState)", render_overview)
         self.assertLess(
-            render_overview.index("renderLocationDistribution(allGroups);"),
+            render_overview.index(
+                "renderLocationDistribution(allGroups, locationMigrationTendency);"
+            ),
             render_overview.index("visibleSymbolsForGroupTracking"),
         )
         self.assertIn("locationDistributionFromGroups(groups)", JAVASCRIPT)
@@ -164,6 +183,48 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("fetch(", distribution_builder)
         self.assertNotIn("location_distribution", API)
 
+    def test_historical_migration_uses_canonical_old_authority_provenance(self) -> None:
+        tendency_method = REPOSITORY.split(
+            "    def location_migration_tendency(self)", 1
+        )[1].split("    def symbols(self)", 1)[0]
+        self.assertIn("current_event.event_type = 'MRZ_MIGRATED'", tendency_method)
+        self.assertIn("current_event.old_core_mrz_lower", tendency_method)
+        self.assertIn("current_event.old_core_mrz_upper", tendency_method)
+        self.assertIn("current_event.new_core_mrz_midpoint", tendency_method)
+        self.assertIn(
+            "previous_authority.structural_location\n                                AS starting_structural_location",
+            tendency_method,
+        )
+        self.assertIn(
+            "source_event.event_type IN (\n                                  'MRZ_ACTIVATED', 'MRZ_MIGRATED'",
+            tendency_method,
+        )
+        self.assertIn("source_event.occurred_at <= current_event.occurred_at", tendency_method)
+        self.assertIn("SELECT DISTINCT ON (current_event.event_key)", tendency_method)
+        self.assertNotIn("created_at", tendency_method)
+        self.assertNotIn("ROUTE_CHANGED", tendency_method)
+
+    def test_migration_tendency_is_added_to_existing_overview_fetch(self) -> None:
+        self.assertIn(
+            '"location_migration_tendency": repository.location_migration_tendency()',
+            API,
+        )
+        load_symbols = JAVASCRIPT.split("async function loadSymbols()", 1)[1].split(
+            "async function handleHeatmapChipClick", 1
+        )[0]
+        self.assertEqual(load_symbols.count('fetch("/api/symbols")'), 1)
+        self.assertIn(
+            "locationMigrationTendency = payload.location_migration_tendency || {};",
+            load_symbols,
+        )
+        renderer = JAVASCRIPT.split("function renderLocationDistribution", 1)[1].split(
+            "function renderSelectedGroupPanel", 1
+        )[0]
+        self.assertIn("migrationTendencyPresentation(migrationTendency?.[key])", renderer)
+        self.assertIn("fieldsForLocation.history.hidden = !migration.hasHistory;", renderer)
+        self.assertIn("fieldsForLocation.historyEmpty.hidden = migration.hasHistory;", renderer)
+        self.assertIn("fieldsForLocation.samples.textContent = migration.sampleLabel;", renderer)
+
     def test_distribution_is_compact_and_mobile_safe(self) -> None:
         self.assertIn(
             ".location-distribution-grid {\n  display: grid;\n  grid-template-columns: repeat(4, minmax(0, 1fr));",
@@ -175,6 +236,10 @@ class MonitorContractTests(unittest.TestCase):
         )
         self.assertIn("max-width: 100%;", CSS.split(".location-distribution-grid", 1)[1])
         self.assertIn("min-width: 0;", CSS.split(".location-distribution-cell", 1)[1])
+        self.assertIn(
+            ".location-migration-directions { grid-template-columns: 1fr; gap: 4px; }",
+            CSS,
+        )
 
     def test_heatmap_has_exactly_four_primary_and_three_fallback_keys(self) -> None:
         primary = HEATMAP_STATE.split("const primaryLocationKeys = [", 1)[1].split("];", 1)[0]

@@ -11,7 +11,7 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/static/edge-mrz-icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/static/edge-mrz-icon-180.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=web-push-20260902" />
+    <link rel="stylesheet" href="/static/styles.css?v=location-migration-20260902" />
     <link rel="stylesheet" href="/static/diagnostics-nav.css?v=diagnostics-menu-20260827" />
   </head>
   <body>
@@ -49,19 +49,67 @@
         <div class="location-distribution-grid" id="locationDistribution" aria-live="polite">
           <article class="location-distribution-cell">
             <h3>Deep Discount</h3>
-            <p><strong id="distributionDeepDiscountCount">0</strong><span aria-hidden="true"> · </span><span id="distributionDeepDiscountPercentage">0.0%</span></p>
+            <div class="location-distribution-current">
+              <span>Current</span>
+              <p><strong id="distributionDeepDiscountCount">0</strong><span aria-hidden="true"> · </span><span id="distributionDeepDiscountPercentage">0.0%</span></p>
+            </div>
+            <div class="location-migration-history">
+              <p class="location-migration-label">Historical migration</p>
+              <div class="location-migration-directions" id="distributionDeepDiscountHistory" hidden>
+                <p><span aria-hidden="true">↑</span> Higher <strong id="distributionDeepDiscountHigher">—</strong></p>
+                <p><span aria-hidden="true">↓</span> Lower <strong id="distributionDeepDiscountLower">—</strong></p>
+              </div>
+              <p class="location-migration-empty" id="distributionDeepDiscountHistoryEmpty">No migration history</p>
+              <p class="location-migration-sample" id="distributionDeepDiscountSamples">n = 0</p>
+            </div>
           </article>
           <article class="location-distribution-cell">
             <h3>Shallow Discount</h3>
-            <p><strong id="distributionShallowDiscountCount">0</strong><span aria-hidden="true"> · </span><span id="distributionShallowDiscountPercentage">0.0%</span></p>
+            <div class="location-distribution-current">
+              <span>Current</span>
+              <p><strong id="distributionShallowDiscountCount">0</strong><span aria-hidden="true"> · </span><span id="distributionShallowDiscountPercentage">0.0%</span></p>
+            </div>
+            <div class="location-migration-history">
+              <p class="location-migration-label">Historical migration</p>
+              <div class="location-migration-directions" id="distributionShallowDiscountHistory" hidden>
+                <p><span aria-hidden="true">↑</span> Higher <strong id="distributionShallowDiscountHigher">—</strong></p>
+                <p><span aria-hidden="true">↓</span> Lower <strong id="distributionShallowDiscountLower">—</strong></p>
+              </div>
+              <p class="location-migration-empty" id="distributionShallowDiscountHistoryEmpty">No migration history</p>
+              <p class="location-migration-sample" id="distributionShallowDiscountSamples">n = 0</p>
+            </div>
           </article>
           <article class="location-distribution-cell">
             <h3>Shallow Premium</h3>
-            <p><strong id="distributionShallowPremiumCount">0</strong><span aria-hidden="true"> · </span><span id="distributionShallowPremiumPercentage">0.0%</span></p>
+            <div class="location-distribution-current">
+              <span>Current</span>
+              <p><strong id="distributionShallowPremiumCount">0</strong><span aria-hidden="true"> · </span><span id="distributionShallowPremiumPercentage">0.0%</span></p>
+            </div>
+            <div class="location-migration-history">
+              <p class="location-migration-label">Historical migration</p>
+              <div class="location-migration-directions" id="distributionShallowPremiumHistory" hidden>
+                <p><span aria-hidden="true">↑</span> Higher <strong id="distributionShallowPremiumHigher">—</strong></p>
+                <p><span aria-hidden="true">↓</span> Lower <strong id="distributionShallowPremiumLower">—</strong></p>
+              </div>
+              <p class="location-migration-empty" id="distributionShallowPremiumHistoryEmpty">No migration history</p>
+              <p class="location-migration-sample" id="distributionShallowPremiumSamples">n = 0</p>
+            </div>
           </article>
           <article class="location-distribution-cell">
             <h3>Deep Premium</h3>
-            <p><strong id="distributionDeepPremiumCount">0</strong><span aria-hidden="true"> · </span><span id="distributionDeepPremiumPercentage">0.0%</span></p>
+            <div class="location-distribution-current">
+              <span>Current</span>
+              <p><strong id="distributionDeepPremiumCount">0</strong><span aria-hidden="true"> · </span><span id="distributionDeepPremiumPercentage">0.0%</span></p>
+            </div>
+            <div class="location-migration-history">
+              <p class="location-migration-label">Historical migration</p>
+              <div class="location-migration-directions" id="distributionDeepPremiumHistory" hidden>
+                <p><span aria-hidden="true">↑</span> Higher <strong id="distributionDeepPremiumHigher">—</strong></p>
+                <p><span aria-hidden="true">↓</span> Lower <strong id="distributionDeepPremiumLower">—</strong></p>
+              </div>
+              <p class="location-migration-empty" id="distributionDeepPremiumHistoryEmpty">No migration history</p>
+              <p class="location-migration-sample" id="distributionDeepPremiumSamples">n = 0</p>
+            </div>
           </article>
         </div>
         <div class="location-distribution-totals" aria-label="Discount and Premium totals">
@@ -211,10 +259,10 @@
     <div class="activity-tooltip" id="heatmapActivityTooltip" role="tooltip" hidden></div>
     <div class="notification-toast-host" id="notificationToastHost" aria-live="polite"></div>
     <script src="/static/diagnostics-nav.js?v=diagnostics-menu-20260827" defer></script>
-    <script src="/static/heatmap-state.js?v=web-push-20260902" defer></script>
-    <script src="/static/operator-time.js?v=web-push-20260902" defer></script>
-    <script src="/static/monitor-presentation.js?v=web-push-20260902" defer></script>
-    <script src="/static/notifications.js?v=web-push-20260902" defer></script>
-    <script src="/static/app.js?v=web-push-20260902" defer></script>
+    <script src="/static/heatmap-state.js?v=location-migration-20260902" defer></script>
+    <script src="/static/operator-time.js?v=location-migration-20260902" defer></script>
+    <script src="/static/monitor-presentation.js?v=location-migration-20260902" defer></script>
+    <script src="/static/notifications.js?v=location-migration-20260902" defer></script>
+    <script src="/static/app.js?v=location-migration-20260902" defer></script>
   </body>
 </html>

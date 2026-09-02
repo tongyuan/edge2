@@ -25,6 +25,7 @@ const {
   groupSymbolsByLocation,
   locationDistributionFromGroups,
   formatLocationPercentage,
+  migrationTendencyPresentation,
   createGroupTrackingState,
   setGroupTrackingEnabled,
   toggleGroupSymbol,
@@ -66,18 +67,38 @@ const distributionFields = {
   deep_discount: {
     count: document.querySelector("#distributionDeepDiscountCount"),
     percentage: document.querySelector("#distributionDeepDiscountPercentage"),
+    history: document.querySelector("#distributionDeepDiscountHistory"),
+    historyEmpty: document.querySelector("#distributionDeepDiscountHistoryEmpty"),
+    higher: document.querySelector("#distributionDeepDiscountHigher"),
+    lower: document.querySelector("#distributionDeepDiscountLower"),
+    samples: document.querySelector("#distributionDeepDiscountSamples"),
   },
   shallow_discount: {
     count: document.querySelector("#distributionShallowDiscountCount"),
     percentage: document.querySelector("#distributionShallowDiscountPercentage"),
+    history: document.querySelector("#distributionShallowDiscountHistory"),
+    historyEmpty: document.querySelector("#distributionShallowDiscountHistoryEmpty"),
+    higher: document.querySelector("#distributionShallowDiscountHigher"),
+    lower: document.querySelector("#distributionShallowDiscountLower"),
+    samples: document.querySelector("#distributionShallowDiscountSamples"),
   },
   shallow_premium: {
     count: document.querySelector("#distributionShallowPremiumCount"),
     percentage: document.querySelector("#distributionShallowPremiumPercentage"),
+    history: document.querySelector("#distributionShallowPremiumHistory"),
+    historyEmpty: document.querySelector("#distributionShallowPremiumHistoryEmpty"),
+    higher: document.querySelector("#distributionShallowPremiumHigher"),
+    lower: document.querySelector("#distributionShallowPremiumLower"),
+    samples: document.querySelector("#distributionShallowPremiumSamples"),
   },
   deep_premium: {
     count: document.querySelector("#distributionDeepPremiumCount"),
     percentage: document.querySelector("#distributionDeepPremiumPercentage"),
+    history: document.querySelector("#distributionDeepPremiumHistory"),
+    historyEmpty: document.querySelector("#distributionDeepPremiumHistoryEmpty"),
+    higher: document.querySelector("#distributionDeepPremiumHigher"),
+    lower: document.querySelector("#distributionDeepPremiumLower"),
+    samples: document.querySelector("#distributionDeepPremiumSamples"),
   },
 };
 const distributionTotals = {
@@ -100,6 +121,7 @@ const selectedGroupFields = {
 
 let overviewSymbols = [];
 let minimumClusterObservations = null;
+let locationMigrationTendency = {};
 let groupTrackingState = createGroupTrackingState();
 
 const formatPrice = (value) => value == null ? "—" : new Intl.NumberFormat("en-US", {
@@ -258,14 +280,21 @@ function createLocationGroup(key, symbols, minimumClusterObservations, secondary
   return group;
 }
 
-function renderLocationDistribution(groups) {
+function renderLocationDistribution(groups, migrationTendency) {
   const distribution = locationDistributionFromGroups(groups);
   primaryLocationKeys.forEach((key) => {
     const bucket = distribution.buckets[key];
-    distributionFields[key].count.textContent = String(bucket.count);
-    distributionFields[key].percentage.textContent = formatLocationPercentage(
+    const fieldsForLocation = distributionFields[key];
+    fieldsForLocation.count.textContent = String(bucket.count);
+    fieldsForLocation.percentage.textContent = formatLocationPercentage(
       bucket.percentage,
     );
+    const migration = migrationTendencyPresentation(migrationTendency?.[key]);
+    fieldsForLocation.history.hidden = !migration.hasHistory;
+    fieldsForLocation.historyEmpty.hidden = migration.hasHistory;
+    fieldsForLocation.higher.textContent = migration.higherLabel;
+    fieldsForLocation.lower.textContent = migration.lowerLabel;
+    fieldsForLocation.samples.textContent = migration.sampleLabel;
   });
   distributionTotals.discount.textContent = (
     `${distribution.discountTotal.count} · ${formatLocationPercentage(distribution.discountTotal.percentage)}`
@@ -275,7 +304,7 @@ function renderLocationDistribution(groups) {
   );
   locationDistribution.setAttribute(
     "aria-label",
-    `Location distribution for ${distribution.classifiedTotal} classified symbols`,
+    `Current location distribution and historical MRZ migration tendency for ${distribution.classifiedTotal} classified symbols`,
   );
 }
 
@@ -329,7 +358,7 @@ function renderLocationHeatmap(symbols, minimumObservations, groups) {
 
 function renderMonitorOverview() {
   const allGroups = groupSymbolsByLocation(overviewSymbols, minimumClusterObservations);
-  renderLocationDistribution(allGroups);
+  renderLocationDistribution(allGroups, locationMigrationTendency);
   const visibleSymbols = visibleSymbolsForGroupTracking(overviewSymbols, groupTrackingState);
   const visibleGroups = visibleSymbols === overviewSymbols
     ? allGroups
@@ -372,6 +401,7 @@ async function loadSymbols() {
   const selectedSymbol = preservedSelectedSymbol(select.value, payload.symbols);
   overviewSymbols = payload.symbols;
   minimumClusterObservations = payload.minimum_cluster_observations;
+  locationMigrationTendency = payload.location_migration_tendency || {};
   groupTrackingState = reconcileGroupTrackingState(groupTrackingState, overviewSymbols);
   select.replaceChildren(new Option("Select a symbol", ""));
   overviewSymbols.forEach(({ symbol }) => select.add(new Option(symbol, symbol)));

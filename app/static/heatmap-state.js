@@ -201,6 +201,31 @@
     return `${(Number.isFinite(percentage) ? percentage : 0).toFixed(1)}%`;
   }
 
+  function migrationTendencyPresentation(value) {
+    const migrationSamples = Number(value?.migration_samples);
+    const higherCount = Number(value?.higher_count);
+    const lowerCount = Number(value?.lower_count);
+    const higherPct = Number(value?.higher_pct);
+    const lowerPct = Number(value?.lower_pct);
+    const hasHistory = (
+      Number.isInteger(migrationSamples)
+      && migrationSamples > 0
+      && Number.isInteger(higherCount)
+      && higherCount >= 0
+      && Number.isInteger(lowerCount)
+      && lowerCount >= 0
+      && migrationSamples === higherCount + lowerCount
+      && Number.isFinite(higherPct)
+      && Number.isFinite(lowerPct)
+    );
+    return {
+      hasHistory,
+      higherLabel: hasHistory ? formatLocationPercentage(higherPct) : "—",
+      lowerLabel: hasHistory ? formatLocationPercentage(lowerPct) : "—",
+      sampleLabel: `n = ${hasHistory ? migrationSamples : 0}`,
+    };
+  }
+
   function createGroupTrackingState() {
     return {
       enabled: false,
@@ -310,6 +335,7 @@
     groupSymbolsByLocation,
     locationDistributionFromGroups,
     formatLocationPercentage,
+    migrationTendencyPresentation,
     createGroupTrackingState,
     setGroupTrackingEnabled,
     toggleGroupSymbol,

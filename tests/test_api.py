@@ -52,7 +52,25 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(health.json()["database"], "ok")
         self.assertEqual(
             self.client.get("/api/symbols").json(),
-            {"minimum_cluster_observations": 4, "symbols": []},
+            {
+                "minimum_cluster_observations": 4,
+                "location_migration_tendency": {
+                    key: {
+                        "migration_samples": 0,
+                        "higher_count": 0,
+                        "lower_count": 0,
+                        "higher_pct": None,
+                        "lower_pct": None,
+                    }
+                    for key in (
+                        "deep_discount",
+                        "shallow_discount",
+                        "shallow_premium",
+                        "deep_premium",
+                    )
+                },
+                "symbols": [],
+            },
         )
 
     def test_monitor_shell_uses_current_terminology_and_is_not_cached(self) -> None:
@@ -272,7 +290,8 @@ class APIIntegrationTests(unittest.TestCase):
             self.assertEqual(final_response.status_code, 201)
 
         monitor = self.client.get("/api/symbols/SPXUSDT").json()
-        overview = self.client.get("/api/symbols").json()["symbols"][0]
+        overview_payload = self.client.get("/api/symbols").json()
+        overview = overview_payload["symbols"][0]
         operation_card = self.client.get(
             "/api/diagnostics/mrz-robustness"
         ).json()["active_mrzs"][0]
@@ -290,6 +309,22 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(overview["route_owner"], "STR")
         self.assertEqual(overview["structural_location"], "deep_premium_core_mrz")
         self.assertTrue(overview["has_migrated"])
+        self.assertEqual(
+            overview_payload["location_migration_tendency"]["deep_discount"],
+            {
+                "migration_samples": 1,
+                "higher_count": 1,
+                "lower_count": 0,
+                "higher_pct": 100.0,
+                "lower_pct": 0.0,
+            },
+        )
+        self.assertEqual(
+            overview_payload["location_migration_tendency"]["deep_premium"][
+                "migration_samples"
+            ],
+            0,
+        )
         self.assertEqual(operation_card["route_owner"], "STR")
         self.assertEqual(operation_card["active_mrz"]["lower"], "180")
         self.assertEqual(operation_card["active_mrz"]["activated_at"], "2026-08-20T12:00:08Z")

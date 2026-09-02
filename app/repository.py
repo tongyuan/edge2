@@ -33,6 +33,13 @@ from app.validation import ObservationPayload, normalize_symbol
 
 LOGGER = logging.getLogger("edge2.repository")
 
+LOCATION_MIGRATION_KEYS = {
+    StructuralLocation.DEEP_DISCOUNT.value: "deep_discount",
+    StructuralLocation.SHALLOW_DISCOUNT.value: "shallow_discount",
+    StructuralLocation.SHALLOW_PREMIUM.value: "shallow_premium",
+    StructuralLocation.DEEP_PREMIUM.value: "deep_premium",
+}
+
 
 @dataclass(frozen=True, slots=True)
 class IngestionOutcome:
@@ -42,6 +49,52 @@ class IngestionOutcome:
     symbol: str
     replay: ReplayResult | None
     triggered_transitions: tuple[MRZTransition, ...]
+
+
+def location_migration_tendency_payload(
+    rows: Sequence[Mapping[str, Any]],
+) -> dict[str, dict[str, int | float | None]]:
+    result: dict[str, dict[str, int | float | None]] = {
+        key: {
+            "migration_samples": 0,
+            "higher_count": 0,
+            "lower_count": 0,
+            "higher_pct": None,
+            "lower_pct": None,
+        }
+        for key in LOCATION_MIGRATION_KEYS.values()
+    }
+    for row in rows:
+        structural_location = str(row["starting_structural_location"])
+        key = LOCATION_MIGRATION_KEYS.get(structural_location)
+        if key is None:
+            raise ValueError(
+                f"Unknown authoritative MRZ structural location: {structural_location}"
+            )
+        equal_count = int(row["equal_count"])
+        if equal_count:
+            raise ValueError(
+                "Authoritative MRZ migration history contains equal old/new midpoints"
+            )
+        higher_count = int(row["higher_count"])
+        lower_count = int(row["lower_count"])
+        migration_samples = higher_count + lower_count
+        result[key] = {
+            "migration_samples": migration_samples,
+            "higher_count": higher_count,
+            "lower_count": lower_count,
+            "higher_pct": (
+                (higher_count / migration_samples) * 100
+                if migration_samples
+                else None
+            ),
+            "lower_pct": (
+                (lower_count / migration_samples) * 100
+                if migration_samples
+                else None
+            ),
+        }
+    return result
 
 
 def observation_from_row(row: Mapping[str, Any]) -> Observation:
@@ -643,6 +696,77 @@ class EdgeRepository:
                     for active in active_mrzs
                 }
                 return active_mrzs, observations, migration_provenance
+        finally:
+            connection.close()
+
+    def location_migration_tendency(self) -> dict[str, dict[str, int | float | None]]:
+        """Aggregate canonical MRZ transitions by the old authority's location."""
+        connection = connect(self.database_url)
+        try:
+            connection.set_session(readonly=True)
+            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    """
+                    WITH authoritative_migrations AS (
+                        SELECT DISTINCT ON (current_event.event_key)
+                            current_event.event_key,
+                            current_event.occurred_at,
+                            current_event.sequence,
+                            previous_authority.structural_location
+                                AS starting_structural_location,
+                            CASE
+                                WHEN current_event.new_core_mrz_midpoint >
+                                     (
+                                         current_event.old_core_mrz_lower
+                                         + current_event.old_core_mrz_upper
+                                     ) / 2
+                                    THEN 'HIGHER'
+                                WHEN current_event.new_core_mrz_midpoint <
+                                     (
+                                         current_event.old_core_mrz_lower
+                                         + current_event.old_core_mrz_upper
+                                     ) / 2
+                                    THEN 'LOWER'
+                                ELSE 'EQUAL'
+                            END AS direction
+                        FROM mrz_events current_event
+                        INNER JOIN LATERAL (
+                            SELECT source_event.structural_location
+                            FROM mrz_events source_event
+                            WHERE source_event.symbol = current_event.symbol
+                              AND source_event.sequence < current_event.sequence
+                              AND source_event.event_type IN (
+                                  'MRZ_ACTIVATED', 'MRZ_MIGRATED'
+                              )
+                              AND source_event.route_owner =
+                                  current_event.previous_route_owner
+                              AND source_event.new_core_mrz_lower =
+                                  current_event.old_core_mrz_lower
+                              AND source_event.new_core_mrz_upper =
+                                  current_event.old_core_mrz_upper
+                              AND source_event.occurred_at <= current_event.occurred_at
+                            ORDER BY
+                                source_event.occurred_at DESC,
+                                source_event.sequence DESC
+                            LIMIT 1
+                        ) previous_authority ON TRUE
+                        WHERE current_event.event_type = 'MRZ_MIGRATED'
+                        ORDER BY
+                            current_event.event_key,
+                            current_event.occurred_at ASC,
+                            current_event.sequence ASC
+                    )
+                    SELECT
+                        starting_structural_location,
+                        COUNT(*) FILTER (WHERE direction = 'HIGHER') AS higher_count,
+                        COUNT(*) FILTER (WHERE direction = 'LOWER') AS lower_count,
+                        COUNT(*) FILTER (WHERE direction = 'EQUAL') AS equal_count
+                    FROM authoritative_migrations
+                    GROUP BY starting_structural_location
+                    ORDER BY starting_structural_location ASC
+                    """
+                )
+                return location_migration_tendency_payload(cursor.fetchall())
         finally:
             connection.close()
 
