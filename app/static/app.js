@@ -9,10 +9,29 @@ const secondaryLocationGroups = document.querySelector("#secondaryLocationGroups
 const locationDistribution = document.querySelector("#locationDistribution");
 const groupTrackingToggle = document.querySelector("#groupTrackingToggle");
 const groupTrackingStateLabel = document.querySelector("#groupTrackingStateLabel");
-const selectedGroupPanel = document.querySelector("#selectedGroupPanel");
+const groupTrackingWorkspace = document.querySelector("#groupTrackingWorkspace");
+const savedGroupSelect = document.querySelector("#savedGroupSelect");
+const newSavedGroup = document.querySelector("#newSavedGroup");
+const groupEditor = document.querySelector("#groupEditor");
+const groupEditorTitle = document.querySelector("#groupEditorTitle");
+const groupName = document.querySelector("#groupName");
 const selectedGroupSymbols = document.querySelector("#selectedGroupSymbols");
 const showSelectedOnly = document.querySelector("#showSelectedOnly");
 const clearSelectedGroup = document.querySelector("#clearSelectedGroup");
+const cancelGroupEdit = document.querySelector("#cancelGroupEdit");
+const saveSelectedGroup = document.querySelector("#saveSelectedGroup");
+const groupFormError = document.querySelector("#groupFormError");
+const savedGroupView = document.querySelector("#savedGroupView");
+const savedGroupHeading = document.querySelector("#savedGroupHeading");
+const savedGroupUpdated = document.querySelector("#savedGroupUpdated");
+const savedGroupMembers = document.querySelector("#savedGroupMembers");
+const editSavedGroup = document.querySelector("#editSavedGroup");
+const deleteSavedGroup = document.querySelector("#deleteSavedGroup");
+const currentStateTab = document.querySelector("#currentStateTab");
+const migrationPathTab = document.querySelector("#migrationPathTab");
+const currentStatePanel = document.querySelector("#currentStatePanel");
+const migrationPathPanel = document.querySelector("#migrationPathPanel");
+const migrationPathScroller = document.querySelector("#migrationPathScroller");
 const {
   primaryLocationKeys,
   secondaryLocationKeys,
@@ -28,12 +47,18 @@ const {
   migrationTendencyPresentation,
   createGroupTrackingState,
   setGroupTrackingEnabled,
+  isGroupSelectionMode,
+  beginNewGroup,
+  beginEditGroup,
+  openSavedGroup,
   toggleGroupSymbol,
   setShowSelectedOnly,
   clearGroupSelection,
   reconcileGroupTrackingState,
   groupTrackingSummary,
   visibleSymbolsForGroupTracking,
+  timelinePosition,
+  timelineTicks,
 } = globalThis.edgeHeatmapState;
 const {
   buildEvidencePresentation,
@@ -107,17 +132,19 @@ const distributionTotals = {
   discount: document.querySelector("#distributionDiscountTotal"),
   premium: document.querySelector("#distributionPremiumTotal"),
 };
-const selectedGroupFields = {
+const groupCurrentFields = {
   count: document.querySelector("#selectedGroupCount"),
-  btd: document.querySelector("#selectedGroupBtdCount"),
-  str: document.querySelector("#selectedGroupStrCount"),
-  active: document.querySelector("#selectedGroupActiveCount"),
-  migrated: document.querySelector("#selectedGroupMigratedCount"),
+  btd: document.querySelector("#groupBtdCount"),
+  str: document.querySelector("#groupStrCount"),
+  active: document.querySelector("#groupActiveMrzCount"),
+  higher: document.querySelector("#groupHigherCount"),
+  lower: document.querySelector("#groupLowerCount"),
+  noMigration: document.querySelector("#groupNoMigrationCount"),
   locations: {
-    deep_discount: document.querySelector("#selectedGroupDeepDiscountCount"),
-    shallow_discount: document.querySelector("#selectedGroupShallowDiscountCount"),
-    shallow_premium: document.querySelector("#selectedGroupShallowPremiumCount"),
-    deep_premium: document.querySelector("#selectedGroupDeepPremiumCount"),
+    deep_discount: document.querySelector("#groupDeepDiscountCount"),
+    shallow_discount: document.querySelector("#groupShallowDiscountCount"),
+    shallow_premium: document.querySelector("#groupShallowPremiumCount"),
+    deep_premium: document.querySelector("#groupDeepPremiumCount"),
   },
 };
 
@@ -125,6 +152,8 @@ let overviewSymbols = [];
 let minimumClusterObservations = null;
 let locationMigrationTendency = {};
 let groupTrackingState = createGroupTrackingState();
+let savedGroups = [];
+let activeSavedGroup = null;
 
 const formatPrice = (value) => value == null ? "—" : new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 12,
@@ -232,7 +261,8 @@ function createLocationGroup(key, symbols, minimumClusterObservations, secondary
       button.type = "button";
       button.className = "symbol-chip";
       const groupSelected = (
-        groupTrackingState.enabled && groupTrackingState.selectedSymbols.has(symbol)
+        isGroupSelectionMode(groupTrackingState)
+        && groupTrackingState.selectedSymbols.has(symbol)
       );
       button.classList.toggle("active-mrz", active);
       button.classList.toggle("group-selected", groupSelected);
@@ -310,28 +340,196 @@ function renderLocationDistribution(groups, migrationTendency) {
   );
 }
 
-function renderSelectedGroupPanel() {
-  const summary = groupTrackingSummary(overviewSymbols, groupTrackingState);
-  const visible = groupTrackingState.enabled && summary.selectedCount > 0;
-  selectedGroupPanel.hidden = !visible;
-  selectedGroupFields.count.textContent = String(summary.selectedCount);
-  selectedGroupSymbols.replaceChildren(...summary.selectedStates.map(({ symbol }) => {
+function groupMemberListItems(symbols, clickable = false) {
+  return symbols.map((symbol) => {
     const item = document.createElement("li");
-    item.textContent = symbol;
+    if (clickable) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = symbol;
+      button.setAttribute("aria-label", `Open ${symbol} in MRZ Monitor`);
+      button.addEventListener("click", () => selectGroupMember(symbol).catch(showError));
+      item.append(button);
+    } else {
+      item.textContent = symbol;
+    }
     return item;
-  }));
-  selectedGroupFields.btd.textContent = String(summary.routeMix.BTD);
-  selectedGroupFields.str.textContent = String(summary.routeMix.STR);
-  primaryLocationKeys.forEach((key) => {
-    selectedGroupFields.locations[key].textContent = String(summary.locationMix[key]);
   });
-  selectedGroupFields.active.textContent = (
-    `${summary.activeMrzCount} / ${summary.selectedCount}`
+}
+
+function renderSavedGroupSelector() {
+  if (savedGroups.length === 0) {
+    savedGroupSelect.replaceChildren(new Option("No saved groups", ""));
+    savedGroupSelect.disabled = true;
+    return;
+  }
+  savedGroupSelect.replaceChildren(...savedGroups.map((group) => (
+    new Option(`${group.name} · ${group.member_count}`, String(group.id))
+  )));
+  savedGroupSelect.disabled = false;
+  const selectedId = groupTrackingState.activeGroupId;
+  savedGroupSelect.value = selectedId == null ? "" : String(selectedId);
+}
+
+function updateSaveGroupAvailability() {
+  saveSelectedGroup.disabled = (
+    !groupName.value.trim() || groupTrackingState.selectedSymbols.size === 0
   );
-  selectedGroupFields.migrated.textContent = (
-    `${summary.migratedCount} / ${summary.selectedCount}`
+}
+
+function renderGroupEditor() {
+  const selecting = isGroupSelectionMode(groupTrackingState);
+  groupEditor.hidden = !selecting;
+  if (!selecting) return;
+  const summary = groupTrackingSummary(overviewSymbols, groupTrackingState);
+  groupCurrentFields.count.textContent = String(summary.selectedCount);
+  selectedGroupSymbols.replaceChildren(
+    ...groupMemberListItems(summary.selectedStates.map(({ symbol }) => symbol)),
   );
+  groupEditorTitle.textContent = groupTrackingState.mode === "edit" ? "EDIT GROUP" : "NEW GROUP";
   showSelectedOnly.checked = groupTrackingState.showSelectedOnly;
+  updateSaveGroupAvailability();
+}
+
+function showGroupTab(tabName) {
+  const showCurrent = tabName !== "migration";
+  currentStateTab.setAttribute("aria-selected", String(showCurrent));
+  migrationPathTab.setAttribute("aria-selected", String(!showCurrent));
+  currentStatePanel.hidden = !showCurrent;
+  migrationPathPanel.hidden = showCurrent;
+}
+
+function renderSavedGroupView() {
+  const visible = groupTrackingState.mode === "saved" && activeSavedGroup !== null;
+  savedGroupView.hidden = !visible;
+  if (!visible) return;
+  const noun = activeSavedGroup.member_count === 1 ? "member" : "members";
+  savedGroupHeading.textContent = (
+    `${activeSavedGroup.name} · ${activeSavedGroup.member_count} ${noun}`
+  );
+  savedGroupUpdated.textContent = "Saved cohort · Live canonical EDGE state";
+  savedGroupMembers.replaceChildren(
+    ...groupMemberListItems(activeSavedGroup.members, true),
+  );
+  const state = activeSavedGroup.current_state;
+  primaryLocationKeys.forEach((key) => {
+    groupCurrentFields.locations[key].textContent = String(state.location[key] ?? 0);
+  });
+  groupCurrentFields.active.textContent = `${state.active_mrz.count} / ${state.active_mrz.total}`;
+  groupCurrentFields.higher.textContent = String(state.migration_breadth.higher);
+  groupCurrentFields.lower.textContent = String(state.migration_breadth.lower);
+  groupCurrentFields.noMigration.textContent = String(state.migration_breadth.no_migration);
+  groupCurrentFields.btd.textContent = String(state.route.BTD);
+  groupCurrentFields.str.textContent = String(state.route.STR);
+}
+
+function renderGroupWorkspace() {
+  groupTrackingWorkspace.hidden = !groupTrackingState.enabled;
+  groupTrackingToggle.checked = groupTrackingState.enabled;
+  groupTrackingStateLabel.textContent = groupTrackingState.enabled ? "On" : "Off";
+  renderSavedGroupSelector();
+  if (!groupTrackingState.enabled) return;
+  renderGroupEditor();
+  renderSavedGroupView();
+}
+
+function formatPathTimestamp(value) {
+  const formatted = formatOperatorTimestampUtcMinus4(value);
+  return formatted || "Time unavailable";
+}
+
+function formatPathTick(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "2-digit",
+  }).format(date);
+}
+
+function migrationStateTooltip(symbol, state) {
+  const direction = state.direction
+    ? ` · ${state.direction === "higher" ? "Higher" : "Lower"} migration`
+    : " · Initial authority";
+  return `${symbol} · ${state.location_label} · ${formatPathTimestamp(state.occurred_at)} · midpoint ${formatPrice(state.midpoint)}${direction}`;
+}
+
+function renderMigrationPath(payload) {
+  const hasAnyHistory = payload.paths.some(({ states }) => states.length > 0);
+  if (!hasAnyHistory) {
+    const empty = document.createElement("p");
+    empty.className = "migration-path-all-empty";
+    empty.textContent = "No authoritative MRZ history for this group.";
+    migrationPathScroller.replaceChildren(empty);
+    return;
+  }
+
+  const timeline = document.createElement("div");
+  timeline.className = "migration-path-timeline";
+  const axis = document.createElement("div");
+  axis.className = "migration-path-axis";
+  axis.append(document.createElement("span"));
+  const ticks = document.createElement("div");
+  ticks.className = "migration-path-ticks";
+  timelineTicks(payload.timeline.started_at, payload.timeline.ended_at).forEach((value) => {
+    const tick = document.createElement("span");
+    tick.className = "migration-path-tick";
+    tick.style.left = `${timelinePosition(value, payload.timeline.started_at, payload.timeline.ended_at)}%`;
+    tick.textContent = formatPathTick(value);
+    tick.title = formatPathTimestamp(value);
+    ticks.append(tick);
+  });
+  axis.append(ticks);
+  timeline.append(axis);
+
+  payload.paths.forEach((path) => {
+    const row = document.createElement("div");
+    row.className = "migration-path-row";
+    const label = document.createElement("div");
+    label.className = "migration-path-row-label";
+    label.textContent = path.symbol;
+    const track = document.createElement("div");
+    track.className = "migration-path-track";
+    if (path.states.length === 0) {
+      const empty = document.createElement("span");
+      empty.className = "migration-path-empty";
+      empty.textContent = "No authoritative MRZ history";
+      track.append(empty);
+    } else {
+      const positions = path.states.map((state) => Math.min(98, Math.max(
+        2,
+        timelinePosition(
+          state.occurred_at,
+          payload.timeline.started_at,
+          payload.timeline.ended_at,
+        ),
+      )));
+      const line = document.createElement("span");
+      line.className = "migration-path-line";
+      line.style.left = `${positions[0]}%`;
+      line.style.width = `${positions.at(-1) - positions[0]}%`;
+      track.append(line);
+      path.states.forEach((state, index) => {
+        const node = document.createElement("span");
+        node.className = `migration-path-state${state.direction ? ` ${state.direction}` : ""}`;
+        node.style.left = `${positions[index]}%`;
+        node.textContent = state.location_code;
+        node.title = migrationStateTooltip(path.symbol, state);
+        node.setAttribute("aria-label", node.title);
+        if (state.direction) {
+          const direction = document.createElement("span");
+          direction.className = "migration-path-direction";
+          direction.setAttribute("aria-hidden", "true");
+          direction.textContent = state.direction === "higher" ? "↑" : "↓";
+          node.append(direction);
+        }
+        track.append(node);
+      });
+    }
+    row.append(label, track);
+    timeline.append(row);
+  });
+  migrationPathScroller.replaceChildren(timeline);
 }
 
 function renderLocationHeatmap(symbols, minimumObservations, groups) {
@@ -366,17 +564,15 @@ function renderMonitorOverview() {
     ? allGroups
     : groupSymbolsByLocation(visibleSymbols, minimumClusterObservations);
   renderLocationHeatmap(visibleSymbols, minimumClusterObservations, visibleGroups);
-  groupTrackingToggle.checked = groupTrackingState.enabled;
-  groupTrackingStateLabel.textContent = groupTrackingState.enabled ? "On" : "Off";
-  renderSelectedGroupPanel();
+  renderGroupWorkspace();
   updateSelectedChip(select.value);
 }
 
 function updateSelectedChip(symbol) {
   document.querySelectorAll(".symbol-chip").forEach((chip) => {
-    const singleSelected = !groupTrackingState.enabled && chip.dataset.symbol === symbol;
+    const singleSelected = !isGroupSelectionMode(groupTrackingState) && chip.dataset.symbol === symbol;
     const groupSelected = (
-      groupTrackingState.enabled
+      isGroupSelectionMode(groupTrackingState)
       && groupTrackingState.selectedSymbols.has(chip.dataset.symbol)
     );
     chip.classList.toggle("selected", singleSelected);
@@ -412,8 +608,138 @@ async function loadSymbols() {
   renderMonitorOverview();
 }
 
+async function requestJson(url, options = {}) {
+  const response = await fetch(url, options);
+  if (!response.ok) {
+    let message = "Unable to complete the group request";
+    try {
+      const payload = await response.json();
+      if (payload.detail) message = String(payload.detail).replaceAll("_", " ");
+    } catch {
+      // Retain the operator-safe fallback.
+    }
+    throw new Error(message);
+  }
+  return response.json();
+}
+
+async function loadSavedGroupDefinitions() {
+  const payload = await requestJson("/api/groups");
+  savedGroups = payload.groups;
+  renderSavedGroupSelector();
+}
+
+async function openSavedGroupById(groupId) {
+  const report = await requestJson(`/api/groups/${encodeURIComponent(groupId)}`);
+  activeSavedGroup = report;
+  groupTrackingState = openSavedGroup(groupTrackingState, report.id);
+  showGroupTab("current");
+  renderMonitorOverview();
+}
+
+function startNewGroup() {
+  groupTrackingState = beginNewGroup(groupTrackingState);
+  groupName.value = "";
+  groupFormError.hidden = true;
+  showGroupTab("current");
+  renderMonitorOverview();
+  groupName.focus();
+}
+
+function startEditingGroup() {
+  if (!activeSavedGroup) return;
+  groupTrackingState = beginEditGroup(groupTrackingState, activeSavedGroup);
+  groupName.value = activeSavedGroup.name;
+  groupFormError.hidden = true;
+  renderMonitorOverview();
+  groupName.focus();
+}
+
+async function cancelGroupEditor() {
+  groupFormError.hidden = true;
+  if (activeSavedGroup) {
+    groupTrackingState = openSavedGroup(groupTrackingState, activeSavedGroup.id);
+    showGroupTab("current");
+    renderMonitorOverview();
+    return;
+  }
+  if (savedGroups.length > 0) {
+    await openSavedGroupById(savedGroups[0].id);
+    return;
+  }
+  groupTrackingState = setGroupTrackingEnabled(groupTrackingState, false);
+  renderMonitorOverview();
+}
+
+async function saveGroup(event) {
+  event.preventDefault();
+  const name = groupName.value.trim();
+  const members = [...groupTrackingState.selectedSymbols];
+  if (!name || members.length === 0) {
+    groupFormError.textContent = "Enter a group name and select at least one symbol.";
+    groupFormError.hidden = false;
+    return;
+  }
+  saveSelectedGroup.disabled = true;
+  groupFormError.hidden = true;
+  const editing = groupTrackingState.mode === "edit";
+  const groupId = groupTrackingState.activeGroupId;
+  try {
+    const report = await requestJson(
+      editing ? `/api/groups/${encodeURIComponent(groupId)}` : "/api/groups",
+      {
+        method: editing ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, members }),
+      },
+    );
+    activeSavedGroup = report;
+    await loadSavedGroupDefinitions();
+    groupTrackingState = openSavedGroup(groupTrackingState, report.id);
+    showGroupTab("current");
+    renderMonitorOverview();
+  } catch (error) {
+    groupFormError.textContent = error.message;
+    groupFormError.hidden = false;
+    updateSaveGroupAvailability();
+  }
+}
+
+async function removeActiveSavedGroup() {
+  if (!activeSavedGroup) return;
+  if (!globalThis.confirm(`Delete saved group ${activeSavedGroup.name}? MRZ history is not affected.`)) {
+    return;
+  }
+  const removedId = activeSavedGroup.id;
+  await requestJson(`/api/groups/${encodeURIComponent(removedId)}`, { method: "DELETE" });
+  activeSavedGroup = null;
+  await loadSavedGroupDefinitions();
+  if (savedGroups.length > 0) {
+    await openSavedGroupById(savedGroups[0].id);
+  } else {
+    startNewGroup();
+  }
+}
+
+async function openMigrationPath() {
+  if (!activeSavedGroup) return;
+  showGroupTab("migration");
+  const groupId = activeSavedGroup.id;
+  const loading = document.createElement("p");
+  loading.className = "migration-path-all-empty";
+  loading.textContent = "Loading authoritative history…";
+  migrationPathScroller.replaceChildren(loading);
+  const payload = await requestJson(`/api/groups/${encodeURIComponent(groupId)}/migration-path`);
+  if (activeSavedGroup?.id === groupId) renderMigrationPath(payload);
+}
+
+async function selectGroupMember(symbol) {
+  await selectSymbol(symbol);
+  document.querySelector(".selected-detail")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 async function handleHeatmapChipClick(symbol) {
-  if (!groupTrackingState.enabled) {
+  if (!isGroupSelectionMode(groupTrackingState)) {
     await selectSymbol(symbol);
     return;
   }
@@ -492,13 +818,32 @@ function renderSymbol(state) {
 }
 
 select.addEventListener("change", () => selectSymbol(select.value).catch(showError));
-groupTrackingToggle.addEventListener("change", () => {
-  groupTrackingState = setGroupTrackingEnabled(
-    groupTrackingState,
-    groupTrackingToggle.checked,
-  );
-  renderMonitorOverview();
+groupTrackingToggle.addEventListener("change", () => (async () => {
+  if (!groupTrackingToggle.checked) {
+    groupTrackingState = setGroupTrackingEnabled(groupTrackingState, false);
+    renderMonitorOverview();
+    return;
+  }
+  groupTrackingState = setGroupTrackingEnabled(groupTrackingState, true);
+  if (activeSavedGroup) {
+    await openSavedGroupById(activeSavedGroup.id);
+  } else if (savedGroups.length > 0) {
+    await openSavedGroupById(savedGroups[0].id);
+  } else {
+    startNewGroup();
+  }
+})().catch(showError));
+savedGroupSelect.addEventListener("change", () => {
+  if (savedGroupSelect.value) openSavedGroupById(savedGroupSelect.value).catch(showError);
 });
+newSavedGroup.addEventListener("click", startNewGroup);
+editSavedGroup.addEventListener("click", startEditingGroup);
+deleteSavedGroup.addEventListener("click", () => removeActiveSavedGroup().catch(showError));
+groupEditor.addEventListener("submit", saveGroup);
+groupName.addEventListener("input", updateSaveGroupAvailability);
+cancelGroupEdit.addEventListener("click", () => cancelGroupEditor().catch(showError));
+currentStateTab.addEventListener("click", () => showGroupTab("current"));
+migrationPathTab.addEventListener("click", () => openMigrationPath().catch(showError));
 showSelectedOnly.addEventListener("change", () => {
   groupTrackingState = setShowSelectedOnly(
     groupTrackingState,
@@ -527,7 +872,7 @@ function requestedSymbolFromQuery(search = globalThis.location?.search || "") {
 
 async function initializeMonitor() {
   loadHealth();
-  await loadSymbols();
+  await Promise.all([loadSymbols(), loadSavedGroupDefinitions()]);
   const requestedSymbol = requestedSymbolFromQuery();
   if (requestedSymbol && Array.from(select.options).some(({ value }) => value === requestedSymbol)) {
     await selectSymbol(requestedSymbol);

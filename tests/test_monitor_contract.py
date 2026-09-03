@@ -22,6 +22,9 @@ EVIDENCE_MIGRATION = (ROOT / "migrations/003_active_mrz_supporting_evidence.sql"
 FORMATION_MIGRATION = (ROOT / "migrations/004_mrz_formation_evidence.sql").read_text(
     encoding="utf-8"
 )
+SAVED_GROUP_MIGRATION = (ROOT / "migrations/007_saved_symbol_groups.sql").read_text(
+    encoding="utf-8"
+)
 
 
 class MonitorContractTests(unittest.TestCase):
@@ -30,7 +33,7 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("Symbol Lab", HTML)
 
     def test_monitor_assets_are_versioned_together(self) -> None:
-        version = "operator-card-link-20260903"
+        version = "group-tracking-20260903"
         self.assertIn(f'/static/styles.css?v={version}', HTML)
         self.assertIn(f'/static/heatmap-state.js?v={version}', HTML)
         self.assertIn(f'/static/operator-time.js?v={version}', HTML)
@@ -113,9 +116,12 @@ class MonitorContractTests(unittest.TestCase):
 
     def test_operator_card_link_is_navigation_only_and_mobile_safe(self) -> None:
         self.assertNotIn('/api/diagnostics/mrz-robustness', JAVASCRIPT)
-        self.assertNotIn("preventDefault", JAVASCRIPT)
-        self.assertNotIn("window.history", JAVASCRIPT)
-        self.assertNotIn("globalThis.history", JAVASCRIPT)
+        symbol_renderer = JAVASCRIPT.split("function renderSymbol(state)", 1)[1].split(
+            'select.addEventListener("change"', 1
+        )[0]
+        self.assertNotIn("preventDefault", symbol_renderer)
+        self.assertNotIn("window.history", symbol_renderer)
+        self.assertNotIn("globalThis.history", symbol_renderer)
         self.assertIn(".operator-card-link[hidden] { display: none; }", CSS)
         responsive = CSS.split("@media (max-width: 680px)", 1)[1]
         self.assertIn(".symbol-header-actions { justify-content: flex-start; width: 100%; }", responsive)
@@ -215,7 +221,7 @@ class MonitorContractTests(unittest.TestCase):
     def test_historical_migration_uses_canonical_old_authority_provenance(self) -> None:
         tendency_method = REPOSITORY.split(
             "    def location_migration_tendency(self)", 1
-        )[1].split("    def symbols(self)", 1)[0]
+        )[1].split("\n    def ", 1)[0]
         self.assertIn("current_event.event_type = 'MRZ_MIGRATED'", tendency_method)
         self.assertIn("current_event.old_core_mrz_lower", tendency_method)
         self.assertIn("current_event.old_core_mrz_upper", tendency_method)
@@ -389,7 +395,7 @@ class MonitorContractTests(unittest.TestCase):
         chip_handler = JAVASCRIPT.split("async function handleHeatmapChipClick", 1)[1].split(
             "async function selectSymbol", 1
         )[0]
-        self.assertIn("if (!groupTrackingState.enabled)", chip_handler)
+        self.assertIn("if (!isGroupSelectionMode(groupTrackingState))", chip_handler)
         self.assertIn("await selectSymbol(symbol);", chip_handler)
         self.assertIn("toggleGroupSymbol(groupTrackingState, symbol)", chip_handler)
         self.assertIn("renderMonitorOverview();", chip_handler)
@@ -402,29 +408,38 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn('type="checkbox"', toggle)
         self.assertNotIn("checked", toggle)
         self.assertIn('id="groupTrackingStateLabel">Off<', HTML)
-        self.assertIn('id="selectedGroupPanel"', HTML)
-        self.assertIn('aria-labelledby="selected-group-title" aria-live="polite" hidden', HTML)
+        self.assertIn('id="groupTrackingWorkspace"', HTML)
+        self.assertIn('aria-labelledby="tracked-groups-title" aria-live="polite" hidden', HTML)
+        self.assertIn('id="savedGroupSelect" disabled', HTML)
+        self.assertIn('id="newSavedGroup" type="button"', HTML)
+        self.assertIn('id="groupEditor" hidden', HTML)
         self.assertIn('type="checkbox" id="showSelectedOnly"', HTML)
         self.assertIn('id="clearSelectedGroup" type="button"', HTML)
         initial_state = HEATMAP_STATE.split("function createGroupTrackingState", 1)[1].split(
             "function setGroupTrackingEnabled", 1
         )[0]
         self.assertIn("enabled: false", initial_state)
+        self.assertIn('mode: "browse"', initial_state)
+        self.assertIn("activeGroupId: null", initial_state)
         self.assertIn("showSelectedOnly: false", initial_state)
         self.assertIn("selectedSymbols: new Set()", initial_state)
 
-    def test_selected_group_panel_contains_only_requested_current_state_metrics(self) -> None:
-        self.assertIn(">SELECTED GROUP · <", HTML)
+    def test_saved_group_view_contains_the_two_requested_views_and_metrics(self) -> None:
+        self.assertIn('id="savedGroupHeading"', HTML)
         self.assertIn('id="selectedGroupSymbols"', HTML)
+        self.assertIn('id="currentStateTab"', HTML)
+        self.assertIn('aria-selected="true" aria-controls="currentStatePanel"', HTML)
+        self.assertIn('id="migrationPathTab"', HTML)
+        self.assertIn('id="migrationPathPanel"', HTML)
         for field_id in (
-            "selectedGroupBtdCount",
-            "selectedGroupStrCount",
-            "selectedGroupDeepDiscountCount",
-            "selectedGroupShallowDiscountCount",
-            "selectedGroupShallowPremiumCount",
-            "selectedGroupDeepPremiumCount",
-            "selectedGroupActiveCount",
-            "selectedGroupMigratedCount",
+            "groupDeepDiscountCount",
+            "groupShallowDiscountCount",
+            "groupShallowPremiumCount",
+            "groupDeepPremiumCount",
+            "groupActiveMrzCount",
+            "groupHigherCount",
+            "groupLowerCount",
+            "groupNoMigrationCount",
         ):
             with self.subTest(field_id=field_id):
                 self.assertIn(f'id="{field_id}"', HTML)
@@ -454,7 +469,7 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("background-color", group_style)
         self.assertIn(".symbol-chip.evidence-ready.group-selected {", CSS)
 
-    def test_group_filters_clear_and_mode_transitions_are_session_only(self) -> None:
+    def test_group_filters_and_persistent_crud_use_the_saved_group_api(self) -> None:
         self.assertIn('showSelectedOnly.addEventListener("change",', JAVASCRIPT)
         self.assertIn("setShowSelectedOnly(", JAVASCRIPT)
         self.assertIn('clearSelectedGroup.addEventListener("click",', JAVASCRIPT)
@@ -472,42 +487,45 @@ class MonitorContractTests(unittest.TestCase):
         ):
             self.assertNotIn(persistence_api, combined)
         self.assertNotIn("URLSearchParams", HEATMAP_STATE)
-        self.assertNotIn("Save group", combined)
-        self.assertNotIn("Group name", combined)
+        self.assertIn("Save Group", HTML)
+        self.assertIn("Group name", HTML)
+        self.assertIn('requestJson("/api/groups")', JAVASCRIPT)
+        self.assertIn('method: editing ? "PUT" : "POST"', JAVASCRIPT)
+        self.assertIn('{ method: "DELETE" }', JAVASCRIPT)
+        self.assertIn("CREATE TABLE IF NOT EXISTS saved_symbol_groups", SAVED_GROUP_MIGRATION)
+        self.assertNotIn("mrz_events", SAVED_GROUP_MIGRATION)
+        self.assertNotIn("active_mrz", SAVED_GROUP_MIGRATION)
+        self.assertNotIn("observations", SAVED_GROUP_MIGRATION)
 
-    def test_group_tracking_uses_canonical_overview_migration_provenance(self) -> None:
-        symbols_method = REPOSITORY.split("    def symbols(self)", 1)[1].split(
-            "    def health(self)", 1
+    def test_group_tracking_reads_canonical_current_and_migration_state(self) -> None:
+        report = REPOSITORY.split("    def saved_group_report", 1)[1].split(
+            "    def saved_group_migration_path", 1
         )[0]
-        for predicate in (
-            "e.event_type = 'MRZ_MIGRATED'",
-            "e.trigger_event_id = a.activation_event_id",
-            "e.occurred_at = a.activated_at",
-            "e.route_owner = a.route_owner",
-            "e.new_core_mrz_lower = a.core_mrz_lower",
-            "e.new_core_mrz_upper = a.core_mrz_upper",
-            "e.new_core_mrz_midpoint = a.core_mrz_midpoint",
-        ):
-            with self.subTest(predicate=predicate):
-                self.assertIn(predicate, symbols_method)
-        self.assertIn('"has_migrated": bool(anchor["has_migrated"])', symbols_method)
-        group_summary = HEATMAP_STATE.split("function groupTrackingSummary", 1)[1].split(
-            "function visibleSymbolsForGroupTracking", 1
+        self.assertIn("LEFT JOIN active_mrz active", report)
+        self.assertIn("ORDER BY observed_at DESC, received_at DESC, id DESC", report)
+        self.assertIn("event_type = 'MRZ_MIGRATED'", report)
+        self.assertIn("ORDER BY sequence DESC", report)
+        self.assertIn('breadth[direction or "no_migration"] += 1', report)
+        path = REPOSITORY.split("    def saved_group_migration_path", 1)[1].split(
+            "    def symbols(self)", 1
         )[0]
-        self.assertIn("if (hasActiveMrz(symbolState))", group_summary)
-        self.assertIn("symbolState.has_migrated === true", group_summary)
-        self.assertNotIn("migration_pressure", group_summary)
-        self.assertNotIn("successor", group_summary)
+        self.assertIn("events.event_type IN ('MRZ_ACTIVATED', 'MRZ_MIGRATED')", path)
+        self.assertIn("events.occurred_at ASC", path)
+        self.assertNotIn("events.created_at", path)
+        self.assertIn('"location": location', path)
+        self.assertNotIn("classify_ipda_location", path)
+        self.assertNotIn("migration_pressure", report + path)
+        self.assertNotIn("successor", report + path)
 
     def test_group_tracking_mobile_layout_wraps_without_horizontal_overflow(self) -> None:
         self.assertIn("min-height: 44px;", CSS.split(".group-tracking-toggle", 1)[1])
         self.assertIn("flex-wrap: wrap;", CSS.split(".selected-group-symbols", 1)[1])
         self.assertIn("max-width: 100%;", CSS.split(".selected-group-symbols li", 1)[1])
-        self.assertIn(
-            ".selected-group-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }",
-            CSS,
-        )
-        self.assertIn(".selected-group-location-mix { grid-column: 1 / -1; }", CSS)
+        self.assertIn(".migration-path-scroller", CSS)
+        self.assertIn("overflow-x: auto;", CSS.split(".migration-path-scroller", 1)[1])
+        self.assertIn("max-width: 100%;", CSS.split(".migration-path-scroller", 1)[1])
+        self.assertIn(".current-state-panel { grid-template-columns: 1fr; }", CSS)
+        self.assertIn("position: sticky;", CSS.split(".migration-path-row-label", 1)[1])
 
     def test_initial_overview_is_one_bounded_query_without_detail_requests(self) -> None:
         load_symbols = JAVASCRIPT.split("async function loadSymbols()", 1)[1].split(
@@ -651,7 +669,10 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn("max-width: calc(100vw - 16px);", tooltip_style)
         self.assertIn("window.innerWidth", JAVASCRIPT)
         self.assertIn("window.innerHeight", JAVASCRIPT)
-        self.assertNotIn("title =", JAVASCRIPT)
+        heatmap_group = JAVASCRIPT.split("function createLocationGroup", 1)[1].split(
+            "function renderLocationDistribution", 1
+        )[0]
+        self.assertNotIn("title =", heatmap_group)
 
     def test_activity_accessible_name_keeps_full_context(self) -> None:
         self.assertIn("activityTooltipText", HEATMAP_STATE)

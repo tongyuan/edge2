@@ -15,6 +15,7 @@ from pydantic import ValidationError
 from app.activation_feasibility import ActivationFeasibilityService
 from app.concentration import MIN_CLUSTER_OBSERVATIONS
 from app.config import Settings
+from app.group_tracking import SavedGroupInput, SavedGroupNameConflict
 from app.logging_config import configure_logging
 from app.mrz_robustness import MRZRobustnessService
 from app.notifications import (
@@ -301,6 +302,70 @@ def create_app(
             "location_migration_tendency": repository.location_migration_tendency(),
             "symbols": repository.symbols(),
         }
+
+    @application.get("/api/groups")
+    def saved_groups() -> JSONResponse:
+        return JSONResponse(
+            {"groups": repository.saved_groups()},
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
+    @application.post("/api/groups", status_code=201)
+    def create_saved_group(payload: SavedGroupInput) -> JSONResponse:
+        try:
+            group = repository.create_saved_group(payload.name, payload.members)
+        except SavedGroupNameConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        report = repository.saved_group_report(group["id"])
+        return JSONResponse(
+            report,
+            status_code=201,
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
+    @application.get("/api/groups/{group_id}")
+    def saved_group(group_id: int) -> JSONResponse:
+        report = repository.saved_group_report(group_id)
+        if report is None:
+            raise HTTPException(status_code=404, detail="group_not_found")
+        return JSONResponse(
+            report,
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
+    @application.put("/api/groups/{group_id}")
+    def update_saved_group(group_id: int, payload: SavedGroupInput) -> JSONResponse:
+        try:
+            group = repository.update_saved_group(group_id, payload.name, payload.members)
+        except SavedGroupNameConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if group is None:
+            raise HTTPException(status_code=404, detail="group_not_found")
+        report = repository.saved_group_report(group_id)
+        return JSONResponse(
+            report,
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
+    @application.delete("/api/groups/{group_id}")
+    def delete_saved_group(group_id: int) -> JSONResponse:
+        group = repository.delete_saved_group(group_id)
+        if group is None:
+            raise HTTPException(status_code=404, detail="group_not_found")
+        return JSONResponse(
+            {"ok": True, "deleted_group": group},
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
+    @application.get("/api/groups/{group_id}/migration-path")
+    def saved_group_migration_path(group_id: int) -> JSONResponse:
+        path = repository.saved_group_migration_path(group_id)
+        if path is None:
+            raise HTTPException(status_code=404, detail="group_not_found")
+        return JSONResponse(
+            path,
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
 
     @application.get("/api/notifications/config")
     def notification_config() -> JSONResponse:

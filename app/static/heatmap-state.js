@@ -229,6 +229,8 @@
   function createGroupTrackingState() {
     return {
       enabled: false,
+      mode: "browse",
+      activeGroupId: null,
       showSelectedOnly: false,
       selectedSymbols: new Set(),
     };
@@ -239,8 +241,45 @@
     return { ...state, enabled: true };
   }
 
+  function isGroupSelectionMode(state) {
+    return state.enabled && (state.mode === "create" || state.mode === "edit");
+  }
+
+  function beginNewGroup(state) {
+    return {
+      ...state,
+      enabled: true,
+      mode: "create",
+      activeGroupId: null,
+      showSelectedOnly: false,
+      selectedSymbols: new Set(),
+    };
+  }
+
+  function beginEditGroup(state, group) {
+    return {
+      ...state,
+      enabled: true,
+      mode: "edit",
+      activeGroupId: group.id,
+      showSelectedOnly: false,
+      selectedSymbols: new Set(group.members || []),
+    };
+  }
+
+  function openSavedGroup(state, groupId) {
+    return {
+      ...state,
+      enabled: true,
+      mode: "saved",
+      activeGroupId: groupId,
+      showSelectedOnly: false,
+      selectedSymbols: new Set(),
+    };
+  }
+
   function toggleGroupSymbol(state, symbol) {
-    if (!state.enabled || !symbol) return state;
+    if (!isGroupSelectionMode(state) || !symbol) return state;
     const selectedSymbols = new Set(state.selectedSymbols);
     if (selectedSymbols.has(symbol)) selectedSymbols.delete(symbol);
     else selectedSymbols.add(symbol);
@@ -255,7 +294,7 @@
     return {
       ...state,
       showSelectedOnly: Boolean(
-        state.enabled && showSelectedOnly && state.selectedSymbols.size > 0,
+        isGroupSelectionMode(state) && showSelectedOnly && state.selectedSymbols.size > 0,
       ),
     };
   }
@@ -314,8 +353,29 @@
   }
 
   function visibleSymbolsForGroupTracking(symbols, state) {
-    if (!state.enabled || !state.showSelectedOnly) return symbols;
+    if (!isGroupSelectionMode(state) || !state.showSelectedOnly) return symbols;
     return selectedGroupStates(symbols, state.selectedSymbols);
+  }
+
+  function timelinePosition(timestamp, startedAt, endedAt) {
+    const value = Date.parse(timestamp);
+    const start = Date.parse(startedAt);
+    const end = Date.parse(endedAt);
+    if (![value, start, end].every(Number.isFinite) || end <= start) return 0;
+    return Math.min(100, Math.max(0, ((value - start) / (end - start)) * 100));
+  }
+
+  function timelineTicks(startedAt, endedAt, count = 4) {
+    const start = Date.parse(startedAt);
+    const end = Date.parse(endedAt);
+    const total = Number(count);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || !Number.isInteger(total) || total < 2) {
+      return [];
+    }
+    if (end <= start) return [new Date(start).toISOString()];
+    return Array.from({ length: total }, (_, index) => (
+      new Date(start + (((end - start) * index) / (total - 1))).toISOString()
+    ));
   }
 
   const heatmapState = {
@@ -338,12 +398,18 @@
     migrationTendencyPresentation,
     createGroupTrackingState,
     setGroupTrackingEnabled,
+    isGroupSelectionMode,
+    beginNewGroup,
+    beginEditGroup,
+    openSavedGroup,
     toggleGroupSymbol,
     setShowSelectedOnly,
     clearGroupSelection,
     reconcileGroupTrackingState,
     groupTrackingSummary,
     visibleSymbolsForGroupTracking,
+    timelinePosition,
+    timelineTicks,
   };
 
   root.edgeHeatmapState = heatmapState;

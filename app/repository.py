@@ -8,6 +8,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Mapping, Sequence
 
+from psycopg2 import errors
 from psycopg2.extras import Json, RealDictCursor
 
 from app.concentration import (
@@ -26,6 +27,7 @@ from app.domain import (
     Route,
     StructuralLocation,
 )
+from app.group_tracking import SavedGroupNameConflict
 from app.state_engine import replay_symbol
 from app.structure import classify_ipda_location, ipda_directional_context
 from app.validation import ObservationPayload, normalize_symbol
@@ -38,6 +40,18 @@ LOCATION_MIGRATION_KEYS = {
     StructuralLocation.SHALLOW_DISCOUNT.value: "shallow_discount",
     StructuralLocation.SHALLOW_PREMIUM.value: "shallow_premium",
     StructuralLocation.DEEP_PREMIUM.value: "deep_premium",
+}
+GROUP_LOCATION_KEYS = (
+    "deep_discount",
+    "shallow_discount",
+    "shallow_premium",
+    "deep_premium",
+)
+STRUCTURAL_LOCATION_PRESENTATION = {
+    StructuralLocation.DEEP_DISCOUNT.value: ("DD", "Deep Discount"),
+    StructuralLocation.SHALLOW_DISCOUNT.value: ("SD", "Shallow Discount"),
+    StructuralLocation.SHALLOW_PREMIUM.value: ("SP", "Shallow Premium"),
+    StructuralLocation.DEEP_PREMIUM.value: ("DP", "Deep Premium"),
 }
 
 
@@ -770,6 +784,269 @@ class EdgeRepository:
         finally:
             connection.close()
 
+    def saved_groups(self) -> list[dict[str, Any]]:
+        connection = connect(self.database_url)
+        try:
+            connection.set_session(readonly=True)
+            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    """
+                    SELECT id, name, member_symbols, created_at, updated_at
+                    FROM saved_symbol_groups
+                    ORDER BY lower(name) ASC, id ASC
+                    """
+                )
+                return [saved_group_payload(row) for row in cursor.fetchall()]
+        finally:
+            connection.close()
+
+    def create_saved_group(
+        self,
+        name: str,
+        members: Sequence[str],
+    ) -> dict[str, Any]:
+        canonical_members = normalize_saved_group_members(members)
+        try:
+            with transaction(self.database_url) as connection:
+                with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                    cursor.execute(
+                        """
+                        INSERT INTO saved_symbol_groups (name, member_symbols)
+                        VALUES (%s, %s)
+                        RETURNING id, name, member_symbols, created_at, updated_at
+                        """,
+                        (name, canonical_members),
+                    )
+                    return saved_group_payload(cursor.fetchone())
+        except errors.UniqueViolation as exc:
+            raise SavedGroupNameConflict("group name already exists") from exc
+
+    def update_saved_group(
+        self,
+        group_id: int,
+        name: str,
+        members: Sequence[str],
+    ) -> dict[str, Any] | None:
+        canonical_members = normalize_saved_group_members(members)
+        try:
+            with transaction(self.database_url) as connection:
+                with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                    cursor.execute(
+                        """
+                        UPDATE saved_symbol_groups
+                        SET name = %s,
+                            member_symbols = %s,
+                            updated_at = clock_timestamp()
+                        WHERE id = %s
+                        RETURNING id, name, member_symbols, created_at, updated_at
+                        """,
+                        (name, canonical_members, group_id),
+                    )
+                    row = cursor.fetchone()
+                    return saved_group_payload(row) if row else None
+        except errors.UniqueViolation as exc:
+            raise SavedGroupNameConflict("group name already exists") from exc
+
+    def delete_saved_group(self, group_id: int) -> dict[str, Any] | None:
+        with transaction(self.database_url) as connection:
+            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    """
+                    DELETE FROM saved_symbol_groups
+                    WHERE id = %s
+                    RETURNING id, name, member_symbols, created_at, updated_at
+                    """,
+                    (group_id,),
+                )
+                row = cursor.fetchone()
+                return saved_group_payload(row) if row else None
+
+    def saved_group_report(self, group_id: int) -> dict[str, Any] | None:
+        """Return a current cohort snapshot without creating group-owned analytics."""
+        connection = connect(self.database_url)
+        try:
+            connection.set_session(readonly=True, isolation_level="REPEATABLE READ")
+            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    """
+                    SELECT id, name, member_symbols, created_at, updated_at
+                    FROM saved_symbol_groups
+                    WHERE id = %s
+                    """,
+                    (group_id,),
+                )
+                group_row = cursor.fetchone()
+                if group_row is None:
+                    return None
+                group = saved_group_payload(group_row)
+                cursor.execute(
+                    """
+                    WITH members(symbol, member_order) AS (
+                        SELECT selected.symbol, selected.member_order
+                        FROM unnest(%s::text[]) WITH ORDINALITY
+                            AS selected(symbol, member_order)
+                    )
+                    SELECT
+                        members.symbol,
+                        members.member_order,
+                        latest.observation_price,
+                        latest.ipda_20w_high,
+                        latest.ipda_20w_low,
+                        (active.symbol IS NOT NULL) AS has_active_mrz,
+                        active.route_owner,
+                        migration.old_core_mrz_lower,
+                        migration.old_core_mrz_upper,
+                        migration.new_core_mrz_midpoint
+                    FROM members
+                    LEFT JOIN LATERAL (
+                        SELECT observation_price, ipda_20w_high, ipda_20w_low
+                        FROM observations
+                        WHERE symbol = members.symbol
+                        ORDER BY observed_at DESC, received_at DESC, id DESC
+                        LIMIT 1
+                    ) latest ON TRUE
+                    LEFT JOIN active_mrz active ON active.symbol = members.symbol
+                    LEFT JOIN LATERAL (
+                        SELECT
+                            old_core_mrz_lower,
+                            old_core_mrz_upper,
+                            new_core_mrz_midpoint
+                        FROM mrz_events
+                        WHERE symbol = members.symbol
+                          AND event_type = 'MRZ_MIGRATED'
+                        ORDER BY sequence DESC
+                        LIMIT 1
+                    ) migration ON TRUE
+                    ORDER BY members.member_order ASC
+                    """,
+                    (group["members"],),
+                )
+
+                locations = {key: 0 for key in GROUP_LOCATION_KEYS}
+                active_count = 0
+                routes = {"BTD": 0, "STR": 0, "unestablished": 0}
+                breadth = {"higher": 0, "lower": 0, "no_migration": 0}
+                for row in cursor.fetchall():
+                    if row["observation_price"] is not None:
+                        location = current_price_location_value(row)
+                        if location in locations:
+                            locations[location] += 1
+                    if row["has_active_mrz"]:
+                        active_count += 1
+                        route = str(row["route_owner"])
+                        if route in ("BTD", "STR"):
+                            routes[route] += 1
+                    else:
+                        routes["unestablished"] += 1
+                    direction = migration_direction(row)
+                    breadth[direction or "no_migration"] += 1
+
+                return {
+                    **group,
+                    "current_state": {
+                        "location": locations,
+                        "active_mrz": {
+                            "count": active_count,
+                            "total": len(group["members"]),
+                        },
+                        "migration_breadth": breadth,
+                        "route": routes,
+                    },
+                }
+        finally:
+            connection.close()
+
+    def saved_group_migration_path(self, group_id: int) -> dict[str, Any] | None:
+        """Read the current canonical authority chain using domain chronology."""
+        connection = connect(self.database_url)
+        try:
+            connection.set_session(readonly=True, isolation_level="REPEATABLE READ")
+            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    """
+                    SELECT id, name, member_symbols, created_at, updated_at
+                    FROM saved_symbol_groups
+                    WHERE id = %s
+                    """,
+                    (group_id,),
+                )
+                group_row = cursor.fetchone()
+                if group_row is None:
+                    return None
+                group = saved_group_payload(group_row)
+                cursor.execute(
+                    """
+                    WITH members(symbol, member_order) AS (
+                        SELECT selected.symbol, selected.member_order
+                        FROM unnest(%s::text[]) WITH ORDINALITY
+                            AS selected(symbol, member_order)
+                    )
+                    SELECT
+                        members.symbol,
+                        members.member_order,
+                        events.event_key,
+                        events.sequence,
+                        events.event_type,
+                        events.route_owner,
+                        events.occurred_at,
+                        events.old_core_mrz_lower,
+                        events.old_core_mrz_upper,
+                        events.new_core_mrz_lower,
+                        events.new_core_mrz_upper,
+                        events.new_core_mrz_midpoint,
+                        events.structural_location
+                    FROM members
+                    LEFT JOIN mrz_events events
+                        ON events.symbol = members.symbol
+                       AND events.event_type IN ('MRZ_ACTIVATED', 'MRZ_MIGRATED')
+                    ORDER BY
+                        members.member_order ASC,
+                        events.occurred_at ASC,
+                        events.sequence ASC
+                    """,
+                    (group["members"],),
+                )
+                states_by_symbol = {symbol: [] for symbol in group["members"]}
+                timestamps: list[datetime] = []
+                for row in cursor.fetchall():
+                    if row["event_key"] is None:
+                        continue
+                    location = str(row["structural_location"])
+                    code, label = STRUCTURAL_LOCATION_PRESENTATION.get(
+                        location,
+                        ("—", "Unavailable"),
+                    )
+                    occurred_at = row["occurred_at"]
+                    timestamps.append(occurred_at)
+                    states_by_symbol[str(row["symbol"])].append(
+                        {
+                            "event_key": str(row["event_key"]),
+                            "event_type": str(row["event_type"]),
+                            "occurred_at": iso(occurred_at),
+                            "route_owner": str(row["route_owner"]),
+                            "location": location,
+                            "location_code": code,
+                            "location_label": label,
+                            "lower": number(row["new_core_mrz_lower"]),
+                            "upper": number(row["new_core_mrz_upper"]),
+                            "midpoint": number(row["new_core_mrz_midpoint"]),
+                            "direction": migration_direction(row),
+                        }
+                    )
+                return {
+                    **group,
+                    "timeline": {
+                        "started_at": iso(min(timestamps)) if timestamps else None,
+                        "ended_at": iso(max(timestamps)) if timestamps else None,
+                    },
+                    "paths": [
+                        {"symbol": symbol, "states": states_by_symbol[symbol]}
+                        for symbol in group["members"]
+                    ],
+                }
+        finally:
+            connection.close()
+
     def symbols(self) -> list[dict[str, Any]]:
         connection = connect(self.database_url)
         try:
@@ -936,6 +1213,46 @@ class EdgeRepository:
 
 def number(value: Any) -> float | None:
     return None if value is None else float(value)
+
+
+def saved_group_payload(row: Mapping[str, Any]) -> dict[str, Any]:
+    members = [str(symbol) for symbol in row["member_symbols"]]
+    return {
+        "id": int(row["id"]),
+        "name": str(row["name"]),
+        "members": members,
+        "member_count": len(members),
+        "created_at": iso(row["created_at"]),
+        "updated_at": iso(row["updated_at"]),
+    }
+
+
+def normalize_saved_group_members(members: Sequence[str]) -> list[str]:
+    canonical_members = list(dict.fromkeys(normalize_symbol(symbol) for symbol in members))
+    if not canonical_members:
+        raise ValueError("at least one member is required")
+    if len(canonical_members) > 100:
+        raise ValueError("a saved group cannot contain more than 100 members")
+    return canonical_members
+
+
+def migration_direction(row: Mapping[str, Any]) -> str | None:
+    if (
+        row.get("old_core_mrz_lower") is None
+        or row.get("old_core_mrz_upper") is None
+        or row.get("new_core_mrz_midpoint") is None
+    ):
+        return None
+    old_midpoint = (
+        Decimal(row["old_core_mrz_lower"])
+        + Decimal(row["old_core_mrz_upper"])
+    ) / Decimal("2")
+    new_midpoint = Decimal(row["new_core_mrz_midpoint"])
+    if new_midpoint > old_midpoint:
+        return "higher"
+    if new_midpoint < old_midpoint:
+        return "lower"
+    return None
 
 
 def iso(value: datetime | None) -> str | None:

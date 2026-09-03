@@ -73,6 +73,80 @@ class APIIntegrationTests(unittest.TestCase):
             },
         )
 
+    def test_saved_group_crud_is_persistent_read_only_and_canonical(self) -> None:
+        response = self.client.post(
+            "/api/groups",
+            json={
+                "name": "MAG7",
+                "members": [
+                    "NASDAQ:aapl", "amzn", "GOOG", "META", "MSFT", "NVDA", "TSLA",
+                ],
+            },
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.headers["cache-control"], "no-store, max-age=0")
+        group = response.json()
+        self.assertEqual(
+            group["members"],
+            ["AAPL", "AMZN", "GOOG", "META", "MSFT", "NVDA", "TSLA"],
+        )
+        self.assertEqual(group["current_state"]["active_mrz"], {"count": 0, "total": 7})
+        self.assertEqual(
+            group["current_state"]["migration_breadth"],
+            {"higher": 0, "lower": 0, "no_migration": 7},
+        )
+
+        persisted = self.client.get("/api/groups")
+        self.assertEqual(persisted.status_code, 200)
+        self.assertEqual(persisted.json()["groups"][0]["name"], "MAG7")
+        reopened = self.client.get(f"/api/groups/{group['id']}")
+        self.assertEqual(reopened.status_code, 200)
+        self.assertEqual(reopened.json()["members"], group["members"])
+        path = self.client.get(f"/api/groups/{group['id']}/migration-path")
+        self.assertEqual(path.status_code, 200)
+        self.assertEqual(len(path.json()["paths"]), 7)
+        self.assertTrue(all(not item["states"] for item in path.json()["paths"]))
+
+        renamed = self.client.put(
+            f"/api/groups/{group['id']}",
+            json={"name": "Magnificent 7", "members": group["members"][:-1]},
+        )
+        self.assertEqual(renamed.status_code, 200)
+        self.assertEqual(renamed.json()["name"], "Magnificent 7")
+        self.assertEqual(renamed.json()["member_count"], 6)
+        conflict = self.client.post(
+            "/api/groups",
+            json={"name": "magnificent 7", "members": ["AAPL"]},
+        )
+        self.assertEqual(conflict.status_code, 409)
+
+        connection = connect(self.database_url)
+        try:
+            with connection.cursor() as cursor:
+                for table in ("observations", "active_mrz", "mrz_events"):
+                    cursor.execute(f"SELECT COUNT(*) FROM {table}")
+                    self.assertEqual(cursor.fetchone()[0], 0)
+        finally:
+            connection.close()
+
+        deleted = self.client.delete(f"/api/groups/{group['id']}")
+        self.assertEqual(deleted.status_code, 200)
+        self.assertEqual(deleted.json()["deleted_group"]["name"], "Magnificent 7")
+        self.assertEqual(self.client.get("/api/groups").json(), {"groups": []})
+
+    def test_saved_group_validation_and_missing_ids_fail_safely(self) -> None:
+        self.assertEqual(
+            self.client.post("/api/groups", json={"name": "", "members": ["AAPL"]}).status_code,
+            422,
+        )
+        self.assertEqual(
+            self.client.post("/api/groups", json={"name": "MAG7", "members": []}).status_code,
+            422,
+        )
+        self.assertEqual(self.client.get("/api/groups/999").status_code, 404)
+        self.assertEqual(self.client.get("/api/groups/999/migration-path").status_code, 404)
+        self.assertEqual(self.client.delete("/api/groups/999").status_code, 404)
+
     def test_monitor_shell_uses_current_terminology_and_is_not_cached(self) -> None:
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)

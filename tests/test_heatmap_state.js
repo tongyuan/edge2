@@ -19,12 +19,18 @@ const {
   migrationTendencyPresentation,
   createGroupTrackingState,
   setGroupTrackingEnabled,
+  isGroupSelectionMode,
+  beginNewGroup,
+  beginEditGroup,
+  openSavedGroup,
   toggleGroupSymbol,
   setShowSelectedOnly,
   clearGroupSelection,
   reconcileGroupTrackingState,
   groupTrackingSummary,
   visibleSymbolsForGroupTracking,
+  timelinePosition,
+  timelineTicks,
 } = require("../app/static/heatmap-state.js");
 
 assert.deepEqual(primaryLocationKeys, [
@@ -227,6 +233,11 @@ assert.equal(trackingState.selectedSymbols.size, 0);
 trackingState = toggleGroupSymbol(trackingState, "ALPHA");
 assert.equal(trackingState.selectedSymbols.size, 0, "chip membership cannot change while off");
 trackingState = setGroupTrackingEnabled(trackingState, true);
+assert.equal(isGroupSelectionMode(trackingState), false, "browse mode does not select chips");
+trackingState = toggleGroupSymbol(trackingState, "ALPHA");
+assert.equal(trackingState.selectedSymbols.size, 0, "saved-group browsing preserves navigation");
+trackingState = beginNewGroup(trackingState);
+assert.equal(isGroupSelectionMode(trackingState), true, "new-group mode enables multi-select");
 trackingState = toggleGroupSymbol(trackingState, "ALPHA");
 trackingState = toggleGroupSymbol(trackingState, "BETA");
 assert.deepEqual([...trackingState.selectedSymbols], ["ALPHA", "BETA"],
@@ -279,6 +290,29 @@ trackingState = setGroupTrackingEnabled(trackingState, false);
 assert.equal(trackingState.enabled, false);
 assert.equal(trackingState.selectedSymbols.size, 0, "turning Group Tracking off clears the cohort");
 assert.equal(trackingState.showSelectedOnly, false);
+trackingState = beginEditGroup(trackingState, { id: 7, members: ["ALPHA", "BETA"] });
+assert.equal(trackingState.activeGroupId, 7);
+assert.deepEqual([...trackingState.selectedSymbols], ["ALPHA", "BETA"]);
+trackingState = openSavedGroup(trackingState, 7);
+assert.equal(trackingState.mode, "saved");
+assert.equal(isGroupSelectionMode(trackingState), false);
+assert.equal(trackingState.selectedSymbols.size, 0);
+
+assert.equal(
+  timelinePosition("2026-08-20T12:30:00Z", "2026-08-20T12:00:00Z", "2026-08-20T13:00:00Z"),
+  50,
+  "migration states use domain-time positions",
+);
+assert.deepEqual(
+  timelineTicks("2026-08-20T12:00:00Z", "2026-08-20T15:00:00Z", 4),
+  [
+    "2026-08-20T12:00:00.000Z",
+    "2026-08-20T13:00:00.000Z",
+    "2026-08-20T14:00:00.000Z",
+    "2026-08-20T15:00:00.000Z",
+  ],
+  "timeline ticks span canonical chronology",
+);
 
 const premiumActivity = routeAlignedActivity({
   symbol: "ETHUSDT",

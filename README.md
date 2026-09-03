@@ -137,6 +137,12 @@ POST /webhook/tradingview
 GET  /api/symbols
 GET  /api/symbols/{symbol}
 GET  /api/symbols/{symbol}/mrz
+GET  /api/groups
+POST /api/groups
+GET  /api/groups/{group_id}
+PUT  /api/groups/{group_id}
+DELETE /api/groups/{group_id}
+GET  /api/groups/{group_id}/migration-path
 GET  /api/diagnostics/activation-feasibility
 GET  /api/diagnostics/mrz-robustness
 GET  /api/notifications/config
@@ -165,6 +171,14 @@ above-range, and unavailable groups. Symbols remain visible without an active
 MRZ, and their chips reuse the existing selected-symbol detail loader. A small
 filled dot marks only overview rows whose authoritative `mrz_status` is
 `active`; it never changes bucket placement or exposes route ownership.
+
+Group Tracking saves named symbol cohorts without owning any market state.
+`Current State` derives its location distribution from the same latest-observation
+classifier, counts authority directly from `active_mrz`, and classifies each
+member by its latest canonical `MRZ_MIGRATED` midpoint change. `Migration Path`
+reads the current `MRZ_ACTIVATED`/`MRZ_MIGRATED` chain by `occurred_at` and uses
+the structural location persisted on each historical event. Saving, editing, or
+deleting a group never writes observations, active authority, or MRZ events.
 
 The selected detail renders SOURCE, ACTIVE MRZ, MRZ LOCATION, CURRENT LOCATION,
 active-core supporting evidence, latest observation, and MRZ status. Both
@@ -212,11 +226,12 @@ The PostgreSQL 16 database revolves around:
 - `web_push_notifications` — deduplicated logical activation and migration notifications.
 - `web_push_delivery_attempts` — isolated per-subscription delivery outcomes.
 - `web_push_notification_cutovers` — replay-safe migration notification cutover.
+- `saved_symbol_groups` — named canonical symbol cohorts only; analytics remain derived.
 
 Migration `001_initial.sql` builds the isolated schema. Additive migrations
-`002–006` add the overview index, supporting count, nullable immutable
+`002–007` add the overview index, supporting count, nullable immutable
 formation evidence, downstream Web Push tables, and migration-notification
-provenance/cutover state. No 4.2 table or historical
+provenance/cutover state, plus saved cohort definitions. No 4.2 table or historical
 record is read. See [`docs/web-push.md`](docs/web-push.md) for notification
 configuration, safety, deployment, and iPhone verification.
 
