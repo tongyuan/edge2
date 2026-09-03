@@ -439,9 +439,6 @@ if (typeof document !== "undefined") {
         "aria-pressed",
         String(filterMode === "migrated"),
       );
-      if (!requestedCardFocused) {
-        requestedCardFocused = focusOperatorCard(activeReports, requestedSymbol);
-      }
     }
 
     function selectFilter(nextFilterMode) {
@@ -465,6 +462,9 @@ if (typeof document !== "undefined") {
         renderReports();
         status.hidden = true;
         content.hidden = false;
+        if (!requestedCardFocused) {
+          requestedCardFocused = focusOperatorCard(activeReports, requestedSymbol);
+        }
       } catch (error) {
         status.classList.add("error");
         status.textContent = `Unable to generate the report. ${error.message}`;

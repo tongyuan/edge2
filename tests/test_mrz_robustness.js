@@ -5,6 +5,7 @@ const {
   durationText,
   directionText,
   filterReports,
+  focusOperatorCard,
   hasValidMigrationProvenance,
   midpointValue,
   migrationEqmValue,
@@ -35,6 +36,37 @@ assert.equal(operatorCardSymbolFromSearch("?symbol=BTCUSDT"), "BTCUSDT");
 assert.equal(operatorCardSymbolFromSearch("?symbol=NASDAQ%3ANDX"), "NASDAQ:NDX");
 assert.equal(operatorCardSymbolFromSearch(""), null);
 
+function fakeOperatorCard(symbol) {
+  return {
+    dataset: { symbol },
+    scrollOptions: null,
+    focusOptions: null,
+    scrollIntoView(options) { this.scrollOptions = options; },
+    focus(options) { this.focusOptions = options; },
+  };
+}
+
+const btcCard = fakeOperatorCard("BTCUSDT");
+const btcDerivativeCard = fakeOperatorCard("BTCUSDT.P");
+const ethCard = fakeOperatorCard("ETHUSDT");
+const operatorCardContainer = {
+  querySelectorAll(selector) {
+    assert.equal(selector, ".mrz-report");
+    return [btcDerivativeCard, ethCard, btcCard];
+  },
+};
+assert.equal(focusOperatorCard(operatorCardContainer, "BTCUSDT"), true);
+assert.deepEqual(btcCard.scrollOptions, { block: "start" });
+assert.deepEqual(btcCard.focusOptions, { preventScroll: true });
+assert.equal(btcDerivativeCard.scrollOptions, null, "similar symbols must not match");
+assert.equal(ethCard.scrollOptions, null);
+
+assert.equal(focusOperatorCard(operatorCardContainer, "ETHUSDT"), true);
+assert.deepEqual(ethCard.scrollOptions, { block: "start" });
+assert.deepEqual(ethCard.focusOptions, { preventScroll: true });
+assert.equal(focusOperatorCard(operatorCardContainer, "MISSING"), false);
+assert.equal(focusOperatorCard(operatorCardContainer, null), false);
+
 const operationCardSource = fs.readFileSync(
   require.resolve("../app/static/mrz-robustness.js"),
   "utf8",
@@ -63,6 +95,24 @@ assert.match(
   operationCardHtml,
   /id="filterMigrated"[^>]*aria-pressed="false"[^>]*>Migrated only</,
 );
+assert.match(
+  operationCardSource,
+  /reports = report\.active_mrzs;\s*renderReports\(\);/,
+  "the async response must populate report state before rendering",
+);
+const reportLoadSource = operationCardSource.split("async function loadReport()", 2)[1];
+const renderAfterLoadIndex = reportLoadSource.indexOf("renderReports();");
+const revealAfterRenderIndex = reportLoadSource.indexOf("content.hidden = false;");
+const focusAfterRevealIndex = reportLoadSource.indexOf(
+  "focusOperatorCard(activeReports, requestedSymbol)",
+);
+assert.ok(
+  renderAfterLoadIndex >= 0
+    && renderAfterLoadIndex < revealAfterRenderIndex
+    && revealAfterRenderIndex < focusAfterRevealIndex,
+  "target scrolling must run after asynchronous render and after the report becomes visible",
+);
+assert.doesNotMatch(operationCardSource, /setTimeout\(/);
 
 const btcReport = {
   symbol: "BTCUSDT",
