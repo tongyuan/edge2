@@ -157,8 +157,9 @@ GET  /diagnostics/mrz-robustness
 The product surfaces have deliberately separate responsibilities:
 
 - **MRZ Monitor** shows production WHO + WHERE and the current authoritative MRZ.
-- **Activation Feasibility** studies initial formation, historical qualification,
-  and pre-activation near misses without changing production state.
+- **MRZ Formation Diagnostics** shows the current production formation rule,
+  observed coverage, first qualifications, and pre-activation near misses without
+  changing production state.
 - **MRZ Operation Card** explains post-activation robustness, migration pressure,
   successor watch, and discretionary operator evidence.
 - **Pine strategy tool** handles execution only after the operator chooses which

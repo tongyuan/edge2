@@ -17,7 +17,7 @@ CSS = (STATIC / "diagnostics-nav.css").read_text(encoding="utf-8")
 
 IMPLEMENTED_ITEMS = [
     ("/diagnostics/mrz-robustness", "MRZ Operation Card"),
-    ("/diagnostics/activation-feasibility", "Activation Feasibility"),
+    ("/diagnostics/activation-feasibility", "MRZ Formation Diagnostics"),
 ]
 
 
@@ -73,7 +73,7 @@ class DiagnosticsNavigationContractTests(unittest.TestCase):
     def test_menu_order_excludes_hidden_robustness_report(self) -> None:
         expected = [
             "MRZ Operation Card",
-            "Activation Feasibility",
+            "MRZ Formation Diagnostics",
         ]
         for name, html in PAGES.items():
             menu = menu_fragment(html)
@@ -91,7 +91,7 @@ class DiagnosticsNavigationContractTests(unittest.TestCase):
     def test_each_existing_diagnostic_page_marks_its_current_child(self) -> None:
         expected_active_label = {
             "operation_card": "MRZ Operation Card",
-            "activation": "Activation Feasibility",
+            "activation": "MRZ Formation Diagnostics",
         }
         self.assertNotIn('aria-current="page"', menu_fragment(PAGES["monitor"]))
         for name, label in expected_active_label.items():

@@ -3,9 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="EDGE 2.0 activation feasibility diagnostic" />
-    <title>EDGE 2.0 · Activation Feasibility</title>
-    <link rel="stylesheet" href="/static/activation-feasibility.css?v=algorithm-a-only-20260828" />
+    <meta name="description" content="EDGE 2.0 MRZ formation diagnostics" />
+    <title>EDGE 2.0 · MRZ Formation Diagnostics</title>
+    <link rel="stylesheet" href="/static/activation-feasibility.css?v=formation-diagnostics-20260904" />
     <link rel="stylesheet" href="/static/diagnostics-nav.css?v=diagnostics-menu-20260827" />
   </head>
   <body>
@@ -13,8 +13,8 @@
       <header class="report-header">
         <div>
           <p class="eyebrow">EDGE 2.0 · DIAGNOSTIC</p>
-          <h1>Activation Feasibility</h1>
-          <p class="subtitle">Live read-only replay of stored route observations</p>
+          <h1>MRZ Formation Diagnostics</h1>
+          <p class="subtitle">Current production formation evidence from stored route observations</p>
         </div>
         <div class="header-actions">
           <nav class="page-nav operator-navigation" aria-label="Operator navigation" data-diagnostics-nav>
@@ -25,7 +25,7 @@
               </button>
               <div class="diagnostics-dropdown" id="activation-diagnostics-menu" role="menu" data-diagnostics-menu hidden>
                 <a href="/diagnostics/mrz-robustness" role="menuitem">MRZ Operation Card</a>
-                <a href="/diagnostics/activation-feasibility" role="menuitem" aria-current="page">Activation Feasibility</a>
+                <a href="/diagnostics/activation-feasibility" role="menuitem" aria-current="page">MRZ Formation Diagnostics</a>
               </div>
             </div>
           </nav>
@@ -38,7 +38,7 @@
         Results are preliminary while the stored sample remains small.
       </aside>
       <section class="status-panel" id="reportStatus" aria-live="polite">
-        Calculating the latest report…
+        Calculating the latest diagnostics…
       </section>
 
       <div id="reportContent" hidden>
@@ -54,59 +54,37 @@
           Preliminary sample: fewer than 30 production-eligible symbol-route histories are available.
         </aside>
 
-        <section class="report-section diagnosis-section" aria-labelledby="diagnosis-title">
-          <div class="section-heading">
-            <div><p class="eyebrow">DETERMINISTIC DIAGNOSIS</p><h2 id="diagnosis-title">What the current sample says</h2></div>
-          </div>
-          <div id="diagnosisSummaryContent"></div>
-        </section>
-
-        <section class="report-section" aria-labelledby="overall-title">
-          <div class="section-heading">
-            <div><p class="eyebrow">15 SCENARIOS</p><h2 id="overall-title">Algorithm A scenario results</h2></div>
-          </div>
-          <h3>Algorithm A · Price-space recognition</h3>
-          <div class="table-wrap"><table id="summaryA"></table></div>
-        </section>
-
-        <section class="report-section" aria-labelledby="matrix-title">
-          <div class="section-heading">
-            <div><p class="eyebrow">SENSITIVITY</p><h2 id="matrix-title">Activation matrices</h2></div>
-          </div>
-          <h3>Algorithm A</h3>
-          <div class="table-wrap"><table id="matrixA" class="activation-matrix"></table></div>
-        </section>
-
-        <section class="report-section diagnosis-section" aria-labelledby="decision-support-title">
-          <div class="section-heading">
-            <div><p class="eyebrow">DECISION SUPPORT</p><h2 id="decision-support-title">Candidate Policy Evaluation</h2></div>
-          </div>
-          <div id="decisionSupportContent"></div>
-        </section>
-
-        <section class="report-section" aria-labelledby="audit-title">
-          <div class="section-heading">
-            <div><p class="eyebrow">AUDIT DETAIL</p><h2 id="audit-title">Algorithm A scenario detail</h2></div>
-            <span id="auditCount">0 rows</span>
-          </div>
-          <form class="filters" id="auditFilters">
-            <label>Symbol<select id="symbolFilter"><option value="">All</option></select></label>
-            <label>Route<select id="routeFilter"><option value="">All</option><option>BTD</option><option>STR</option></select></label>
-            <label>Minimum<select id="minimumFilter"><option value="">All</option><option>2</option><option>3</option><option>4</option></select></label>
-            <label>Allowance<select id="allowanceFilter"><option value="">All</option><option value="1">1%</option><option value="2">2%</option><option value="3">3%</option><option value="4">4%</option><option value="5">5%</option></select></label>
-            <label>Result<select id="classificationFilter"><option value="">All</option><option>QUALIFIED</option><option>NEAR_MISS</option><option>DISPERSED</option><option>INSUFFICIENT</option></select></label>
-          </form>
-          <div class="table-wrap audit-wrap"><table id="auditTable"></table></div>
-        </section>
-
-        <section class="production-marker" aria-label="Production activation summary">
-          <span>PRODUCTION ACTIVATION SUMMARY</span>
+        <section class="production-marker" aria-labelledby="production-title">
+          <span>CURRENT PRODUCTION RULE</span>
+          <h2 id="production-title">Production rule</h2>
           <div id="productionContent">—</div>
+        </section>
+
+        <section class="report-section" aria-labelledby="near-miss-title">
+          <div class="section-heading">
+            <div><p class="eyebrow">CURRENT STATE</p><h2 id="near-miss-title">Current production near misses</h2></div>
+          </div>
+          <div id="currentNearMissContent"></div>
+        </section>
+
+        <section class="report-section" aria-labelledby="qualification-title">
+          <div class="section-heading">
+            <div><p class="eyebrow">OBSERVED FORMATIONS</p><h2 id="qualification-title">Qualified under production rule</h2></div>
+          </div>
+          <p class="section-description">Historical first qualifications in the stored sample; these cards do not assert current active-MRZ authority.</p>
+          <div id="qualificationContent"></div>
+        </section>
+
+        <section class="report-section sample-section" aria-labelledby="sample-title">
+          <div class="section-heading">
+            <div><p class="eyebrow">CURRENT SAMPLE</p><h2 id="sample-title">Current production sample</h2></div>
+          </div>
+          <div id="productionSampleContent"></div>
         </section>
       </div>
     </main>
     <script src="/static/diagnostics-nav.js?v=diagnostics-menu-20260827" defer></script>
     <script src="/static/operator-time.js?v=operator-clarity-20260824" defer></script>
-    <script src="/static/activation-feasibility.js?v=algorithm-a-only-20260828" defer></script>
+    <script src="/static/activation-feasibility.js?v=formation-diagnostics-20260904" defer></script>
   </body>
 </html>
