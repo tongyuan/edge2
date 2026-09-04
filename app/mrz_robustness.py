@@ -28,6 +28,12 @@ RobustnessInputProvider = Callable[
 ]
 
 
+MIN_MEANINGFUL_OUTSIDE_ENVELOPE_OBSERVATIONS = 2
+MIN_DIRECTIONAL_ENVELOPE_LEAD = 2
+DIRECTIONAL_ENVELOPE_SHARE_NUMERATOR = 3
+DIRECTIONAL_ENVELOPE_SHARE_DENOMINATOR = 5
+
+
 def iso(value: datetime | None) -> str | None:
     return None if value is None else value.isoformat().replace("+00:00", "Z")
 
@@ -96,15 +102,81 @@ def structural_location_label(value: str) -> str:
     return labels[value]
 
 
-def directional_evidence(
-    upper_count: int,
-    lower_count: int,
-) -> tuple[str, str]:
-    if upper_count > lower_count:
-        return "UP", "Upward"
-    if lower_count > upper_count:
-        return "DOWN", "Downward"
-    return "NEUTRAL", "Neutral"
+@dataclass(frozen=True, slots=True)
+class PostActivationState:
+    status: str
+    label: str
+    reason: str
+    direction: str
+    direction_label: str
+
+
+def classify_post_activation_state(
+    total_observation_count: int,
+    above_envelope_count: int,
+    below_envelope_count: int,
+) -> PostActivationState:
+    """Interpret envelope activity without changing migration eligibility."""
+    if total_observation_count == 0:
+        return PostActivationState(
+            status="NO_EVIDENCE",
+            label="No evidence",
+            reason="No post-activation observations are available to assess behavior.",
+            direction="NEUTRAL",
+            direction_label="Neutral",
+        )
+
+    outside_count = above_envelope_count + below_envelope_count
+    if outside_count < MIN_MEANINGFUL_OUTSIDE_ENVELOPE_OBSERVATIONS:
+        reason = (
+            "No post-activation observation is beyond the active MRZ migration envelope."
+            if outside_count == 0
+            else (
+                "Only one post-activation observation is beyond the active MRZ "
+                "migration envelope; this is not enough to establish directional pressure."
+            )
+        )
+        return PostActivationState(
+            status="STABLE",
+            label="Contained / Quiet",
+            reason=reason,
+            direction="NEUTRAL",
+            direction_label="Neutral",
+        )
+
+    def materially_dominates(dominant_count: int, other_count: int) -> bool:
+        return (
+            dominant_count - other_count >= MIN_DIRECTIONAL_ENVELOPE_LEAD
+            and dominant_count * DIRECTIONAL_ENVELOPE_SHARE_DENOMINATOR
+            >= outside_count * DIRECTIONAL_ENVELOPE_SHARE_NUMERATOR
+        )
+
+    if materially_dominates(above_envelope_count, below_envelope_count):
+        return PostActivationState(
+            status="UNDER_PRESSURE",
+            label="Upward Pressure",
+            reason="Above-envelope activity materially dominates below-envelope activity.",
+            direction="UP",
+            direction_label="Upward",
+        )
+    if materially_dominates(below_envelope_count, above_envelope_count):
+        return PostActivationState(
+            status="UNDER_PRESSURE",
+            label="Downward Pressure",
+            reason="Below-envelope activity materially dominates above-envelope activity.",
+            direction="DOWN",
+            direction_label="Downward",
+        )
+    return PostActivationState(
+        status="STABLE",
+        label="Two-sided / Consolidating",
+        reason=(
+            "Post-activation observations are distributed on both sides of the active "
+            "MRZ with no meaningful directional dominance."
+        ),
+        direction="NEUTRAL",
+        direction_label="Neutral",
+    )
 
 
 def displacement_evidence(
@@ -297,10 +369,16 @@ class MRZRobustnessService:
             if observation.observation_price < active.lower_migration_boundary
         )
         outside_envelope = (*below_lower_envelope, *above_upper_envelope)
-        pressure_direction, pressure_direction_label = directional_evidence(
+        post_activation_state = classify_post_activation_state(
+            total,
             len(above_upper_envelope),
             len(below_lower_envelope),
         )
+        pressure_status = post_activation_state.status
+        pressure_label = post_activation_state.label
+        pressure_reason = post_activation_state.reason
+        pressure_direction = post_activation_state.direction
+        pressure_direction_label = post_activation_state.direction_label
 
         midpoint_displacements = tuple(
             (observation.observation_price - active.core_mrz_midpoint)
@@ -449,40 +527,13 @@ class MRZRobustnessService:
             operational_migration_eligibility_label = "Not assessed"
 
         if total == 0:
-            pressure_status = "NO_EVIDENCE"
-            pressure_label = "No evidence"
-            pressure_reason = (
-                "No post-activation observations are available to assess migration pressure."
-            )
-        elif outside_envelope:
-            pressure_status = "UNDER_PRESSURE"
-            pressure_label = "Under Pressure"
-            pressure_reason = (
-                "External observations were detected outside the active MRZ envelope."
-            )
-        else:
-            pressure_status = "STABLE"
-            pressure_label = "Stable"
-            pressure_reason = (
-                "No post-activation observation has moved outside the active MRZ envelope."
-            )
-
-        if total == 0:
             robustness_status = "NOT_YET_ASSESSABLE"
             robustness_label = "Not yet assessable"
             robustness_reason = "No post-activation observations are available yet."
-        elif pressure_status == "STABLE":
-            robustness_status = "STABLE"
-            robustness_label = "Stable"
-            robustness_reason = (
-                "No post-activation observation is beyond the active MRZ migration envelope."
-            )
         else:
-            robustness_status = "UNDER_PRESSURE"
-            robustness_label = "Under Pressure"
-            robustness_reason = (
-                "Post-activation observations are present beyond the active MRZ migration envelope."
-            )
+            robustness_status = pressure_status
+            robustness_label = pressure_label
+            robustness_reason = pressure_reason
 
         location_label = structural_location_label(active.structural_location.value)
         structural_role_status = (
@@ -519,12 +570,12 @@ class MRZRobustnessService:
             )
         if total == 0:
             summary_detail = (
-                "No post-activation observations are available to assess pressure or "
+                "No post-activation observations are available to assess behavior or "
                 "successor formation."
             )
         elif pressure_direction == "UP":
             summary_detail = (
-                "Post-activation observations are exerting upward pressure. "
+                "Above-envelope activity materially dominates. "
                 + (
                     "A qualifying successor candidate is detected."
                     if successor_candidate_detected
@@ -533,17 +584,17 @@ class MRZRobustnessService:
             )
         elif pressure_direction == "DOWN":
             summary_detail = (
-                "Post-activation observations are exerting downward pressure. "
+                "Below-envelope activity materially dominates. "
                 + (
                     "A qualifying successor candidate is detected."
                     if successor_candidate_detected
                     else "No qualifying successor candidate is detected."
                 )
             )
-        elif outside_envelope:
+        elif pressure_label == "Two-sided / Consolidating":
             summary_detail = (
-                "Post-activation observations are beyond both sides of the migration "
-                "envelope without a dominant pressure direction. "
+                "Post-activation observations are distributed on both sides of the active "
+                "MRZ with no meaningful directional dominance. "
                 + (
                     "A qualifying successor candidate is detected."
                     if successor_candidate_detected
@@ -552,8 +603,13 @@ class MRZRobustnessService:
             )
         else:
             summary_detail = (
-                "No post-activation observation is beyond the migration envelope, and "
-                "no qualifying successor candidate is detected."
+                pressure_reason
+                + " "
+                + (
+                    "A qualifying successor candidate is detected."
+                    if successor_candidate_detected
+                    else "No qualifying successor candidate is detected."
+                )
             )
 
         return {

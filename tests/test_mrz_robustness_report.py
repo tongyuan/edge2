@@ -207,7 +207,7 @@ class MRZRobustnessReportTests(unittest.TestCase):
         self.assertEqual(production["lifecycle"]["time_to_migration_seconds"], "4")
         self.assertTrue(production["lifecycle"]["early_migration"])
         self.assertEqual(production["migration_pressure"]["status"], "UNDER_PRESSURE")
-        self.assertEqual(production["migration_pressure"]["time_to_first_pressure_seconds"], "1")
+        self.assertEqual(production["migration_pressure"]["time_to_first_pressure_seconds"], "2")
         self.assertEqual(production["successor_watch"]["status"], "SUCCESSOR_CANDIDATE")
         self.assertEqual(production["successor_watch"]["route"], "BTD")
         self.assertEqual(production["successor_watch"]["direction"], "UP")

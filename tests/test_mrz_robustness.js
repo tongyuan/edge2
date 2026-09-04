@@ -145,8 +145,8 @@ const btcReport = {
   },
   post_activation_robustness: {
     status: "UNDER_PRESSURE",
-    label: "Under Pressure",
-    reason: "Post-activation observations have moved outside the frozen migration envelope.",
+    label: "Upward Pressure",
+    reason: "Above-envelope activity materially dominates below-envelope activity.",
     post_activation_observation_count: 4,
   },
   observation_position: {
@@ -182,8 +182,8 @@ const btcReport = {
   },
   migration_pressure: {
     status: "UNDER_PRESSURE",
-    label: "Under Pressure",
-    reason: "Three post-activation observations are above the upper migration envelope.",
+    label: "Upward Pressure",
+    reason: "Above-envelope activity materially dominates below-envelope activity.",
     direction: "UP",
     direction_label: "Upward",
     relevant_boundary_label: "Upper migration boundary",
@@ -222,7 +222,7 @@ const btcReport = {
   structural_summary: {
     current_authority: "STR · Deep Premium",
     robustness_status: "UNDER_PRESSURE",
-    robustness_label: "Under Pressure",
+    robustness_label: "Upward Pressure",
     pressure_direction: "UP",
     pressure_direction_label: "Upward",
     structural_role: "RESISTIVE",
@@ -231,7 +231,7 @@ const btcReport = {
     successor_label: "Not detected",
     authority_statement: "The current MRZ remains authoritative.",
     displacement_statement: "Post-activation observations are centered above the active MRZ midpoint.",
-    detail_statement: "Observed post-activation evidence is exerting upward pressure.",
+    detail_statement: "Above-envelope activity materially dominates.",
   },
 };
 
@@ -280,7 +280,7 @@ for (const summaryValue of [
   "Activated",
   "Formation duration",
   "MRZ age",
-  "Pressure",
+  "State",
   "Successor",
 ]) {
   const summaryValueIndex = btcMarkup.indexOf(summaryValue);
@@ -300,7 +300,7 @@ assert.match(formationGroupMarkup, /Activated/);
 assert.match(formationGroupMarkup, /Formation duration/);
 assert.match(formationGroupMarkup, /MRZ age/);
 assert.match(postActivationGroupMarkup, /POST-ACTIVATION STATE/);
-assert.match(postActivationGroupMarkup, /Pressure/);
+assert.match(postActivationGroupMarkup, /State/);
 assert.match(postActivationGroupMarkup, /Successor/);
 assert.ok(
   formationGroupMarkup.indexOf("First qualifying rejection")
@@ -346,11 +346,11 @@ assert.match(
   /First qualifying rejection<\/dt><dd>24 Aug 2026 · 10:25 UTC−4<\/dd>/,
 );
 assert.doesNotMatch(btcCompactSummary, /<dt>Robustness<\/dt>/);
-assert.match(btcCompactSummary, /<dt>Pressure<\/dt>/);
+assert.match(btcCompactSummary, /<dt>State<\/dt>/);
 assert.match(btcCompactSummary, /<dt>Successor<\/dt>/);
 assert.match(
   btcMarkup,
-  /data-section="post-activation"[\s\S]*Under Pressure[\s\S]*<\/details>/,
+  /data-section="post-activation"[\s\S]*Upward Pressure[\s\S]*<\/details>/,
 );
 assert.equal(
   btcReport.active_mrz.activated_at,
@@ -361,7 +361,7 @@ assert.equal(
     - Date.parse(btcReport.formation_evidence.started_at)) / 1000,
   Number(btcReport.formation_evidence.duration_seconds),
 );
-assert.match(btcMarkup, /Under Pressure/);
+assert.match(btcMarkup, /Upward Pressure/);
 assert.match(btcMarkup, /↑ Upward/);
 assert.match(btcMarkup, /Upper migration boundary/);
 assert.match(btcMarkup, /Still authoritative/);
@@ -394,6 +394,101 @@ assert.doesNotMatch(btcMarkup, /Structural Role|Route Integrity|Containment/i);
 assert.doesNotMatch(btcMarkup, /Boundary Behavior|Upper tests|Lower tests/i);
 assert.doesNotMatch(btcMarkup, /Resistive|Supportive/i);
 assert.doesNotMatch(btcMarkup, /<dt>First rejection<\/dt>/);
+
+const ethBalancedReport = {
+  ...btcReport,
+  symbol: "ETHUSDT",
+  active_mrz: {
+    ...btcReport.active_mrz,
+    lower: "2452.46",
+    upper: "2461.11",
+    midpoint: "2456.785",
+  },
+  robustness_evidence: {
+    ...btcReport.robustness_evidence,
+    post_activation_observation_count: 22,
+  },
+  post_activation_robustness: {
+    status: "STABLE",
+    label: "Two-sided / Consolidating",
+    reason: "Post-activation observations are distributed on both sides of the active MRZ with no meaningful directional dominance.",
+    post_activation_observation_count: 22,
+  },
+  observation_position: {
+    above_active_mrz_observation_count: 10,
+    inside_active_mrz_observation_count: 2,
+    below_active_mrz_observation_count: 10,
+    total_observation_count: 22,
+  },
+  boundary_pressure: {
+    ...btcReport.boundary_pressure,
+    outside_envelope_observation_count: 11,
+    above_upper_envelope_observation_count: 5,
+    below_lower_envelope_observation_count: 6,
+  },
+  mrz_displacement: {
+    ...btcReport.mrz_displacement,
+    median_signed_displacement_percentage_of_activation_ipda: "-0.1",
+    direction: "BELOW",
+    label: "Median displacement below midpoint",
+  },
+  migration_pressure: {
+    ...btcReport.migration_pressure,
+    status: "STABLE",
+    label: "Two-sided / Consolidating",
+    reason: "Post-activation observations are distributed on both sides of the active MRZ with no meaningful directional dominance.",
+    direction: "NEUTRAL",
+    direction_label: "Neutral",
+    relevant_boundary_label: null,
+    relevant_boundary: null,
+    observations_beyond_envelope: 11,
+    above_upper_envelope_observation_count: 5,
+    below_lower_envelope_observation_count: 6,
+  },
+  successor_watch: {
+    ...btcReport.successor_watch,
+    status: "NO_QUALIFYING_SUCCESSOR",
+    label: "No qualifying successor",
+    evidence_observation_count: 6,
+    higher_external_observation_count: 5,
+    lower_external_observation_count: 6,
+    production_evaluation_result: "TOO_DISPERSED",
+  },
+  structural_summary: {
+    ...btcReport.structural_summary,
+    robustness_status: "STABLE",
+    robustness_label: "Two-sided / Consolidating",
+    pressure_direction: "NEUTRAL",
+    pressure_direction_label: "Neutral",
+    displacement_statement: "Post-activation observations are centered below the active MRZ midpoint.",
+    detail_statement: "Post-activation observations are distributed on both sides of the active MRZ with no meaningful directional dominance. No qualifying successor candidate is detected.",
+  },
+};
+const ethBalancedMarkup = robustnessCardMarkup(ethBalancedReport);
+const ethBalancedSummary = ethBalancedMarkup.slice(
+  0,
+  ethBalancedMarkup.indexOf("</header>") + 9,
+);
+assert.match(
+  ethBalancedSummary,
+  /<dt>State<\/dt><dd>Two-sided \/ Consolidating<\/dd>/,
+);
+assert.match(
+  ethBalancedSummary,
+  /<dt>Successor<\/dt><dd>No qualifying successor<\/dd>/,
+);
+assert.match(ethBalancedMarkup, /22 post-activation observations/);
+assert.match(ethBalancedMarkup, /Above MRZ<\/dt><dd>10/);
+assert.match(ethBalancedMarkup, /Inside MRZ<\/dt><dd>2/);
+assert.match(ethBalancedMarkup, /Below MRZ<\/dt><dd>10/);
+assert.match(ethBalancedMarkup, /11<\/strong>\s*<span class="metric-secondary">outside envelope/);
+assert.match(ethBalancedMarkup, /Above envelope<\/dt><dd>5/);
+assert.match(ethBalancedMarkup, /Below envelope<\/dt><dd>6/);
+assert.match(ethBalancedMarkup, /↓ -0\.1%/);
+assert.match(ethBalancedMarkup, /Median displacement below midpoint/);
+assert.match(ethBalancedMarkup, /no meaningful directional dominance/i);
+assert.doesNotMatch(ethBalancedMarkup, /Under Pressure|↓ Downward/);
+
 assert.match(operationCardCss, /\.operator-disclosure\[open\] > summary/);
 assert.match(operationCardCss, /\.operator-disclosure > summary:focus-visible/);
 assert.match(operationCardCss, /min-height:\s*64px/);
@@ -470,7 +565,7 @@ assert.match(migrationMarkup, /0\.400475/);
 assert.match(migrationMarkup, /CURRENT MRZ/);
 assert.match(migrationMarkup, /Midpoint 0\.40585/);
 assert.match(migrationMarkup, /POST-MIGRATION/);
-assert.match(migrationMarkup, /Pressure<\/dt><dd>Stable/);
+assert.match(migrationMarkup, /State<\/dt><dd>Stable/);
 assert.match(migrationMarkup, /Successor<\/dt><dd>No successor candidate/);
 assert.equal(migrationEqmValue(wldMigration, "0.40585"), 0.400475);
 assert.match(
@@ -546,7 +641,7 @@ const wldReport = {
   },
   post_activation_robustness: {
     status: "STABLE",
-    label: "Stable",
+    label: "Contained / Quiet",
     reason: "The observed post-activation sample remains within the frozen migration envelope.",
     post_activation_observation_count: 1,
   },
@@ -584,7 +679,7 @@ const wldReport = {
   migration_pressure: {
     ...btcReport.migration_pressure,
     status: "STABLE",
-    label: "Stable",
+    label: "Contained / Quiet",
     reason: "No post-activation observation is outside the frozen migration envelope.",
     direction: "NEUTRAL",
     direction_label: "Neutral",
@@ -606,7 +701,7 @@ const wldReport = {
     ...btcReport.structural_summary,
     current_authority: "BTD · Shallow Discount",
     robustness_status: "STABLE",
-    robustness_label: "Stable",
+    robustness_label: "Contained / Quiet",
     pressure_direction: "NEUTRAL",
     pressure_direction_label: "Neutral",
     structural_role: "SUPPORTIVE",
@@ -627,7 +722,7 @@ const wldCompactSummary = wldMarkup.slice(0, wldMarkup.indexOf("</header>") + 9)
 assert.match(wldMarkup, /WLDUSDT · BTD/);
 assert.match(wldMarkup, /Shallow Discount/);
 assert.match(wldMarkup, /↑ MIGRATED UPWARD/);
-assert.match(wldMarkup, /Stable/);
+assert.match(wldMarkup, /Contained \/ Quiet/);
 assert.match(wldMarkup, /Neutral/);
 assert.match(wldMarkup, /↓ -1\.0%/);
 assert.match(wldMarkup, /Median displacement below midpoint/);
@@ -648,7 +743,7 @@ assert.match(
   /First qualifying reclaim<\/dt><dd>28 Aug 2026 · 21:13 UTC−4<\/dd>/,
 );
 assert.doesNotMatch(wldCompactSummary, /<dt>Robustness<\/dt>/);
-assert.match(wldCompactSummary, /<dt>Pressure<\/dt>/);
+assert.match(wldCompactSummary, /<dt>State<\/dt>/);
 assert.match(wldCompactSummary, /<dt>Successor<\/dt>/);
 assert.doesNotMatch(wldMarkup, /<dt>First reclaim<\/dt>/);
 

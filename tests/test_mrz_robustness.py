@@ -7,7 +7,7 @@ from decimal import Decimal
 
 from app.db import connect
 from app.domain import Route
-from app.mrz_robustness import MRZRobustnessService
+from app.mrz_robustness import MRZRobustnessService, classify_post_activation_state
 from app.repository import EdgeRepository
 from app.state_engine import replay_symbol
 from app.validation import ObservationPayload
@@ -24,6 +24,7 @@ def report_for(
     active_route=Route.BTD,
     formation_prices=None,
     migration=None,
+    symbol="SPXUSDT",
 ):
     formation_prices = formation_prices or (
         ("110", "110.2", "110.4", "110.6")
@@ -31,7 +32,7 @@ def report_for(
         else ("180", "180.2", "180.4", "180.6")
     )
     formation = tuple(
-        observation(index, price, route=active_route)
+        replace(observation(index, price, route=active_route), symbol=symbol)
         for index, price in enumerate(formation_prices, 1)
     )
     active = replay_symbol(formation).active_mrz
@@ -48,6 +49,18 @@ def report_for(
 
 
 class MRZRobustnessTests(unittest.TestCase):
+    def test_small_count_differences_remain_two_sided(self) -> None:
+        for above, below in ((5, 6), (10, 11), (2, 1)):
+            with self.subTest(above=above, below=below):
+                state = classify_post_activation_state(
+                    above + below,
+                    above,
+                    below,
+                )
+                self.assertEqual(state.status, "STABLE")
+                self.assertEqual(state.label, "Two-sided / Consolidating")
+                self.assertEqual(state.direction, "NEUTRAL")
+
     def test_only_canonical_post_activation_observations_are_included(self) -> None:
         post = (
             observation(5, "110.3", observed_offset=5),
@@ -314,7 +327,11 @@ class MRZRobustnessTests(unittest.TestCase):
         )
         self.assertEqual(report["mrz_displacement"]["direction"], "CENTERED")
         self.assertEqual(report["mrz_displacement"]["label"], "Centered around midpoint")
-        self.assertEqual(report["migration_pressure"]["status"], "UNDER_PRESSURE")
+        self.assertEqual(report["migration_pressure"]["status"], "STABLE")
+        self.assertEqual(
+            report["migration_pressure"]["label"],
+            "Two-sided / Consolidating",
+        )
         self.assertEqual(report["migration_pressure"]["direction"], "NEUTRAL")
         self.assertEqual(report["successor_watch"]["status"], "EXTERNAL_OBSERVATIONS")
         self.assertEqual(
@@ -367,6 +384,7 @@ class MRZRobustnessTests(unittest.TestCase):
 
         self.assertEqual(active.upper_migration_boundary, Decimal("111.8"))
         self.assertEqual(report["migration_pressure"]["status"], "UNDER_PRESSURE")
+        self.assertEqual(report["migration_pressure"]["label"], "Upward Pressure")
         self.assertEqual(report["migration_pressure"]["direction"], "UP")
         self.assertEqual(report["migration_pressure"]["direction_label"], "Upward")
         self.assertEqual(report["migration_pressure"]["relevant_boundary"], "111.8")
@@ -599,6 +617,7 @@ class MRZRobustnessTests(unittest.TestCase):
 
         self.assertEqual(report["migration"], migration)
         self.assertEqual(report["migration_pressure"]["status"], "STABLE")
+        self.assertEqual(report["migration_pressure"]["label"], "Contained / Quiet")
         self.assertEqual(report["migration_pressure"]["direction"], "NEUTRAL")
         self.assertEqual(report["post_activation_robustness"]["status"], "STABLE")
         self.assertEqual(
@@ -665,14 +684,15 @@ class MRZRobustnessTests(unittest.TestCase):
         self.assertEqual(report["migration_pressure"]["direction"], "NEUTRAL")
         self.assertIsNone(report["migration_pressure"]["relevant_boundary"])
 
-    def test_pressure_without_successor_retains_directional_evidence(self) -> None:
+    def test_single_external_observation_is_quiet_without_changing_successor(self) -> None:
         opposite_route_pressure = (
             observation(5, "180", route=Route.STR, observed_offset=5),
         )
         _active, report = report_for(opposite_route_pressure)
 
-        self.assertEqual(report["migration_pressure"]["status"], "UNDER_PRESSURE")
-        self.assertEqual(report["migration_pressure"]["direction"], "UP")
+        self.assertEqual(report["migration_pressure"]["status"], "STABLE")
+        self.assertEqual(report["migration_pressure"]["label"], "Contained / Quiet")
+        self.assertEqual(report["migration_pressure"]["direction"], "NEUTRAL")
         self.assertEqual(
             report["successor_watch"]["status"],
             "EXTERNAL_OBSERVATIONS",
@@ -682,19 +702,133 @@ class MRZRobustnessTests(unittest.TestCase):
             "Not detected",
         )
 
-    def test_balanced_external_evidence_is_neutral_without_hiding_pressure(self) -> None:
+    def test_balanced_external_evidence_is_two_sided_without_hiding_activity(self) -> None:
         balanced_pressure = (
             observation(5, "120", observed_offset=5),
             observation(6, "100", observed_offset=6),
         )
         _active, report = report_for(balanced_pressure)
 
-        self.assertEqual(report["migration_pressure"]["status"], "UNDER_PRESSURE")
+        self.assertEqual(report["migration_pressure"]["status"], "STABLE")
+        self.assertEqual(
+            report["migration_pressure"]["label"],
+            "Two-sided / Consolidating",
+        )
         self.assertEqual(report["migration_pressure"]["direction"], "NEUTRAL")
         self.assertEqual(report["migration_pressure"]["observations_beyond_envelope"], 2)
         self.assertIn(
-            "without a dominant pressure direction",
+            "no meaningful directional dominance",
             report["structural_summary"]["detail_statement"],
+        )
+
+    def test_eth_balanced_activity_is_consolidating_despite_small_displacement(self) -> None:
+        prices = (
+            "168", "170", "172", "174", "176", "178",
+            "179", "179.2", "179.4", "179.6",
+            "180.2", "180.2",
+            "180.8", "181", "181.2", "181.4", "181.6",
+            "185", "187", "189", "191", "193",
+        )
+        post = tuple(
+            replace(
+                observation(
+                    index,
+                    price,
+                    route=Route.STR,
+                    observed_offset=index,
+                ),
+                symbol="ETHUSDT",
+            )
+            for index, price in enumerate(prices, 5)
+        )
+        _active, report = report_for(
+            post,
+            active_route=Route.STR,
+            symbol="ETHUSDT",
+        )
+
+        self.assertEqual(report["symbol"], "ETHUSDT")
+        self.assertEqual(report["route_owner"], "STR")
+        self.assertEqual(
+            report["observation_position"],
+            {
+                "above_active_mrz_observation_count": 10,
+                "inside_active_mrz_observation_count": 2,
+                "below_active_mrz_observation_count": 10,
+                "total_observation_count": 22,
+                "definition": (
+                    "Mutually exclusive post-activation observation counts relative "
+                    "to the inclusive frozen active MRZ bounds."
+                ),
+            },
+        )
+        self.assertEqual(
+            report["boundary_pressure"]["above_upper_envelope_observation_count"],
+            5,
+        )
+        self.assertEqual(
+            report["boundary_pressure"]["below_lower_envelope_observation_count"],
+            6,
+        )
+        self.assertEqual(
+            report["boundary_pressure"]["outside_envelope_observation_count"],
+            11,
+        )
+        self.assertEqual(
+            report["mrz_displacement"][
+                "median_signed_displacement_percentage_of_activation_ipda"
+            ],
+            "-0.100",
+        )
+        self.assertEqual(report["mrz_displacement"]["direction"], "BELOW")
+        self.assertEqual(report["migration_pressure"]["status"], "STABLE")
+        self.assertEqual(
+            report["migration_pressure"]["label"],
+            "Two-sided / Consolidating",
+        )
+        self.assertEqual(report["migration_pressure"]["direction"], "NEUTRAL")
+        self.assertEqual(
+            report["post_activation_robustness"]["label"],
+            "Two-sided / Consolidating",
+        )
+        self.assertEqual(
+            report["successor_watch"]["status"],
+            "NO_QUALIFYING_SUCCESSOR",
+        )
+        self.assertEqual(
+            report["successor_watch"]["label"],
+            "No qualifying successor",
+        )
+
+    def test_directional_state_is_route_neutral_and_requires_material_dominance(self) -> None:
+        str_up = tuple(
+            observation(index, price, route=Route.STR, observed_offset=index)
+            for index, price in enumerate(("190", "191"), 5)
+        )
+        _active, str_report = report_for(str_up, active_route=Route.STR)
+        self.assertEqual(str_report["migration_pressure"]["label"], "Upward Pressure")
+        self.assertEqual(str_report["migration_pressure"]["direction"], "UP")
+
+        btd_down = tuple(
+            observation(index, price, route=Route.BTD, observed_offset=index)
+            for index, price in enumerate(("100", "99"), 5)
+        )
+        _active, btd_report = report_for(btd_down, active_route=Route.BTD)
+        self.assertEqual(btd_report["migration_pressure"]["label"], "Downward Pressure")
+        self.assertEqual(btd_report["migration_pressure"]["direction"], "DOWN")
+
+        nearly_balanced = tuple(
+            observation(index, price, observed_offset=index)
+            for index, price in enumerate(("120", "121", "100"), 5)
+        )
+        _active, balanced_report = report_for(nearly_balanced)
+        self.assertEqual(
+            balanced_report["migration_pressure"]["label"],
+            "Two-sided / Consolidating",
+        )
+        self.assertEqual(
+            balanced_report["migration_pressure"]["direction"],
+            "NEUTRAL",
         )
 
 
@@ -755,7 +889,11 @@ class MRZRobustnessDatabaseSafetyTests(unittest.TestCase):
 
         self.assertEqual(before, after)
         self.assertEqual(report["active_mrz_count"], 1)
-        self.assertEqual(report["active_mrzs"][0]["migration_pressure"]["status"], "UNDER_PRESSURE")
+        self.assertEqual(report["active_mrzs"][0]["migration_pressure"]["status"], "STABLE")
+        self.assertEqual(
+            report["active_mrzs"][0]["migration_pressure"]["label"],
+            "Contained / Quiet",
+        )
 
     def test_report_does_not_mutate_persisted_route_changed_authority(self) -> None:
         for index, price in enumerate(("110", "110.2", "110.4", "110.6"), 1):

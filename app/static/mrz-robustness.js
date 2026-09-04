@@ -193,7 +193,7 @@ function migrationProvenanceMarkup(
     <div class="post-migration-state" aria-label="Post-migration state">
       <span class="section-label">POST-MIGRATION</span>
       <dl>
-        <div><dt>Pressure</dt><dd>${escapeHtml(currentState.pressureLabel || "—")}</dd></div>
+        <div><dt>State</dt><dd>${escapeHtml(currentState.stateLabel || currentState.pressureLabel || "—")}</dd></div>
         <div><dt>Successor</dt><dd>${escapeHtml(currentState.successorLabel || "—")}</dd></div>
       </dl>
     </div>
@@ -239,12 +239,12 @@ function robustnessCardMarkup(
   const activeTimestamp = timestampFormatter(active.activated_at) || "—";
   const activeDuration = durationText(age.active_duration_seconds);
   const pressureDirection = directionText(pressure.direction, pressure.direction_label);
-  const pressureSummary = pressure.direction === "NEUTRAL"
-    ? pressure.label
-    : `${pressure.label} · ${pressureDirection}`;
+  const stateSummary = pressure.label === "Under Pressure" && pressure.direction !== "NEUTRAL"
+    ? `${pressure.label} · ${pressureDirection}`
+    : pressure.label || pressureDirection;
   const migrationSummary = report.migration?.has_migrated
-    ? `Migrated ${String(report.migration.direction || "").toLowerCase()} · ${pressureSummary}`
-    : `No recorded migration · ${pressureSummary}`;
+    ? `Migrated ${String(report.migration.direction || "").toLowerCase()} · ${stateSummary}`
+    : `No recorded migration · ${stateSummary}`;
   const relevantBoundary = pressure.relevant_boundary_label
     ? `<dt>${escapeHtml(pressure.relevant_boundary_label)}</dt><dd>${priceText(pressure.relevant_boundary)}</dd>`
     : "<dt>Relevant boundary</dt><dd>—</dd>";
@@ -290,14 +290,14 @@ function robustnessCardMarkup(
     report.migration,
     {
       currentMidpoint: active.midpoint,
-      pressureLabel: pressureSummary,
+      stateLabel: stateSummary,
       successorLabel: successor.label,
     },
     timestampFormatter,
   )}
     <div class="detail-card pressure ${statusClass(pressure.status)}">
       <div class="detail-status"><span>DIRECTION</span><strong class="direction-value">${escapeHtml(pressureDirection)}</strong></div>
-      <div class="detail-status"><span>STATUS</span><strong>${escapeHtml(pressure.label)}</strong></div>
+      <div class="detail-status"><span>STATE</span><strong>${escapeHtml(stateSummary)}</strong></div>
       <dl class="detail-grid">
         <div>${relevantBoundary}</div>
         <div><dt>Observations beyond envelope</dt><dd>${pressure.observations_beyond_envelope}</dd></div>
@@ -311,7 +311,7 @@ function robustnessCardMarkup(
       <dl class="summary-grid">
         <div><dt>Current authority</dt><dd>${escapeHtml(structuralSummary.current_authority)}</dd></div>
         <div><dt>Robustness</dt><dd>${escapeHtml(structuralSummary.robustness_label)}</dd></div>
-        <div><dt>Pressure</dt><dd>${escapeHtml(directionText(structuralSummary.pressure_direction, structuralSummary.pressure_direction_label))}</dd></div>
+        <div><dt>State</dt><dd>${escapeHtml(stateSummary)}</dd></div>
         <div><dt>Successor</dt><dd>${escapeHtml(structuralSummary.successor_label)}</dd></div>
       </dl>
       <p class="summary-authority">${escapeHtml(structuralSummary.authority_statement)}</p>
@@ -351,7 +351,7 @@ function robustnessCardMarkup(
       <section class="compact-group post-activation-group" aria-label="Post-activation state">
         <span class="section-label">POST-ACTIVATION STATE</span>
         <dl class="compact-facts post-activation-facts">
-          <div class="${statusClass(pressure.status)}"><dt>Pressure</dt><dd>${escapeHtml(pressureSummary)}</dd></div>
+          <div class="${statusClass(pressure.status)}"><dt>State</dt><dd>${escapeHtml(stateSummary)}</dd></div>
           <div class="${statusClass(successor.status)}"><dt>Successor</dt><dd>${escapeHtml(successor.label)}</dd></div>
         </dl>
       </section>

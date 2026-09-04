@@ -191,7 +191,7 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(response.headers["cache-control"], "no-store, max-age=0")
         self.assertIn("MRZ Operation Card", response.text)
         self.assertIn(
-            "Current structural authority, robustness, pressure and migration state.",
+            "Current structural authority, post-activation behavior and migration state.",
             response.text,
         )
         self.assertIn("Observation only", response.text)
@@ -274,9 +274,14 @@ class APIIntegrationTests(unittest.TestCase):
             report["robustness_evidence"]["post_activation_observation_count"],
             1,
         )
-        self.assertEqual(report["migration_pressure"]["status"], "UNDER_PRESSURE")
-        self.assertEqual(report["migration_pressure"]["direction"], "UP")
-        self.assertEqual(report["post_activation_robustness"]["status"], "UNDER_PRESSURE")
+        self.assertEqual(report["migration_pressure"]["status"], "STABLE")
+        self.assertEqual(report["migration_pressure"]["label"], "Contained / Quiet")
+        self.assertEqual(report["migration_pressure"]["direction"], "NEUTRAL")
+        self.assertEqual(report["post_activation_robustness"]["status"], "STABLE")
+        self.assertEqual(
+            report["post_activation_robustness"]["label"],
+            "Contained / Quiet",
+        )
         self.assertEqual(report["structural_authority"]["label"], "Authoritative")
         self.assertEqual(report["structural_authority"]["structural_location_label"], "Deep Discount")
         self.assertEqual(
