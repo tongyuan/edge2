@@ -121,7 +121,7 @@ class NotificationRepository:
                 return cursor.rowcount > 0
 
     def reconcile_notifiable_events(self, trigger_event_id: str | None = None) -> list[int]:
-        query = """
+        authority_query = """
             INSERT INTO web_push_notifications (
                 source_event_key,
                 source_trigger_event_id,
@@ -168,14 +168,66 @@ class NotificationRepository:
         """
         parameters: tuple[Any, ...] = ()
         if trigger_event_id is not None:
-            query += " AND e.trigger_event_id = %s"
+            authority_query += " AND e.trigger_event_id = %s"
             parameters = (trigger_event_id,)
-        query += " ON CONFLICT (source_event_key) DO NOTHING RETURNING id"
+        authority_query += " ON CONFLICT (source_event_key) DO NOTHING RETURNING id"
+
+        near_miss_query = """
+            INSERT INTO web_push_notifications (
+                source_event_key,
+                source_trigger_event_id,
+                event_type,
+                symbol,
+                route_owner,
+                structural_location,
+                core_mrz_lower,
+                core_mrz_upper,
+                activated_at,
+                occurred_at,
+                candidate_identity,
+                evaluator_identity,
+                minimum_required_allowance_pct,
+                production_threshold_pct,
+                shortfall_percentage_points,
+                supporting_observation_count,
+                candidate_timestamp,
+                deliverable
+            )
+            SELECT
+                episode_key,
+                source_trigger_event_id,
+                'MRZ_NEAR_MISS',
+                symbol,
+                route_owner,
+                structural_location,
+                candidate_lower,
+                candidate_upper,
+                candidate_timestamp,
+                started_at,
+                candidate_identity,
+                evaluator_identity,
+                minimum_required_allowance_pct,
+                production_threshold_pct,
+                shortfall_percentage_points,
+                supporting_observation_count,
+                candidate_timestamp,
+                TRUE
+            FROM current_production_near_miss_episodes
+            WHERE deliverable = TRUE
+        """
+        if trigger_event_id is not None:
+            near_miss_query += " AND source_trigger_event_id = %s"
+        near_miss_query += (
+            " ON CONFLICT (source_event_key) DO NOTHING RETURNING id"
+        )
 
         with transaction(self.database_url) as connection:
             with connection.cursor() as cursor:
-                cursor.execute(query, parameters)
-                return [int(row[0]) for row in cursor.fetchall()]
+                cursor.execute(authority_query, parameters)
+                notification_ids = [int(row[0]) for row in cursor.fetchall()]
+                cursor.execute(near_miss_query, parameters)
+                notification_ids.extend(int(row[0]) for row in cursor.fetchall())
+                return notification_ids
 
     def latest_notification_id(self) -> int:
         connection = connect(self.database_url)
@@ -186,7 +238,9 @@ class NotificationRepository:
                     SELECT COALESCE(MAX(id), 0)
                     FROM web_push_notifications
                     WHERE deliverable = TRUE
-                      AND event_type IN ('MRZ_ACTIVATED', 'MRZ_MIGRATED')
+                      AND event_type IN (
+                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS'
+                      )
                     """
                 )
                 return int(cursor.fetchone()[0])
@@ -202,7 +256,9 @@ class NotificationRepository:
                     SELECT *
                     FROM web_push_notifications
                     WHERE deliverable = TRUE
-                      AND event_type IN ('MRZ_ACTIVATED', 'MRZ_MIGRATED')
+                      AND event_type IN (
+                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS'
+                      )
                       AND id > %s
                     ORDER BY id ASC
                     LIMIT %s
@@ -258,7 +314,9 @@ class NotificationRepository:
                           AND d.subscription_id = s.id
                     ) attempts ON TRUE
                     WHERE n.deliverable = TRUE
-                      AND n.event_type IN ('MRZ_ACTIVATED', 'MRZ_MIGRATED')
+                      AND n.event_type IN (
+                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS'
+                      )
                       AND s.enabled = TRUE
                       AND s.enabled_at <= n.created_at
                       AND attempts.attempt_count < {MAX_DELIVERY_ATTEMPTS}
@@ -529,7 +587,15 @@ def notification_payload(row: Mapping[str, Any]) -> dict[str, Any]:
     event_key = str(row["source_event_key"])
     event_type = str(row["event_type"])
     occurred_at = iso(row["occurred_at"])
-    if event_type == "MRZ_MIGRATED":
+    if event_type == "MRZ_NEAR_MISS":
+        title = f"{symbol} MRZ Near Miss"
+        body = (
+            f"{route_owner} · {display_decimal(row['core_mrz_lower'])}–"
+            f"{display_decimal(row['core_mrz_upper'])} · Required "
+            f"{Decimal(row['minimum_required_allowance_pct']):.2f}% vs "
+            f"{Decimal(row['production_threshold_pct']):.2f}%"
+        )
+    elif event_type == "MRZ_MIGRATED":
         route_label = (
             f"{previous_route_owner} → {route_owner}"
             if previous_route_owner and previous_route_owner != route_owner
@@ -569,7 +635,37 @@ def notification_payload(row: Mapping[str, Any]) -> dict[str, Any]:
         "occurred_at": occurred_at,
         "url": f"/?symbol={quote(symbol, safe='')}",
     }
-    if event_type == "MRZ_ACTIVATED":
+    if event_type == "MRZ_NEAR_MISS":
+        candidate_identity = str(row["candidate_identity"])
+        payload.update({
+            "candidate_identity": candidate_identity,
+            "evaluator_identity": str(row["evaluator_identity"]),
+            "candidate_lower": lower,
+            "candidate_upper": upper,
+            "candidate_midpoint": decimal_text(
+                (Decimal(row["core_mrz_lower"]) + Decimal(row["core_mrz_upper"]))
+                / Decimal("2")
+            ),
+            "minimum_required_allowance_pct": decimal_text(
+                row["minimum_required_allowance_pct"]
+            ),
+            "production_threshold_pct": decimal_text(
+                row["production_threshold_pct"]
+            ),
+            "shortfall_percentage_points": decimal_text(
+                row["shortfall_percentage_points"]
+            ),
+            "supporting_observation_count": int(
+                row["supporting_observation_count"]
+            ),
+            "candidate_timestamp": iso(row["candidate_timestamp"]),
+            "url": (
+                "/diagnostics/activation-feasibility?symbol="
+                f"{quote(symbol, safe='')}&candidate="
+                f"{quote(candidate_identity, safe='')}#current-production-near-misses"
+            ),
+        })
+    elif event_type == "MRZ_ACTIVATED":
         payload["activated_at"] = occurred_at
     elif event_type == "MRZ_MIGRATED":
         payload["migrated_at"] = occurred_at

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -11,7 +12,9 @@ from typing import Any, Mapping, Sequence
 from psycopg2 import errors
 from psycopg2.extras import Json, RealDictCursor
 
+from app.activation_feasibility import current_production_near_misses
 from app.concentration import (
+    CONCENTRATION_SPAN_THRESHOLD,
     ROUTE_OBSERVATION_WINDOW,
     ConcentrationDiagnostic,
     ConcentrationResult,
@@ -19,7 +22,9 @@ from app.concentration import (
 )
 from app.db import connect, transaction
 from app.domain import (
+    ActivationSource,
     ActiveMRZ,
+    Cluster,
     MRZTransition,
     Observation,
     ObservationType,
@@ -28,8 +33,12 @@ from app.domain import (
     StructuralLocation,
 )
 from app.group_tracking import SavedGroupNameConflict
-from app.state_engine import replay_symbol
-from app.structure import classify_ipda_location, ipda_directional_context
+from app.state_engine import effective_instrument_tick, replay_symbol
+from app.structure import (
+    classify_ipda_location,
+    classify_structural_location,
+    ipda_directional_context,
+)
 from app.validation import ObservationPayload, normalize_symbol
 
 
@@ -63,6 +72,21 @@ class IngestionOutcome:
     symbol: str
     replay: ReplayResult | None
     triggered_transitions: tuple[MRZTransition, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class PromotionOutcome:
+    symbol: str
+    route: Route
+    candidate_identity: str
+    duplicate: bool
+    trigger_event_id: str
+
+
+class PromotionConflict(RuntimeError):
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 def location_migration_tendency_payload(
@@ -154,6 +178,35 @@ def active_from_row(row: Mapping[str, Any] | None) -> ActiveMRZ | None:
         ipda_width_at_activation=Decimal(row["ipda_width_at_activation"]),
         normalized_span_at_activation=Decimal(row["normalized_span_at_activation"]),
         instrument_tick=Decimal(row["instrument_tick"]),
+        activation_source=ActivationSource(
+            str(row.get("activation_source") or "PRODUCTION_QUALIFIED")
+        ),
+    )
+
+
+def promoted_active_from_row(row: Mapping[str, Any] | None) -> ActiveMRZ | None:
+    if not row:
+        return None
+    return ActiveMRZ(
+        symbol=str(row["symbol"]),
+        route_owner=Route(str(row["route_owner"])),
+        core_mrz_lower=Decimal(row["candidate_lower"]),
+        core_mrz_upper=Decimal(row["candidate_upper"]),
+        core_mrz_midpoint=Decimal(row["candidate_midpoint"]),
+        structural_location=StructuralLocation(str(row["structural_location"])),
+        confirming_observation_count=int(row["supporting_observation_count"]),
+        supporting_observation_count=int(row["supporting_observation_count"]),
+        activated_at=row["promoted_at"],
+        activation_event_id=str(row["trigger_event_id"]),
+        formation_started_at=row["formation_started_at"],
+        formation_completed_at=row["formation_completed_at"],
+        formation_duration_seconds=Decimal(row["formation_duration_seconds"]),
+        ipda_20w_high_at_activation=Decimal(row["ipda_20w_high"]),
+        ipda_20w_low_at_activation=Decimal(row["ipda_20w_low"]),
+        ipda_width_at_activation=Decimal(row["ipda_width"]),
+        normalized_span_at_activation=Decimal(row["normalized_span"]),
+        instrument_tick=Decimal(row["instrument_tick"]),
+        activation_source=ActivationSource.OPERATOR_PROMOTED,
     )
 
 
@@ -286,6 +339,11 @@ class EdgeRepository:
             with connection.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (payload.symbol,))
                 cursor.execute(
+                    "SELECT EXISTS (SELECT 1 FROM active_mrz WHERE symbol = %s) AS active",
+                    (payload.symbol,),
+                )
+                was_active = bool(cursor.fetchone()["active"])
+                cursor.execute(
                     """
                     INSERT INTO observations (
                         event_id, schema_version, symbol, route, observation_type,
@@ -336,8 +394,25 @@ class EdgeRepository:
                     """,
                     (payload.symbol,),
                 )
-                replay = replay_symbol([observation_from_row(row) for row in cursor.fetchall()])
+                symbol_observations = tuple(
+                    observation_from_row(row) for row in cursor.fetchall()
+                )
+                cursor.execute(
+                    "SELECT * FROM operator_mrz_promotions WHERE symbol = %s",
+                    (payload.symbol,),
+                )
+                promoted_activation = promoted_active_from_row(cursor.fetchone())
+                replay = replay_symbol(
+                    symbol_observations,
+                    promoted_activation=promoted_activation,
+                )
                 self._replace_derived_state(cursor, replay)
+                self._sync_near_miss_episodes(
+                    cursor,
+                    symbol=payload.symbol,
+                    trigger_event_id=payload.event_id,
+                    was_active=was_active,
+                )
                 cursor.execute(
                     """
                     UPDATE ingestion_metrics
@@ -370,6 +445,7 @@ class EdgeRepository:
                 """
                 INSERT INTO mrz_events (
                     event_key, sequence, event_type, symbol, route_owner,
+                    activation_source,
                     previous_route_owner, occurred_at, trigger_event_id,
                     old_core_mrz_lower, old_core_mrz_upper,
                     new_core_mrz_lower, new_core_mrz_upper, new_core_mrz_midpoint,
@@ -382,7 +458,7 @@ class EdgeRepository:
                     details
                 )
                 VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s, %s
                 )
@@ -393,6 +469,7 @@ class EdgeRepository:
                     transition.event_type.value,
                     transition.symbol,
                     transition.route_owner.value,
+                    new.activation_source.value,
                     transition.previous_route_owner.value if transition.previous_route_owner else None,
                     transition.occurred_at,
                     transition.trigger_event_id,
@@ -425,6 +502,7 @@ class EdgeRepository:
                 symbol, route_owner, core_mrz_lower, core_mrz_upper,
                 core_mrz_midpoint, structural_location, confirming_observation_count,
                 supporting_observation_count,
+                activation_source,
                 activated_at, activation_event_id,
                 formation_started_at, formation_completed_at,
                 formation_duration_seconds,
@@ -433,7 +511,7 @@ class EdgeRepository:
                 instrument_tick, updated_at
             )
             VALUES (
-                %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                 %s, %s, %s, %s, %s, %s, %s, %s, %s,
                 clock_timestamp()
             )
@@ -445,6 +523,7 @@ class EdgeRepository:
                 structural_location = EXCLUDED.structural_location,
                 confirming_observation_count = EXCLUDED.confirming_observation_count,
                 supporting_observation_count = EXCLUDED.supporting_observation_count,
+                activation_source = EXCLUDED.activation_source,
                 activated_at = EXCLUDED.activated_at,
                 activation_event_id = EXCLUDED.activation_event_id,
                 formation_started_at = EXCLUDED.formation_started_at,
@@ -466,6 +545,7 @@ class EdgeRepository:
                 active.structural_location.value,
                 active.confirming_observation_count,
                 active.supporting_observation_count,
+                active.activation_source.value,
                 active.activated_at,
                 active.activation_event_id,
                 active.formation_started_at,
@@ -478,6 +558,466 @@ class EdgeRepository:
                 active.instrument_tick,
             ),
         )
+        self._replace_production_confirmation(cursor, replay)
+
+    def promote_current_near_miss(
+        self,
+        symbol: str,
+        route: Route,
+        candidate_identity: str,
+    ) -> PromotionOutcome:
+        normalized = normalize_symbol(symbol)
+        with transaction(self.database_url) as connection:
+            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                    (normalized,),
+                )
+                cursor.execute(
+                    "SELECT * FROM operator_mrz_promotions WHERE symbol = %s",
+                    (normalized,),
+                )
+                existing_promotion = cursor.fetchone()
+                cursor.execute("SELECT * FROM active_mrz WHERE symbol = %s", (normalized,))
+                existing_active = active_from_row(cursor.fetchone())
+                if existing_promotion is not None:
+                    if (
+                        str(existing_promotion["candidate_identity"])
+                        == candidate_identity
+                        and existing_active is not None
+                    ):
+                        return PromotionOutcome(
+                            symbol=normalized,
+                            route=Route(str(existing_promotion["route_owner"])),
+                            candidate_identity=candidate_identity,
+                            duplicate=True,
+                            trigger_event_id=str(existing_promotion["trigger_event_id"]),
+                        )
+                    raise PromotionConflict(
+                        "active_mrz_exists",
+                        f"{normalized} already has authoritative MRZ history.",
+                    )
+                if existing_active is not None:
+                    raise PromotionConflict(
+                        "active_mrz_exists",
+                        f"{normalized} already has an authoritative MRZ.",
+                    )
+
+                cursor.execute(
+                    """
+                    SELECT * FROM observations
+                    WHERE schema_version = '4.3'
+                    ORDER BY symbol ASC, route ASC,
+                             observed_at ASC, received_at ASC, id ASC
+                    """
+                )
+                observations = tuple(
+                    observation_from_row(row) for row in cursor.fetchall()
+                )
+                cursor.execute("SELECT symbol FROM active_mrz ORDER BY symbol")
+                active_symbols = {str(row["symbol"]) for row in cursor.fetchall()}
+                candidates = current_production_near_misses(
+                    observations,
+                    active_symbols=active_symbols,
+                )
+                candidate = next(
+                    (
+                        row
+                        for row in candidates
+                        if row["symbol"] == normalized and row["route"] == route.value
+                    ),
+                    None,
+                )
+                if candidate is None:
+                    raise PromotionConflict(
+                        "candidate_no_longer_current",
+                        "Candidate changed or is no longer a current production near miss. "
+                        "Review the latest report before promoting.",
+                    )
+                if candidate["candidate_identity"] != candidate_identity:
+                    raise PromotionConflict(
+                        "candidate_changed",
+                        "Candidate changed. Review the latest near miss before promoting.",
+                    )
+
+                supporting_ids = tuple(candidate["supporting_observation_ids"])
+                observations_by_id = {item.event_id: item for item in observations}
+                try:
+                    supporting = tuple(
+                        observations_by_id[event_id] for event_id in supporting_ids
+                    )
+                    trigger = observations_by_id[str(candidate["candidate_event_id"])]
+                except KeyError as exc:
+                    raise PromotionConflict(
+                        "candidate_evidence_missing",
+                        "Canonical candidate evidence is no longer available.",
+                    ) from exc
+                if (
+                    len(supporting) < 4
+                    or any(item.symbol != normalized or item.route is not route for item in supporting)
+                    or trigger.event_id not in supporting_ids
+                ):
+                    raise PromotionConflict(
+                        "candidate_evidence_invalid",
+                        "Canonical candidate evidence is not promotion-eligible.",
+                    )
+
+                lower = Decimal(str(candidate["candidate_lower_boundary"]))
+                upper = Decimal(str(candidate["candidate_upper_boundary"]))
+                midpoint = Decimal(str(candidate["candidate_midpoint"]))
+                required = Decimal(str(candidate["minimum_required_allowance_pct"]))
+                threshold = Decimal(str(candidate["configured_allowance_pct"]))
+                structural_location = classify_structural_location(
+                    route,
+                    midpoint,
+                    trigger.ipda_20w_high,
+                    trigger.ipda_20w_low,
+                )
+                if structural_location is None:
+                    raise PromotionConflict(
+                        "candidate_structurally_ineligible",
+                        "Candidate no longer satisfies structural eligibility.",
+                    )
+                cluster = Cluster(
+                    members=supporting,
+                    lower=lower,
+                    upper=upper,
+                    midpoint=midpoint,
+                    normalized_span=required / Decimal("100"),
+                )
+                cursor.execute("SELECT clock_timestamp() AS promoted_at")
+                promoted_at = cursor.fetchone()["promoted_at"]
+                promotion_key = f"OPERATOR_PROMOTION:{candidate_identity}"
+                cursor.execute(
+                    """
+                    INSERT INTO operator_mrz_promotions (
+                        promotion_key, symbol, route_owner, candidate_identity,
+                        evaluator_identity, candidate_lower, candidate_upper,
+                        candidate_midpoint, structural_location, normalized_span,
+                        minimum_required_allowance_pct, production_threshold_pct,
+                        shortfall_percentage_points, supporting_observation_count,
+                        supporting_observation_ids, candidate_timestamp,
+                        trigger_event_id, formation_started_at,
+                        formation_completed_at, formation_duration_seconds,
+                        ipda_20w_high, ipda_20w_low, ipda_width,
+                        instrument_tick, promoted_at, operator_identity
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, NULL
+                    )
+                    RETURNING *
+                    """,
+                    (
+                        promotion_key,
+                        normalized,
+                        route.value,
+                        candidate_identity,
+                        candidate["evaluator_identity"],
+                        lower,
+                        upper,
+                        midpoint,
+                        structural_location.value,
+                        cluster.normalized_span,
+                        required,
+                        threshold,
+                        required - threshold,
+                        cluster.observation_count,
+                        Json(list(supporting_ids)),
+                        trigger.observed_at,
+                        trigger.event_id,
+                        cluster.formation_started_at,
+                        cluster.formation_completed_at,
+                        cluster.formation_duration_seconds,
+                        trigger.ipda_20w_high,
+                        trigger.ipda_20w_low,
+                        trigger.ipda_width,
+                        effective_instrument_tick(cluster),
+                        promoted_at,
+                    ),
+                )
+                promoted_activation = promoted_active_from_row(cursor.fetchone())
+                if promoted_activation is None:
+                    raise RuntimeError("persisted promotion did not produce authority")
+                symbol_observations = tuple(
+                    item for item in observations if item.symbol == normalized
+                )
+                replay = replay_symbol(
+                    symbol_observations,
+                    promoted_activation=promoted_activation,
+                )
+                if replay.active_mrz is None:
+                    raise RuntimeError("operator promotion replay produced no authority")
+                self._replace_derived_state(cursor, replay)
+                cursor.execute(
+                    """
+                    UPDATE current_production_near_miss_episodes
+                    SET ended_at = %s, ended_reason = 'OPERATOR_PROMOTED'
+                    WHERE symbol = %s AND ended_at IS NULL
+                    """,
+                    (promoted_at, normalized),
+                )
+                return PromotionOutcome(
+                    symbol=normalized,
+                    route=route,
+                    candidate_identity=candidate_identity,
+                    duplicate=False,
+                    trigger_event_id=trigger.event_id,
+                )
+
+    def _replace_production_confirmation(
+        self,
+        cursor: RealDictCursor,
+        replay: ReplayResult,
+    ) -> None:
+        cursor.execute(
+            "SELECT * FROM operator_mrz_promotions WHERE symbol = %s",
+            (replay.symbol,),
+        )
+        promotion = cursor.fetchone()
+        if promotion is None:
+            return
+        cursor.execute(
+            "DELETE FROM mrz_production_confirmations WHERE promotion_id = %s",
+            (promotion["id"],),
+        )
+        promoted_active = promoted_active_from_row(promotion)
+        if promoted_active is None:
+            return
+        cursor.execute(
+            """
+            SELECT * FROM observations
+            WHERE symbol = %s
+            ORDER BY observed_at ASC, received_at ASC, id ASC
+            """,
+            (replay.symbol,),
+        )
+        observations = tuple(
+            observation_from_row(row) for row in cursor.fetchall()
+        )
+        migration_triggers = {
+            transition.trigger_event_id
+            for transition in replay.transitions
+            if transition.event_type.value == "MRZ_MIGRATED"
+        }
+        windows: dict[Route, deque[Observation]] = {
+            Route.BTD: deque(maxlen=ROUTE_OBSERVATION_WINDOW),
+            Route.STR: deque(maxlen=ROUTE_OBSERVATION_WINDOW),
+        }
+        promotion_seen = False
+        for incoming in observations:
+            windows[incoming.route].append(incoming)
+            if not promotion_seen:
+                promotion_seen = incoming.event_id == promoted_active.activation_event_id
+                continue
+            if incoming.event_id in migration_triggers:
+                break
+            evaluation = evaluate_concentration(
+                tuple(windows[incoming.route]),
+                incoming.route,
+            )
+            if (
+                evaluation.result is not ConcentrationResult.QUALIFIES
+                or evaluation.cluster is None
+            ):
+                continue
+            cluster = evaluation.cluster
+            location = classify_structural_location(
+                incoming.route,
+                cluster.midpoint,
+                incoming.ipda_20w_high,
+                incoming.ipda_20w_low,
+            )
+            if location is None:
+                continue
+            supporting_ids = [item.event_id for item in cluster.members]
+            identity_payload = {
+                "symbol": replay.symbol,
+                "route": incoming.route.value,
+                "evaluator_identity": "A-4-1:production-concentration-v1",
+                "candidate_lower": str(cluster.lower),
+                "candidate_upper": str(cluster.upper),
+                "candidate_midpoint": str(cluster.midpoint),
+                "supporting_observation_ids": supporting_ids,
+                "trigger_event_id": incoming.event_id,
+                "qualified_at": iso(incoming.observed_at),
+            }
+            evaluation_identity = hashlib.sha256(
+                json.dumps(
+                    identity_payload,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+            confirmation_key = (
+                f"{promotion['promotion_key']}:PRODUCTION_CONFIRMATION:"
+                f"{evaluation_identity}"
+            )
+            required = cluster.normalized_span * Decimal("100")
+            cursor.execute(
+                """
+                INSERT INTO mrz_production_confirmations (
+                    confirmation_key, promotion_id, symbol, route_owner,
+                    evaluator_identity, evaluation_identity,
+                    qualified_lower, qualified_upper, qualified_midpoint,
+                    structural_location, qualified_at, trigger_event_id,
+                    normalized_span, minimum_required_allowance_pct,
+                    production_threshold_pct, supporting_observation_count,
+                    supporting_observation_ids
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s
+                )
+                """,
+                (
+                    confirmation_key,
+                    promotion["id"],
+                    replay.symbol,
+                    incoming.route.value,
+                    "A-4-1:production-concentration-v1",
+                    evaluation_identity,
+                    cluster.lower,
+                    cluster.upper,
+                    cluster.midpoint,
+                    location.value,
+                    incoming.observed_at,
+                    incoming.event_id,
+                    cluster.normalized_span,
+                    required,
+                    Decimal("1.00"),
+                    cluster.observation_count,
+                    Json(supporting_ids),
+                ),
+            )
+            break
+
+    def _sync_near_miss_episodes(
+        self,
+        cursor: RealDictCursor,
+        *,
+        symbol: str,
+        trigger_event_id: str,
+        was_active: bool,
+    ) -> None:
+        cursor.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+            ("CURRENT_PRODUCTION_NEAR_MISS_EPISODES",),
+        )
+        cursor.execute(
+            """
+            SELECT * FROM observations
+            WHERE schema_version = '4.3'
+            ORDER BY symbol ASC, route ASC,
+                     observed_at ASC, received_at ASC, id ASC
+            """
+        )
+        observations = tuple(
+            observation_from_row(row) for row in cursor.fetchall()
+        )
+        previous_observations = tuple(
+            item for item in observations if item.event_id != trigger_event_id
+        )
+        cursor.execute("SELECT symbol FROM active_mrz ORDER BY symbol")
+        current_active = {str(row["symbol"]) for row in cursor.fetchall()}
+        previous_active = set(current_active)
+        if not was_active:
+            previous_active.discard(symbol)
+        current_candidates = current_production_near_misses(
+            observations,
+            active_symbols=current_active,
+        )
+        previous_candidates = current_production_near_misses(
+            previous_observations,
+            active_symbols=previous_active,
+        )
+        current_by_history = {
+            (str(row["symbol"]), str(row["route"])): row
+            for row in current_candidates
+        }
+        previous_by_history = {
+            (str(row["symbol"]), str(row["route"])): row
+            for row in previous_candidates
+        }
+        cursor.execute(
+            """
+            SELECT * FROM current_production_near_miss_episodes
+            WHERE ended_at IS NULL
+            FOR UPDATE
+            """
+        )
+        open_by_history = {
+            (str(row["symbol"]), str(row["route_owner"])): row
+            for row in cursor.fetchall()
+        }
+        for history, episode in open_by_history.items():
+            if history in current_by_history:
+                continue
+            reason = (
+                "SYMBOL_ACTIVATED"
+                if history[0] in current_active
+                else "NO_LONGER_CURRENT"
+            )
+            cursor.execute(
+                """
+                UPDATE current_production_near_miss_episodes
+                SET ended_at = clock_timestamp(), ended_reason = %s
+                WHERE id = %s AND ended_at IS NULL
+                """,
+                (reason, episode["id"]),
+            )
+        for history, candidate in current_by_history.items():
+            if history in open_by_history:
+                continue
+            candidate_symbol, route_value = history
+            previous = previous_by_history.get(history)
+            source = previous or candidate
+            deliverable = previous is None
+            source_event_id = (
+                trigger_event_id
+                if deliverable
+                else str(source["candidate_event_id"])
+            )
+            episode_key = (
+                f"MRZ_NEAR_MISS:{candidate_symbol}:{route_value}:"
+                f"{source_event_id}:{source['candidate_identity']}"
+            )
+            cursor.execute(
+                """
+                INSERT INTO current_production_near_miss_episodes (
+                    episode_key, symbol, route_owner,
+                    source_trigger_event_id, candidate_identity,
+                    evaluator_identity, candidate_lower, candidate_upper,
+                    candidate_midpoint, structural_location,
+                    minimum_required_allowance_pct,
+                    production_threshold_pct, shortfall_percentage_points,
+                    supporting_observation_count, supporting_observation_ids,
+                    candidate_timestamp, deliverable
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s
+                )
+                ON CONFLICT (episode_key) DO NOTHING
+                """,
+                (
+                    episode_key,
+                    candidate_symbol,
+                    route_value,
+                    source_event_id,
+                    source["candidate_identity"],
+                    source["evaluator_identity"],
+                    Decimal(str(source["candidate_lower_boundary"])),
+                    Decimal(str(source["candidate_upper_boundary"])),
+                    Decimal(str(source["candidate_midpoint"])),
+                    source["structural_location"],
+                    Decimal(str(source["minimum_required_allowance_pct"])),
+                    Decimal(str(source["configured_allowance_pct"])),
+                    Decimal(str(source["shortfall_percentage_points"])),
+                    int(source["candidate_observation_count"]),
+                    Json(list(source["supporting_observation_ids"])),
+                    source["candidate_timestamp"],
+                    deliverable,
+                ),
+            )
 
     def record_rejection(
         self,
@@ -579,6 +1119,23 @@ class EdgeRepository:
                 cursor.execute("SELECT * FROM active_mrz WHERE symbol = %s", (normalized,))
                 active = active_from_row(cursor.fetchone())
                 migration = current_migration_provenance(cursor, active)
+                cursor.execute(
+                    "SELECT * FROM operator_mrz_promotions WHERE symbol = %s",
+                    (normalized,),
+                )
+                promotion = cursor.fetchone()
+                cursor.execute(
+                    """
+                    SELECT c.*
+                    FROM mrz_production_confirmations c
+                    INNER JOIN operator_mrz_promotions p ON p.id = c.promotion_id
+                    WHERE p.symbol = %s
+                    ORDER BY c.qualified_at DESC, c.id DESC
+                    LIMIT 1
+                    """,
+                    (normalized,),
+                )
+                production_confirmation = cursor.fetchone()
                 concentration_checks = None
                 if active is None:
                     concentration_checks = {
@@ -595,6 +1152,8 @@ class EdgeRepository:
                     window_counts,
                     concentration_checks,
                     migration,
+                    promotion_provenance_payload(promotion),
+                    production_confirmation_payload(production_confirmation),
                 )
         finally:
             connection.close()
@@ -618,6 +1177,35 @@ class EdgeRepository:
                     """
                 )
                 return tuple(observation_from_row(row) for row in cursor.fetchall())
+        finally:
+            connection.close()
+
+    def activation_feasibility_inputs(
+        self,
+    ) -> tuple[tuple[Observation, ...], tuple[str, ...]]:
+        """Return one current snapshot for feasibility and promotion visibility."""
+        connection = connect(self.database_url)
+        try:
+            connection.set_session(readonly=True, isolation_level="REPEATABLE READ")
+            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        id, event_id, schema_version, symbol, route, observation_type,
+                        observation_price, observation_price_tick,
+                        ipda_20w_high, ipda_20w_low, observed_at, received_at
+                    FROM observations
+                    WHERE schema_version = '4.3'
+                    ORDER BY symbol ASC, route ASC,
+                             observed_at ASC, received_at ASC, id ASC
+                    """
+                )
+                observations = tuple(
+                    observation_from_row(row) for row in cursor.fetchall()
+                )
+                cursor.execute("SELECT symbol FROM active_mrz ORDER BY symbol")
+                active_symbols = tuple(str(row["symbol"]) for row in cursor.fetchall())
+                return observations, active_symbols
         finally:
             connection.close()
 
@@ -1072,7 +1660,7 @@ class EdgeRepository:
                         o.observed_at AS latest_observed_at,
                         a.route_owner, a.core_mrz_lower, a.core_mrz_upper,
                         a.core_mrz_midpoint, a.structural_location,
-                        a.confirming_observation_count,
+                        a.confirming_observation_count, a.activation_source,
                         EXISTS (
                             SELECT 1
                             FROM mrz_events e
@@ -1150,6 +1738,7 @@ class EdgeRepository:
                             "core_mrz_upper": number(anchor["core_mrz_upper"]),
                             "core_mrz_midpoint": number(anchor["core_mrz_midpoint"]),
                             "structural_location": anchor["structural_location"],
+                            "activation_source": anchor["activation_source"],
                             "has_migrated": bool(anchor["has_migrated"]),
                             "confirming_observation_count": anchor[
                                 "confirming_observation_count"
@@ -1321,6 +1910,59 @@ def log_unestablished_qualifying_concentration(
     )
 
 
+def promotion_provenance_payload(
+    row: Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    return {
+        "promotion_key": str(row["promotion_key"]),
+        "candidate_identity": str(row["candidate_identity"]),
+        "evaluator_identity": str(row["evaluator_identity"]),
+        "route": str(row["route_owner"]),
+        "candidate_lower": number(row["candidate_lower"]),
+        "candidate_upper": number(row["candidate_upper"]),
+        "candidate_midpoint": number(row["candidate_midpoint"]),
+        "structural_location": str(row["structural_location"]),
+        "promoted_at": iso(row["promoted_at"]),
+        "minimum_required_allowance_pct": number(
+            row["minimum_required_allowance_pct"]
+        ),
+        "production_threshold_pct": number(row["production_threshold_pct"]),
+        "shortfall_percentage_points": number(row["shortfall_percentage_points"]),
+        "supporting_observation_count": int(row["supporting_observation_count"]),
+        "supporting_observation_ids": list(row["supporting_observation_ids"]),
+        "candidate_timestamp": iso(row["candidate_timestamp"]),
+        "operator_identity": row.get("operator_identity"),
+    }
+
+
+def production_confirmation_payload(
+    row: Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    return {
+        "confirmation_key": str(row["confirmation_key"]),
+        "evaluation_identity": str(row["evaluation_identity"]),
+        "evaluator_identity": str(row["evaluator_identity"]),
+        "route": str(row["route_owner"]),
+        "qualified_lower": number(row["qualified_lower"]),
+        "qualified_upper": number(row["qualified_upper"]),
+        "qualified_midpoint": number(row["qualified_midpoint"]),
+        "structural_location": str(row["structural_location"]),
+        "qualified_at": iso(row["qualified_at"]),
+        "normalized_span": number(row["normalized_span"]),
+        "minimum_required_allowance_pct": number(
+            row["minimum_required_allowance_pct"]
+        ),
+        "production_threshold_pct": number(row["production_threshold_pct"]),
+        "supporting_observation_count": int(row["supporting_observation_count"]),
+        "supporting_observation_ids": list(row["supporting_observation_ids"]),
+        "trigger_event_id": str(row["trigger_event_id"]),
+    }
+
+
 def detail_payload(
     symbol: str,
     latest: Mapping[str, Any],
@@ -1328,6 +1970,8 @@ def detail_payload(
     window_counts: Mapping[str, Any],
     concentration_checks: Mapping[Route, ConcentrationDiagnostic] | None,
     migration: Mapping[str, Any],
+    operator_promotion: Mapping[str, Any] | None,
+    production_confirmation: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
     base = {
         "symbol": symbol,
@@ -1354,6 +1998,14 @@ def detail_payload(
             else None
         ),
         "migration": dict(migration),
+        "operator_promotion": (
+            dict(operator_promotion) if operator_promotion is not None else None
+        ),
+        "production_confirmation": (
+            dict(production_confirmation)
+            if production_confirmation is not None
+            else None
+        ),
     }
     if active is None:
         return {
@@ -1368,6 +2020,7 @@ def detail_payload(
             "supporting_observation_count": None,
             "activated_at": None,
             "activation_event_id": None,
+            "activation_source": None,
             "formation_started_at": None,
             "formation_completed_at": None,
             "formation_duration_seconds": None,
@@ -1384,6 +2037,7 @@ def detail_payload(
         "supporting_observation_count": active.supporting_observation_count,
         "activated_at": iso(active.activated_at),
         "activation_event_id": active.activation_event_id,
+        "activation_source": active.activation_source.value,
         "formation_started_at": iso(active.formation_started_at),
         "formation_completed_at": iso(active.formation_completed_at),
         "formation_duration_seconds": number(active.formation_duration_seconds),

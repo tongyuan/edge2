@@ -11,7 +11,7 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/static/edge-mrz-icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/static/edge-mrz-icon-180.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=migration-eqm-20260904" />
+    <link rel="stylesheet" href="/static/styles.css?v=operator-promotion-20260904" />
     <link rel="stylesheet" href="/static/diagnostics-nav.css?v=diagnostics-menu-20260827" />
   </head>
   <body>
@@ -286,6 +286,14 @@
           </div>
 
           <dl class="facts">
+            <div id="activationSourceFact" hidden>
+              <dt>ACTIVATION SOURCE</dt>
+              <dd id="activationSource"><span class="fact-primary">—</span></dd>
+            </div>
+            <div id="productionConfirmationFact" hidden>
+              <dt>PRODUCTION CONFIRMATION</dt>
+              <dd id="productionConfirmation"><span class="fact-primary">—</span></dd>
+            </div>
             <div>
               <dt>EVIDENCE</dt>
               <dd id="evidence"><span class="fact-primary">—</span></dd>
@@ -305,10 +313,10 @@
     <div class="activity-tooltip" id="heatmapActivityTooltip" role="tooltip" hidden></div>
     <div class="notification-toast-host" id="notificationToastHost" aria-live="polite"></div>
     <script src="/static/diagnostics-nav.js?v=diagnostics-menu-20260827" defer></script>
-    <script src="/static/heatmap-state.js?v=migration-eqm-20260904" defer></script>
-    <script src="/static/operator-time.js?v=migration-eqm-20260904" defer></script>
-    <script src="/static/monitor-presentation.js?v=migration-eqm-20260904" defer></script>
-    <script src="/static/notifications.js?v=migration-eqm-20260904" defer></script>
-    <script src="/static/app.js?v=migration-eqm-20260904" defer></script>
+    <script src="/static/heatmap-state.js?v=operator-promotion-20260904" defer></script>
+    <script src="/static/operator-time.js?v=operator-promotion-20260904" defer></script>
+    <script src="/static/monitor-presentation.js?v=operator-promotion-20260904" defer></script>
+    <script src="/static/notifications.js?v=near-miss-push-20260904" defer></script>
+    <script src="/static/app.js?v=operator-promotion-20260904" defer></script>
   </body>
 </html>

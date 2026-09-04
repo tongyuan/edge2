@@ -1,13 +1,18 @@
 const EDGE_ORIGIN = self.location.origin;
 const SYMBOL_PATTERN = /^[A-Z0-9][A-Z0-9:._-]{0,39}$/;
+const CANDIDATE_PATTERN = /^[a-f0-9]{64}$/;
 
 function safeNotificationPath(candidate) {
   try {
     const parsed = new URL(typeof candidate === "string" ? candidate : "/", EDGE_ORIGIN);
-    if (parsed.origin !== EDGE_ORIGIN || parsed.pathname !== "/") return "/";
+    if (parsed.origin !== EDGE_ORIGIN) return "/";
     const symbol = parsed.searchParams.get("symbol");
     if (!symbol || !SYMBOL_PATTERN.test(symbol)) return "/";
-    return `/?symbol=${encodeURIComponent(symbol)}`;
+    if (parsed.pathname === "/") return `/?symbol=${encodeURIComponent(symbol)}`;
+    if (parsed.pathname !== "/diagnostics/activation-feasibility") return "/";
+    const candidateIdentity = parsed.searchParams.get("candidate");
+    if (!candidateIdentity || !CANDIDATE_PATTERN.test(candidateIdentity)) return "/";
+    return `/diagnostics/activation-feasibility?symbol=${encodeURIComponent(symbol)}&candidate=${encodeURIComponent(candidateIdentity)}#current-production-near-misses`;
   } catch {
     return "/";
   }
@@ -27,7 +32,7 @@ self.addEventListener("push", (event) => {
     payload = {};
   }
   const eventId = typeof payload.event_id === "string" ? payload.event_id : "unknown";
-  const eventType = ["MRZ_ACTIVATED", "MRZ_MIGRATED"].includes(payload.event_type)
+  const eventType = ["MRZ_ACTIVATED", "MRZ_MIGRATED", "MRZ_NEAR_MISS"].includes(payload.event_type)
     ? payload.event_type
     : null;
   const url = safeNotificationPath(payload.url);

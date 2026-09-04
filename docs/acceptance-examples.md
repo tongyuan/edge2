@@ -46,4 +46,26 @@ For active STR bounds `180.00–180.60`, the lower boundary is `178.80`. Rejecti
 
 Four observations at exactly `110.00` create width `0`. With known tick `0.01`, effective width is `0.01` and the migration envelope is `109.98–110.02`. No arbitrary symbol-percentage fallback is introduced.
 
-These examples are executable assertions in `tests/test_concentration.py` and `tests/test_state_engine.py`. Run `python3 scripts/acceptance_examples.py` for a deterministic JSON summary of the activation/migration examples.
+## MU operator promotion, production confirmation, and migration
+
+For MU STR observations `941.52, 941.52, 941.52, 949.89` with IPDA low
+`200` and width `820.5882352941176470588235294`, the exact span is `1.02%`.
+Production therefore remains unestablished under the unchanged 1.00% rule and
+the candidate appears as a current production near miss.
+
+After explicit promotion, `941.52–949.89` is authoritative with
+`activation_source = OPERATOR_PROMOTED`. A later actual production cluster
+`930, 932, 934, 935.6` has span `5.6` against width
+`577.319587628865979381443299`, or `0.97%`. It is recorded as Production
+Confirmation while the promoted bounds and activation remain unchanged.
+
+Finally, STR observations `970, 972, 974, 976` are wholly above the promoted
+upper migration envelope and qualify at the existing production threshold.
+They create the normal `MRZ_MIGRATED` transition to `970–976`; there is still
+only one `MRZ_ACTIVATED` event and `OPERATOR_PROMOTED` remains the lifecycle's
+activation provenance.
+
+These examples are executable assertions in `tests/test_concentration.py`,
+`tests/test_state_engine.py`, and `tests/test_operator_promotion.py`. Run
+`python3 scripts/acceptance_examples.py` for a deterministic JSON summary of
+the original production activation/migration examples.

@@ -13,6 +13,7 @@ from app.concentration import (
     evaluate_concentration,
 )
 from app.domain import (
+    ActivationSource,
     ActiveMRZ,
     Cluster,
     MRZEventType,
@@ -31,7 +32,12 @@ def effective_instrument_tick(cluster: Cluster) -> Decimal:
     return min(ticks)
 
 
-def build_active_mrz(observation: Observation, cluster: Cluster) -> ActiveMRZ | None:
+def build_active_mrz(
+    observation: Observation,
+    cluster: Cluster,
+    *,
+    activation_source: ActivationSource = ActivationSource.PRODUCTION_QUALIFIED,
+) -> ActiveMRZ | None:
     location = classify_structural_location(
         observation.route,
         cluster.midpoint,
@@ -59,6 +65,7 @@ def build_active_mrz(observation: Observation, cluster: Cluster) -> ActiveMRZ | 
         ipda_width_at_activation=observation.ipda_width,
         normalized_span_at_activation=cluster.normalized_span,
         instrument_tick=effective_instrument_tick(cluster),
+        activation_source=activation_source,
     )
 
 
@@ -111,7 +118,11 @@ def build_successor_mrz(
         for item in cluster.members
     ):
         return None
-    return build_active_mrz(incoming, cluster)
+    return build_active_mrz(
+        incoming,
+        cluster,
+        activation_source=active.activation_source,
+    )
 
 
 def supports_active_core_mrz(active: ActiveMRZ, observation: Observation) -> bool:
@@ -135,6 +146,7 @@ def replay_symbol(
     *,
     minimum_required_count: int = MIN_CLUSTER_OBSERVATIONS,
     concentration_threshold: Decimal = CONCENTRATION_SPAN_THRESHOLD,
+    promoted_activation: ActiveMRZ | None = None,
 ) -> ReplayResult:
     ordered = sorted(observations, key=lambda item: item.order_key)
     if not ordered:
@@ -142,6 +154,8 @@ def replay_symbol(
     symbol = ordered[0].symbol
     if any(item.symbol != symbol for item in ordered):
         raise ValueError("replay_symbol accepts exactly one normalized symbol")
+    if promoted_activation is not None and promoted_activation.symbol != symbol:
+        raise ValueError("promoted activation must belong to the replayed symbol")
 
     windows: dict[Route, deque[Observation]] = {
         Route.BTD: deque(maxlen=ROUTE_OBSERVATION_WINDOW),
@@ -155,6 +169,29 @@ def replay_symbol(
         route_window.append(incoming)
 
         if active is None:
+            if (
+                promoted_activation is not None
+                and incoming.event_id == promoted_activation.activation_event_id
+            ):
+                active = promoted_activation
+                transitions.append(
+                    MRZTransition(
+                        sequence=len(transitions) + 1,
+                        event_type=MRZEventType.ACTIVATED,
+                        symbol=symbol,
+                        route_owner=active.route_owner,
+                        previous_route_owner=None,
+                        occurred_at=active.activated_at,
+                        trigger_event_id=incoming.event_id,
+                        old_mrz=None,
+                        new_mrz=active,
+                        details={
+                            "reason": "current_production_near_miss_operator_promoted",
+                            "activation_source": ActivationSource.OPERATOR_PROMOTED.value,
+                        },
+                    )
+                )
+                continue
             evaluation = evaluate_concentration(
                 tuple(route_window),
                 incoming.route,

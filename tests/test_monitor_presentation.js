@@ -2,8 +2,10 @@ const assert = require("node:assert/strict");
 const {
   formatFormationDuration,
   buildConcentrationCheck,
+  buildActivationSourcePresentation,
   buildEvidencePresentation,
   buildMigrationPresentation,
+  buildProductionConfirmationPresentation,
   formatActivatedAt,
   formatLatestObservationContext,
   operatorCardHref,
@@ -40,6 +42,49 @@ assert.equal(
 );
 assert.equal(operatorCardHref({ mrz_status: "unestablished", symbol: "BTCUSDT" }), null);
 assert.equal(operatorCardHref({ mrz_status: "active", symbol: "" }), null);
+assert.deepEqual(
+  buildActivationSourcePresentation({
+    mrz_status: "active",
+    activation_source: "OPERATOR_PROMOTED",
+    operator_promotion: {
+      minimum_required_allowance_pct: "1.02",
+      production_threshold_pct: "1",
+    },
+  }),
+  {
+    primary: "OPERATOR PROMOTED",
+    secondary: ["1.02% required / 1.00% threshold"],
+  },
+);
+assert.deepEqual(
+  buildActivationSourcePresentation({
+    mrz_status: "active",
+    activation_source: "PRODUCTION_QUALIFIED",
+  }),
+  { primary: "PRODUCTION QUALIFIED", secondary: [] },
+);
+assert.equal(buildActivationSourcePresentation({ mrz_status: "unestablished" }), null);
+assert.deepEqual(
+  buildProductionConfirmationPresentation({
+    production_confirmation: {
+      qualified_lower: "943.1",
+      qualified_upper: "948.7",
+      qualified_midpoint: "945.9",
+      qualified_at: "2026-09-04T05:00:00Z",
+      minimum_required_allowance_pct: "0.97",
+      supporting_observation_count: 4,
+    },
+  }, () => "4 Sep 2026 · 01:00 UTC−4", formatPrice),
+  {
+    primary: "943.1–948.7",
+    secondary: [
+      "Midpoint · 945.9",
+      "Qualified · 4 Sep 2026 · 01:00 UTC−4",
+      "0.97% · 4 observations",
+    ],
+  },
+);
+assert.equal(buildProductionConfirmationPresentation({}), null);
 assert.equal(
   buildMigrationPresentation(
     { mrz_status: "active", migration: { has_migrated: false } },

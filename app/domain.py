@@ -39,6 +39,11 @@ class MRZEventType(StrEnum):
     ROUTE_CHANGED = "ROUTE_CHANGED"
 
 
+class ActivationSource(StrEnum):
+    PRODUCTION_QUALIFIED = "PRODUCTION_QUALIFIED"
+    OPERATOR_PROMOTED = "OPERATOR_PROMOTED"
+
+
 @dataclass(frozen=True, slots=True)
 class Observation:
     id: int
@@ -110,6 +115,7 @@ class ActiveMRZ:
     ipda_width_at_activation: Decimal
     normalized_span_at_activation: Decimal
     instrument_tick: Decimal
+    activation_source: ActivationSource = ActivationSource.PRODUCTION_QUALIFIED
 
     @property
     def width(self) -> Decimal:

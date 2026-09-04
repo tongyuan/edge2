@@ -11,13 +11,24 @@ It is a clean project, database, runtime, and Git repository. It does not import
 
 ## Operational doctrine
 
-Every symbol begins as `NO_ACTIVE_MRZ`. A route becomes authoritative only when an incoming schema 4.3 observation completes a valid four-observation price concentration. The authority is singular:
+Every symbol begins as `NO_ACTIVE_MRZ`. A route normally becomes authoritative
+when an incoming schema 4.3 observation completes a valid four-observation
+price concentration. An operator may instead promote the exact candidate shown
+in `Current production near misses`; that is the only override path. The
+authority remains singular:
 
 ```text
 SOURCE = active_mrz.route_owner
 ```
 
-The active bounds are frozen. Later observations cannot resize them. A confirmed external successor concentration can atomically replace them using its own BTD/STR route and structural validity, independently of the previous authority's route or direction. A route-changing migration records `MRZ_MIGRATED` followed by the `ROUTE_CHANGED` audit companion.
+The active bounds are frozen. Later observations cannot resize them. Promotion
+records immutable `OPERATOR_PROMOTED` provenance and does not change the 1.00%
+production threshold. A later production-qualified cluster that is not a
+migration successor is retained as `Production Confirmation` without replacing
+the promoted authority. A confirmed external successor concentration can
+atomically replace the authority using the existing migration rules. A
+route-changing migration records `MRZ_MIGRATED` followed by the `ROUTE_CHANGED`
+audit companion.
 
 ## Schema 4.3 webhook contract
 
@@ -97,7 +108,22 @@ The confirming event's IPDA frame supplies normalization and structural classifi
 
 ## Activation and migration
 
-Activation persists the owner, bounds, midpoint, location, evidence count, confirming time/event, activation IPDA frame, normalized span, and instrument tick.
+Activation persists the owner, bounds, midpoint, location, evidence count,
+confirming time/event, activation IPDA frame, normalized span, instrument tick,
+and activation source (`PRODUCTION_QUALIFIED` or `OPERATOR_PROMOTED`).
+
+The promotion command accepts the symbol, route, and opaque candidate identity
+from the current near-miss card. Inside one transaction it takes the same
+per-symbol advisory lock used by ingestion, rejects existing authority,
+re-evaluates the current canonical candidate, requires an exact identity match,
+writes immutable promotion provenance, and creates the normal `MRZ_ACTIVATED`
+transition plus `active_mrz`. Repeating the exact command is a successful no-op;
+a changed or resolved candidate returns HTTP 409.
+
+After promotion, the ordinary replay engine is seeded with that authority at
+the promotion trigger. `OPERATOR_PROMOTED` remains the immutable lifecycle
+origin across later migrations. All support, successor, migration-envelope,
+and `MRZ_MIGRATED` behavior from that point onward is unchanged.
 
 For active width `W`:
 
@@ -144,6 +170,7 @@ PUT  /api/groups/{group_id}
 DELETE /api/groups/{group_id}
 GET  /api/groups/{group_id}/migration-path
 GET  /api/diagnostics/activation-feasibility
+POST /api/diagnostics/activation-feasibility/near-misses/{symbol}/promote
 GET  /api/diagnostics/mrz-robustness
 GET  /api/notifications/config
 POST /api/notifications/subscriptions
@@ -158,8 +185,9 @@ The product surfaces have deliberately separate responsibilities:
 
 - **MRZ Monitor** shows production WHO + WHERE and the current authoritative MRZ.
 - **MRZ Formation Diagnostics** shows the current production formation rule,
-  observed coverage, first qualifications, and pre-activation near misses without
-  changing production state.
+  observed coverage, and first qualifications. Its current near-miss cards are
+  the sole explicit operator path for promoting an exact candidate to active
+  authority.
 - **MRZ Operation Card** explains post-activation robustness, migration pressure,
   successor watch, and discretionary operator evidence.
 - **Pine strategy tool** handles execution only after the operator chooses which
@@ -181,7 +209,8 @@ reads the current `MRZ_ACTIVATED`/`MRZ_MIGRATED` chain by `occurred_at` and uses
 the structural location persisted on each historical event. Saving, editing, or
 deleting a group never writes observations, active authority, or MRZ events.
 
-The selected detail renders SOURCE, ACTIVE MRZ, MRZ LOCATION, CURRENT LOCATION,
+The selected detail renders SOURCE, ACTIVE MRZ, activation source, any later
+Production Confirmation, MRZ LOCATION, CURRENT LOCATION,
 active-core supporting evidence, latest observation, and MRZ status. Both
 overview and detail derive `current_price_location` through the same backend
 classifier using the latest accepted observation price and that observation's
@@ -220,21 +249,25 @@ The PostgreSQL 16 database revolves around:
 
 - `observations` — validated, durable, deduplicated schema 4.3 events.
 - `active_mrz` — one authoritative row per symbol.
+- `operator_mrz_promotions` — immutable exact candidate and operator-promotion provenance.
+- `mrz_production_confirmations` — the first later production-qualified cluster retained without resizing promoted authority.
 - `mrz_events` — operational transition audit only.
 - `ingestion_rejections` — sanitized invalid-packet diagnostics.
 - `ingestion_metrics` — lightweight durable counters for health reporting.
 - `web_push_subscriptions` — single-operator browser Push subscriptions.
-- `web_push_notifications` — deduplicated logical activation and migration notifications.
+- `current_production_near_miss_episodes` — durable current-list episode identity and replay baseline.
+- `web_push_notifications` — deduplicated near-miss, activation, and migration notifications.
 - `web_push_delivery_attempts` — isolated per-subscription delivery outcomes.
 - `web_push_notification_cutovers` — replay-safe migration notification cutover.
 - `saved_symbol_groups` — named canonical symbol cohorts only; analytics remain derived.
 
 Migration `001_initial.sql` builds the isolated schema. Additive migrations
-`002–007` add the overview index, supporting count, nullable immutable
-formation evidence, downstream Web Push tables, and migration-notification
-provenance/cutover state, plus saved cohort definitions. No 4.2 table or historical
-record is read. See [`docs/web-push.md`](docs/web-push.md) for notification
-configuration, safety, deployment, and iPhone verification.
+`002–008` add the overview index, supporting count, nullable immutable
+formation evidence, downstream Web Push tables, migration-notification
+provenance/cutover state, saved cohort definitions, operator-promotion
+provenance, Production Confirmation, and near-miss episodes. No 4.2 table or
+historical record is read. See [`docs/web-push.md`](docs/web-push.md) for
+notification configuration, safety, deployment, and iPhone verification.
 
 ## Test
 
@@ -247,8 +280,9 @@ make test
 The suite covers ingestion, validation, durable duplicate handling, price-space
 concentration, route windows, directional IPDA context, exact-cluster formation
 duration, activation, frozen bounds, migration, zero-width tick safety, late
-replay, atomic audit preservation, API output, UI presentation, and restart
-persistence.
+replay, atomic audit preservation, exact near-miss promotion, stale-candidate
+rejection, immutable provenance, Production Confirmation, one notification per
+near-miss episode, API output, UI presentation, and restart persistence.
 
 ## Git development and remote operation
 

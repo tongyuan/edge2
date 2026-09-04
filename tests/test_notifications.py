@@ -127,6 +127,21 @@ class NotificationIntegrationTests(unittest.TestCase):
             ("77309.19", "77350", "77400", "77436.91"),
         )
 
+    def post_mu_near_miss_observation(self, index: int, price: str):
+        return self.client.post(
+            "/webhook/tradingview",
+            json=webhook_payload(
+                index,
+                price,
+                event_id=f"mu-near-event-{index}",
+                symbol="MU",
+                route="STR",
+                observation_type="rejection",
+                ipda_20w_low="200",
+                ipda_20w_high="1020.5882352941176470588235294",
+            ),
+        )
+
     def scalar(self, query: str):
         connection = connect(self.database_url)
         try:
@@ -314,6 +329,58 @@ class NotificationIntegrationTests(unittest.TestCase):
         self.assertEqual(len(self.sender.calls), 2)
         self.assertEqual(self.scalar("SELECT COUNT(*) FROM web_push_notifications"), 1)
         self.assertEqual(self.active_mrz_signature(), active_before)
+
+    def test_near_miss_uses_existing_retry_outbox_and_exact_deep_link(self) -> None:
+        self.sender.outcomes = [503, None]
+        self.client.post("/api/notifications/subscriptions", json=SUBSCRIPTION)
+        for index, price in enumerate(("941.52", "941.52", "941.52", "949.89"), 1):
+            response = self.post_mu_near_miss_observation(index, price)
+            self.assertEqual(response.status_code, 201)
+
+        self.assertEqual(len(self.sender.calls), 1)
+        self.assertEqual(
+            self.scalar(
+                "SELECT COUNT(*) FROM web_push_notifications "
+                "WHERE event_type = 'MRZ_NEAR_MISS'"
+            ),
+            1,
+        )
+        self.assertTrue(
+            self.scalar(
+                "SELECT retryable FROM web_push_delivery_attempts "
+                "WHERE outcome = 'FAILED'"
+            )
+        )
+        first_payload = json.loads(self.sender.calls[0]["data"])
+        self.assertEqual(first_payload["event_type"], "MRZ_NEAR_MISS")
+        self.assertEqual(first_payload["symbol"], "MU")
+        self.assertEqual(first_payload["route_owner"], "STR")
+        self.assertEqual(first_payload["candidate_lower"], "941.52")
+        self.assertEqual(first_payload["candidate_upper"], "949.89")
+        self.assertEqual(first_payload["minimum_required_allowance_pct"], "1.02")
+        self.assertEqual(first_payload["production_threshold_pct"], "1")
+        self.assertEqual(first_payload["supporting_observation_count"], 4)
+        self.assertEqual(len(first_payload["candidate_identity"]), 64)
+        self.assertEqual(
+            first_payload["url"],
+            "/diagnostics/activation-feasibility?symbol=MU&candidate="
+            f"{first_payload['candidate_identity']}#current-production-near-misses",
+        )
+
+        self.client.app.state.notification_service.recover()
+        self.assertEqual(len(self.sender.calls), 2)
+        self.assertEqual(
+            self.scalar("SELECT COUNT(*) FROM web_push_delivery_attempts"),
+            2,
+        )
+        self.assertEqual(
+            self.scalar("SELECT COUNT(*) FROM web_push_notifications"),
+            1,
+        )
+        self.assertEqual(
+            json.loads(self.sender.calls[1]["data"])["source_event_key"],
+            first_payload["source_event_key"],
+        )
 
     def test_transient_exceptions_are_bounded_to_three_attempts(self) -> None:
         self.sender.outcomes = [

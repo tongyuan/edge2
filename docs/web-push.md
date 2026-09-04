@@ -2,23 +2,26 @@
 
 ## Scope and authority boundary
 
-Web Push is an operational output only. It consumes exactly the already-persisted
-`MRZ_ACTIVATED` and `MRZ_MIGRATED` event types:
+Web Push is an operational output only. It consumes persisted `MRZ_ACTIVATED`
+and `MRZ_MIGRATED` events plus durable entries into the existing `Current
+production near misses` list:
 
 ```text
 TradingView observation
   -> unchanged MRZ engine
-  -> active_mrz + mrz_events commit
-  -> notification background task re-reads the persisted transition
+  -> active_mrz + mrz_events or current near-miss episode commit
+  -> notification background task re-reads the persisted source
   -> logical notification deduplication
   -> active Web Push subscriptions
 ```
 
 The notification subsystem never evaluates concentration, qualification,
 migration eligibility, successor state, route ownership, or structural
-authority. It never notifies for `ROUTE_CHANGED`; a route transition is included
-in the corresponding migration notification. The webhook response and MRZ
-commit do not depend on push delivery.
+authority. Ingestion creates near-miss episodes by calling the same canonical
+A-4-1 current-list evaluator used by the operator UI; notification delivery only
+copies those committed facts. It never notifies for `ROUTE_CHANGED`; a route
+transition is included in the corresponding migration notification. The
+webhook response and MRZ commit do not depend on push delivery.
 
 Migration `005_web_push_notifications.sql` is additive. It creates:
 
@@ -35,6 +38,15 @@ when the triggering observation was received after that cutover. Together with
 the activation baseline from migration 005, this prevents deployment, restart,
 or deterministic MRZ replay from sending historical transitions. Neither
 migration updates `observations`, `active_mrz`, or `mrz_events`.
+
+Migration `008_operator_promotion_near_miss_notifications.sql` extends the
+logical outbox with `MRZ_NEAR_MISS` candidate provenance and creates durable
+near-miss episodes. One continuous membership episode produces one logical
+notification even when its exact candidate evolves. Exit followed by re-entry
+is a new episode. Existing candidates are baselined as non-deliverable on their
+first observed post-migration replay, so application startup, recovery,
+duplicate webhooks, and deterministic replay do not send historical near
+misses.
 
 ## Configuration
 
@@ -123,12 +135,25 @@ The compact JSON payload contains:
 }
 ```
 
+A near-miss payload uses `event_type: MRZ_NEAR_MISS` and includes the exact
+candidate identity, evaluator identity, candidate bounds/midpoint and time,
+route/location, required percentage, fixed `1.00` production threshold,
+shortfall, and supporting count. Its deep link is:
+
+```text
+/diagnostics/activation-feasibility?symbol=<symbol>&candidate=<64-hex-id>#current-production-near-misses
+```
+
+The page focuses the exact card. If the candidate changed or the episode
+resolved, it says so and shows the latest current state rather than promoting
+stale evidence.
+
 All MRZ fields are copied from the persisted authoritative event. Migration old
 bounds come from `MRZ_MIGRATED` provenance, never from current `active_mrz` UI
-state. The service worker accepts only the existing same-origin `/` monitor
-route with a validated symbol query. It focuses and navigates an existing EDGE
-window when possible, or opens one new window. External or unexpected paths
-fall back to `/`.
+state. The service worker accepts only the same-origin `/` monitor route with a
+validated symbol query or the exact Activation Feasibility candidate path above.
+It focuses and navigates an existing EDGE window when possible, or opens one new
+window. External or unexpected paths fall back to `/`.
 
 ## Deployment
 
@@ -139,7 +164,7 @@ make test
 ./scripts/deploy-remote.sh
 ```
 
-Application startup applies migrations `005` and `006` before Uvicorn starts.
+Application startup applies migrations `005`, `006`, and `008` before Uvicorn starts.
 It is also safe to run the existing explicit migration command:
 
 ```bash
@@ -174,14 +199,17 @@ Use development/test data only; do not manufacture production MRZ authority.
    ```
 
 6. In a development/test environment, submit exact observation sequences that
-   produce one authoritative `MRZ_ACTIVATED` event and one later
-   `MRZ_MIGRATED` event.
+   first produce one current production near miss, then one authoritative
+   `MRZ_ACTIVATED` event and one later `MRZ_MIGRATED` event.
 7. Put EDGE in the background and verify one iOS system notification appears
-   for each transition, with no separate `ROUTE_CHANGED` alert.
-8. Tap it and verify EDGE focuses/opens the correct `/?symbol=...` monitor
+   for the near-miss episode and for each transition, with no separate
+   `ROUTE_CHANGED` alert.
+8. Tap the near-miss notification and verify EDGE focuses the exact candidate;
+   tap transition notifications and verify the correct `/?symbol=...` monitor
    detail.
-9. Retry each confirming webhook event and restart the service. Confirm that no
-   duplicate logical notification or system alert is produced.
+9. Continue a near-miss episode, retry confirming webhooks, run recovery, and
+   restart the service. Confirm that no duplicate logical notification or
+   system alert is produced.
 
 On iPhone/iPad, Web Push is available to Home Screen web apps on iOS/iPadOS
 16.4 or later, and permission must be requested from a direct operator gesture.

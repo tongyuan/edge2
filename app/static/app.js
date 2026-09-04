@@ -63,6 +63,8 @@ const {
 } = globalThis.edgeHeatmapState;
 const {
   buildEvidencePresentation,
+  buildActivationSourcePresentation,
+  buildProductionConfirmationPresentation,
   buildMigrationPresentation,
   formatLatestObservationContext,
   formatActivatedAt,
@@ -87,6 +89,10 @@ const fields = {
   evidence: document.querySelector("#evidence"),
   latest: document.querySelector("#latestObservation"),
   midpoint: document.querySelector("#mrzMidpoint"),
+  activationSourceFact: document.querySelector("#activationSourceFact"),
+  activationSource: document.querySelector("#activationSource"),
+  productionConfirmationFact: document.querySelector("#productionConfirmationFact"),
+  productionConfirmation: document.querySelector("#productionConfirmation"),
 };
 const activityTooltip = document.querySelector("#heatmapActivityTooltip");
 let activityTooltipOwner = null;
@@ -828,6 +834,24 @@ function renderSymbol(state) {
     [formatLatestObservationContext(state, formatOperatorTimestampUtcMinus4)],
   );
   fields.midpoint.textContent = formatPrice(state.core_mrz_midpoint);
+  const activationSource = buildActivationSourcePresentation(state);
+  fields.activationSourceFact.hidden = activationSource === null;
+  renderFact(
+    fields.activationSource,
+    activationSource?.primary || "—",
+    activationSource?.secondary || [],
+  );
+  const productionConfirmation = buildProductionConfirmationPresentation(
+    state,
+    formatOperatorTimestampUtcMinus4,
+    formatPrice,
+  );
+  fields.productionConfirmationFact.hidden = productionConfirmation === null;
+  renderFact(
+    fields.productionConfirmation,
+    productionConfirmation?.primary || "—",
+    productionConfirmation?.secondary || [],
+  );
   emptyState.hidden = true;
   stateCard.hidden = false;
 }

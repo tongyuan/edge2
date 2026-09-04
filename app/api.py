@@ -10,11 +10,12 @@ from typing import Any, Mapping
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.activation_feasibility import ActivationFeasibilityService
 from app.concentration import MIN_CLUSTER_OBSERVATIONS
 from app.config import Settings
+from app.domain import Route
 from app.group_tracking import SavedGroupInput, SavedGroupNameConflict
 from app.logging_config import configure_logging
 from app.mrz_robustness import MRZRobustnessService
@@ -24,12 +25,24 @@ from app.notifications import (
     PushSubscriptionDelete,
     PushSubscriptionPayload,
 )
-from app.repository import EdgeRepository, json_diagnostics, sanitize_payload
+from app.repository import (
+    EdgeRepository,
+    PromotionConflict,
+    json_diagnostics,
+    sanitize_payload,
+)
 from app.validation import ObservationPayload
 
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 LOGGER = logging.getLogger("edge2.api")
+
+
+class NearMissPromotionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    route: Route
+    candidate_identity: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
 def supplied_secret(request: Request, payload: Any) -> str | None:
@@ -421,9 +434,54 @@ def create_app(
 
     @application.get("/api/diagnostics/activation-feasibility")
     def activation_feasibility() -> JSONResponse:
-        service = ActivationFeasibilityService(repository.schema_43_observations)
+        observations, active_symbols = repository.activation_feasibility_inputs()
+        service = ActivationFeasibilityService(
+            lambda: observations,
+            active_symbol_reader=lambda: active_symbols,
+        )
         return JSONResponse(
             service.generate_report(),
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
+    @application.post(
+        "/api/diagnostics/activation-feasibility/near-misses/{symbol}/promote"
+    )
+    def promote_current_near_miss(
+        symbol: str,
+        command: NearMissPromotionRequest,
+        background_tasks: BackgroundTasks,
+    ) -> JSONResponse:
+        try:
+            outcome = repository.promote_current_near_miss(
+                symbol,
+                command.route,
+                command.candidate_identity,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except PromotionConflict as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": exc.code, "message": str(exc)},
+            ) from exc
+        background_tasks.add_task(
+            run_notification_trigger,
+            notification_service,
+            outcome.trigger_event_id,
+        )
+        state = repository.symbol_detail(outcome.symbol)
+        return JSONResponse(
+            {
+                "ok": True,
+                "promoted": not outcome.duplicate,
+                "duplicate": outcome.duplicate,
+                "symbol": outcome.symbol,
+                "route": outcome.route.value,
+                "candidate_identity": outcome.candidate_identity,
+                "state": state,
+            },
+            status_code=200 if outcome.duplicate else 201,
             headers={"Cache-Control": "no-store, max-age=0"},
         )
 

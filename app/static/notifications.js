@@ -1,6 +1,7 @@
 (function initializeEdgeNotifications(globalObject) {
   const REQUESTED_STORAGE_KEY = "edgeMRZNotificationsRequested";
   const SYMBOL_PATTERN = /^[A-Z0-9][A-Z0-9:._-]{0,39}$/;
+  const CANDIDATE_PATTERN = /^[a-f0-9]{64}$/;
 
   function supportsWebPush(environment = globalObject) {
     return Boolean(
@@ -31,10 +32,14 @@
   function safeNotificationPath(candidate, origin = globalObject.location?.origin) {
     try {
       const parsed = new URL(typeof candidate === "string" ? candidate : "/", origin);
-      if (parsed.origin !== origin || parsed.pathname !== "/") return "/";
+      if (parsed.origin !== origin) return "/";
       const symbol = parsed.searchParams.get("symbol");
       if (!symbol || !SYMBOL_PATTERN.test(symbol)) return "/";
-      return `/?symbol=${encodeURIComponent(symbol)}`;
+      if (parsed.pathname === "/") return `/?symbol=${encodeURIComponent(symbol)}`;
+      if (parsed.pathname !== "/diagnostics/activation-feasibility") return "/";
+      const candidateIdentity = parsed.searchParams.get("candidate");
+      if (!candidateIdentity || !CANDIDATE_PATTERN.test(candidateIdentity)) return "/";
+      return `/diagnostics/activation-feasibility?symbol=${encodeURIComponent(symbol)}&candidate=${encodeURIComponent(candidateIdentity)}#current-production-near-misses`;
     } catch {
       return "/";
     }
@@ -185,7 +190,7 @@
         try {
           await persistSubscription(this.subscription, fetch.bind(globalObject));
           this.rememberRequested();
-          this.render("subscribed", "MRZ activation and migration alerts are enabled on this device.");
+          this.render("subscribed", "MRZ near-miss, activation and migration alerts are enabled on this device.");
         } catch (error) {
           if (error.code === "subscription_expired") {
             await this.subscription.unsubscribe();
@@ -214,7 +219,7 @@
             fetchImpl: fetch.bind(globalObject),
           });
           this.subscription = null;
-          this.render("ready", "MRZ activation and migration alerts are off on this device.");
+          this.render("ready", "MRZ near-miss, activation and migration alerts are off on this device.");
           return;
         }
         const result = await enableWebPush({
@@ -233,7 +238,7 @@
         }
         this.subscription = result.subscription;
         this.rememberRequested();
-        this.render("subscribed", "MRZ activation and migration alerts are enabled on this device.");
+        this.render("subscribed", "MRZ near-miss, activation and migration alerts are enabled on this device.");
       } catch (error) {
         this.render("error", error.message || "Unable to update notifications.");
       }

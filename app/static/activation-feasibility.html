@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="EDGE 2.0 MRZ formation diagnostics" />
     <title>EDGE 2.0 · MRZ Formation Diagnostics</title>
-    <link rel="stylesheet" href="/static/activation-feasibility.css?v=formation-diagnostics-20260904" />
+    <link rel="stylesheet" href="/static/activation-feasibility.css?v=near-miss-promotion-20260904" />
     <link rel="stylesheet" href="/static/diagnostics-nav.css?v=diagnostics-menu-20260827" />
   </head>
   <body>
@@ -40,6 +40,7 @@
       <section class="status-panel" id="reportStatus" aria-live="polite">
         Calculating the latest diagnostics…
       </section>
+      <aside class="promotion-outcome" id="promotionOutcome" aria-live="polite" hidden></aside>
 
       <div id="reportContent" hidden>
         <section class="metadata-grid" aria-label="Report metadata">
@@ -60,7 +61,7 @@
           <div id="productionContent">—</div>
         </section>
 
-        <section class="report-section" aria-labelledby="near-miss-title">
+        <section class="report-section" id="current-production-near-misses" aria-labelledby="near-miss-title">
           <div class="section-heading">
             <div><p class="eyebrow">CURRENT STATE</p><h2 id="near-miss-title">Current production near misses</h2></div>
           </div>
@@ -83,8 +84,20 @@
         </section>
       </div>
     </main>
+    <dialog class="promotion-dialog" id="promotionDialog" aria-labelledby="promotionTitle">
+      <form method="dialog">
+        <p class="eyebrow">OPERATOR AUTHORITY</p>
+        <h2 id="promotionTitle">PROMOTE TO ACTIVE MRZ?</h2>
+        <div id="promotionDetails"></div>
+        <p class="promotion-error" id="promotionError" role="alert" hidden></p>
+        <div class="promotion-actions">
+          <button type="submit" value="cancel" class="secondary-action">Cancel</button>
+          <button type="button" id="confirmPromotion">Confirm Promotion</button>
+        </div>
+      </form>
+    </dialog>
     <script src="/static/diagnostics-nav.js?v=diagnostics-menu-20260827" defer></script>
     <script src="/static/operator-time.js?v=operator-clarity-20260824" defer></script>
-    <script src="/static/activation-feasibility.js?v=formation-diagnostics-20260904" defer></script>
+    <script src="/static/activation-feasibility.js?v=near-miss-promotion-20260904" defer></script>
   </body>
 </html>

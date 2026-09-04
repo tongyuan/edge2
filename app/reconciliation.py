@@ -11,7 +11,12 @@ from psycopg2.extras import RealDictCursor
 
 from app.db import connect, transaction
 from app.domain import ActiveMRZ, MRZEventType, MRZTransition, Observation, ReplayResult
-from app.repository import EdgeRepository, active_from_row, observation_from_row
+from app.repository import (
+    EdgeRepository,
+    active_from_row,
+    observation_from_row,
+    promoted_active_from_row,
+)
 from app.state_engine import replay_symbol
 from app.validation import normalize_symbol
 
@@ -26,6 +31,7 @@ class PersistedDerivedState:
     observations: tuple[Observation, ...]
     active_mrz: ActiveMRZ
     events: tuple[Mapping[str, Any], ...]
+    promoted_activation: ActiveMRZ | None = None
 
 
 class ReconciliationError(RuntimeError):
@@ -90,7 +96,10 @@ class DerivedStateReconciler:
                     if report["result"] == RESULT_NO_CHANGE:
                         continue
                     snapshot = self._read_symbol(cursor, report["symbol"])
-                    replay = replay_symbol(snapshot.observations)
+                    replay = replay_symbol(
+                        snapshot.observations,
+                        promoted_activation=snapshot.promoted_activation,
+                    )
                     try:
                         self.repository._replace_derived_state(cursor, replay)
                     except Exception as exc:
@@ -150,13 +159,19 @@ class DerivedStateReconciler:
         cursor: RealDictCursor,
         symbols: Sequence[str] | None,
     ) -> list[dict[str, Any]]:
-        return [
-            compare_derived_state(snapshot, replay_symbol(snapshot.observations))
-            for snapshot in (
-                self._read_symbol(cursor, symbol)
-                for symbol in self._symbol_names(cursor, symbols)
+        reports = []
+        for symbol in self._symbol_names(cursor, symbols):
+            snapshot = self._read_symbol(cursor, symbol)
+            reports.append(
+                compare_derived_state(
+                    snapshot,
+                    replay_symbol(
+                        snapshot.observations,
+                        promoted_activation=snapshot.promoted_activation,
+                    ),
+                )
             )
-        ]
+        return reports
 
     @staticmethod
     def _symbol_names(
@@ -224,7 +239,18 @@ class DerivedStateReconciler:
             (symbol,),
         )
         events = tuple(dict(row) for row in cursor.fetchall())
-        return PersistedDerivedState(symbol, observations, active, events)
+        cursor.execute(
+            "SELECT * FROM operator_mrz_promotions WHERE symbol = %s",
+            (symbol,),
+        )
+        promoted_activation = promoted_active_from_row(cursor.fetchone())
+        return PersistedDerivedState(
+            symbol,
+            observations,
+            active,
+            events,
+            promoted_activation,
+        )
 
 
 def compare_derived_state(
@@ -326,6 +352,7 @@ def active_payload(active: ActiveMRZ | None) -> dict[str, Any] | None:
             active.normalized_span_at_activation
         ),
         "instrument_tick": decimal_text(active.instrument_tick),
+        "activation_source": active.activation_source.value,
     }
 
 
@@ -340,6 +367,7 @@ def authority_signature(active: ActiveMRZ | None) -> tuple[Any, ...] | None:
         active.structural_location,
         active.activated_at,
         active.activation_event_id,
+        active.activation_source,
     )
 
 
@@ -370,6 +398,7 @@ def transition_signature(transition: MRZTransition) -> dict[str, Any]:
         "event_type": transition.event_type.value,
         "symbol": transition.symbol,
         "route_owner": transition.route_owner.value,
+        "activation_source": new.activation_source.value,
         "previous_route_owner": (
             transition.previous_route_owner.value
             if transition.previous_route_owner
@@ -407,6 +436,7 @@ def persisted_event_signature(row: Mapping[str, Any]) -> dict[str, Any]:
         "event_type",
         "symbol",
         "route_owner",
+        "activation_source",
         "previous_route_owner",
         "occurred_at",
         "trigger_event_id",

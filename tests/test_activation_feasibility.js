@@ -3,8 +3,10 @@ const fs = require("node:fs");
 const path = require("node:path");
 const {
   currentNearMissMarkup,
+  nearMissTargetFromSearch,
   productionMarkup,
   productionSampleMarkup,
+  promotionConfirmationMarkup,
   qualificationMarkup,
 } = require("../app/static/activation-feasibility.js");
 
@@ -34,7 +36,9 @@ const nearMisses = [{
   shortfall_percentage_points: "0.5900",
   candidate_lower_boundary: "2.7",
   candidate_upper_boundary: "2.8",
+  candidate_midpoint: "2.75",
   candidate_observation_count: 4,
+  candidate_identity: "a".repeat(64),
   total_stored_route_observations: 5,
   candidate_timestamp: "2026-08-22T00:30:00Z",
 }];
@@ -56,9 +60,32 @@ assert.match(nearMiss, /1\.00%/);
 assert.match(nearMiss, /Shortfall/);
 assert.match(nearMiss, /0\.59 percentage points/);
 assert.match(nearMiss, /2\.7–2\.8/);
+assert.match(nearMiss, /Midpoint/);
+assert.match(nearMiss, /2\.75/);
 assert.match(nearMiss, /4 of 5/);
 assert.match(nearMiss, /21 Aug 2026 · 20:30 UTC−4/);
+assert.match(nearMiss, /Promote to Active MRZ/);
+assert.match(nearMiss, new RegExp(`data-candidate-identity="${"a".repeat(64)}"`));
 assert.match(currentNearMissMarkup([]), /No current production near misses/);
+
+assert.deepEqual(
+  nearMissTargetFromSearch(`?symbol=WLDUSDT&candidate=${"a".repeat(64)}`),
+  { symbol: "WLDUSDT", candidateIdentity: "a".repeat(64) },
+);
+assert.equal(nearMissTargetFromSearch("?symbol=WLDUSDT&candidate=stale"), null);
+assert.equal(nearMissTargetFromSearch(`?symbol=<script>&candidate=${"a".repeat(64)}`), null);
+const promotionConfirmation = promotionConfirmationMarkup(
+  nearMisses[0],
+  () => "21 Aug 2026 · 20:30 UTC−4",
+);
+assert.match(promotionConfirmation, /operator override/);
+assert.match(promotionConfirmation, /Route<\/dt><dd>BTD/);
+assert.match(promotionConfirmation, /2\.7–2\.8/);
+assert.match(promotionConfirmation, /Midpoint<\/dt><dd>2\.75/);
+assert.match(promotionConfirmation, /1\.59%/);
+assert.match(promotionConfirmation, /1\.00%/);
+assert.match(promotionConfirmation, /0\.59 percentage points/);
+assert.match(promotionConfirmation, /Production status<\/dt><dd>Near miss/);
 
 const qualifications = qualificationMarkup(
   productionRule.activations,
@@ -104,6 +131,9 @@ for (const contextId of [
 assert.match(pageHtml, /SYMBOL-ROUTE HISTORIES/);
 assert.match(pageHtml, /id="productionContent"/);
 assert.match(pageHtml, /id="currentNearMissContent"/);
+assert.match(pageHtml, /id="current-production-near-misses"/);
+assert.match(pageHtml, /id="promotionDialog"/);
+assert.match(pageHtml, /id="confirmPromotion"/);
 assert.match(pageHtml, /id="qualificationContent"/);
 assert.match(pageHtml, /id="productionSampleContent"/);
 assert.match(pageHtml, /Qualified under production rule/);

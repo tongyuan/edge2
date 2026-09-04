@@ -146,6 +146,42 @@
     return `/diagnostics/mrz-robustness?symbol=${encodeURIComponent(state.symbol)}`;
   }
 
+  function buildActivationSourcePresentation(state) {
+    if (state?.mrz_status !== "active") return null;
+    if (state.activation_source === "OPERATOR_PROMOTED") {
+      const promotion = state.operator_promotion || {};
+      return {
+        primary: "OPERATOR PROMOTED",
+        secondary: (
+          promotion.minimum_required_allowance_pct == null
+            ? []
+            : [
+              `${percentageText(promotion.minimum_required_allowance_pct)}% required / ${percentageText(promotion.production_threshold_pct)}% threshold`,
+            ]
+        ),
+      };
+    }
+    return { primary: "PRODUCTION QUALIFIED", secondary: [] };
+  }
+
+  function buildProductionConfirmationPresentation(
+    state,
+    timestampFormatter = () => null,
+    priceFormatter = (value) => String(value),
+  ) {
+    const confirmation = state?.production_confirmation;
+    if (!confirmation) return null;
+    const secondary = [
+      `Midpoint · ${priceFormatter(confirmation.qualified_midpoint)}`,
+      `Qualified · ${timestampFormatter(confirmation.qualified_at) || "—"}`,
+      `${percentageText(confirmation.minimum_required_allowance_pct)}% · ${countValue(confirmation.supporting_observation_count)} observations`,
+    ];
+    return {
+      primary: `${priceFormatter(confirmation.qualified_lower)}–${priceFormatter(confirmation.qualified_upper)}`,
+      secondary,
+    };
+  }
+
   function buildMigrationPresentation(
     state,
     timestampFormatter = () => null,
@@ -168,6 +204,8 @@
     buildConcentrationCheck,
     buildEvidencePresentation,
     buildMigrationPresentation,
+    buildActivationSourcePresentation,
+    buildProductionConfirmationPresentation,
     formatLatestObservationContext,
     formatActivatedAt,
     operatorCardHref,

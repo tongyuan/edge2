@@ -214,6 +214,28 @@ async function testServiceWorkerPushAndClick() {
   assert.equal(shown[1].title, "WLDUSDT MRZ Migrated");
   assert.equal(shown[1].options.data.event_type, "MRZ_MIGRATED");
 
+  let nearMissPushWork;
+  const candidateIdentity = "a".repeat(64);
+  listeners.push({
+    data: {
+      json() {
+        return {
+          event_id: `near-miss:WLDUSDT:STR:${candidateIdentity}`,
+          event_type: "MRZ_NEAR_MISS",
+          title: "WLDUSDT Production Near Miss",
+          body: "STR · 1.02% required · 1.00% production threshold",
+          symbol: "WLDUSDT",
+          url: `/diagnostics/activation-feasibility?symbol=WLDUSDT&candidate=${candidateIdentity}#current-production-near-misses`,
+        };
+      },
+    },
+    waitUntil(promise) { nearMissPushWork = promise; },
+  });
+  await nearMissPushWork;
+  assert.equal(shown.length, 3);
+  assert.equal(shown[2].options.data.event_type, "MRZ_NEAR_MISS");
+  assert.match(shown[2].options.data.url, /activation-feasibility\?symbol=WLDUSDT&candidate=/);
+
   let clickWork;
   listeners.notificationclick({
     notification: {
@@ -238,6 +260,20 @@ async function main() {
   assert.equal(
     safeNotificationPath("/?symbol=WLDUSDT", "https://edge.example.test"),
     "/?symbol=WLDUSDT",
+  );
+  assert.equal(
+    safeNotificationPath(
+      `/diagnostics/activation-feasibility?symbol=WLDUSDT&candidate=${"a".repeat(64)}#current-production-near-misses`,
+      "https://edge.example.test",
+    ),
+    `/diagnostics/activation-feasibility?symbol=WLDUSDT&candidate=${"a".repeat(64)}#current-production-near-misses`,
+  );
+  assert.equal(
+    safeNotificationPath(
+      "/diagnostics/activation-feasibility?symbol=WLDUSDT&candidate=bad",
+      "https://edge.example.test",
+    ),
+    "/",
   );
   assert.equal(
     safeNotificationPath("https://attacker.example/phish", "https://edge.example.test"),

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -14,6 +16,7 @@ from app.concentration import (
     expand_selected_seed,
 )
 from app.domain import Observation, Route
+from app.structure import classify_structural_location
 
 
 ALGORITHM_A = "A"
@@ -83,14 +86,23 @@ class FirstQualification:
 
 @dataclass(frozen=True, slots=True)
 class ClosestEvaluation:
+    symbol: str
+    route: Route
+    evaluator_identity: str
     timestamp: datetime
+    newest_observation_id: str
     ordinal: int
     qualification_ratio: Decimal
     candidate_normalized_span: Decimal
     candidate_observed_span: Decimal
     candidate_lower_boundary: Decimal
     candidate_upper_boundary: Decimal
+    candidate_midpoint: Decimal
     candidate_observation_count: int
+    candidate_observation_ids: tuple[str, ...]
+    ipda_high: Decimal
+    ipda_low: Decimal
+    ipda_width: Decimal
     structural_location: str | None
     structural_eligibility_passed: bool | None
     evaluation_result: str
@@ -99,8 +111,29 @@ class ClosestEvaluation:
     def minimum_required_allowance_pct(self) -> Decimal:
         return self.candidate_normalized_span * Decimal("100")
 
-    def payload(self) -> dict[str, object]:
-        return {
+    @property
+    def candidate_identity(self) -> str:
+        identity = {
+            "symbol": self.symbol,
+            "route": self.route.value,
+            "evaluator_identity": self.evaluator_identity,
+            "candidate_lower": str(self.candidate_lower_boundary),
+            "candidate_upper": str(self.candidate_upper_boundary),
+            "candidate_midpoint": str(self.candidate_midpoint),
+            "supporting_observation_ids": list(self.candidate_observation_ids),
+            "newest_observation_id": self.newest_observation_id,
+            "required_allowance_pct": str(self.minimum_required_allowance_pct),
+            "candidate_timestamp": iso(self.timestamp),
+        }
+        serialized = json.dumps(
+            identity,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return hashlib.sha256(serialized).hexdigest()
+
+    def payload(self, *, include_evidence_ids: bool = False) -> dict[str, object]:
+        payload = {
             "timestamp": iso(self.timestamp),
             "ordinal_route_observation_number": self.ordinal,
             "qualification_ratio": decimal_text(self.qualification_ratio),
@@ -108,7 +141,13 @@ class ClosestEvaluation:
             "candidate_observed_span": decimal_text(self.candidate_observed_span),
             "candidate_lower_boundary": decimal_text(self.candidate_lower_boundary),
             "candidate_upper_boundary": decimal_text(self.candidate_upper_boundary),
+            "candidate_midpoint": decimal_text(self.candidate_midpoint),
             "candidate_observation_count": self.candidate_observation_count,
+            "candidate_identity": self.candidate_identity,
+            "evaluator_identity": self.evaluator_identity,
+            "ipda_20w_high": decimal_text(self.ipda_high),
+            "ipda_20w_low": decimal_text(self.ipda_low),
+            "ipda_width": decimal_text(self.ipda_width),
             "minimum_required_allowance_pct": decimal_text(
                 self.minimum_required_allowance_pct
             ),
@@ -116,6 +155,12 @@ class ClosestEvaluation:
             "structural_eligibility_passed": self.structural_eligibility_passed,
             "evaluation_result": self.evaluation_result,
         }
+        if include_evidence_ids:
+            payload.update({
+                "supporting_observation_ids": list(self.candidate_observation_ids),
+                "candidate_event_id": self.newest_observation_id,
+            })
+        return payload
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,7 +179,7 @@ class SequenceOutcome:
     def activated(self) -> bool:
         return self.first_qualification is not None
 
-    def payload(self) -> dict[str, object]:
+    def payload(self, *, include_evidence_ids: bool = False) -> dict[str, object]:
         first = self.first_qualification.payload() if self.first_qualification else {}
         return {
             "symbol": self.symbol,
@@ -175,10 +220,18 @@ class SequenceOutcome:
                 else None
             ),
             "closest_evaluation": (
-                self.closest_evaluation.payload() if self.closest_evaluation else None
+                self.closest_evaluation.payload(
+                    include_evidence_ids=include_evidence_ids
+                )
+                if self.closest_evaluation
+                else None
             ),
             "current_evaluation": (
-                self.current_evaluation.payload() if self.current_evaluation else None
+                self.current_evaluation.payload(
+                    include_evidence_ids=include_evidence_ids
+                )
+                if self.current_evaluation
+                else None
             ),
         }
 
@@ -282,6 +335,124 @@ def evaluate_feasibility_concentration(
     )
 
 
+def production_near_misses(
+    sequence_details: Sequence[dict[str, object]],
+    evaluation_key: str,
+    *,
+    scope: str,
+    preliminary: bool,
+    active_symbols: set[str] | None = None,
+    limit: int = 5,
+) -> list[dict[str, object]]:
+    """Return the exact actionable near-miss cards used by the operator UI."""
+    production_id = Scenario(ALGORITHM_A, 4, Decimal("0.01")).scenario_id
+    configured_allowance = Decimal("1")
+    active = active_symbols or set()
+    near_misses: list[dict[str, object]] = []
+    for row in sequence_details:
+        evaluation = row[evaluation_key]
+        if (
+            row["scenario_id"] != production_id
+            or not row["eligible"]
+            or row["activated"]
+            or row["symbol"] in active
+            or evaluation is None
+            or evaluation["structural_eligibility_passed"] is not True
+        ):
+            continue
+        required = Decimal(evaluation["minimum_required_allowance_pct"])
+        if required <= configured_allowance or required > Decimal("2"):
+            continue
+        shortfall = required - configured_allowance
+        scope_label = (
+            "Current minimum allowance required"
+            if scope == "CURRENT"
+            else "Closest historical minimum allowance required"
+        )
+        near_miss = {
+            "code": f"PRODUCTION_SPATIAL_NEAR_MISS_{scope}",
+            "heading": f"{row['symbol']} · {row['route']}",
+            "text": (
+                f"{scope_label} · {display_decimal(required, '0.01')}%. "
+                "Current allowance · 1.00%. Shortfall · "
+                f"{display_decimal(shortfall, '0.01')} percentage points."
+            ),
+            "measurement_scope": scope,
+            "numerator": evaluation["candidate_observation_count"],
+            "denominator": row["total_stored_route_observations"],
+            "scenario_ids": [production_id],
+            "small_sample": preliminary,
+            "symbol": row["symbol"],
+            "route": row["route"],
+            "minimum_required_allowance_pct": decimal_text(required),
+            "configured_allowance_pct": decimal_text(configured_allowance),
+            "shortfall_percentage_points": decimal_text(shortfall),
+            "candidate_lower_boundary": evaluation["candidate_lower_boundary"],
+            "candidate_upper_boundary": evaluation["candidate_upper_boundary"],
+            "candidate_midpoint": evaluation["candidate_midpoint"],
+            "candidate_observation_count": evaluation[
+                "candidate_observation_count"
+            ],
+            "candidate_identity": evaluation["candidate_identity"],
+            "evaluator_identity": evaluation["evaluator_identity"],
+            "structural_location": evaluation["structural_location"],
+            "ipda_20w_high": evaluation["ipda_20w_high"],
+            "ipda_20w_low": evaluation["ipda_20w_low"],
+            "ipda_width": evaluation["ipda_width"],
+            "total_stored_route_observations": row[
+                "total_stored_route_observations"
+            ],
+            "candidate_timestamp": evaluation["timestamp"],
+        }
+        if "supporting_observation_ids" in evaluation:
+            near_miss.update({
+                "supporting_observation_ids": evaluation[
+                    "supporting_observation_ids"
+                ],
+                "candidate_event_id": evaluation["candidate_event_id"],
+            })
+        near_misses.append(near_miss)
+    near_misses.sort(
+        key=lambda item: (
+            Decimal(item["minimum_required_allowance_pct"]),
+            item["symbol"],
+            item["route"],
+        )
+    )
+    return near_misses[:limit]
+
+
+def current_production_near_misses(
+    observations: Sequence[Observation],
+    *,
+    active_symbols: set[str] | None = None,
+    limit: int = 5,
+) -> list[dict[str, object]]:
+    """Evaluate only the canonical production scenario for command/episode use."""
+    grouped: dict[tuple[str, Route], list[Observation]] = defaultdict(list)
+    for observation in observations:
+        grouped[(observation.symbol, observation.route)].append(observation)
+    scenario = Scenario(ALGORITHM_A, 4, Decimal("0.01"))
+    rows = [
+        ActivationFeasibilityService.evaluate_sequence(
+            tuple(sorted(group, key=lambda item: item.order_key)),
+            scenario,
+        ).payload(include_evidence_ids=True)
+        for _key, group in sorted(
+            grouped.items(),
+            key=lambda item: (item[0][0], item[0][1].value),
+        )
+    ]
+    return production_near_misses(
+        rows,
+        "current_evaluation",
+        scope="CURRENT",
+        preliminary=len(grouped) < LOW_SAMPLE_SEQUENCE_THRESHOLD,
+        active_symbols=active_symbols,
+        limit=limit,
+    )
+
+
 class ActivationFeasibilityService:
     """Read-only chronological replay of hypothetical initial activations."""
 
@@ -289,9 +460,11 @@ class ActivationFeasibilityService:
         self,
         observation_reader: Callable[[], Sequence[Observation]],
         *,
+        active_symbol_reader: Callable[[], Sequence[str]] | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._observation_reader = observation_reader
+        self._active_symbol_reader = active_symbol_reader or (lambda: ())
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     def generate_report(self) -> dict[str, object]:
@@ -395,7 +568,10 @@ class ActivationFeasibilityService:
             "comparisons": comparisons,
             "sequence_details": [outcome.payload() for outcome in outcomes],
         }
-        report["diagnosis"] = self._diagnosis(report)
+        report["diagnosis"] = self._diagnosis(
+            report,
+            active_symbols=set(self._active_symbol_reader()),
+        )
         return report
 
     @staticmethod
@@ -434,17 +610,35 @@ class ActivationFeasibilityService:
                 if diagnostic.selected_lower is None or diagnostic.selected_upper is None:
                     raise RuntimeError("measurable candidate must include its price range")
                 candidate = ClosestEvaluation(
+                    symbol=symbol,
+                    route=route,
+                    evaluator_identity=f"{scenario.scenario_id}:production-concentration-v1",
                     timestamp=incoming.observed_at,
+                    newest_observation_id=incoming.event_id,
                     ordinal=ordinal,
                     qualification_ratio=diagnostic.normalized_span / scenario.allowance,
                     candidate_normalized_span=diagnostic.normalized_span,
                     candidate_observed_span=diagnostic.observed_span,
                     candidate_lower_boundary=diagnostic.selected_lower,
                     candidate_upper_boundary=diagnostic.selected_upper,
+                    candidate_midpoint=(
+                        diagnostic.selected_lower + diagnostic.selected_upper
+                    ) / Decimal("2"),
                     candidate_observation_count=diagnostic.selected_observation_count,
+                    candidate_observation_ids=diagnostic.selected_observation_ids,
+                    ipda_high=incoming.ipda_20w_high,
+                    ipda_low=incoming.ipda_20w_low,
+                    ipda_width=incoming.ipda_width,
                     structural_location=(
-                        diagnostic.proposed_structural_location.value
-                        if diagnostic.proposed_structural_location
+                        location.value
+                        if (
+                            location := classify_structural_location(
+                                route,
+                                diagnostic.proposed_midpoint,
+                                incoming.ipda_20w_high,
+                                incoming.ipda_20w_low,
+                            )
+                        )
                         else None
                     ),
                     structural_eligibility_passed=(
@@ -733,7 +927,11 @@ class ActivationFeasibilityService:
         }
 
     @staticmethod
-    def _diagnosis(report: dict[str, object]) -> dict[str, object]:
+    def _diagnosis(
+        report: dict[str, object],
+        *,
+        active_symbols: set[str] | None = None,
+    ) -> dict[str, object]:
         """Generate fixed, auditable commentary from the completed report payload."""
         scenarios = {
             item["scenario_id"]: item for item in report["scenarios"]
@@ -1110,76 +1308,19 @@ class ActivationFeasibilityService:
                 "small_sample": preliminary,
             }
 
-        configured_allowance = Decimal("1")
-        def production_near_misses(
-            evaluation_key: str,
-            *,
-            scope: str,
-        ) -> list[dict[str, object]]:
-            near_misses = []
-            for row in report["sequence_details"]:
-                evaluation = row[evaluation_key]
-                if (
-                    row["scenario_id"] != production_id
-                    or not row["eligible"]
-                    or row["activated"]
-                    or evaluation is None
-                    or evaluation["structural_eligibility_passed"] is not True
-                ):
-                    continue
-                required = Decimal(evaluation["minimum_required_allowance_pct"])
-                if required <= configured_allowance or required > Decimal("2"):
-                    continue
-                shortfall = required - configured_allowance
-                scope_label = (
-                    "Current minimum allowance required"
-                    if scope == "CURRENT"
-                    else "Closest historical minimum allowance required"
-                )
-                near_misses.append({
-                    "code": f"PRODUCTION_SPATIAL_NEAR_MISS_{scope}",
-                    "heading": f"{row['symbol']} · {row['route']}",
-                    "text": (
-                        f"{scope_label} · {display_decimal(required, '0.01')}%. "
-                        "Current allowance · 1.00%. Shortfall · "
-                        f"{display_decimal(shortfall, '0.01')} percentage points."
-                    ),
-                    "measurement_scope": scope,
-                    "numerator": evaluation["candidate_observation_count"],
-                    "denominator": row["total_stored_route_observations"],
-                    "scenario_ids": [production_id],
-                    "small_sample": preliminary,
-                    "symbol": row["symbol"],
-                    "route": row["route"],
-                    "minimum_required_allowance_pct": decimal_text(required),
-                    "configured_allowance_pct": decimal_text(configured_allowance),
-                    "shortfall_percentage_points": decimal_text(shortfall),
-                    "candidate_lower_boundary": evaluation["candidate_lower_boundary"],
-                    "candidate_upper_boundary": evaluation["candidate_upper_boundary"],
-                    "candidate_observation_count": evaluation[
-                        "candidate_observation_count"
-                    ],
-                    "total_stored_route_observations": row[
-                        "total_stored_route_observations"
-                    ],
-                    "candidate_timestamp": evaluation["timestamp"],
-                })
-            near_misses.sort(
-                key=lambda item: (
-                    Decimal(item["minimum_required_allowance_pct"]),
-                    item["symbol"],
-                    item["route"],
-                )
-            )
-            return near_misses[:5]
-
         current_near_misses = production_near_misses(
+            report["sequence_details"],
             "current_evaluation",
             scope="CURRENT",
+            preliminary=preliminary,
+            active_symbols=active_symbols,
         )
         historical_near_misses = production_near_misses(
+            report["sequence_details"],
             "closest_evaluation",
             scope="HISTORICAL_CLOSEST",
+            preliminary=preliminary,
+            active_symbols=set(),
         )
         current_by_history = {
             (item["symbol"], item["route"]): item for item in current_near_misses

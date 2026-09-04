@@ -78,7 +78,7 @@ button:hover { border-color: var(--accent); }
 button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 button:disabled { cursor: progress; opacity: 0.65; }
 
-.notice, .sample-warning, .status-panel {
+.notice, .sample-warning, .status-panel, .promotion-outcome {
   margin-top: 24px;
   padding: 16px 18px;
   border: 1px solid var(--line);
@@ -90,6 +90,14 @@ button:disabled { cursor: progress; opacity: 0.65; }
 .status-panel { color: var(--muted); }
 .status-panel.error { border-color: #74434a; color: #ff9fac; }
 .status-panel[hidden] { display: none; }
+.promotion-outcome {
+  margin-top: 18px;
+  border-color: #4d6f65;
+  background: var(--accent-soft);
+  color: #c8f6e5;
+}
+.promotion-outcome[hidden] { display: none; }
+.promotion-outcome a { margin-left: 8px; color: var(--accent); font-weight: 700; }
 
 .metadata-grid {
   display: grid;
@@ -183,6 +191,12 @@ button:disabled { cursor: progress; opacity: 0.65; }
 }
 .diagnostic-card dt, .sample-summary dt { color: var(--muted); font-size: 0.75rem; }
 .diagnostic-card dd, .sample-summary dd { margin: 0; color: var(--text); font-size: 0.78rem; text-align: right; }
+.near-miss-card .promote-near-miss { width: 100%; margin-top: 16px; }
+.near-miss-card.focused-near-miss {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(98, 230, 181, 0.14);
+  scroll-margin-top: 24px;
+}
 .qualification-card { border-color: rgba(98, 230, 181, 0.24); }
 .empty-state { margin: 20px 0 0; }
 .neutral { color: var(--muted); }
@@ -198,6 +212,34 @@ button:disabled { cursor: progress; opacity: 0.65; }
   font-size: 0.84rem;
   line-height: 1.55;
 }
+
+.promotion-dialog {
+  width: min(620px, calc(100% - 28px));
+  max-height: calc(100vh - 36px);
+  overflow: auto;
+  padding: 26px;
+  border: 1px solid #4d6f65;
+  border-radius: 18px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 24px 100px rgba(0, 0, 0, 0.65);
+}
+.promotion-dialog::backdrop { background: rgba(2, 5, 8, 0.78); }
+.promotion-confirmation-copy > p { color: #c5cedb; line-height: 1.5; }
+.promotion-confirmation-copy dl { margin: 18px 0 0; }
+.promotion-confirmation-copy dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 9px 0;
+  border-top: 1px solid var(--line);
+}
+.promotion-confirmation-copy dt { color: var(--muted); font-size: 0.78rem; }
+.promotion-confirmation-copy dd { margin: 0; text-align: right; font-size: 0.8rem; font-weight: 700; }
+.promotion-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
+.secondary-action { border-color: var(--line); background: transparent; color: #c9d4e2; }
+.promotion-error { margin: 16px 0 0; color: #ff9fac; }
+.promotion-error[hidden] { display: none; }
 
 @media (max-width: 900px) {
   .metadata-grid { grid-template-columns: repeat(3, 1fr); }
