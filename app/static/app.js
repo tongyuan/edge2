@@ -59,6 +59,7 @@ const {
   visibleSymbolsForGroupTracking,
   timelinePosition,
   timelineTicks,
+  authoritativeMrzEqmPair,
 } = globalThis.edgeHeatmapState;
 const {
   buildEvidencePresentation,
@@ -447,11 +448,24 @@ function formatPathTick(value) {
   }).format(date);
 }
 
-function migrationStateTooltip(symbol, state) {
-  const direction = state.direction
-    ? ` · ${state.direction === "higher" ? "Higher" : "Lower"} migration`
-    : " · Initial authority";
-  return `${symbol} · ${state.location_label} · ${formatPathTimestamp(state.occurred_at)} · midpoint ${formatPrice(state.midpoint)}${direction}`;
+function migrationStateTooltip(symbol, state, eqmPair) {
+  const fields = [
+    `${symbol} · ${state.location_label}`,
+    formatPathTimestamp(state.occurred_at),
+    `Current midpoint: ${formatPrice(state.midpoint)}`,
+  ];
+  if (state.direction) {
+    fields.push(`Migration: ${state.direction === "higher" ? "Higher" : "Lower"}`);
+  } else if (!eqmPair) {
+    fields.push("Initial authority");
+  }
+  if (eqmPair) {
+    fields.push(
+      `Previous MRZ midpoint: ${formatPrice(eqmPair.previousMidpoint)}`,
+      `MRZ EQM: ${formatPrice(eqmPair.eqm)}`,
+    );
+  }
+  return fields.join(" · ");
 }
 
 function renderMigrationPath(payload) {
@@ -511,10 +525,11 @@ function renderMigrationPath(payload) {
       track.append(line);
       path.states.forEach((state, index) => {
         const node = document.createElement("span");
+        const eqmPair = authoritativeMrzEqmPair(path.states, index);
         node.className = `migration-path-state${state.direction ? ` ${state.direction}` : ""}`;
         node.style.left = `${positions[index]}%`;
         node.textContent = state.location_code;
-        node.title = migrationStateTooltip(path.symbol, state);
+        node.title = migrationStateTooltip(path.symbol, state, eqmPair);
         node.setAttribute("aria-label", node.title);
         if (state.direction) {
           const direction = document.createElement("span");

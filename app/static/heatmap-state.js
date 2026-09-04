@@ -378,6 +378,25 @@
     ));
   }
 
+  function authoritativeMrzEqmPair(states, index) {
+    if (!Array.isArray(states) || !Number.isInteger(index) || index <= 0 || index >= states.length) {
+      return null;
+    }
+    const currentValue = states[index]?.midpoint;
+    const previousValue = states[index - 1]?.midpoint;
+    if (currentValue == null || currentValue === "" || previousValue == null || previousValue === "") {
+      return null;
+    }
+    const currentMidpoint = Number(currentValue);
+    const previousMidpoint = Number(previousValue);
+    if (!Number.isFinite(currentMidpoint) || !Number.isFinite(previousMidpoint)) return null;
+    return {
+      currentMidpoint,
+      previousMidpoint,
+      eqm: (currentMidpoint + previousMidpoint) / 2,
+    };
+  }
+
   const heatmapState = {
     primaryLocationKeys,
     secondaryLocationKeys,
@@ -410,6 +429,7 @@
     visibleSymbolsForGroupTracking,
     timelinePosition,
     timelineTicks,
+    authoritativeMrzEqmPair,
   };
 
   root.edgeHeatmapState = heatmapState;

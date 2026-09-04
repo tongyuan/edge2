@@ -136,7 +136,9 @@ class GroupTrackingIntegrationTests(unittest.TestCase):
         })
         self.assertEqual(sum(report["current_state"]["migration_breadth"].values()), 7)
 
+        before_path = self.domain_counts()
         path = self.repository.saved_group_migration_path(saved["id"])
+        self.assertEqual(self.domain_counts(), before_path)
         by_symbol = {item["symbol"]: item["states"] for item in path["paths"]}
         self.assertEqual([state["direction"] for state in by_symbol["AAPL"]], [None, "higher"])
         self.assertEqual([state["direction"] for state in by_symbol["AMZN"]], [None, "lower"])

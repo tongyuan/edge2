@@ -31,6 +31,7 @@ const {
   visibleSymbolsForGroupTracking,
   timelinePosition,
   timelineTicks,
+  authoritativeMrzEqmPair,
 } = require("../app/static/heatmap-state.js");
 
 assert.deepEqual(primaryLocationKeys, [
@@ -312,6 +313,31 @@ assert.deepEqual(
     "2026-08-20T15:00:00.000Z",
   ],
   "timeline ticks span canonical chronology",
+);
+
+const authoritativeStates = [
+  { midpoint: "0.40585", direction: null },
+  { midpoint: "0.37665", direction: "lower" },
+  { midpoint: "0.42585", direction: "higher" },
+];
+assert.equal(
+  authoritativeMrzEqmPair(authoritativeStates, 0),
+  null,
+  "the first authoritative MRZ has no previous pair or EQM",
+);
+const downwardPair = authoritativeMrzEqmPair(authoritativeStates, 1);
+assert.equal(downwardPair.previousMidpoint, 0.40585, "the second MRZ pairs with the first");
+assert.equal(downwardPair.currentMidpoint, 0.37665);
+assert.ok(Math.abs(downwardPair.eqm - 0.39125) < 1e-12, "downward EQM uses full values");
+const upwardPair = authoritativeMrzEqmPair(authoritativeStates, 2);
+assert.equal(upwardPair.previousMidpoint, 0.37665, "the third MRZ pairs with the second");
+assert.notEqual(upwardPair.previousMidpoint, 0.40585, "the third MRZ never pairs with the first");
+assert.equal(upwardPair.currentMidpoint, 0.42585);
+assert.ok(Math.abs(upwardPair.eqm - 0.40125) < 1e-12, "upward EQM is direction-neutral");
+assert.equal(
+  authoritativeMrzEqmPair([{ midpoint: "1" }, { midpoint: null }], 1),
+  null,
+  "missing midpoint data never creates a placeholder EQM",
 );
 
 const premiumActivity = routeAlignedActivity({

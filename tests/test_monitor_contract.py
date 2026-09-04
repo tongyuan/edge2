@@ -33,7 +33,7 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("Symbol Lab", HTML)
 
     def test_monitor_assets_are_versioned_together(self) -> None:
-        version = "group-tracking-20260903"
+        version = "migration-eqm-20260904"
         self.assertIn(f'/static/styles.css?v={version}', HTML)
         self.assertIn(f'/static/heatmap-state.js?v={version}', HTML)
         self.assertIn(f'/static/operator-time.js?v={version}', HTML)
@@ -516,6 +516,40 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("classify_ipda_location", path)
         self.assertNotIn("migration_pressure", report + path)
         self.assertNotIn("successor", report + path)
+
+    def test_migration_path_tooltip_derives_eqm_from_adjacent_authorities_only(self) -> None:
+        tooltip = JAVASCRIPT.split("function migrationStateTooltip", 1)[1].split(
+            "function renderMigrationPath", 1
+        )[0]
+        renderer = JAVASCRIPT.split("function renderMigrationPath", 1)[1].split(
+            "function renderLocationHeatmap", 1
+        )[0]
+        helper = HEATMAP_STATE.split("function authoritativeMrzEqmPair", 1)[1].split(
+            "const heatmapState", 1
+        )[0]
+        self.assertIn("states[index - 1]?.midpoint", helper)
+        self.assertIn("states[index]?.midpoint", helper)
+        self.assertIn("(currentMidpoint + previousMidpoint) / 2", helper)
+        self.assertNotIn("direction", helper)
+        self.assertIn("authoritativeMrzEqmPair(path.states, index)", renderer)
+        self.assertIn("Current midpoint:", tooltip)
+        self.assertIn("Previous MRZ midpoint:", tooltip)
+        self.assertIn("MRZ EQM:", tooltip)
+        self.assertIn("if (eqmPair)", tooltip)
+        self.assertNotIn("N/A", tooltip)
+        self.assertIn("formatPrice(eqmPair.previousMidpoint)", tooltip)
+        self.assertIn("formatPrice(eqmPair.eqm)", tooltip)
+
+    def test_migration_path_eqm_adds_no_visual_timeline_elements(self) -> None:
+        renderer = JAVASCRIPT.split("function renderMigrationPath", 1)[1].split(
+            "function renderLocationHeatmap", 1
+        )[0]
+        self.assertIn('line.className = "migration-path-line"', renderer)
+        self.assertIn('node.className = `migration-path-state', renderer)
+        self.assertIn("node.title = migrationStateTooltip", renderer)
+        self.assertIn('node.setAttribute("aria-label", node.title)', renderer)
+        self.assertNotIn("migration-path-eqm", HTML + JAVASCRIPT + CSS)
+        self.assertNotIn("eqm-marker", HTML + JAVASCRIPT + CSS)
 
     def test_group_tracking_mobile_layout_wraps_without_horizontal_overflow(self) -> None:
         self.assertIn("min-height: 44px;", CSS.split(".group-tracking-toggle", 1)[1])
