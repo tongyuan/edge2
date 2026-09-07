@@ -764,32 +764,51 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(final["core_mrz_lower"], activated["core_mrz_lower"])
         self.assertEqual(final["core_mrz_upper"], activated["core_mrz_upper"])
 
-    def test_current_price_location_is_independent_from_active_mrz_state(self) -> None:
-        for index, price in enumerate(("110", "110.2", "110.4", "110.6"), 1):
-            response = self.client.post("/webhook/tradingview", json=webhook_payload(index, price))
+    def test_current_price_location_uses_newest_observation_frame_without_moving_mrz(self) -> None:
+        for index, price in enumerate(("220", "220.2", "220.4", "220.6"), 1):
+            packet = webhook_payload(
+                index,
+                price,
+                symbol="FRAME",
+                route="STR",
+                observation_type="rejection",
+                ipda_20w_high="300",
+                ipda_20w_low="100",
+            )
+            response = self.client.post("/webhook/tradingview", json=packet)
             self.assertEqual(response.status_code, 201)
-        before = self.client.get("/api/symbols/SPXUSDT/mrz").json()
-        events_before = self.client.app.state.repository.audit_events("SPXUSDT")
+        before = self.client.get("/api/symbols/FRAME/mrz").json()
+        events_before = self.client.app.state.repository.audit_events("FRAME")
 
         price_shift = webhook_payload(
             5,
-            "160",
+            "232",
             event_id="current-price-shift",
+            symbol="FRAME",
             route="STR",
             observation_type="rejection",
+            ipda_20w_high="240",
+            ipda_20w_low="200",
         )
         response = self.client.post("/webhook/tradingview", json=price_shift)
         self.assertEqual(response.status_code, 201)
-        after = self.client.get("/api/symbols/SPXUSDT/mrz").json()
+        after = self.client.get("/api/symbols/FRAME/mrz").json()
         overview_after = self.client.get("/api/symbols").json()["symbols"][0]
-        events_after = self.client.app.state.repository.audit_events("SPXUSDT")
+        events_after = self.client.app.state.repository.audit_events("FRAME")
 
-        self.assertEqual(after["current_price_location"], "shallow_premium")
+        # 232 is Shallow Premium in the frozen 100-300 activation frame, but
+        # Deep Premium in its own latest-observation 200-240 frame.
+        self.assertEqual(after["latest_observation_price"], 232.0)
+        self.assertEqual(after["current_price_location"], "deep_premium")
+        self.assertEqual(after["current_location_context"], "60% from EQM toward IPDA high")
         self.assertEqual(after["latest_observed_at"], "2026-08-20T12:00:05Z")
         self.assertNotEqual(after["latest_observed_at"], after["activated_at"])
         self.assertEqual(after["activated_at"], before["activated_at"])
-        self.assertEqual(overview_after["current_price_location"], "shallow_premium")
-        self.assertEqual(overview_after["structural_location"], "deep_discount_core_mrz")
+        self.assertEqual(overview_after["current_price_location"], "deep_premium")
+        self.assertEqual(overview_after["structural_location"], "shallow_premium_core_mrz")
+        self.assertEqual(after["structural_location"], "shallow_premium_core_mrz")
+        self.assertEqual(after["ipda_20w_high_at_activation"], 300.0)
+        self.assertEqual(after["ipda_20w_low_at_activation"], 100.0)
         self.assertEqual(after["route_owner"], before["route_owner"])
         self.assertEqual(after["core_mrz_lower"], before["core_mrz_lower"])
         self.assertEqual(after["core_mrz_upper"], before["core_mrz_upper"])
@@ -806,6 +825,94 @@ class APIIntegrationTests(unittest.TestCase):
             [tuple(event[field] for field in transition_fields) for event in events_after],
             [tuple(event[field] for field in transition_fields) for event in events_before],
         )
+
+    def test_current_price_location_uses_newest_discount_observation_frame(self) -> None:
+        for index, price in enumerate(("180", "180.2", "180.4", "180.6"), 1):
+            packet = webhook_payload(
+                index,
+                price,
+                symbol="DISCOUNT",
+                ipda_20w_high="300",
+                ipda_20w_low="100",
+            )
+            self.assertEqual(
+                self.client.post("/webhook/tradingview", json=packet).status_code,
+                201,
+            )
+        before = self.client.get("/api/symbols/DISCOUNT/mrz").json()
+
+        price_shift = webhook_payload(
+            5,
+            "168",
+            event_id="discount-current-price-shift",
+            symbol="DISCOUNT",
+            ipda_20w_high="200",
+            ipda_20w_low="160",
+        )
+        self.assertEqual(
+            self.client.post("/webhook/tradingview", json=price_shift).status_code,
+            201,
+        )
+        after = self.client.get("/api/symbols/DISCOUNT/mrz").json()
+
+        # 168 is Shallow Discount in the frozen 100-300 activation frame, but
+        # Deep Discount in its own latest-observation 160-200 frame.
+        self.assertEqual(after["latest_observation_price"], 168.0)
+        self.assertEqual(after["current_price_location"], "deep_discount")
+        self.assertEqual(after["current_location_context"], "60% from EQM toward IPDA low")
+        self.assertEqual(after["structural_location"], "shallow_discount_core_mrz")
+        self.assertEqual(after["activated_at"], before["activated_at"])
+        self.assertEqual(after["core_mrz_lower"], before["core_mrz_lower"])
+        self.assertEqual(after["core_mrz_upper"], before["core_mrz_upper"])
+        self.assertEqual(after["ipda_20w_high_at_activation"], 300.0)
+        self.assertEqual(after["ipda_20w_low_at_activation"], 100.0)
+
+    def test_invalid_latest_frame_is_rejected_without_using_the_frozen_mrz_frame(self) -> None:
+        for index, price in enumerate(("180", "180.2", "180.4", "180.6"), 1):
+            packet = webhook_payload(
+                index,
+                price,
+                symbol="INVALIDFRAME",
+                ipda_20w_high="300",
+                ipda_20w_low="100",
+            )
+            self.assertEqual(
+                self.client.post("/webhook/tradingview", json=packet).status_code,
+                201,
+            )
+        before = self.client.get("/api/symbols/INVALIDFRAME/mrz").json()
+
+        missing_frame = webhook_payload(
+            5,
+            "168",
+            event_id="missing-current-frame",
+            symbol="INVALIDFRAME",
+        )
+        missing_frame.pop("ipda_20w_low")
+        invalid_frame = webhook_payload(
+            6,
+            "168",
+            event_id="invalid-current-frame",
+            symbol="INVALIDFRAME",
+            ipda_20w_high="200",
+            ipda_20w_low="200",
+        )
+        self.assertEqual(
+            self.client.post("/webhook/tradingview", json=missing_frame).status_code,
+            400,
+        )
+        self.assertEqual(
+            self.client.post("/webhook/tradingview", json=invalid_frame).status_code,
+            400,
+        )
+
+        after = self.client.get("/api/symbols/INVALIDFRAME/mrz").json()
+        self.assertEqual(after["latest_observed_at"], before["latest_observed_at"])
+        self.assertEqual(after["latest_observation_price"], before["latest_observation_price"])
+        self.assertEqual(after["current_price_location"], before["current_price_location"])
+        self.assertEqual(after["structural_location"], before["structural_location"])
+        self.assertEqual(after["ipda_20w_high_at_activation"], 300.0)
+        self.assertEqual(after["ipda_20w_low_at_activation"], 100.0)
 
     def test_current_price_at_exact_eqm_is_explicitly_unclassified(self) -> None:
         response = self.client.post("/webhook/tradingview", json=webhook_payload(price="150"))
