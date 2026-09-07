@@ -11,8 +11,8 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/static/edge-mrz-icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/static/edge-mrz-icon-180.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=operator-promotion-20260904" />
-    <link rel="stylesheet" href="/static/diagnostics-nav.css?v=diagnostics-menu-20260827" />
+    <link rel="stylesheet" href="/static/styles.css?v=monitor-role-20260907" />
+    <link rel="stylesheet" href="/static/diagnostics-nav.css?v=views-menu-20260907" />
   </head>
   <body>
     <main class="shell">
@@ -20,16 +20,17 @@
         <div>
           <p class="eyebrow">EDGE 2.0</p>
           <h1>MRZ Monitor</h1>
+          <p class="masthead-descriptor">Route authority · Structural location</p>
         </div>
         <div class="masthead-actions">
           <nav class="page-nav operator-navigation" aria-label="Operator navigation" data-diagnostics-nav>
             <div class="diagnostics-menu">
               <button class="diagnostics-trigger" type="button" aria-expanded="false" aria-haspopup="menu" aria-controls="monitor-diagnostics-menu" data-diagnostics-trigger>
-                Diagnostics <span class="diagnostics-chevron" aria-hidden="true">▾</span>
+                Views <span class="diagnostics-chevron" aria-hidden="true">▾</span>
               </button>
               <div class="diagnostics-dropdown" id="monitor-diagnostics-menu" role="menu" data-diagnostics-menu hidden>
-                <a href="/diagnostics/mrz-robustness" role="menuitem">MRZ Operation Card</a>
-                <a href="/diagnostics/activation-feasibility" role="menuitem">MRZ Formation Diagnostics</a>
+                <a href="/diagnostics/mrz-robustness" role="menuitem">Operator Card</a>
+                <a href="/diagnostics/activation-feasibility" role="menuitem">Formation Diagnostics</a>
               </div>
             </div>
           </nav>
@@ -312,11 +313,11 @@
     </main>
     <div class="activity-tooltip" id="heatmapActivityTooltip" role="tooltip" hidden></div>
     <div class="notification-toast-host" id="notificationToastHost" aria-live="polite"></div>
-    <script src="/static/diagnostics-nav.js?v=diagnostics-menu-20260827" defer></script>
-    <script src="/static/heatmap-state.js?v=operator-promotion-20260904" defer></script>
-    <script src="/static/operator-time.js?v=operator-promotion-20260904" defer></script>
-    <script src="/static/monitor-presentation.js?v=operator-promotion-20260904" defer></script>
+    <script src="/static/diagnostics-nav.js?v=views-menu-20260907" defer></script>
+    <script src="/static/heatmap-state.js?v=monitor-role-20260907" defer></script>
+    <script src="/static/operator-time.js?v=monitor-role-20260907" defer></script>
+    <script src="/static/monitor-presentation.js?v=monitor-role-20260907" defer></script>
     <script src="/static/notifications.js?v=near-miss-push-20260904" defer></script>
-    <script src="/static/app.js?v=operator-promotion-20260904" defer></script>
+    <script src="/static/app.js?v=monitor-role-20260907" defer></script>
   </body>
 </html>

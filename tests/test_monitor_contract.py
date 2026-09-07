@@ -30,10 +30,14 @@ SAVED_GROUP_MIGRATION = (ROOT / "migrations/007_saved_symbol_groups.sql").read_t
 class MonitorContractTests(unittest.TestCase):
     def test_operational_title_replaces_lab_wording(self) -> None:
         self.assertIn("MRZ Monitor", HTML)
+        self.assertIn(
+            '<p class="masthead-descriptor">Route authority · Structural location</p>',
+            HTML,
+        )
         self.assertNotIn("Symbol Lab", HTML)
 
     def test_monitor_assets_are_versioned_together(self) -> None:
-        version = "operator-promotion-20260904"
+        version = "monitor-role-20260907"
         self.assertIn(f'/static/styles.css?v={version}', HTML)
         self.assertIn(f'/static/heatmap-state.js?v={version}', HTML)
         self.assertIn(f'/static/operator-time.js?v={version}', HTML)
@@ -42,22 +46,34 @@ class MonitorContractTests(unittest.TestCase):
         self.assertLess(HTML.index("heatmap-state.js"), HTML.index("app.js"))
         self.assertLess(HTML.index("monitor-presentation.js"), HTML.index("app.js"))
         self.assertIn(
-            "/static/diagnostics-nav.css?v=diagnostics-menu-20260827", HTML
+            "/static/diagnostics-nav.css?v=views-menu-20260907", HTML
         )
         self.assertIn(
-            "/static/diagnostics-nav.js?v=diagnostics-menu-20260827", HTML
+            "/static/diagnostics-nav.js?v=views-menu-20260907", HTML
         )
 
     def test_monitor_consolidates_diagnostic_links_in_shared_dropdown(self) -> None:
         self.assertIn('href="/diagnostics/activation-feasibility"', HTML)
-        self.assertIn("MRZ Formation Diagnostics", HTML)
+        self.assertIn(">Formation Diagnostics</a>", HTML)
         self.assertNotIn(">Activation Feasibility<", HTML)
         self.assertIn('href="/diagnostics/mrz-robustness"', HTML)
+        self.assertIn(">Operator Card</a>", HTML)
+        self.assertIn("Views", HTML)
+        self.assertNotIn(">Diagnostics <", HTML)
+        self.assertNotIn(">MRZ Operation Card</a>", HTML)
+        self.assertNotIn(">MRZ Formation Diagnostics</a>", HTML)
         self.assertNotIn('href="/diagnostics/mrz-robustness-report"', HTML)
         self.assertNotIn('href="/diagnostics/trading-window-feasibility"', HTML)
         self.assertNotIn("Trading Window Feasibility", HTML)
         self.assertIn('aria-label="Operator navigation"', HTML)
         self.assertIn('data-diagnostics-trigger', HTML)
+
+    def test_monitor_descriptor_is_secondary_compact_and_mobile_safe(self) -> None:
+        descriptor = CSS.split(".masthead-descriptor {", 1)[1].split("}", 1)[0]
+        self.assertIn("color: var(--muted);", descriptor)
+        self.assertIn("font-size: clamp(", descriptor)
+        self.assertIn("white-space: nowrap;", descriptor)
+        self.assertIn("margin: 5px 0 0;", descriptor)
 
     def test_source_and_active_mrz_replace_who_and_where(self) -> None:
         self.assertIn(">SOURCE<", HTML)

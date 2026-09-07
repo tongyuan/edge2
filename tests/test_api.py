@@ -229,11 +229,13 @@ class APIIntegrationTests(unittest.TestCase):
 
         pages = (monitor, feasibility, robustness)
         for page in pages:
-            self.assertIn("Diagnostics", page)
+            self.assertIn("Views", page)
+            self.assertNotIn(">Diagnostics <", page)
             self.assertIn('data-diagnostics-trigger', page)
             self.assertIn('href="/diagnostics/activation-feasibility"', page)
             self.assertIn('href="/diagnostics/mrz-robustness"', page)
-            self.assertIn("MRZ Formation Diagnostics", page)
+            self.assertIn(">Formation Diagnostics</a>", page)
+            self.assertIn(">Operator Card</a>", page)
             self.assertNotIn(">Activation Feasibility<", page)
             self.assertNotIn('href="/diagnostics/mrz-robustness-report"', page)
             self.assertNotIn('href="/diagnostics/trading-window-feasibility"', page)

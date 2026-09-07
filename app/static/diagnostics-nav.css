@@ -120,12 +120,13 @@
 
 @media (max-width: 680px) {
   .operator-navigation {
+    align-items: flex-start;
     justify-content: flex-start;
     max-width: 100%;
   }
 
   .diagnostics-dropdown {
-    right: auto;
-    left: 0;
+    position: static;
+    margin-top: 8px;
   }
 }

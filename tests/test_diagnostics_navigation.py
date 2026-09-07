@@ -16,8 +16,8 @@ JAVASCRIPT = (STATIC / "diagnostics-nav.js").read_text(encoding="utf-8")
 CSS = (STATIC / "diagnostics-nav.css").read_text(encoding="utf-8")
 
 IMPLEMENTED_ITEMS = [
-    ("/diagnostics/mrz-robustness", "MRZ Operation Card"),
-    ("/diagnostics/activation-feasibility", "MRZ Formation Diagnostics"),
+    ("/diagnostics/mrz-robustness", "Operator Card"),
+    ("/diagnostics/activation-feasibility", "Formation Diagnostics"),
 ]
 
 
@@ -48,14 +48,15 @@ class DiagnosticsNavigationContractTests(unittest.TestCase):
     def test_all_pages_use_the_shared_accessible_click_menu(self) -> None:
         for name, html in PAGES.items():
             with self.subTest(page=name):
-                self.assertIn("Diagnostics", html)
+                self.assertIn("Views", html)
+                self.assertNotIn(">Diagnostics <", html)
                 self.assertIn('data-diagnostics-trigger', html)
                 self.assertIn('type="button"', navigation_fragment(html))
                 self.assertIn('aria-expanded="false"', navigation_fragment(html))
                 self.assertIn('aria-haspopup="menu"', navigation_fragment(html))
                 self.assertIn('role="menu"', navigation_fragment(html))
-                self.assertIn('/static/diagnostics-nav.css?v=diagnostics-menu-20260827', html)
-                self.assertIn('/static/diagnostics-nav.js?v=diagnostics-menu-20260827', html)
+                self.assertIn('/static/diagnostics-nav.css?v=views-menu-20260907', html)
+                self.assertIn('/static/diagnostics-nav.js?v=views-menu-20260907', html)
 
     def test_diagnostic_links_are_nested_and_keep_their_existing_routes(self) -> None:
         for name, html in PAGES.items():
@@ -72,8 +73,8 @@ class DiagnosticsNavigationContractTests(unittest.TestCase):
 
     def test_menu_order_excludes_hidden_robustness_report(self) -> None:
         expected = [
-            "MRZ Operation Card",
-            "MRZ Formation Diagnostics",
+            "Operator Card",
+            "Formation Diagnostics",
         ]
         for name, html in PAGES.items():
             menu = menu_fragment(html)
@@ -90,8 +91,8 @@ class DiagnosticsNavigationContractTests(unittest.TestCase):
 
     def test_each_existing_diagnostic_page_marks_its_current_child(self) -> None:
         expected_active_label = {
-            "operation_card": "MRZ Operation Card",
-            "activation": "MRZ Formation Diagnostics",
+            "operation_card": "Operator Card",
+            "activation": "Formation Diagnostics",
         }
         self.assertNotIn('aria-current="page"', menu_fragment(PAGES["monitor"]))
         for name, label in expected_active_label.items():
@@ -118,8 +119,9 @@ class DiagnosticsNavigationContractTests(unittest.TestCase):
         self.assertIn("max-width: calc(100vw - 32px);", CSS)
         self.assertIn("@media (max-width: 680px)", CSS)
         responsive = CSS.split("@media (max-width: 680px)", 1)[1]
-        self.assertIn("left: 0;", responsive)
-        self.assertIn("right: auto;", responsive)
+        self.assertIn("align-items: flex-start;", responsive)
+        self.assertIn("position: static;", responsive)
+        self.assertIn("margin-top: 8px;", responsive)
 
 
 if __name__ == "__main__":
