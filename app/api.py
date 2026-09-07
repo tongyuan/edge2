@@ -92,6 +92,7 @@ def create_app(
     notification_service = NotificationService(
         resolved,
         notification_repository,
+        pressure_input_provider=repository.mrz_robustness_inputs,
         **({"sender": web_push_sender} if web_push_sender is not None else {}),
     )
 

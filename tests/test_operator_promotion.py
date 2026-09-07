@@ -241,8 +241,17 @@ class OperatorPromotionIntegrationTests(unittest.TestCase):
 
         notifications = self.client.get("/api/notifications/events?after=0").json()["events"]
         self.assertEqual(
-            [item["event_type"] for item in notifications],
+            [
+                item["event_type"]
+                for item in notifications
+                if item["event_type"]
+                in {"MRZ_NEAR_MISS", "MRZ_ACTIVATED", "MRZ_MIGRATED"}
+            ],
             ["MRZ_NEAR_MISS", "MRZ_ACTIVATED", "MRZ_MIGRATED"],
+        )
+        self.assertIn(
+            "POST_ACTIVATION_PRESSURE_CHANGED",
+            [item["event_type"] for item in notifications],
         )
         near_miss_notification = notifications[0]
         self.assertEqual(

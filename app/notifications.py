@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Callable, Mapping, Sequence
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 from urllib.parse import quote, urlsplit
@@ -13,12 +14,22 @@ from pywebpush import WebPushException, webpush
 
 from app.config import Settings
 from app.db import connect, transaction
+from app.mrz_robustness import MRZRobustnessService, RobustnessInputProvider
 
 
 LOGGER = logging.getLogger("edge2.notifications")
 PERMANENT_SUBSCRIPTION_FAILURES = {404, 410}
 MAX_DELIVERY_ATTEMPTS = 3
 RETRYABLE_PROVIDER_FAILURES = {408, 425, 429}
+PRESSURE_EVENT_TYPE = "POST_ACTIVATION_PRESSURE_CHANGED"
+PRESSURE_DIRECTIONS = {"UP", "DOWN"}
+
+
+def should_notify_pressure_transition(previous_state: str, current_state: str) -> bool:
+    """Return whether a persisted state change enters directional pressure."""
+    return previous_state != current_state and current_state in PRESSURE_DIRECTIONS
+
+
 class PushSubscriptionKeys(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -119,6 +130,260 @@ class NotificationRepository:
                     (endpoint,),
                 )
                 return cursor.rowcount > 0
+
+    def reconcile_pressure_state(
+        self,
+        report: Mapping[str, Any],
+        evaluation_trigger_event_id: str,
+    ) -> int | None:
+        """Persist one lifecycle-scoped pressure comparison and optional outbox row."""
+        symbol = str(report["symbol"])
+        active = report["active_mrz"]
+        pressure = report["migration_pressure"]
+        position = report["observation_position"]
+        boundary = report["boundary_pressure"]
+        displacement = report["mrz_displacement"]
+        successor = report["successor_watch"]
+        activation_event_id = str(active["activation_event_id"])
+        current_state = str(pressure["direction"])
+        if current_state not in {"NEUTRAL", *PRESSURE_DIRECTIONS}:
+            raise ValueError(f"Unsupported post-activation direction: {current_state}")
+
+        with transaction(self.database_url) as connection:
+            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                    (f"POST_ACTIVATION_PRESSURE:{symbol}",),
+                )
+                cursor.execute(
+                    """
+                    SELECT activation_event_id
+                    FROM active_mrz
+                    WHERE symbol = %s
+                    """,
+                    (symbol,),
+                )
+                current_authority = cursor.fetchone()
+                if (
+                    current_authority is None
+                    or str(current_authority["activation_event_id"])
+                    != activation_event_id
+                ):
+                    return None
+
+                cursor.execute(
+                    """
+                    SELECT id, event_id, received_at
+                    FROM observations
+                    WHERE symbol = %s
+                    ORDER BY received_at DESC, id DESC
+                    LIMIT 1
+                    """,
+                    (symbol,),
+                )
+                latest_observation = cursor.fetchone()
+                if (
+                    latest_observation is None
+                    or str(latest_observation["event_id"])
+                    != evaluation_trigger_event_id
+                ):
+                    # A newer canonical packet committed after the report snapshot.
+                    # Its own background task or startup recovery will evaluate it.
+                    return None
+
+                cursor.execute(
+                    """
+                    SELECT *
+                    FROM post_activation_pressure_states
+                    WHERE symbol = %s AND activation_event_id = %s
+                    FOR UPDATE
+                    """,
+                    (symbol, activation_event_id),
+                )
+                previous = cursor.fetchone()
+                evaluation_order = (
+                    latest_observation["received_at"],
+                    int(latest_observation["id"]),
+                )
+                if previous is not None:
+                    previous_order = (
+                        previous["last_evaluated_received_at"],
+                        int(previous["last_evaluated_observation_id"]),
+                    )
+                    if previous_order >= evaluation_order:
+                        return None
+
+                cursor.execute(
+                    """
+                    SELECT enabled_at
+                    FROM web_push_notification_cutovers
+                    WHERE event_type = %s
+                    """,
+                    (PRESSURE_EVENT_TYPE,),
+                )
+                cutover_row = cursor.fetchone()
+                cursor.execute(
+                    """
+                    SELECT COALESCE(
+                        (
+                            SELECT promoted_at
+                            FROM operator_mrz_promotions
+                            WHERE symbol = %s AND trigger_event_id = %s
+                        ),
+                        (
+                            SELECT received_at
+                            FROM observations
+                            WHERE event_id = %s
+                        )
+                    ) AS lifecycle_started_at
+                    """,
+                    (symbol, activation_event_id, activation_event_id),
+                )
+                lifecycle_row = cursor.fetchone()
+                lifecycle_started_at = lifecycle_row["lifecycle_started_at"]
+                lifecycle_is_live = bool(
+                    cutover_row is not None
+                    and lifecycle_started_at is not None
+                    and lifecycle_started_at >= cutover_row["enabled_at"]
+                )
+
+                previous_state = (
+                    str(previous["current_state"])
+                    if previous is not None
+                    else "NEUTRAL"
+                    if lifecycle_is_live
+                    else current_state
+                )
+                state_changed = previous_state != current_state
+                transition_count = (
+                    int(previous["transition_count"]) if previous is not None else 0
+                ) + int(state_changed)
+                cursor.execute("SELECT clock_timestamp() AS evaluated_at")
+                evaluated_at = cursor.fetchone()["evaluated_at"]
+                metrics = (
+                    int(position["total_observation_count"]),
+                    int(position["above_active_mrz_observation_count"]),
+                    int(position["inside_active_mrz_observation_count"]),
+                    int(position["below_active_mrz_observation_count"]),
+                    int(boundary["above_upper_envelope_observation_count"]),
+                    int(boundary["below_lower_envelope_observation_count"]),
+                )
+                displacement_value = displacement[
+                    "median_signed_displacement_percentage_of_activation_ipda"
+                ]
+                cursor.execute(
+                    """
+                    INSERT INTO post_activation_pressure_states (
+                        symbol, activation_event_id, current_state,
+                        state_status, state_label,
+                        post_activation_observation_count,
+                        above_mrz_count, inside_mrz_count, below_mrz_count,
+                        above_envelope_count, below_envelope_count,
+                        displacement, successor_status, successor_label,
+                        transition_count, last_evaluated_trigger_event_id,
+                        last_evaluated_observation_id,
+                        last_evaluated_received_at, last_evaluated_at
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    )
+                    ON CONFLICT (symbol, activation_event_id) DO UPDATE SET
+                        current_state = EXCLUDED.current_state,
+                        state_status = EXCLUDED.state_status,
+                        state_label = EXCLUDED.state_label,
+                        post_activation_observation_count =
+                            EXCLUDED.post_activation_observation_count,
+                        above_mrz_count = EXCLUDED.above_mrz_count,
+                        inside_mrz_count = EXCLUDED.inside_mrz_count,
+                        below_mrz_count = EXCLUDED.below_mrz_count,
+                        above_envelope_count = EXCLUDED.above_envelope_count,
+                        below_envelope_count = EXCLUDED.below_envelope_count,
+                        displacement = EXCLUDED.displacement,
+                        successor_status = EXCLUDED.successor_status,
+                        successor_label = EXCLUDED.successor_label,
+                        transition_count = EXCLUDED.transition_count,
+                        last_evaluated_trigger_event_id =
+                            EXCLUDED.last_evaluated_trigger_event_id,
+                        last_evaluated_observation_id =
+                            EXCLUDED.last_evaluated_observation_id,
+                        last_evaluated_received_at =
+                            EXCLUDED.last_evaluated_received_at,
+                        last_evaluated_at = EXCLUDED.last_evaluated_at,
+                        updated_at = clock_timestamp()
+                    """,
+                    (
+                        symbol,
+                        activation_event_id,
+                        current_state,
+                        str(pressure["status"]),
+                        str(pressure["label"]),
+                        *metrics,
+                        displacement_value,
+                        str(successor["status"]),
+                        str(successor["label"]),
+                        transition_count,
+                        evaluation_trigger_event_id,
+                        int(latest_observation["id"]),
+                        latest_observation["received_at"],
+                        evaluated_at,
+                    ),
+                )
+
+                if not should_notify_pressure_transition(
+                    previous_state,
+                    current_state,
+                ):
+                    return None
+
+                source_event_key = (
+                    f"{PRESSURE_EVENT_TYPE}:{symbol}:{activation_event_id}:"
+                    f"{evaluation_trigger_event_id}:{current_state}"
+                )
+                cursor.execute(
+                    """
+                    INSERT INTO web_push_notifications (
+                        source_event_key, source_trigger_event_id, event_type,
+                        symbol, route_owner, structural_location,
+                        core_mrz_lower, core_mrz_upper, activated_at, occurred_at,
+                        lifecycle_activation_event_id,
+                        previous_pressure_state, current_pressure_state,
+                        pressure_state_label,
+                        post_activation_observation_count,
+                        above_mrz_count, inside_mrz_count, below_mrz_count,
+                        above_envelope_count, below_envelope_count,
+                        displacement, successor_status, successor_label,
+                        deliverable
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, TRUE
+                    )
+                    ON CONFLICT (source_event_key) DO NOTHING
+                    RETURNING id
+                    """,
+                    (
+                        source_event_key,
+                        evaluation_trigger_event_id,
+                        PRESSURE_EVENT_TYPE,
+                        symbol,
+                        str(report["route_owner"]),
+                        str(report["structural_authority"]["structural_location"]),
+                        active["lower"],
+                        active["upper"],
+                        active["activated_at"],
+                        evaluated_at,
+                        activation_event_id,
+                        previous_state,
+                        current_state,
+                        str(pressure["label"]),
+                        *metrics,
+                        displacement_value,
+                        str(successor["status"]),
+                        str(successor["label"]),
+                    ),
+                )
+                inserted = cursor.fetchone()
+                return int(inserted["id"]) if inserted is not None else None
 
     def reconcile_notifiable_events(self, trigger_event_id: str | None = None) -> list[int]:
         authority_query = """
@@ -239,7 +504,8 @@ class NotificationRepository:
                     FROM web_push_notifications
                     WHERE deliverable = TRUE
                       AND event_type IN (
-                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS'
+                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
+                          'POST_ACTIVATION_PRESSURE_CHANGED'
                       )
                     """
                 )
@@ -257,7 +523,8 @@ class NotificationRepository:
                     FROM web_push_notifications
                     WHERE deliverable = TRUE
                       AND event_type IN (
-                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS'
+                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
+                          'POST_ACTIVATION_PRESSURE_CHANGED'
                       )
                       AND id > %s
                     ORDER BY id ASC
@@ -315,7 +582,8 @@ class NotificationRepository:
                     ) attempts ON TRUE
                     WHERE n.deliverable = TRUE
                       AND n.event_type IN (
-                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS'
+                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
+                          'POST_ACTIVATION_PRESSURE_CHANGED'
                       )
                       AND s.enabled = TRUE
                       AND s.enabled_at <= n.created_at
@@ -450,10 +718,12 @@ class NotificationService:
         self,
         settings: Settings,
         repository: NotificationRepository,
+        pressure_input_provider: RobustnessInputProvider | None = None,
         sender: Callable[..., Any] = webpush,
     ) -> None:
         self.settings = settings
         self.repository = repository
+        self.pressure_input_provider = pressure_input_provider
         self.sender = sender
 
     @property
@@ -466,6 +736,7 @@ class NotificationService:
 
     def process_trigger_event(self, trigger_event_id: str) -> None:
         self.repository.reconcile_notifiable_events(trigger_event_id)
+        self.reconcile_pressure(trigger_event_id)
         # Each accepted or duplicate webhook is a lightweight opportunity to
         # resume persisted transient deliveries. Claiming remains atomic and
         # bounded, so this sweep cannot resend successes or create new logical
@@ -474,7 +745,62 @@ class NotificationService:
 
     def recover(self) -> None:
         self.repository.reconcile_notifiable_events()
+        self.reconcile_pressure()
         self.dispatch_pending()
+
+    def reconcile_pressure(self, trigger_event_id: str | None = None) -> None:
+        if self.pressure_input_provider is None:
+            return
+        try:
+            active_mrzs, observations, migration_provenance = (
+                self.pressure_input_provider()
+            )
+            if not active_mrzs:
+                return
+            observations_by_symbol: dict[str, list[Any]] = {}
+            trigger_symbol = None
+            for observation in observations:
+                observations_by_symbol.setdefault(observation.symbol, []).append(
+                    observation
+                )
+                if observation.event_id == trigger_event_id:
+                    trigger_symbol = observation.symbol
+            if trigger_event_id is not None and trigger_symbol is None:
+                return
+
+            generated_at = datetime.now(timezone.utc)
+            robustness_service = MRZRobustnessService(
+                lambda: (active_mrzs, observations, migration_provenance)
+            )
+            for active in active_mrzs:
+                if trigger_symbol is not None and active.symbol != trigger_symbol:
+                    continue
+                symbol_observations = observations_by_symbol.get(active.symbol, [])
+                if not symbol_observations:
+                    continue
+                evaluation_trigger = max(
+                    symbol_observations,
+                    key=lambda item: (item.received_at, item.id),
+                )
+                report = robustness_service.active_mrz_report(
+                    active,
+                    symbol_observations,
+                    generated_at,
+                    migration_provenance.get(
+                        active.symbol,
+                        {"has_migrated": False},
+                    ),
+                )
+                self.repository.reconcile_pressure_state(
+                    report,
+                    evaluation_trigger.event_id,
+                )
+        except Exception:
+            LOGGER.exception(
+                "Post-activation pressure reconciliation failed; MRZ authority "
+                "and other notifications are unaffected",
+                extra={"trigger_event_id": trigger_event_id},
+            )
 
     def dispatch_pending(self, notification_ids: Sequence[int] | None = None) -> None:
         if not self.web_push_configured:
@@ -587,7 +913,19 @@ def notification_payload(row: Mapping[str, Any]) -> dict[str, Any]:
     event_key = str(row["source_event_key"])
     event_type = str(row["event_type"])
     occurred_at = iso(row["occurred_at"])
-    if event_type == "MRZ_NEAR_MISS":
+    if event_type == PRESSURE_EVENT_TYPE:
+        direction = str(row["current_pressure_state"])
+        side = "above" if direction == "UP" else "below"
+        side_mrz_count = int(row[f"{side}_mrz_count"])
+        side_envelope_count = int(row[f"{side}_envelope_count"])
+        title = f"{symbol} · {row['pressure_state_label']}"
+        body = (
+            f"Post-activation activity materially favors {side}-envelope observations · "
+            f"{int(row['post_activation_observation_count'])} total · "
+            f"{side_mrz_count} {side} MRZ · "
+            f"{side_envelope_count} {side} envelope · {row['successor_label']}"
+        )
+    elif event_type == "MRZ_NEAR_MISS":
         title = f"{symbol} MRZ Near Miss"
         body = (
             f"{route_owner} · {display_decimal(row['core_mrz_lower'])}–"
@@ -635,7 +973,38 @@ def notification_payload(row: Mapping[str, Any]) -> dict[str, Any]:
         "occurred_at": occurred_at,
         "url": f"/?symbol={quote(symbol, safe='')}",
     }
-    if event_type == "MRZ_NEAR_MISS":
+    if event_type == PRESSURE_EVENT_TYPE:
+        displacement_value = row.get("displacement")
+        payload.update({
+            "lifecycle_activation_event_id": str(
+                row["lifecycle_activation_event_id"]
+            ),
+            "previous_state": str(row["previous_pressure_state"]),
+            "current_state": str(row["current_pressure_state"]),
+            "pressure_state_label": str(row["pressure_state_label"]),
+            "evaluated_at": occurred_at,
+            "activated_at": iso(row["activated_at"]),
+            "post_activation_observation_count": int(
+                row["post_activation_observation_count"]
+            ),
+            "above_mrz_count": int(row["above_mrz_count"]),
+            "inside_mrz_count": int(row["inside_mrz_count"]),
+            "below_mrz_count": int(row["below_mrz_count"]),
+            "above_envelope_count": int(row["above_envelope_count"]),
+            "below_envelope_count": int(row["below_envelope_count"]),
+            "displacement": (
+                decimal_text(displacement_value)
+                if displacement_value is not None
+                else None
+            ),
+            "successor_status": str(row["successor_status"]),
+            "successor_label": str(row["successor_label"]),
+            "url": (
+                "/diagnostics/mrz-robustness?symbol="
+                f"{quote(symbol, safe='')}#post-activation"
+            ),
+        })
+    elif event_type == "MRZ_NEAR_MISS":
         candidate_identity = str(row["candidate_identity"])
         payload.update({
             "candidate_identity": candidate_identity,

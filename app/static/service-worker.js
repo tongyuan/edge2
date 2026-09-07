@@ -9,6 +9,9 @@ function safeNotificationPath(candidate) {
     const symbol = parsed.searchParams.get("symbol");
     if (!symbol || !SYMBOL_PATTERN.test(symbol)) return "/";
     if (parsed.pathname === "/") return `/?symbol=${encodeURIComponent(symbol)}`;
+    if (parsed.pathname === "/diagnostics/mrz-robustness") {
+      return `/diagnostics/mrz-robustness?symbol=${encodeURIComponent(symbol)}#post-activation`;
+    }
     if (parsed.pathname !== "/diagnostics/activation-feasibility") return "/";
     const candidateIdentity = parsed.searchParams.get("candidate");
     if (!candidateIdentity || !CANDIDATE_PATTERN.test(candidateIdentity)) return "/";
@@ -32,7 +35,12 @@ self.addEventListener("push", (event) => {
     payload = {};
   }
   const eventId = typeof payload.event_id === "string" ? payload.event_id : "unknown";
-  const eventType = ["MRZ_ACTIVATED", "MRZ_MIGRATED", "MRZ_NEAR_MISS"].includes(payload.event_type)
+  const eventType = [
+    "MRZ_ACTIVATED",
+    "MRZ_MIGRATED",
+    "MRZ_NEAR_MISS",
+    "POST_ACTIVATION_PRESSURE_CHANGED",
+  ].includes(payload.event_type)
     ? payload.event_type
     : null;
   const url = safeNotificationPath(payload.url);

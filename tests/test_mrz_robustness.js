@@ -11,6 +11,7 @@ const {
   migrationEqmValue,
   migrationProvenanceMarkup,
   normalizedSpanText,
+  operatorCardSectionFromHash,
   operatorCardSymbolFromSearch,
   percentageText,
   reportMarkup,
@@ -35,12 +36,19 @@ assert.equal(midpointValue(null, "0.3966"), null);
 assert.equal(operatorCardSymbolFromSearch("?symbol=BTCUSDT"), "BTCUSDT");
 assert.equal(operatorCardSymbolFromSearch("?symbol=NASDAQ%3ANDX"), "NASDAQ:NDX");
 assert.equal(operatorCardSymbolFromSearch(""), null);
+assert.equal(operatorCardSectionFromHash("#post-activation"), "post-activation");
+assert.equal(operatorCardSectionFromHash("#other"), null);
 
 function fakeOperatorCard(symbol) {
   return {
     dataset: { symbol },
     scrollOptions: null,
     focusOptions: null,
+    disclosure: { open: false },
+    querySelector(selector) {
+      assert.equal(selector, 'details[data-section="post-activation"]');
+      return this.disclosure;
+    },
     scrollIntoView(options) { this.scrollOptions = options; },
     focus(options) { this.focusOptions = options; },
   };
@@ -66,6 +74,11 @@ assert.deepEqual(ethCard.scrollOptions, { block: "start" });
 assert.deepEqual(ethCard.focusOptions, { preventScroll: true });
 assert.equal(focusOperatorCard(operatorCardContainer, "MISSING"), false);
 assert.equal(focusOperatorCard(operatorCardContainer, null), false);
+assert.equal(
+  focusOperatorCard(operatorCardContainer, "BTCUSDT", "post-activation"),
+  true,
+);
+assert.equal(btcCard.disclosure.open, true);
 
 const operationCardSource = fs.readFileSync(
   require.resolve("../app/static/mrz-robustness.js"),
@@ -104,7 +117,7 @@ const reportLoadSource = operationCardSource.split("async function loadReport()"
 const renderAfterLoadIndex = reportLoadSource.indexOf("renderReports();");
 const revealAfterRenderIndex = reportLoadSource.indexOf("content.hidden = false;");
 const focusAfterRevealIndex = reportLoadSource.indexOf(
-  "focusOperatorCard(activeReports, requestedSymbol)",
+  "focusOperatorCard(",
 );
 assert.ok(
   renderAfterLoadIndex >= 0

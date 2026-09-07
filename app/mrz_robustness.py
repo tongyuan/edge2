@@ -111,6 +111,24 @@ class PostActivationState:
     direction_label: str
 
 
+@dataclass(frozen=True, slots=True)
+class PostActivationSnapshot:
+    observations: tuple[Observation, ...]
+    state: PostActivationState
+    inside_mrz_count: int
+    above_mrz_count: int
+    below_mrz_count: int
+    upper_boundary_test_count: int
+    lower_boundary_test_count: int
+    above_envelope_count: int
+    below_envelope_count: int
+    displacement_median: Decimal | None
+
+    @property
+    def total_observation_count(self) -> int:
+        return len(self.observations)
+
+
 def classify_post_activation_state(
     total_observation_count: int,
     above_envelope_count: int,
@@ -176,6 +194,85 @@ def classify_post_activation_state(
         ),
         direction="NEUTRAL",
         direction_label="Neutral",
+    )
+
+
+def select_post_activation_observations(
+    active: ActiveMRZ,
+    observations: Sequence[Observation],
+) -> tuple[Observation, ...]:
+    """Select observations after the current activation in canonical order."""
+    ordered = tuple(sorted(observations, key=lambda item: item.order_key))
+    activation = next(
+        (
+            item
+            for item in ordered
+            if item.event_id == active.activation_event_id
+        ),
+        None,
+    )
+    if activation is not None:
+        return tuple(item for item in ordered if item.order_key > activation.order_key)
+    return tuple(item for item in ordered if item.observed_at > active.activated_at)
+
+
+def post_activation_snapshot(
+    active: ActiveMRZ,
+    observations: Sequence[Observation],
+) -> PostActivationSnapshot:
+    """Build the shared post-activation evidence consumed by UI and notifications."""
+    post_activation = select_post_activation_observations(active, observations)
+    inside_mrz_count = sum(
+        active.core_mrz_lower
+        <= observation.observation_price
+        <= active.core_mrz_upper
+        for observation in post_activation
+    )
+    above_mrz_count = sum(
+        observation.observation_price > active.core_mrz_upper
+        for observation in post_activation
+    )
+    below_mrz_count = sum(
+        observation.observation_price < active.core_mrz_lower
+        for observation in post_activation
+    )
+    upper_boundary_test_count = sum(
+        observation.observation_price >= active.core_mrz_upper
+        for observation in post_activation
+    )
+    lower_boundary_test_count = sum(
+        observation.observation_price <= active.core_mrz_lower
+        for observation in post_activation
+    )
+    above_envelope_count = sum(
+        observation.observation_price > active.upper_migration_boundary
+        for observation in post_activation
+    )
+    below_envelope_count = sum(
+        observation.observation_price < active.lower_migration_boundary
+        for observation in post_activation
+    )
+    midpoint_displacements = tuple(
+        (observation.observation_price - active.core_mrz_midpoint)
+        / active.ipda_width_at_activation
+        * Decimal("100")
+        for observation in post_activation
+    )
+    return PostActivationSnapshot(
+        observations=post_activation,
+        state=classify_post_activation_state(
+            len(post_activation),
+            above_envelope_count,
+            below_envelope_count,
+        ),
+        inside_mrz_count=inside_mrz_count,
+        above_mrz_count=above_mrz_count,
+        below_mrz_count=below_mrz_count,
+        upper_boundary_test_count=upper_boundary_test_count,
+        lower_boundary_test_count=lower_boundary_test_count,
+        above_envelope_count=above_envelope_count,
+        below_envelope_count=below_envelope_count,
+        displacement_median=median_decimal(midpoint_displacements),
     )
 
 
@@ -307,18 +404,7 @@ class MRZRobustnessService:
         active: ActiveMRZ,
         observations: Sequence[Observation],
     ) -> tuple[Observation, ...]:
-        ordered = tuple(sorted(observations, key=lambda item: item.order_key))
-        activation = next(
-            (
-                item
-                for item in ordered
-                if item.event_id == active.activation_event_id
-            ),
-            None,
-        )
-        if activation is not None:
-            return tuple(item for item in ordered if item.order_key > activation.order_key)
-        return tuple(item for item in ordered if item.observed_at > active.activated_at)
+        return select_post_activation_observations(active, observations)
 
     def active_mrz_report(
         self,
@@ -328,36 +414,20 @@ class MRZRobustnessService:
         migration: Mapping[str, object],
     ) -> dict[str, object]:
         formation = current_formation_provenance(active)
-        post_activation = self._post_activation_observations(active, observations)
-        total = len(post_activation)
-        contained = sum(
-            active.core_mrz_lower
-            <= observation.observation_price
-            <= active.core_mrz_upper
-            for observation in post_activation
-        )
-        above_active_mrz = sum(
-            observation.observation_price > active.core_mrz_upper
-            for observation in post_activation
-        )
-        below_active_mrz = sum(
-            observation.observation_price < active.core_mrz_lower
-            for observation in post_activation
-        )
+        snapshot = post_activation_snapshot(active, observations)
+        post_activation = snapshot.observations
+        total = snapshot.total_observation_count
+        contained = snapshot.inside_mrz_count
+        above_active_mrz = snapshot.above_mrz_count
+        below_active_mrz = snapshot.below_mrz_count
         containment_percentage = (
             Decimal(contained) * Decimal("100") / Decimal(total)
             if total
             else None
         )
 
-        upper_tests = sum(
-            observation.observation_price >= active.core_mrz_upper
-            for observation in post_activation
-        )
-        lower_tests = sum(
-            observation.observation_price <= active.core_mrz_lower
-            for observation in post_activation
-        )
+        upper_tests = snapshot.upper_boundary_test_count
+        lower_tests = snapshot.lower_boundary_test_count
         above_upper_envelope = tuple(
             observation
             for observation in post_activation
@@ -369,24 +439,14 @@ class MRZRobustnessService:
             if observation.observation_price < active.lower_migration_boundary
         )
         outside_envelope = (*below_lower_envelope, *above_upper_envelope)
-        post_activation_state = classify_post_activation_state(
-            total,
-            len(above_upper_envelope),
-            len(below_lower_envelope),
-        )
+        post_activation_state = snapshot.state
         pressure_status = post_activation_state.status
         pressure_label = post_activation_state.label
         pressure_reason = post_activation_state.reason
         pressure_direction = post_activation_state.direction
         pressure_direction_label = post_activation_state.direction_label
 
-        midpoint_displacements = tuple(
-            (observation.observation_price - active.core_mrz_midpoint)
-            / active.ipda_width_at_activation
-            * Decimal("100")
-            for observation in post_activation
-        )
-        displacement_median = median_decimal(midpoint_displacements)
+        displacement_median = snapshot.displacement_median
         displacement_direction, displacement_label = displacement_evidence(
             displacement_median
         )

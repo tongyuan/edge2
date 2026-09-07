@@ -236,6 +236,33 @@ async function testServiceWorkerPushAndClick() {
   assert.equal(shown[2].options.data.event_type, "MRZ_NEAR_MISS");
   assert.match(shown[2].options.data.url, /activation-feasibility\?symbol=WLDUSDT&candidate=/);
 
+  let pressurePushWork;
+  listeners.push({
+    data: {
+      json() {
+        return {
+          event_id: "POST_ACTIVATION_PRESSURE_CHANGED:WLDUSDT:event-4:event-6:UP",
+          event_type: "POST_ACTIVATION_PRESSURE_CHANGED",
+          title: "WLDUSDT · Upward Pressure",
+          body: "Post-activation activity materially favors above-envelope observations",
+          symbol: "WLDUSDT",
+          url: "/diagnostics/mrz-robustness?symbol=WLDUSDT#post-activation",
+        };
+      },
+    },
+    waitUntil(promise) { pressurePushWork = promise; },
+  });
+  await pressurePushWork;
+  assert.equal(shown.length, 4);
+  assert.equal(
+    shown[3].options.data.event_type,
+    "POST_ACTIVATION_PRESSURE_CHANGED",
+  );
+  assert.equal(
+    shown[3].options.data.url,
+    "/diagnostics/mrz-robustness?symbol=WLDUSDT#post-activation",
+  );
+
   let clickWork;
   listeners.notificationclick({
     notification: {
@@ -247,6 +274,20 @@ async function testServiceWorkerPushAndClick() {
   await clickWork;
   assert.deepEqual(navigated, ["https://edge.example.test/?symbol=WLDUSDT"]);
   assert.equal(focused, true);
+
+  let pressureClickWork;
+  listeners.notificationclick({
+    notification: {
+      data: shown[3].options.data,
+      close() {},
+    },
+    waitUntil(promise) { pressureClickWork = promise; },
+  });
+  await pressureClickWork;
+  assert.deepEqual(navigated, [
+    "https://edge.example.test/?symbol=WLDUSDT",
+    "https://edge.example.test/diagnostics/mrz-robustness?symbol=WLDUSDT#post-activation",
+  ]);
   assert.equal(context.safeNotificationPath("https://attacker.example/phish"), "/");
 }
 
@@ -260,6 +301,13 @@ async function main() {
   assert.equal(
     safeNotificationPath("/?symbol=WLDUSDT", "https://edge.example.test"),
     "/?symbol=WLDUSDT",
+  );
+  assert.equal(
+    safeNotificationPath(
+      "/diagnostics/mrz-robustness?symbol=WLDUSDT#post-activation",
+      "https://edge.example.test",
+    ),
+    "/diagnostics/mrz-robustness?symbol=WLDUSDT#post-activation",
   );
   assert.equal(
     safeNotificationPath(

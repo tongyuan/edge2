@@ -3,25 +3,28 @@
 ## Scope and authority boundary
 
 Web Push is an operational output only. It consumes persisted `MRZ_ACTIVATED`
-and `MRZ_MIGRATED` events plus durable entries into the existing `Current
-production near misses` list:
+and `MRZ_MIGRATED` events, durable entries into the existing `Current
+production near misses` list, and transitions emitted by the existing
+Post-Activation State read model:
 
 ```text
 TradingView observation
   -> unchanged MRZ engine
   -> active_mrz + mrz_events or current near-miss episode commit
+  -> shared Post-Activation State classification
   -> notification background task re-reads the persisted source
   -> logical notification deduplication
   -> active Web Push subscriptions
 ```
 
-The notification subsystem never evaluates concentration, qualification,
+The notification subsystem never changes concentration, qualification,
 migration eligibility, successor state, route ownership, or structural
 authority. Ingestion creates near-miss episodes by calling the same canonical
-A-4-1 current-list evaluator used by the operator UI; notification delivery only
-copies those committed facts. It never notifies for `ROUTE_CHANGED`; a route
-transition is included in the corresponding migration notification. The
-webhook response and MRZ commit do not depend on push delivery.
+A-4-1 current-list evaluator used by the operator UI. Pressure reconciliation
+calls the same `classify_post_activation_state` path used by the Operator Card;
+it does not define another pressure rule. It never notifies for `ROUTE_CHANGED`;
+a route transition is included in the corresponding migration notification.
+The webhook response and MRZ commit do not depend on push delivery.
 
 Migration `005_web_push_notifications.sql` is additive. It creates:
 
@@ -47,6 +50,16 @@ is a new episode. Existing candidates are baselined as non-deliverable on their
 first observed post-migration replay, so application startup, recovery,
 duplicate webhooks, and deterministic replay do not send historical near
 misses.
+
+Migration `009_post_activation_pressure_notifications.sql` adds a downstream
+`post_activation_pressure_states` record keyed by symbol and current
+`activation_event_id`, extends the logical outbox with
+`POST_ACTIVATION_PRESSURE_CHANGED`, and records a pressure-feature cutover.
+First evaluation of a lifecycle that predates the cutover persists its current
+state without sending. New lifecycles begin with the classifier's neutral
+baseline. A later change into `UP` or `DOWN` creates one logical notification;
+neutral transitions are persisted without a notification. Neither the table nor
+the reconciler writes `active_mrz`, `mrz_events`, or observations.
 
 ## Configuration
 
@@ -104,7 +117,7 @@ or startup recovery; there is no tight retry loop and push work remains outside
 the authoritative webhook transaction.
 
 The in-site toast polls only logical notification records. It does not infer an
-activation or migration by comparing symbol state. The service worker has no
+activation, migration, or pressure state in the browser. The service worker has no
 `fetch` handler and does not cache or intercept operational HTML or MRZ API
 responses.
 
@@ -148,10 +161,24 @@ The page focuses the exact card. If the candidate changed or the episode
 resolved, it says so and shows the latest current state rather than promoting
 stale evidence.
 
+A pressure payload uses `event_type: POST_ACTIVATION_PRESSURE_CHANGED` and
+includes the lifecycle activation event, previous/current direction, evaluation
+time, the current Post-Activation State counts and displacement, plus the
+current diagnostic successor status. Its same-origin deep link is:
+
+```text
+/diagnostics/mrz-robustness?symbol=<symbol>#post-activation
+```
+
+The Operator Card fetches current authoritative state, focuses the exact symbol,
+and expands its existing Post-activation observations disclosure. No analytical
+state is embedded in the URL.
+
 All MRZ fields are copied from the persisted authoritative event. Migration old
 bounds come from `MRZ_MIGRATED` provenance, never from current `active_mrz` UI
 state. The service worker accepts only the same-origin `/` monitor route with a
-validated symbol query or the exact Activation Feasibility candidate path above.
+validated symbol query, the exact symbol Operator Card pressure path, or the
+exact Activation Feasibility candidate path above.
 It focuses and navigates an existing EDGE window when possible, or opens one new
 window. External or unexpected paths fall back to `/`.
 
@@ -164,7 +191,8 @@ make test
 ./scripts/deploy-remote.sh
 ```
 
-Application startup applies migrations `005`, `006`, and `008` before Uvicorn starts.
+Application startup applies migrations `005`, `006`, `008`, and `009` before
+Uvicorn starts.
 It is also safe to run the existing explicit migration command:
 
 ```bash
@@ -200,13 +228,15 @@ Use development/test data only; do not manufacture production MRZ authority.
 
 6. In a development/test environment, submit exact observation sequences that
    first produce one current production near miss, then one authoritative
-   `MRZ_ACTIVATED` event and one later `MRZ_MIGRATED` event.
+   `MRZ_ACTIVATED` event, one new pressure transition, and one later
+   `MRZ_MIGRATED` event.
 7. Put EDGE in the background and verify one iOS system notification appears
-   for the near-miss episode and for each transition, with no separate
+   for the near-miss episode and for each notifiable transition, with no separate
    `ROUTE_CHANGED` alert.
 8. Tap the near-miss notification and verify EDGE focuses the exact candidate;
-   tap transition notifications and verify the correct `/?symbol=...` monitor
-   detail.
+   tap authority transition notifications and verify the correct
+   `/?symbol=...` monitor detail; tap the pressure notification and verify the
+   current symbol Operator Card opens with Post-activation observations expanded.
 9. Continue a near-miss episode, retry confirming webhooks, run recovery, and
    restart the service. Confirm that no duplicate logical notification or
    system alert is produced.

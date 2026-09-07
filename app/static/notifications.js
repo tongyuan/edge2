@@ -36,6 +36,9 @@
       const symbol = parsed.searchParams.get("symbol");
       if (!symbol || !SYMBOL_PATTERN.test(symbol)) return "/";
       if (parsed.pathname === "/") return `/?symbol=${encodeURIComponent(symbol)}`;
+      if (parsed.pathname === "/diagnostics/mrz-robustness") {
+        return `/diagnostics/mrz-robustness?symbol=${encodeURIComponent(symbol)}#post-activation`;
+      }
       if (parsed.pathname !== "/diagnostics/activation-feasibility") return "/";
       const candidateIdentity = parsed.searchParams.get("candidate");
       if (!candidateIdentity || !CANDIDATE_PATTERN.test(candidateIdentity)) return "/";
@@ -190,7 +193,7 @@
         try {
           await persistSubscription(this.subscription, fetch.bind(globalObject));
           this.rememberRequested();
-          this.render("subscribed", "MRZ near-miss, activation and migration alerts are enabled on this device.");
+          this.render("subscribed", "MRZ pressure, near-miss, activation and migration alerts are enabled on this device.");
         } catch (error) {
           if (error.code === "subscription_expired") {
             await this.subscription.unsubscribe();
@@ -219,7 +222,7 @@
             fetchImpl: fetch.bind(globalObject),
           });
           this.subscription = null;
-          this.render("ready", "MRZ near-miss, activation and migration alerts are off on this device.");
+          this.render("ready", "MRZ pressure, near-miss, activation and migration alerts are off on this device.");
           return;
         }
         const result = await enableWebPush({
@@ -238,7 +241,7 @@
         }
         this.subscription = result.subscription;
         this.rememberRequested();
-        this.render("subscribed", "MRZ near-miss, activation and migration alerts are enabled on this device.");
+        this.render("subscribed", "MRZ pressure, near-miss, activation and migration alerts are enabled on this device.");
       } catch (error) {
         this.render("error", error.message || "Unable to update notifications.");
       }

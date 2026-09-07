@@ -256,16 +256,18 @@ The PostgreSQL 16 database revolves around:
 - `ingestion_metrics` — lightweight durable counters for health reporting.
 - `web_push_subscriptions` — single-operator browser Push subscriptions.
 - `current_production_near_miss_episodes` — durable current-list episode identity and replay baseline.
-- `web_push_notifications` — deduplicated near-miss, activation, and migration notifications.
+- `post_activation_pressure_states` — downstream lifecycle-scoped pressure comparison state.
+- `web_push_notifications` — deduplicated near-miss, activation, migration, and pressure notifications.
 - `web_push_delivery_attempts` — isolated per-subscription delivery outcomes.
-- `web_push_notification_cutovers` — replay-safe migration notification cutover.
+- `web_push_notification_cutovers` — replay-safe migration and pressure notification cutovers.
 - `saved_symbol_groups` — named canonical symbol cohorts only; analytics remain derived.
 
 Migration `001_initial.sql` builds the isolated schema. Additive migrations
-`002–008` add the overview index, supporting count, nullable immutable
+`002–009` add the overview index, supporting count, nullable immutable
 formation evidence, downstream Web Push tables, migration-notification
 provenance/cutover state, saved cohort definitions, operator-promotion
-provenance, Production Confirmation, and near-miss episodes. No 4.2 table or
+provenance, Production Confirmation, near-miss episodes, and downstream
+post-activation pressure notification state. No 4.2 table or
 historical record is read. See [`docs/web-push.md`](docs/web-push.md) for
 notification configuration, safety, deployment, and iPhone verification.
 

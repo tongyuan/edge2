@@ -402,11 +402,19 @@ function operatorCardSymbolFromSearch(search = "") {
   return new URLSearchParams(search).get("symbol") || null;
 }
 
-function focusOperatorCard(container, symbol) {
+function operatorCardSectionFromHash(hash = "") {
+  return hash === "#post-activation" ? "post-activation" : null;
+}
+
+function focusOperatorCard(container, symbol, section = null) {
   if (!container || !symbol) return false;
   const card = Array.from(container.querySelectorAll(".mrz-report"))
     .find((item) => item.dataset.symbol === symbol);
   if (!card) return false;
+  if (section) {
+    const disclosure = card.querySelector(`details[data-section="${section}"]`);
+    if (disclosure) disclosure.open = true;
+  }
   card.scrollIntoView({ block: "start" });
   card.focus({ preventScroll: true });
   return true;
@@ -421,6 +429,7 @@ if (typeof document !== "undefined") {
     const allFilterButton = document.getElementById("filterAll");
     const migratedFilterButton = document.getElementById("filterMigrated");
     const requestedSymbol = operatorCardSymbolFromSearch(window.location.search);
+    const requestedSection = operatorCardSectionFromHash(window.location.hash);
     let reports = [];
     let filterMode = "all";
     let requestedCardFocused = false;
@@ -463,7 +472,11 @@ if (typeof document !== "undefined") {
         status.hidden = true;
         content.hidden = false;
         if (!requestedCardFocused) {
-          requestedCardFocused = focusOperatorCard(activeReports, requestedSymbol);
+          requestedCardFocused = focusOperatorCard(
+            activeReports,
+            requestedSymbol,
+            requestedSection,
+          );
         }
       } catch (error) {
         status.classList.add("error");
@@ -491,6 +504,7 @@ if (typeof module === "object" && module.exports) {
     migrationEqmValue,
     migrationProvenanceMarkup,
     normalizedSpanText,
+    operatorCardSectionFromHash,
     operatorCardSymbolFromSearch,
     focusOperatorCard,
     percentageText,

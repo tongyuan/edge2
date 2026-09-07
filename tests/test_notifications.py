@@ -8,8 +8,13 @@ from pywebpush import WebPushException
 
 from app.api import create_app
 from app.config import Settings
-from app.db import connect
-from app.notifications import is_retryable_push_failure
+from app.db import connect, transaction
+from app.notifications import (
+    PRESSURE_EVENT_TYPE,
+    is_retryable_push_failure,
+    should_notify_pressure_transition,
+)
+from app.validation import ObservationPayload
 from tests.db_support import clean, migrate_and_clean, require_test_database
 from tests.test_api import webhook_payload
 
@@ -46,6 +51,27 @@ class RecordingSender:
                 response=FakeResponse(outcome),
             )
         return FakeResponse(201)
+
+
+class PressureTransitionPolicyTests(unittest.TestCase):
+    def test_only_directional_entries_and_flips_are_notifiable(self) -> None:
+        matrix = {
+            ("NEUTRAL", "UP"): True,
+            ("NEUTRAL", "DOWN"): True,
+            ("UP", "DOWN"): True,
+            ("DOWN", "UP"): True,
+            ("UP", "UP"): False,
+            ("DOWN", "DOWN"): False,
+            ("UP", "NEUTRAL"): False,
+            ("DOWN", "NEUTRAL"): False,
+            ("NEUTRAL", "NEUTRAL"): False,
+        }
+        for transition, expected in matrix.items():
+            with self.subTest(transition=transition):
+                self.assertEqual(
+                    should_notify_pressure_transition(*transition),
+                    expected,
+                )
 
 
 class NotificationIntegrationTests(unittest.TestCase):
@@ -162,6 +188,328 @@ class NotificationIntegrationTests(unittest.TestCase):
             FROM active_mrz
             """
         )
+
+    def active_authority_signature(self, symbol: str = "SPXUSDT") -> str:
+        return self.scalar(
+            f"""
+            SELECT CONCAT_WS(
+                '|', symbol, route_owner, core_mrz_lower::text,
+                core_mrz_upper::text, activation_event_id, activated_at::text
+            )
+            FROM active_mrz
+            WHERE symbol = '{symbol}'
+            """
+        )
+
+    def post_spx(self, index: int, price: str):
+        response = self.client.post(
+            "/webhook/tradingview",
+            json=webhook_payload(index, price),
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+        return response
+
+    def ingest_spx_without_notification(self, index: int, price: str) -> None:
+        payload = ObservationPayload.model_validate(webhook_payload(index, price))
+        self.client.app.state.repository.ingest(
+            payload,
+            payload.price_tick({}),
+        )
+
+    def pressure_notification_count(self) -> int:
+        return self.scalar(
+            "SELECT COUNT(*) FROM web_push_notifications "
+            f"WHERE event_type = '{PRESSURE_EVENT_TYPE}'"
+        )
+
+    def current_pressure_state(self, symbol: str = "SPXUSDT") -> str:
+        return self.scalar(
+            "SELECT p.current_state FROM post_activation_pressure_states p "
+            "INNER JOIN active_mrz a "
+            "ON a.symbol = p.symbol "
+            "AND a.activation_event_id = p.activation_event_id "
+            f"WHERE p.symbol = '{symbol}'"
+        )
+
+    def pressure_events(self) -> list[dict]:
+        return [
+            event
+            for event in self.client.get(
+                "/api/notifications/events?after=0"
+            ).json()["events"]
+            if event["event_type"] == PRESSURE_EVENT_TYPE
+        ]
+
+    def test_ranging_to_upward_uses_shared_state_and_needs_no_successor(self) -> None:
+        self.client.post("/api/notifications/subscriptions", json=SUBSCRIPTION)
+        self.activate()
+        self.assertEqual(self.current_pressure_state(), "NEUTRAL")
+
+        # Remain balanced until four dispersed above-envelope observations
+        # materially dominate two dispersed below-envelope observations.
+        for index, price in enumerate(("120", "90", "140", "80", "160"), 5):
+            self.post_spx(index, price)
+        self.assertEqual(self.current_pressure_state(), "NEUTRAL")
+        self.assertEqual(self.pressure_notification_count(), 0)
+        self.post_spx(10, "180")
+
+        self.assertEqual(self.current_pressure_state(), "UP")
+        self.assertEqual(self.pressure_notification_count(), 1)
+        event = self.pressure_events()[0]
+        self.assertEqual(event["previous_state"], "NEUTRAL")
+        self.assertEqual(event["current_state"], "UP")
+        self.assertEqual(event["title"], "SPXUSDT · Upward Pressure")
+        self.assertEqual(event["post_activation_observation_count"], 6)
+        self.assertEqual(event["above_mrz_count"], 4)
+        self.assertEqual(event["above_envelope_count"], 4)
+        self.assertEqual(event["successor_status"], "NO_QUALIFYING_SUCCESSOR")
+        self.assertEqual(event["successor_label"], "No qualifying successor")
+        self.assertEqual(
+            event["url"],
+            "/diagnostics/mrz-robustness?symbol=SPXUSDT#post-activation",
+        )
+        self.assertIn("above-envelope", event["body"])
+
+        self.post_spx(11, "170")
+        self.assertEqual(self.current_pressure_state(), "UP")
+        self.assertEqual(self.pressure_notification_count(), 1)
+
+    def test_ranging_to_downward_and_unchanged_down_do_not_repeat(self) -> None:
+        self.activate()
+        self.post_spx(5, "90")
+        self.post_spx(6, "50")
+        self.assertEqual(self.current_pressure_state(), "DOWN")
+        self.assertEqual(self.pressure_notification_count(), 1)
+        event = self.pressure_events()[0]
+        self.assertEqual(event["previous_state"], "NEUTRAL")
+        self.assertEqual(event["current_state"], "DOWN")
+        self.assertIn("below-envelope", event["body"])
+
+        self.post_spx(7, "20")
+        self.assertEqual(self.current_pressure_state(), "DOWN")
+        self.assertEqual(self.pressure_notification_count(), 1)
+
+    def test_neutral_resolution_is_persisted_and_reentry_is_new_episode(self) -> None:
+        self.activate()
+        self.post_spx(5, "120")
+        self.post_spx(6, "150")
+        first_key = self.scalar(
+            "SELECT source_event_key FROM web_push_notifications "
+            f"WHERE event_type = '{PRESSURE_EVENT_TYPE}'"
+        )
+
+        self.post_spx(7, "90")
+        self.post_spx(8, "80")
+        self.assertEqual(self.current_pressure_state(), "NEUTRAL")
+        self.assertEqual(self.pressure_notification_count(), 1)
+
+        self.post_spx(9, "170")
+        self.assertEqual(self.current_pressure_state(), "NEUTRAL")
+        self.post_spx(10, "180")
+        self.assertEqual(self.current_pressure_state(), "UP")
+        self.assertEqual(self.pressure_notification_count(), 2)
+        keys = self.scalar(
+            "SELECT COUNT(DISTINCT source_event_key) "
+            "FROM web_push_notifications "
+            f"WHERE event_type = '{PRESSURE_EVENT_TYPE}'"
+        )
+        self.assertEqual(keys, 2)
+        self.assertNotEqual(self.pressure_events()[-1]["source_event_key"], first_key)
+
+    def test_restart_recovery_can_flip_direction_without_duplicate_or_mrz_change(self) -> None:
+        self.activate()
+        self.post_spx(5, "120")
+        self.post_spx(6, "150")
+        self.assertEqual(self.current_pressure_state(), "UP")
+        authority_before = self.active_authority_signature()
+
+        for index, price in enumerate(("90", "80", "70", "60"), 7):
+            self.ingest_spx_without_notification(index, price)
+        self.client.app.state.notification_service.recover()
+
+        self.assertEqual(self.current_pressure_state(), "DOWN")
+        self.assertEqual(self.pressure_notification_count(), 2)
+        downward = self.pressure_events()[-1]
+        self.assertEqual(downward["previous_state"], "UP")
+        self.assertEqual(downward["current_state"], "DOWN")
+        self.assertEqual(self.active_authority_signature(), authority_before)
+
+        for index, price in enumerate(("170", "180", "190", "195"), 11):
+            self.ingest_spx_without_notification(index, price)
+        self.client.app.state.notification_service.recover()
+        self.assertEqual(self.current_pressure_state(), "UP")
+        self.assertEqual(self.pressure_notification_count(), 3)
+        upward = self.pressure_events()[-1]
+        self.assertEqual(upward["previous_state"], "DOWN")
+        self.assertEqual(upward["current_state"], "UP")
+        self.assertEqual(self.active_authority_signature(), authority_before)
+
+        duplicate = self.client.post(
+            "/webhook/tradingview",
+            json=webhook_payload(14, "195"),
+        )
+        self.assertEqual(duplicate.status_code, 200)
+        self.assertTrue(duplicate.json()["duplicate"])
+        self.client.app.state.notification_service.recover()
+        self.assertEqual(self.pressure_notification_count(), 3)
+        self.assertEqual(self.active_authority_signature(), authority_before)
+
+    def test_pressure_delivery_retry_keeps_one_logical_notification(self) -> None:
+        self.activate()
+        self.client.post("/api/notifications/subscriptions", json=SUBSCRIPTION)
+        self.sender.outcomes = [503, None]
+        self.post_spx(5, "120")
+        self.post_spx(6, "150")
+        authority_before = self.active_authority_signature()
+
+        self.assertEqual(self.pressure_notification_count(), 1)
+        pressure_key = self.scalar(
+            "SELECT source_event_key FROM web_push_notifications "
+            f"WHERE event_type = '{PRESSURE_EVENT_TYPE}'"
+        )
+        self.assertEqual(len(self.sender.calls), 1)
+        self.assertTrue(
+            self.scalar(
+                "SELECT d.retryable FROM web_push_delivery_attempts d "
+                "INNER JOIN web_push_notifications n ON n.id = d.notification_id "
+                f"WHERE n.event_type = '{PRESSURE_EVENT_TYPE}'"
+            )
+        )
+
+        self.client.app.state.notification_service.recover()
+        self.assertEqual(len(self.sender.calls), 2)
+        self.assertEqual(self.pressure_notification_count(), 1)
+        self.assertEqual(
+            self.scalar(
+                "SELECT COUNT(*) FROM web_push_delivery_attempts d "
+                "INNER JOIN web_push_notifications n ON n.id = d.notification_id "
+                f"WHERE n.event_type = '{PRESSURE_EVENT_TYPE}'"
+            ),
+            2,
+        )
+        payloads = [json.loads(call["data"]) for call in self.sender.calls]
+        self.assertTrue(
+            all(item["source_event_key"] == pressure_key for item in payloads)
+        )
+        self.assertEqual(self.active_authority_signature(), authority_before)
+
+    def test_new_mrz_lifecycle_does_not_inherit_previous_pressure(self) -> None:
+        self.activate_btc()
+        self.post_btc_cluster(5, ("81000", "85000"))
+        self.assertEqual(self.current_pressure_state("BTCUSDT"), "UP")
+        self.post_btc_cluster(7, ("78919.34", "78950", "79000", "79030"))
+
+        current_activation = self.scalar(
+            "SELECT activation_event_id FROM active_mrz WHERE symbol = 'BTCUSDT'"
+        )
+        self.assertEqual(current_activation, "btc-event-10")
+        self.assertEqual(self.current_pressure_state("BTCUSDT"), "NEUTRAL")
+        self.assertEqual(
+            self.scalar(
+                "SELECT COUNT(*) FROM post_activation_pressure_states "
+                "WHERE symbol = 'BTCUSDT'"
+            ),
+            2,
+        )
+
+        self.post_btc_cluster(11, ("82000", "87000"))
+        self.assertEqual(self.current_pressure_state("BTCUSDT"), "UP")
+        self.assertEqual(
+            self.scalar(
+                "SELECT COUNT(*) FROM web_push_notifications "
+                f"WHERE event_type = '{PRESSURE_EVENT_TYPE}' "
+                "AND symbol = 'BTCUSDT'"
+            ),
+            2,
+        )
+        lifecycle_ids = self.scalar(
+            "SELECT COUNT(DISTINCT lifecycle_activation_event_id) "
+            "FROM web_push_notifications "
+            f"WHERE event_type = '{PRESSURE_EVENT_TYPE}' "
+            "AND symbol = 'BTCUSDT'"
+        )
+        self.assertEqual(lifecycle_ids, 2)
+
+    def test_operator_promoted_authority_uses_the_same_pressure_path(self) -> None:
+        for index, price in enumerate(("941.52", "941.52", "941.52", "949.89"), 1):
+            self.assertEqual(
+                self.post_mu_near_miss_observation(index, price).status_code,
+                201,
+            )
+        candidate = self.client.get(
+            "/api/diagnostics/activation-feasibility"
+        ).json()["diagnosis"]["current_production_near_misses"][0]
+        promoted = self.client.post(
+            "/api/diagnostics/activation-feasibility/near-misses/MU/promote",
+            json={
+                "route": candidate["route"],
+                "candidate_identity": candidate["candidate_identity"],
+            },
+        )
+        self.assertEqual(promoted.status_code, 201, promoted.text)
+        self.assertEqual(promoted.json()["state"]["activation_source"], "OPERATOR_PROMOTED")
+        self.assertEqual(self.current_pressure_state("MU"), "NEUTRAL")
+
+        self.assertEqual(self.post_mu_near_miss_observation(5, "900").status_code, 201)
+        self.assertEqual(self.post_mu_near_miss_observation(6, "850").status_code, 201)
+        self.assertEqual(self.current_pressure_state("MU"), "DOWN")
+        pressure = [
+            event for event in self.pressure_events() if event["symbol"] == "MU"
+        ]
+        self.assertEqual(len(pressure), 1)
+        self.assertEqual(pressure[0]["current_state"], "DOWN")
+
+    def test_preexisting_pressure_is_baselined_without_historical_push(self) -> None:
+        self.activate()
+        self.post_spx(5, "120")
+        self.post_spx(6, "150")
+        with transaction(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM web_push_notifications WHERE event_type = %s",
+                    (PRESSURE_EVENT_TYPE,),
+                )
+                cursor.execute("DELETE FROM post_activation_pressure_states")
+                cursor.execute(
+                    """
+                    UPDATE web_push_notification_cutovers
+                    SET enabled_at = clock_timestamp() + INTERVAL '1 hour'
+                    WHERE event_type = %s
+                    """,
+                    (PRESSURE_EVENT_TYPE,),
+                )
+
+        try:
+            self.client.app.state.notification_service.recover()
+            self.assertEqual(self.current_pressure_state(), "UP")
+            self.assertEqual(self.pressure_notification_count(), 0)
+            with transaction(self.database_url) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        UPDATE web_push_notification_cutovers
+                        SET enabled_at = clock_timestamp() - INTERVAL '1 hour'
+                        WHERE event_type = %s
+                        """,
+                        (PRESSURE_EVENT_TYPE,),
+                    )
+            for index, price in enumerate(("90", "80", "70", "60"), 7):
+                self.ingest_spx_without_notification(index, price)
+            self.client.app.state.notification_service.recover()
+            self.assertEqual(self.current_pressure_state(), "DOWN")
+            self.assertEqual(self.pressure_notification_count(), 1)
+            self.assertEqual(self.pressure_events()[0]["current_state"], "DOWN")
+        finally:
+            with transaction(self.database_url) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        UPDATE web_push_notification_cutovers
+                        SET enabled_at = clock_timestamp()
+                        WHERE event_type = %s
+                        """,
+                        (PRESSURE_EVENT_TYPE,),
+                    )
 
     def test_activation_creates_one_logical_notification_across_retry_and_replay(self) -> None:
         self.activate()
@@ -428,14 +776,25 @@ class NotificationIntegrationTests(unittest.TestCase):
             ("78919.34", "78950", "79000", "79030"),
         )
 
-        self.assertEqual(self.scalar("SELECT COUNT(*) FROM web_push_notifications"), 2)
+        self.assertEqual(
+            self.scalar(
+                "SELECT COUNT(*) FROM web_push_notifications WHERE event_type IN "
+                "('MRZ_ACTIVATED', 'MRZ_MIGRATED')"
+            ),
+            2,
+        )
         self.assertEqual(
             self.scalar("SELECT COUNT(*) FROM mrz_events WHERE event_type = 'MRZ_MIGRATED'"),
             1,
         )
-        self.assertEqual(len(self.sender.calls), 2)
-        activated_payload = json.loads(self.sender.calls[0]["data"])
-        migrated_payload = json.loads(self.sender.calls[1]["data"])
+        self.assertEqual(len(self.sender.calls), 3)
+        delivered_payloads = [json.loads(call["data"]) for call in self.sender.calls]
+        activated_payload = next(
+            item for item in delivered_payloads if item["event_type"] == "MRZ_ACTIVATED"
+        )
+        migrated_payload = next(
+            item for item in delivered_payloads if item["event_type"] == "MRZ_MIGRATED"
+        )
 
         self.assertEqual(activated_payload["title"], "BTCUSDT MRZ Activated")
         self.assertEqual(activated_payload["body"], "BTD · 77,309.19–77,436.91")
@@ -498,7 +857,13 @@ class NotificationIntegrationTests(unittest.TestCase):
             self.scalar("SELECT COUNT(*) FROM mrz_events WHERE event_type = 'ROUTE_CHANGED'"),
             1,
         )
-        self.assertEqual(self.scalar("SELECT COUNT(*) FROM web_push_notifications"), 2)
+        self.assertEqual(
+            self.scalar(
+                "SELECT COUNT(*) FROM web_push_notifications WHERE event_type IN "
+                "('MRZ_ACTIVATED', 'MRZ_MIGRATED')"
+            ),
+            2,
+        )
         self.assertEqual(
             self.scalar(
                 "SELECT COUNT(*) FROM web_push_notifications WHERE event_type = 'ROUTE_CHANGED'"
@@ -527,7 +892,13 @@ class NotificationIntegrationTests(unittest.TestCase):
         self.assertTrue(duplicate.json()["duplicate"])
         self.client.app.state.notification_service.recover()
 
-        self.assertEqual(self.scalar("SELECT COUNT(*) FROM web_push_notifications"), 2)
+        self.assertEqual(
+            self.scalar(
+                "SELECT COUNT(*) FROM web_push_notifications WHERE event_type IN "
+                "('MRZ_ACTIVATED', 'MRZ_MIGRATED')"
+            ),
+            2,
+        )
         self.assertEqual(
             self.scalar(
                 "SELECT source_event_key FROM web_push_notifications WHERE event_type = 'MRZ_MIGRATED'"
@@ -550,7 +921,13 @@ class NotificationIntegrationTests(unittest.TestCase):
             ("78850.69", "78900", "78950", "79030"),
         )
 
-        self.assertEqual(self.scalar("SELECT COUNT(*) FROM web_push_notifications"), 4)
+        self.assertEqual(
+            self.scalar(
+                "SELECT COUNT(*) FROM web_push_notifications WHERE event_type IN "
+                "('MRZ_ACTIVATED', 'MRZ_MIGRATED')"
+            ),
+            4,
+        )
         self.assertEqual(
             self.scalar(
                 "SELECT COUNT(*) FROM web_push_notifications WHERE event_type = 'MRZ_ACTIVATED'"
@@ -565,7 +942,8 @@ class NotificationIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(
             self.scalar(
-                "SELECT COUNT(DISTINCT source_event_key) FROM web_push_notifications"
+                "SELECT COUNT(DISTINCT source_event_key) FROM web_push_notifications "
+                "WHERE event_type IN ('MRZ_ACTIVATED', 'MRZ_MIGRATED')"
             ),
             4,
         )
