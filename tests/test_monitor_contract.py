@@ -37,7 +37,7 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("Symbol Lab", HTML)
 
     def test_monitor_assets_are_versioned_together(self) -> None:
-        version = "monitor-role-20260907"
+        version = "migration-evidence-20260909"
         self.assertIn(f'/static/styles.css?v={version}', HTML)
         self.assertIn(f'/static/heatmap-state.js?v={version}', HTML)
         self.assertIn(f'/static/operator-time.js?v={version}', HTML)

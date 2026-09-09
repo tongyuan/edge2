@@ -35,6 +35,42 @@ def payload(
     )
 
 
+def migration_row(
+    index: int,
+    direction: str,
+    *,
+    symbol: str | None = None,
+) -> dict[str, object]:
+    source_midpoint = Decimal("180.5")
+    destination_midpoint = (
+        source_midpoint + Decimal("10")
+        if direction == "HIGHER"
+        else source_midpoint - Decimal("10")
+    )
+    return {
+        "event_key": f"migration-event-{index}",
+        "trigger_event_id": f"observation-{index}",
+        "symbol": symbol or f"SYMBOL-{index}",
+        "occurred_at": BASE_TIME + timedelta(hours=index),
+        "sequence": index,
+        "source_route_owner": "STR",
+        "destination_route_owner": "STR",
+        "old_core_mrz_lower": Decimal("180"),
+        "old_core_mrz_upper": Decimal("181"),
+        "new_core_mrz_lower": destination_midpoint - Decimal("0.5"),
+        "new_core_mrz_upper": destination_midpoint + Decimal("0.5"),
+        "new_core_mrz_midpoint": destination_midpoint,
+        "starting_structural_location": "deep_premium_core_mrz",
+        "destination_structural_location": "shallow_premium_core_mrz",
+        "source_event_key": f"source-event-{index}",
+        "source_activated_at": BASE_TIME + timedelta(hours=index - 1),
+        "source_activation_source": "PRODUCTION_QUALIFIED",
+        "destination_activation_source": "PRODUCTION_QUALIFIED",
+        "confirming_observation_count": 4,
+        "direction": direction,
+    }
+
+
 class LocationMigrationTendencyTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -76,7 +112,16 @@ class LocationMigrationTendencyTests(unittest.TestCase):
         tendency = self.repository.location_migration_tendency()
 
         self.assertEqual(
-            tendency["deep_discount"],
+            {
+                key: tendency["deep_discount"][key]
+                for key in (
+                    "migration_samples",
+                    "higher_count",
+                    "lower_count",
+                    "higher_pct",
+                    "lower_pct",
+                )
+            },
             {
                 "migration_samples": 2,
                 "higher_count": 2,
@@ -84,6 +129,14 @@ class LocationMigrationTendencyTests(unittest.TestCase):
                 "higher_pct": 100.0,
                 "lower_pct": 0.0,
             },
+        )
+        self.assertEqual(len(tendency["deep_discount"]["higher_records"]), 2)
+        self.assertEqual(tendency["deep_discount"]["lower_records"], [])
+        self.assertTrue(
+            all(
+                record["direction"] == "HIGHER"
+                for record in tendency["deep_discount"]["higher_records"]
+            )
         )
         self.assertEqual(tendency["shallow_discount"]["migration_samples"], 1)
         self.assertEqual(tendency["shallow_discount"]["higher_count"], 0)
@@ -164,18 +217,60 @@ class LocationMigrationTendencyTests(unittest.TestCase):
             self.assertEqual(bucket["migration_samples"], 0)
             self.assertIsNone(bucket["higher_pct"])
             self.assertIsNone(bucket["lower_pct"])
+            self.assertEqual(bucket["higher_records"], [])
+            self.assertEqual(bucket["lower_records"], [])
 
         with self.assertRaisesRegex(ValueError, "equal old/new midpoints"):
             location_migration_tendency_payload(
                 (
                     {
                         "starting_structural_location": "deep_discount_core_mrz",
-                        "higher_count": 0,
-                        "lower_count": 0,
-                        "equal_count": 1,
+                        "direction": "EQUAL",
                     },
                 )
             )
+
+    def test_deep_premium_aggregate_and_evidence_share_exactly_eight_events(self) -> None:
+        rows = tuple(
+            migration_row(
+                index,
+                "HIGHER" if index <= 4 else "LOWER",
+                symbol="BTCUSDT" if index in {1, 8} else None,
+            )
+            for index in range(1, 9)
+        )
+
+        bucket = location_migration_tendency_payload(rows)["deep_premium"]
+
+        self.assertEqual(bucket["migration_samples"], 8)
+        self.assertEqual(bucket["higher_count"], 4)
+        self.assertEqual(bucket["lower_count"], 4)
+        self.assertEqual(bucket["higher_pct"], 50.0)
+        self.assertEqual(bucket["lower_pct"], 50.0)
+        self.assertEqual(len(bucket["higher_records"]), 4)
+        self.assertEqual(len(bucket["lower_records"]), 4)
+        self.assertTrue(
+            all(record["direction"] == "HIGHER" for record in bucket["higher_records"])
+        )
+        self.assertTrue(
+            all(record["direction"] == "LOWER" for record in bucket["lower_records"])
+        )
+        self.assertEqual(
+            [record["migration_event_key"] for record in bucket["lower_records"]],
+            [f"migration-event-{index}" for index in range(8, 4, -1)],
+        )
+        records = [*bucket["higher_records"], *bucket["lower_records"]]
+        self.assertEqual(len({record["migration_event_key"] for record in records}), 8)
+        self.assertEqual(sum(record["symbol"] == "BTCUSDT" for record in records), 2)
+        self.assertTrue(
+            all(
+                record["source"]["structural_location"]
+                == "deep_premium_core_mrz"
+                and record["destination"]["structural_location"]
+                == "shallow_premium_core_mrz"
+                for record in records
+            )
+        )
 
 
 if __name__ == "__main__":

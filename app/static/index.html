@@ -11,7 +11,7 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/static/edge-mrz-icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/static/edge-mrz-icon-180.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=monitor-role-20260907" />
+    <link rel="stylesheet" href="/static/styles.css?v=migration-evidence-20260909" />
     <link rel="stylesheet" href="/static/diagnostics-nav.css?v=views-menu-20260907" />
   </head>
   <body>
@@ -57,8 +57,8 @@
             <div class="location-migration-history">
               <p class="location-migration-label">Historical migration</p>
               <div class="location-migration-directions" id="distributionDeepDiscountHistory" hidden>
-                <p><span aria-hidden="true">↑</span> Higher <strong id="distributionDeepDiscountHigher">—</strong></p>
-                <p><span aria-hidden="true">↓</span> Lower <strong id="distributionDeepDiscountLower">—</strong></p>
+                <button type="button" id="distributionDeepDiscountHigherButton" disabled><span><span aria-hidden="true">↑</span> Higher</span><strong id="distributionDeepDiscountHigher">—</strong><span class="migration-evidence-chevron" aria-hidden="true">›</span></button>
+                <button type="button" id="distributionDeepDiscountLowerButton" disabled><span><span aria-hidden="true">↓</span> Lower</span><strong id="distributionDeepDiscountLower">—</strong><span class="migration-evidence-chevron" aria-hidden="true">›</span></button>
               </div>
               <p class="location-migration-empty" id="distributionDeepDiscountHistoryEmpty">No migration history</p>
               <p class="location-migration-sample" id="distributionDeepDiscountSamples">n = 0</p>
@@ -73,8 +73,8 @@
             <div class="location-migration-history">
               <p class="location-migration-label">Historical migration</p>
               <div class="location-migration-directions" id="distributionShallowDiscountHistory" hidden>
-                <p><span aria-hidden="true">↑</span> Higher <strong id="distributionShallowDiscountHigher">—</strong></p>
-                <p><span aria-hidden="true">↓</span> Lower <strong id="distributionShallowDiscountLower">—</strong></p>
+                <button type="button" id="distributionShallowDiscountHigherButton" disabled><span><span aria-hidden="true">↑</span> Higher</span><strong id="distributionShallowDiscountHigher">—</strong><span class="migration-evidence-chevron" aria-hidden="true">›</span></button>
+                <button type="button" id="distributionShallowDiscountLowerButton" disabled><span><span aria-hidden="true">↓</span> Lower</span><strong id="distributionShallowDiscountLower">—</strong><span class="migration-evidence-chevron" aria-hidden="true">›</span></button>
               </div>
               <p class="location-migration-empty" id="distributionShallowDiscountHistoryEmpty">No migration history</p>
               <p class="location-migration-sample" id="distributionShallowDiscountSamples">n = 0</p>
@@ -89,8 +89,8 @@
             <div class="location-migration-history">
               <p class="location-migration-label">Historical migration</p>
               <div class="location-migration-directions" id="distributionShallowPremiumHistory" hidden>
-                <p><span aria-hidden="true">↑</span> Higher <strong id="distributionShallowPremiumHigher">—</strong></p>
-                <p><span aria-hidden="true">↓</span> Lower <strong id="distributionShallowPremiumLower">—</strong></p>
+                <button type="button" id="distributionShallowPremiumHigherButton" disabled><span><span aria-hidden="true">↑</span> Higher</span><strong id="distributionShallowPremiumHigher">—</strong><span class="migration-evidence-chevron" aria-hidden="true">›</span></button>
+                <button type="button" id="distributionShallowPremiumLowerButton" disabled><span><span aria-hidden="true">↓</span> Lower</span><strong id="distributionShallowPremiumLower">—</strong><span class="migration-evidence-chevron" aria-hidden="true">›</span></button>
               </div>
               <p class="location-migration-empty" id="distributionShallowPremiumHistoryEmpty">No migration history</p>
               <p class="location-migration-sample" id="distributionShallowPremiumSamples">n = 0</p>
@@ -105,8 +105,8 @@
             <div class="location-migration-history">
               <p class="location-migration-label">Historical migration</p>
               <div class="location-migration-directions" id="distributionDeepPremiumHistory" hidden>
-                <p><span aria-hidden="true">↑</span> Higher <strong id="distributionDeepPremiumHigher">—</strong></p>
-                <p><span aria-hidden="true">↓</span> Lower <strong id="distributionDeepPremiumLower">—</strong></p>
+                <button type="button" id="distributionDeepPremiumHigherButton" disabled><span><span aria-hidden="true">↑</span> Higher</span><strong id="distributionDeepPremiumHigher">—</strong><span class="migration-evidence-chevron" aria-hidden="true">›</span></button>
+                <button type="button" id="distributionDeepPremiumLowerButton" disabled><span><span aria-hidden="true">↓</span> Lower</span><strong id="distributionDeepPremiumLower">—</strong><span class="migration-evidence-chevron" aria-hidden="true">›</span></button>
               </div>
               <p class="location-migration-empty" id="distributionDeepPremiumHistoryEmpty">No migration history</p>
               <p class="location-migration-sample" id="distributionDeepPremiumSamples">n = 0</p>
@@ -311,13 +311,26 @@
         </section>
       </section>
     </main>
+    <dialog class="migration-evidence-dialog" id="migrationEvidenceDialog" aria-labelledby="migrationEvidenceTitle">
+      <div class="migration-evidence-dialog-shell">
+        <header class="migration-evidence-header">
+          <div>
+            <p class="eyebrow">MIGRATION EVIDENCE</p>
+            <h2 id="migrationEvidenceTitle">—</h2>
+            <p class="migration-evidence-summary" id="migrationEvidenceSummary">—</p>
+          </div>
+          <button type="button" class="migration-evidence-close" id="migrationEvidenceClose" aria-label="Close migration evidence">Close</button>
+        </header>
+        <div class="migration-evidence-list" id="migrationEvidenceList"></div>
+      </div>
+    </dialog>
     <div class="activity-tooltip" id="heatmapActivityTooltip" role="tooltip" hidden></div>
     <div class="notification-toast-host" id="notificationToastHost" aria-live="polite"></div>
     <script src="/static/diagnostics-nav.js?v=views-menu-20260907" defer></script>
-    <script src="/static/heatmap-state.js?v=monitor-role-20260907" defer></script>
-    <script src="/static/operator-time.js?v=monitor-role-20260907" defer></script>
-    <script src="/static/monitor-presentation.js?v=monitor-role-20260907" defer></script>
+    <script src="/static/heatmap-state.js?v=migration-evidence-20260909" defer></script>
+    <script src="/static/operator-time.js?v=migration-evidence-20260909" defer></script>
+    <script src="/static/monitor-presentation.js?v=migration-evidence-20260909" defer></script>
     <script src="/static/notifications.js?v=pressure-push-20260907" defer></script>
-    <script src="/static/app.js?v=monitor-role-20260907" defer></script>
+    <script src="/static/app.js?v=migration-evidence-20260909" defer></script>
   </body>
 </html>

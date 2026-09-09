@@ -61,6 +61,8 @@ class APIIntegrationTests(unittest.TestCase):
                         "lower_count": 0,
                         "higher_pct": None,
                         "lower_pct": None,
+                        "higher_records": [],
+                        "lower_records": [],
                     }
                     for key in (
                         "deep_discount",
@@ -397,16 +399,25 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(overview["route_owner"], "STR")
         self.assertEqual(overview["structural_location"], "deep_premium_core_mrz")
         self.assertTrue(overview["has_migrated"])
-        self.assertEqual(
-            overview_payload["location_migration_tendency"]["deep_discount"],
-            {
-                "migration_samples": 1,
-                "higher_count": 1,
-                "lower_count": 0,
-                "higher_pct": 100.0,
-                "lower_pct": 0.0,
-            },
-        )
+        migration_bucket = overview_payload["location_migration_tendency"][
+            "deep_discount"
+        ]
+        self.assertEqual(migration_bucket["migration_samples"], 1)
+        self.assertEqual(migration_bucket["higher_count"], 1)
+        self.assertEqual(migration_bucket["lower_count"], 0)
+        self.assertEqual(migration_bucket["higher_pct"], 100.0)
+        self.assertEqual(migration_bucket["lower_pct"], 0.0)
+        self.assertEqual(len(migration_bucket["higher_records"]), 1)
+        self.assertEqual(migration_bucket["lower_records"], [])
+        evidence = migration_bucket["higher_records"][0]
+        self.assertEqual(evidence["symbol"], "SPXUSDT")
+        self.assertEqual(evidence["direction"], "HIGHER")
+        self.assertEqual(evidence["source"]["lower"], 110.0)
+        self.assertEqual(evidence["source"]["structural_location"], "deep_discount_core_mrz")
+        self.assertEqual(evidence["destination"]["lower"], 180.0)
+        self.assertEqual(evidence["destination"]["structural_location"], "deep_premium_core_mrz")
+        self.assertEqual(evidence["migrated_at"], "2026-08-20T12:00:08Z")
+        self.assertTrue(evidence["migration_event_key"])
         self.assertEqual(
             overview_payload["location_migration_tendency"]["deep_premium"][
                 "migration_samples"

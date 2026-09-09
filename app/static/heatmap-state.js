@@ -207,6 +207,8 @@
     const lowerCount = Number(value?.lower_count);
     const higherPct = Number(value?.higher_pct);
     const lowerPct = Number(value?.lower_pct);
+    const higherRecords = Array.isArray(value?.higher_records) ? value.higher_records : [];
+    const lowerRecords = Array.isArray(value?.lower_records) ? value.lower_records : [];
     const hasHistory = (
       Number.isInteger(migrationSamples)
       && migrationSamples > 0
@@ -217,12 +219,53 @@
       && migrationSamples === higherCount + lowerCount
       && Number.isFinite(higherPct)
       && Number.isFinite(lowerPct)
+      && higherRecords.length === higherCount
+      && lowerRecords.length === lowerCount
     );
+    const higherPercentageLabel = hasHistory ? formatLocationPercentage(higherPct) : "—";
+    const lowerPercentageLabel = hasHistory ? formatLocationPercentage(lowerPct) : "—";
     return {
       hasHistory,
-      higherLabel: hasHistory ? formatLocationPercentage(higherPct) : "—",
-      lowerLabel: hasHistory ? formatLocationPercentage(lowerPct) : "—",
+      higherCount: hasHistory ? higherCount : 0,
+      lowerCount: hasHistory ? lowerCount : 0,
+      higherPercentageLabel,
+      lowerPercentageLabel,
+      higherLabel: hasHistory ? `${higherPercentageLabel} · ${higherCount}` : "—",
+      lowerLabel: hasHistory ? `${lowerPercentageLabel} · ${lowerCount}` : "—",
+      higherInteractive: hasHistory && higherCount > 0,
+      lowerInteractive: hasHistory && lowerCount > 0,
       sampleLabel: `n = ${hasHistory ? migrationSamples : 0}`,
+    };
+  }
+
+  function migrationEvidenceSelection(value, direction) {
+    const normalizedDirection = String(direction || "").toUpperCase();
+    if (!new Set(["HIGHER", "LOWER"]).has(normalizedDirection)) return null;
+    const presentation = migrationTendencyPresentation(value);
+    if (!presentation.hasHistory) return null;
+    const directionKey = normalizedDirection.toLowerCase();
+    const count = presentation[`${directionKey}Count`];
+    if (count === 0) return null;
+    const records = [...value[`${directionKey}_records`]];
+    const uniqueEventKeys = new Set();
+    if (records.some((record) => {
+      const eventKey = String(record?.migration_event_key || "");
+      if (record?.direction !== normalizedDirection || !eventKey || uniqueEventKeys.has(eventKey)) {
+        return true;
+      }
+      uniqueEventKeys.add(eventKey);
+      return false;
+    })) return null;
+    records.sort((left, right) => (
+      String(right.migrated_at).localeCompare(String(left.migrated_at))
+      || String(left.migration_event_key).localeCompare(String(right.migration_event_key))
+    ));
+    return {
+      direction: normalizedDirection,
+      count,
+      total: Number(value.migration_samples),
+      percentageLabel: presentation[`${directionKey}PercentageLabel`],
+      records,
     };
   }
 
@@ -415,6 +458,7 @@
     locationDistributionFromGroups,
     formatLocationPercentage,
     migrationTendencyPresentation,
+    migrationEvidenceSelection,
     createGroupTrackingState,
     setGroupTrackingEnabled,
     isGroupSelectionMode,

@@ -32,6 +32,11 @@ const migrationPathTab = document.querySelector("#migrationPathTab");
 const currentStatePanel = document.querySelector("#currentStatePanel");
 const migrationPathPanel = document.querySelector("#migrationPathPanel");
 const migrationPathScroller = document.querySelector("#migrationPathScroller");
+const migrationEvidenceDialog = document.querySelector("#migrationEvidenceDialog");
+const migrationEvidenceTitle = document.querySelector("#migrationEvidenceTitle");
+const migrationEvidenceSummary = document.querySelector("#migrationEvidenceSummary");
+const migrationEvidenceList = document.querySelector("#migrationEvidenceList");
+const migrationEvidenceClose = document.querySelector("#migrationEvidenceClose");
 const {
   primaryLocationKeys,
   secondaryLocationKeys,
@@ -45,6 +50,7 @@ const {
   locationDistributionFromGroups,
   formatLocationPercentage,
   migrationTendencyPresentation,
+  migrationEvidenceSelection,
   createGroupTrackingState,
   setGroupTrackingEnabled,
   isGroupSelectionMode,
@@ -104,7 +110,9 @@ const distributionFields = {
     history: document.querySelector("#distributionDeepDiscountHistory"),
     historyEmpty: document.querySelector("#distributionDeepDiscountHistoryEmpty"),
     higher: document.querySelector("#distributionDeepDiscountHigher"),
+    higherButton: document.querySelector("#distributionDeepDiscountHigherButton"),
     lower: document.querySelector("#distributionDeepDiscountLower"),
+    lowerButton: document.querySelector("#distributionDeepDiscountLowerButton"),
     samples: document.querySelector("#distributionDeepDiscountSamples"),
   },
   shallow_discount: {
@@ -113,7 +121,9 @@ const distributionFields = {
     history: document.querySelector("#distributionShallowDiscountHistory"),
     historyEmpty: document.querySelector("#distributionShallowDiscountHistoryEmpty"),
     higher: document.querySelector("#distributionShallowDiscountHigher"),
+    higherButton: document.querySelector("#distributionShallowDiscountHigherButton"),
     lower: document.querySelector("#distributionShallowDiscountLower"),
+    lowerButton: document.querySelector("#distributionShallowDiscountLowerButton"),
     samples: document.querySelector("#distributionShallowDiscountSamples"),
   },
   shallow_premium: {
@@ -122,7 +132,9 @@ const distributionFields = {
     history: document.querySelector("#distributionShallowPremiumHistory"),
     historyEmpty: document.querySelector("#distributionShallowPremiumHistoryEmpty"),
     higher: document.querySelector("#distributionShallowPremiumHigher"),
+    higherButton: document.querySelector("#distributionShallowPremiumHigherButton"),
     lower: document.querySelector("#distributionShallowPremiumLower"),
+    lowerButton: document.querySelector("#distributionShallowPremiumLowerButton"),
     samples: document.querySelector("#distributionShallowPremiumSamples"),
   },
   deep_premium: {
@@ -131,7 +143,9 @@ const distributionFields = {
     history: document.querySelector("#distributionDeepPremiumHistory"),
     historyEmpty: document.querySelector("#distributionDeepPremiumHistoryEmpty"),
     higher: document.querySelector("#distributionDeepPremiumHigher"),
+    higherButton: document.querySelector("#distributionDeepPremiumHigherButton"),
     lower: document.querySelector("#distributionDeepPremiumLower"),
+    lowerButton: document.querySelector("#distributionDeepPremiumLowerButton"),
     samples: document.querySelector("#distributionDeepPremiumSamples"),
   },
 };
@@ -161,6 +175,7 @@ let locationMigrationTendency = {};
 let groupTrackingState = createGroupTrackingState();
 let savedGroups = [];
 let activeSavedGroup = null;
+let migrationEvidenceReturnFocus = null;
 
 const formatPrice = (value) => value == null ? "—" : new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 12,
@@ -331,8 +346,8 @@ function renderLocationDistribution(groups, migrationTendency) {
     const migration = migrationTendencyPresentation(migrationTendency?.[key]);
     fieldsForLocation.history.hidden = !migration.hasHistory;
     fieldsForLocation.historyEmpty.hidden = migration.hasHistory;
-    fieldsForLocation.higher.textContent = migration.higherLabel;
-    fieldsForLocation.lower.textContent = migration.lowerLabel;
+    configureMigrationDirection(fieldsForLocation, key, "HIGHER", migration);
+    configureMigrationDirection(fieldsForLocation, key, "LOWER", migration);
     fieldsForLocation.samples.textContent = migration.sampleLabel;
   });
   distributionTotals.discount.textContent = (
@@ -575,6 +590,136 @@ function renderLocationHeatmap(symbols, minimumObservations, groups) {
   secondaryLocationGroups.hidden = populatedSecondaryKeys.length === 0;
   heatmapEmpty.hidden = true;
   locationHeatmap.hidden = false;
+}
+
+function definitionRow(term, value) {
+  const row = document.createElement("div");
+  const name = document.createElement("dt");
+  const content = document.createElement("dd");
+  name.textContent = term;
+  content.textContent = value == null || value === "" ? "—" : String(value);
+  row.append(name, content);
+  return row;
+}
+
+function authorityProvenance(label, authority = {}) {
+  const section = document.createElement("section");
+  section.className = "migration-provenance-section";
+  const heading = document.createElement("p");
+  heading.className = "migration-provenance-label";
+  heading.textContent = label;
+  const facts = document.createElement("dl");
+  const range = `${formatPrice(authority.lower)}–${formatPrice(authority.upper)}`;
+  facts.append(
+    definitionRow("Location", formatLocation(authority.structural_location)),
+    definitionRow("Route", authority.route_owner),
+    definitionRow("MRZ", range),
+    definitionRow("Midpoint", formatPrice(authority.midpoint)),
+    definitionRow("Activated", formatOperatorTimestampUtcMinus4(authority.activated_at)),
+    definitionRow("Source", String(authority.activation_source || "").replaceAll("_", " ")),
+    definitionRow("Authority event", authority.authority_event_key),
+  );
+  section.append(heading, facts);
+  return section;
+}
+
+function signedMetric(value, suffix = "") {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "—";
+  const formatted = suffix
+    ? new Intl.NumberFormat("en-US", { maximumFractionDigits: 4 }).format(Math.abs(numeric))
+    : formatPrice(Math.abs(numeric));
+  const sign = numeric > 0 ? "+" : numeric < 0 ? "−" : "";
+  return `${sign}${formatted}${suffix}`;
+}
+
+function migrationEvidenceRecord(record) {
+  const details = document.createElement("details");
+  details.className = "migration-evidence-record";
+  const summary = document.createElement("summary");
+  const heading = document.createElement("div");
+  heading.className = "migration-evidence-record-heading";
+  const symbol = document.createElement("strong");
+  symbol.textContent = record.symbol;
+  const inspect = document.createElement("span");
+  inspect.textContent = "Inspect provenance";
+  heading.append(symbol, inspect);
+  const ranges = document.createElement("div");
+  ranges.className = "migration-evidence-ranges";
+  const fromRange = document.createElement("span");
+  fromRange.textContent = `${formatPrice(record.source?.lower)}–${formatPrice(record.source?.upper)}`;
+  const arrow = document.createElement("span");
+  arrow.textContent = record.direction === "LOWER" ? "↓" : "↑";
+  const toRange = document.createElement("span");
+  toRange.textContent = `${formatPrice(record.destination?.lower)}–${formatPrice(record.destination?.upper)}`;
+  ranges.append(fromRange, arrow, toRange);
+  const timestamp = document.createElement("time");
+  timestamp.className = "migration-evidence-time";
+  timestamp.dateTime = record.migrated_at;
+  timestamp.textContent = formatOperatorTimestampUtcMinus4(record.migrated_at) || "—";
+  summary.append(heading, ranges, timestamp);
+
+  const provenance = document.createElement("div");
+  provenance.className = "migration-provenance";
+  const authorities = document.createElement("div");
+  authorities.className = "migration-provenance-grid";
+  authorities.append(
+    authorityProvenance("FROM", record.source),
+    authorityProvenance("TO", record.destination),
+  );
+  const metadata = document.createElement("dl");
+  metadata.className = "migration-event-metadata";
+  metadata.append(
+    definitionRow("Direction", record.direction),
+    definitionRow("Migrated", formatOperatorTimestampUtcMinus4(record.migrated_at)),
+    definitionRow("Midpoint delta", signedMetric(record.midpoint_delta)),
+    definitionRow("Midpoint delta %", signedMetric(record.midpoint_delta_pct, "%")),
+    definitionRow("Evidence", `${record.confirming_observation_count} confirming observations`),
+    definitionRow("Migration event", record.migration_event_key),
+    definitionRow("Trigger observation", record.trigger_event_id),
+  );
+  provenance.append(authorities, metadata);
+  details.append(summary, provenance);
+  return details;
+}
+
+function openMigrationEvidence(locationKey, direction, trigger) {
+  const selection = migrationEvidenceSelection(
+    locationMigrationTendency?.[locationKey],
+    direction,
+  );
+  if (!selection) return;
+  const arrow = selection.direction === "LOWER" ? "↓" : "↑";
+  const directionLabel = selection.direction === "LOWER" ? "Lower" : "Higher";
+  migrationEvidenceTitle.textContent = formatLocation(locationKey);
+  migrationEvidenceSummary.textContent = (
+    `${arrow} ${directionLabel} · ${selection.count} of ${selection.total} migrations · ${selection.percentageLabel}`
+  );
+  migrationEvidenceList.replaceChildren(
+    ...selection.records.map(migrationEvidenceRecord),
+  );
+  migrationEvidenceReturnFocus = trigger;
+  migrationEvidenceDialog.showModal();
+}
+
+function configureMigrationDirection(fieldsForLocation, locationKey, direction, migration) {
+  const directionKey = direction.toLowerCase();
+  const button = fieldsForLocation[`${directionKey}Button`];
+  const value = fieldsForLocation[directionKey];
+  const interactive = migration[`${directionKey}Interactive`];
+  value.textContent = migration[`${directionKey}Label`];
+  button.disabled = !interactive;
+  button.onclick = interactive
+    ? () => openMigrationEvidence(locationKey, direction, button)
+    : null;
+  if (interactive) {
+    button.setAttribute(
+      "aria-label",
+      `Inspect ${formatLocation(locationKey)} ${directionKey} migration evidence, ${migration[`${directionKey}Label`]}`,
+    );
+  } else {
+    button.removeAttribute("aria-label");
+  }
 }
 
 function renderMonitorOverview() {
@@ -893,6 +1038,14 @@ showSelectedOnly.addEventListener("change", () => {
 clearSelectedGroup.addEventListener("click", () => {
   groupTrackingState = clearGroupSelection(groupTrackingState);
   renderMonitorOverview();
+});
+migrationEvidenceClose.addEventListener("click", () => migrationEvidenceDialog.close());
+migrationEvidenceDialog.addEventListener("click", (event) => {
+  if (event.target === migrationEvidenceDialog) migrationEvidenceDialog.close();
+});
+migrationEvidenceDialog.addEventListener("close", () => {
+  migrationEvidenceReturnFocus?.focus();
+  migrationEvidenceReturnFocus = null;
 });
 
 function showError(error) {

@@ -17,6 +17,7 @@ const {
   locationDistributionFromGroups,
   formatLocationPercentage,
   migrationTendencyPresentation,
+  migrationEvidenceSelection,
   createGroupTrackingState,
   setGroupTrackingEnabled,
   isGroupSelectionMode,
@@ -162,16 +163,47 @@ assert.deepEqual(emptyDistribution.discountTotal, { count: 0, percentage: 0 });
 assert.deepEqual(emptyDistribution.premiumTotal, { count: 0, percentage: 0 });
 assert.equal(formatLocationPercentage(emptyDistribution.buckets.deep_discount.percentage), "0.0%");
 
-assert.deepEqual(migrationTendencyPresentation({
+const migrationRecords = [
+  {
+    symbol: "BTCUSDT",
+    migration_event_key: "migration-2",
+    direction: "HIGHER",
+    migrated_at: "2026-08-22T12:00:00Z",
+  },
+  {
+    symbol: "BTCUSDT",
+    migration_event_key: "migration-1",
+    direction: "HIGHER",
+    migrated_at: "2026-08-20T12:00:00Z",
+  },
+  {
+    symbol: "ETHUSDT",
+    migration_event_key: "migration-3",
+    direction: "LOWER",
+    migrated_at: "2026-08-21T12:00:00Z",
+  },
+];
+const migrationTendency = {
   migration_samples: 3,
   higher_count: 2,
   lower_count: 1,
   higher_pct: 200 / 3,
   lower_pct: 100 / 3,
+  higher_records: migrationRecords.slice(0, 2).reverse(),
+  lower_records: migrationRecords.slice(2),
+};
+assert.deepEqual(migrationTendencyPresentation({
+  ...migrationTendency,
 }), {
   hasHistory: true,
-  higherLabel: "66.7%",
-  lowerLabel: "33.3%",
+  higherCount: 2,
+  lowerCount: 1,
+  higherPercentageLabel: "66.7%",
+  lowerPercentageLabel: "33.3%",
+  higherLabel: "66.7% · 2",
+  lowerLabel: "33.3% · 1",
+  higherInteractive: true,
+  lowerInteractive: true,
   sampleLabel: "n = 3",
 }, "historical migration percentages use the existing one-decimal formatter");
 assert.deepEqual(migrationTendencyPresentation({
@@ -180,10 +212,18 @@ assert.deepEqual(migrationTendencyPresentation({
   lower_count: 0,
   higher_pct: null,
   lower_pct: null,
+  higher_records: [],
+  lower_records: [],
 }), {
   hasHistory: false,
+  higherCount: 0,
+  lowerCount: 0,
+  higherPercentageLabel: "—",
+  lowerPercentageLabel: "—",
   higherLabel: "—",
   lowerLabel: "—",
+  higherInteractive: false,
+  lowerInteractive: false,
   sampleLabel: "n = 0",
 }, "zero history renders neutrally without misleading zero percentages");
 assert.equal(migrationTendencyPresentation({
@@ -192,7 +232,42 @@ assert.equal(migrationTendencyPresentation({
   lower_count: 1,
   higher_pct: 100,
   lower_pct: 0,
+  higher_records: migrationRecords.slice(0, 2),
+  lower_records: migrationRecords.slice(2),
 }).hasHistory, false, "inconsistent historical denominators are not presented");
+
+assert.deepEqual(
+  migrationEvidenceSelection(migrationTendency, "higher"),
+  {
+    direction: "HIGHER",
+    count: 2,
+    total: 3,
+    percentageLabel: "66.7%",
+    records: migrationRecords.slice(0, 2),
+  },
+  "evidence selection filters by direction and returns newest-first authoritative events",
+);
+assert.equal(
+  migrationEvidenceSelection({
+    ...migrationTendency,
+    higher_count: 0,
+    lower_count: 3,
+    higher_pct: 0,
+    lower_pct: 100,
+    higher_records: [],
+    lower_records: migrationRecords.map((record) => ({ ...record, direction: "LOWER" })),
+  }, "HIGHER"),
+  null,
+  "zero-count directions do not expose an empty drill-down",
+);
+assert.equal(
+  migrationEvidenceSelection({
+    ...migrationTendency,
+    higher_records: [migrationRecords[0], migrationRecords[0]],
+  }, "HIGHER"),
+  null,
+  "duplicate authoritative event identities fail closed",
+);
 
 const groupSymbols = [
   {

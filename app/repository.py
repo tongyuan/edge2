@@ -91,14 +91,16 @@ class PromotionConflict(RuntimeError):
 
 def location_migration_tendency_payload(
     rows: Sequence[Mapping[str, Any]],
-) -> dict[str, dict[str, int | float | None]]:
-    result: dict[str, dict[str, int | float | None]] = {
+) -> dict[str, dict[str, Any]]:
+    result: dict[str, dict[str, Any]] = {
         key: {
             "migration_samples": 0,
             "higher_count": 0,
             "lower_count": 0,
             "higher_pct": None,
             "lower_pct": None,
+            "higher_records": [],
+            "lower_records": [],
         }
         for key in LOCATION_MIGRATION_KEYS.values()
     }
@@ -109,30 +111,98 @@ def location_migration_tendency_payload(
             raise ValueError(
                 f"Unknown authoritative MRZ structural location: {structural_location}"
             )
-        equal_count = int(row["equal_count"])
-        if equal_count:
+        direction = str(row["direction"])
+        if direction == "EQUAL":
             raise ValueError(
                 "Authoritative MRZ migration history contains equal old/new midpoints"
             )
-        higher_count = int(row["higher_count"])
-        lower_count = int(row["lower_count"])
+        if direction not in {"HIGHER", "LOWER"}:
+            raise ValueError(f"Unknown authoritative MRZ migration direction: {direction}")
+        result[key][f"{direction.lower()}_records"].append(
+            location_migration_evidence_payload(row)
+        )
+
+    for bucket in result.values():
+        higher_records = bucket["higher_records"]
+        lower_records = bucket["lower_records"]
+        higher_records.sort(key=migration_evidence_order_key, reverse=True)
+        lower_records.sort(key=migration_evidence_order_key, reverse=True)
+        higher_count = len(higher_records)
+        lower_count = len(lower_records)
         migration_samples = higher_count + lower_count
-        result[key] = {
-            "migration_samples": migration_samples,
-            "higher_count": higher_count,
-            "lower_count": lower_count,
-            "higher_pct": (
-                (higher_count / migration_samples) * 100
-                if migration_samples
-                else None
-            ),
-            "lower_pct": (
-                (lower_count / migration_samples) * 100
-                if migration_samples
-                else None
-            ),
-        }
+        bucket.update(
+            {
+                "migration_samples": migration_samples,
+                "higher_count": higher_count,
+                "lower_count": lower_count,
+                "higher_pct": (
+                    (higher_count / migration_samples) * 100
+                    if migration_samples
+                    else None
+                ),
+                "lower_pct": (
+                    (lower_count / migration_samples) * 100
+                    if migration_samples
+                    else None
+                ),
+            }
+        )
+        if (
+            len(higher_records) != bucket["higher_count"]
+            or len(lower_records) != bucket["lower_count"]
+            or bucket["higher_count"] + bucket["lower_count"]
+            != bucket["migration_samples"]
+        ):
+            raise RuntimeError("Migration evidence aggregate is internally inconsistent")
     return result
+
+
+def location_migration_evidence_payload(row: Mapping[str, Any]) -> dict[str, Any]:
+    source_midpoint = (
+        Decimal(row["old_core_mrz_lower"])
+        + Decimal(row["old_core_mrz_upper"])
+    ) / Decimal("2")
+    destination_midpoint = Decimal(row["new_core_mrz_midpoint"])
+    midpoint_delta = destination_midpoint - source_midpoint
+    midpoint_delta_pct = (
+        midpoint_delta / abs(source_midpoint) * Decimal("100")
+        if source_midpoint != 0
+        else None
+    )
+    return {
+        "symbol": str(row["symbol"]),
+        "migration_event_key": str(row["event_key"]),
+        "trigger_event_id": str(row["trigger_event_id"]),
+        "direction": str(row["direction"]),
+        "migrated_at": iso(row["occurred_at"]),
+        "midpoint_delta": number(midpoint_delta),
+        "midpoint_delta_pct": number(midpoint_delta_pct),
+        "confirming_observation_count": int(row["confirming_observation_count"]),
+        "source": {
+            "authority_event_key": str(row["source_event_key"]),
+            "lower": number(row["old_core_mrz_lower"]),
+            "upper": number(row["old_core_mrz_upper"]),
+            "midpoint": number(source_midpoint),
+            "structural_location": str(row["starting_structural_location"]),
+            "route_owner": str(row["source_route_owner"]),
+            "activated_at": iso(row["source_activated_at"]),
+            "activation_source": str(row["source_activation_source"]),
+        },
+        "destination": {
+            "authority_event_key": str(row["event_key"]),
+            "lower": number(row["new_core_mrz_lower"]),
+            "upper": number(row["new_core_mrz_upper"]),
+            "midpoint": number(destination_midpoint),
+            "structural_location": str(row["destination_structural_location"]),
+            "route_owner": str(row["destination_route_owner"]),
+            "activated_at": iso(row["occurred_at"]),
+            "activation_source": str(row["destination_activation_source"]),
+        },
+    }
+
+
+def migration_evidence_order_key(record: Mapping[str, Any]) -> tuple[str, str]:
+    return (str(record["migrated_at"]), str(record["migration_event_key"]))
 
 
 def observation_from_row(row: Mapping[str, Any]) -> Observation:
@@ -1301,8 +1371,8 @@ class EdgeRepository:
         finally:
             connection.close()
 
-    def location_migration_tendency(self) -> dict[str, dict[str, int | float | None]]:
-        """Aggregate canonical MRZ transitions by the old authority's location."""
+    def location_migration_tendency(self) -> dict[str, dict[str, Any]]:
+        """Return aggregates and their canonical migration evidence records."""
         connection = connect(self.database_url)
         try:
             connection.set_session(readonly=True)
@@ -1312,8 +1382,26 @@ class EdgeRepository:
                     WITH authoritative_migrations AS (
                         SELECT DISTINCT ON (current_event.event_key)
                             current_event.event_key,
+                            current_event.trigger_event_id,
+                            current_event.symbol,
                             current_event.occurred_at,
                             current_event.sequence,
+                            current_event.route_owner AS destination_route_owner,
+                            current_event.old_core_mrz_lower,
+                            current_event.old_core_mrz_upper,
+                            current_event.new_core_mrz_lower,
+                            current_event.new_core_mrz_upper,
+                            current_event.new_core_mrz_midpoint,
+                            current_event.structural_location
+                                AS destination_structural_location,
+                            current_event.activation_source
+                                AS destination_activation_source,
+                            current_event.confirming_observation_count,
+                            previous_authority.event_key AS source_event_key,
+                            previous_authority.occurred_at AS source_activated_at,
+                            previous_authority.route_owner AS source_route_owner,
+                            previous_authority.activation_source
+                                AS source_activation_source,
                             previous_authority.structural_location
                                 AS starting_structural_location,
                             CASE
@@ -1333,7 +1421,12 @@ class EdgeRepository:
                             END AS direction
                         FROM mrz_events current_event
                         INNER JOIN LATERAL (
-                            SELECT source_event.structural_location
+                            SELECT
+                                source_event.event_key,
+                                source_event.occurred_at,
+                                source_event.route_owner,
+                                source_event.activation_source,
+                                source_event.structural_location
                             FROM mrz_events source_event
                             WHERE source_event.symbol = current_event.symbol
                               AND source_event.sequence < current_event.sequence
@@ -1359,13 +1452,9 @@ class EdgeRepository:
                             current_event.sequence ASC
                     )
                     SELECT
-                        starting_structural_location,
-                        COUNT(*) FILTER (WHERE direction = 'HIGHER') AS higher_count,
-                        COUNT(*) FILTER (WHERE direction = 'LOWER') AS lower_count,
-                        COUNT(*) FILTER (WHERE direction = 'EQUAL') AS equal_count
+                        *
                     FROM authoritative_migrations
-                    GROUP BY starting_structural_location
-                    ORDER BY starting_structural_location ASC
+                    ORDER BY occurred_at DESC, sequence DESC, event_key ASC
                     """
                 )
                 return location_migration_tendency_payload(cursor.fetchall())
