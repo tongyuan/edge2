@@ -84,7 +84,13 @@ function nearMissHistoryMarkup(diagnosis, timestampFormatter) {
 }
 
 function nearMissDiagnosisMarkup(diagnosis, timestampFormatter) {
-  if (!diagnosis?.available) return "";
+  if (!diagnosis) return "";
+  if (!diagnosis.available) {
+    return `<p class="near-miss-diagnosis-pending">
+      <span>HISTORY BUILDING</span>
+      Diagnosis available after another distinct near-miss episode
+    </p>`;
+  }
   const allowanceHistory = (diagnosis.allowance_history || [])
     .map((value) => percentageText(value))
     .join(" → ");

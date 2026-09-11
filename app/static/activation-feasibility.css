@@ -192,6 +192,24 @@ button:disabled { cursor: progress; opacity: 0.65; }
 .diagnostic-card dt, .sample-summary dt { color: var(--muted); font-size: 0.75rem; }
 .diagnostic-card dd, .sample-summary dd { margin: 0; color: var(--text); font-size: 0.78rem; text-align: right; }
 .near-miss-card .promote-near-miss { width: 100%; margin-top: 16px; }
+.near-miss-diagnosis-pending {
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  border-top: 1px solid rgba(98, 230, 181, 0.18);
+  border-radius: 0 0 8px 8px;
+  background: rgba(98, 230, 181, 0.045);
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+.near-miss-diagnosis-pending span {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--accent);
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
 .near-miss-diagnosis {
   margin-top: 16px;
   padding-top: 16px;

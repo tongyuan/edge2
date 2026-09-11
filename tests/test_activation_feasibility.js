@@ -107,7 +107,10 @@ const dispersingNearMiss = currentNearMissMarkup([{
 assert.match(dispersingNearMiss, /DISPERSING/);
 assert.match(dispersingNearMiss, /Promote to Active MRZ/);
 assert.match(currentNearMissMarkup([]), /No current production near misses/);
-assert.equal(nearMissDiagnosisMarkup({ available: false }, String), "");
+const pendingDiagnosis = nearMissDiagnosisMarkup({ available: false }, String);
+assert.match(pendingDiagnosis, /HISTORY BUILDING/);
+assert.match(pendingDiagnosis, /Diagnosis available after another distinct near-miss episode/);
+assert.doesNotMatch(pendingDiagnosis, /NEAR-MISS DIAGNOSIS/);
 
 assert.deepEqual(
   nearMissTargetFromSearch(`?symbol=WLDUSDT&candidate=${"a".repeat(64)}`),
