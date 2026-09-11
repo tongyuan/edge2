@@ -86,6 +86,17 @@ live judgment.
    the new structure. At an operator stop, record the end time and any reported
    position state. Neither event dictates a trade action.
 
+### Evidence inspection
+
+The 5-minute saved layout is only a landing view, not a preferred timeframe.
+If evidence is unclear, Astra may independently zoom or pan, isolate Display
+components, inspect another timeframe, or use available TradingView inspection
+tools before deciding. The current viewport is not a complete evidence inventory;
+"not visible" must not be interpreted as "does not exist." Record approximate
+readings as approximate, and unresolved precision as not reliably determined.
+Astra decides what needs attention; follow the mandate's
+[Evidence Readability](MANDATE.md#evidence-readability) rule and Blind Discovery.
+
 ## Review and learn
 
 Complete T1 later using the original decision ID, an explicit review time, and

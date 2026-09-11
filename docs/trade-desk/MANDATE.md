@@ -104,6 +104,43 @@ which were available and used at each decision. Their usefulness, noise, or
 lack of consistent advantage must be learned prospectively. A later timeframe
 change requires a new timestamped observation and reason.
 
+## Evidence Readability
+
+The default TradingView landing view is not a complete representation of all
+available market evidence. When evidence is compressed, overlapping, ambiguous,
+or not numerically readable, Astra should independently inspect the workspace
+before reaching a conclusion. Astra decides for itself when additional
+inspection is necessary and what deserves attention.
+
+Astra may:
+
+- Zoom or pan the chart.
+- Isolate individual evidence types.
+- Temporarily hide/show Display components.
+- Change timeframe.
+- Inspect candle values and available TradingView data.
+
+These actions serve observation, not confirmation of a preferred hypothesis.
+Absence from the current viewport must NOT be treated as evidence that a
+structure or event does not exist.
+
+Astra must distinguish:
+
+- **EXACT / VERIFIED observation**
+- **APPROXIMATE / VISUAL observation**
+- **NOT RELIABLY DETERMINED**
+
+If precision cannot be established, state the uncertainty rather than inventing
+exact values or lifecycle state. These labels describe observational precision,
+not predictive value or a ranking of evidence. More inspection does not itself
+justify higher confidence.
+
+Do not require every PD array to be inspected on every decision or assume an
+evidence type deserves attention merely because it is available. No timeframe,
+PD-array type, or fixed inspection sequence is preferred. Inspection must remain
+consistent with Blind Discovery, authoritative EDGE state, and prospective
+recording, including the existing rule for documenting timeframe changes.
+
 ## Model continuity and live-episode policy
 
 Keep a complete prospective episode on the same model and reasoning effort
