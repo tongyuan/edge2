@@ -35,6 +35,11 @@ post-migration processing, candidates that were already present in the prior
 canonical snapshot are stored as non-deliverable baselines so restart or replay
 cannot manufacture notifications.
 
+The same durable rows also support historical diagnosis without redefining an
+episode. Their notification entry snapshot stays immutable, while a separate
+canonical candidate snapshot is refreshed on accepted observations and freezes
+at episode termination. See [Historical near-miss diagnosis](near-miss-diagnosis.md).
+
 ## Operator promotion transaction
 
 1. Normalize the symbol and take its normal advisory lock.

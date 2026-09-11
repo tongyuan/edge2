@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const {
   currentNearMissMarkup,
+  nearMissDiagnosisMarkup,
   nearMissTargetFromSearch,
   productionMarkup,
   productionSampleMarkup,
@@ -41,6 +42,29 @@ const nearMisses = [{
   candidate_identity: "a".repeat(64),
   total_stored_route_observations: 5,
   candidate_timestamp: "2026-08-22T00:30:00Z",
+  historical_diagnosis: {
+    available: true,
+    diagnosis: "CONVERGING",
+    concentration_trend: "TIGHTENING",
+    episode_count: 3,
+    same_area_count: 2,
+    allowance_history: ["1.32", "1.17", "1.05"],
+    explanation: "Repeated same-area near misses are becoming more tightly concentrated toward the 1.00% production threshold.",
+    episodes: [{
+      episode_number: 1,
+      status: "HISTORICAL",
+      route: "BTD",
+      candidate_lower_boundary: "2.68",
+      candidate_upper_boundary: "2.76",
+      candidate_midpoint: "2.72",
+      minimum_required_allowance_pct: "1.32",
+      candidate_observation_count: 4,
+      structural_location_label: "Deep Discount",
+      candidate_timestamp: "2026-08-20T00:30:00Z",
+      overlaps_current: true,
+      included_in_diagnosis: true,
+    }],
+  },
 }];
 
 const production = productionMarkup(productionRule);
@@ -65,8 +89,25 @@ assert.match(nearMiss, /2\.75/);
 assert.match(nearMiss, /4 of 5/);
 assert.match(nearMiss, /21 Aug 2026 · 20:30 UTC−4/);
 assert.match(nearMiss, /Promote to Active MRZ/);
+assert.match(nearMiss, /NEAR-MISS DIAGNOSIS/);
+assert.match(nearMiss, /CONVERGING/);
+assert.match(nearMiss, /Same-area recurrence<\/dt><dd>2 \/ 3/);
+assert.match(nearMiss, /1\.32% → 1\.17% → 1\.05%/);
+assert.match(nearMiss, /View history/);
+assert.match(nearMiss, /Deep Discount/);
 assert.match(nearMiss, new RegExp(`data-candidate-identity="${"a".repeat(64)}"`));
+const dispersingNearMiss = currentNearMissMarkup([{
+  ...nearMisses[0],
+  historical_diagnosis: {
+    ...nearMisses[0].historical_diagnosis,
+    diagnosis: "DISPERSING",
+    concentration_trend: "WIDENING",
+  },
+}]);
+assert.match(dispersingNearMiss, /DISPERSING/);
+assert.match(dispersingNearMiss, /Promote to Active MRZ/);
 assert.match(currentNearMissMarkup([]), /No current production near misses/);
+assert.equal(nearMissDiagnosisMarkup({ available: false }, String), "");
 
 assert.deepEqual(
   nearMissTargetFromSearch(`?symbol=WLDUSDT&candidate=${"a".repeat(64)}`),

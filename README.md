@@ -255,7 +255,7 @@ The PostgreSQL 16 database revolves around:
 - `ingestion_rejections` — sanitized invalid-packet diagnostics.
 - `ingestion_metrics` — lightweight durable counters for health reporting.
 - `web_push_subscriptions` — single-operator browser Push subscriptions.
-- `current_production_near_miss_episodes` — durable current-list episode identity and replay baseline.
+- `current_production_near_miss_episodes` — durable current-list episode identity, replay baseline, and canonical final eligible candidate for diagnosis.
 - `post_activation_pressure_states` — downstream lifecycle-scoped pressure comparison state.
 - `web_push_notifications` — deduplicated near-miss, activation, migration, and pressure notifications.
 - `web_push_delivery_attempts` — isolated per-subscription delivery outcomes.
@@ -263,13 +263,16 @@ The PostgreSQL 16 database revolves around:
 - `saved_symbol_groups` — named canonical symbol cohorts only; analytics remain derived.
 
 Migration `001_initial.sql` builds the isolated schema. Additive migrations
-`002–009` add the overview index, supporting count, nullable immutable
+`002–010` add the overview index, supporting count, nullable immutable
 formation evidence, downstream Web Push tables, migration-notification
 provenance/cutover state, saved cohort definitions, operator-promotion
 provenance, Production Confirmation, near-miss episodes, and downstream
-post-activation pressure notification state. No 4.2 table or
+post-activation pressure notification state, and trustworthy final-candidate
+near-miss history. No 4.2 table or
 historical record is read. See [`docs/web-push.md`](docs/web-push.md) for
 notification configuration, safety, deployment, and iPhone verification.
+See [`docs/near-miss-diagnosis.md`](docs/near-miss-diagnosis.md) for the
+diagnosis state machine, lookback, epsilon, and prospective-backfill decision.
 
 ## Test
 

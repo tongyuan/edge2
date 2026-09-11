@@ -822,10 +822,38 @@ class EdgeRepository:
                 cursor.execute(
                     """
                     UPDATE current_production_near_miss_episodes
-                    SET ended_at = %s, ended_reason = 'OPERATOR_PROMOTED'
+                    SET canonical_candidate_identity = %s,
+                        canonical_candidate_event_id = %s,
+                        canonical_candidate_lower = %s,
+                        canonical_candidate_upper = %s,
+                        canonical_candidate_midpoint = %s,
+                        canonical_structural_location = %s,
+                        canonical_minimum_required_allowance_pct = %s,
+                        canonical_shortfall_percentage_points = %s,
+                        canonical_supporting_observation_count = %s,
+                        canonical_supporting_observation_ids = %s,
+                        canonical_candidate_timestamp = %s,
+                        canonical_snapshot_reliable = TRUE,
+                        canonical_updated_at = %s,
+                        ended_at = %s, ended_reason = 'OPERATOR_PROMOTED'
                     WHERE symbol = %s AND ended_at IS NULL
                     """,
-                    (promoted_at, normalized),
+                    (
+                        candidate["candidate_identity"],
+                        candidate["candidate_event_id"],
+                        lower,
+                        upper,
+                        midpoint,
+                        structural_location.value,
+                        required,
+                        required - threshold,
+                        cluster.observation_count,
+                        Json(list(supporting_ids)),
+                        candidate["candidate_timestamp"],
+                        promoted_at,
+                        promoted_at,
+                        normalized,
+                    ),
                 )
                 return PromotionOutcome(
                     symbol=normalized,
@@ -1020,21 +1048,95 @@ class EdgeRepository:
             for row in cursor.fetchall()
         }
         for history, episode in open_by_history.items():
-            if history in current_by_history:
+            candidate = current_by_history.get(history)
+            if candidate is not None:
+                cursor.execute(
+                    """
+                    UPDATE current_production_near_miss_episodes
+                    SET canonical_candidate_identity = %s,
+                        canonical_candidate_event_id = %s,
+                        canonical_candidate_lower = %s,
+                        canonical_candidate_upper = %s,
+                        canonical_candidate_midpoint = %s,
+                        canonical_structural_location = %s,
+                        canonical_minimum_required_allowance_pct = %s,
+                        canonical_shortfall_percentage_points = %s,
+                        canonical_supporting_observation_count = %s,
+                        canonical_supporting_observation_ids = %s,
+                        canonical_candidate_timestamp = %s,
+                        canonical_snapshot_reliable = TRUE,
+                        canonical_updated_at = clock_timestamp()
+                    WHERE id = %s AND ended_at IS NULL
+                    """,
+                    (
+                        candidate["candidate_identity"],
+                        candidate["candidate_event_id"],
+                        Decimal(str(candidate["candidate_lower_boundary"])),
+                        Decimal(str(candidate["candidate_upper_boundary"])),
+                        Decimal(str(candidate["candidate_midpoint"])),
+                        candidate["structural_location"],
+                        Decimal(str(candidate["minimum_required_allowance_pct"])),
+                        Decimal(str(candidate["shortfall_percentage_points"])),
+                        int(candidate["candidate_observation_count"]),
+                        Json(list(candidate["supporting_observation_ids"])),
+                        candidate["candidate_timestamp"],
+                        episode["id"],
+                    ),
+                )
                 continue
             reason = (
                 "SYMBOL_ACTIVATED"
                 if history[0] in current_active
                 else "NO_LONGER_CURRENT"
             )
-            cursor.execute(
-                """
-                UPDATE current_production_near_miss_episodes
-                SET ended_at = clock_timestamp(), ended_reason = %s
-                WHERE id = %s AND ended_at IS NULL
-                """,
-                (reason, episode["id"]),
-            )
+            previous_candidate = previous_by_history.get(history)
+            if previous_candidate is None:
+                cursor.execute(
+                    """
+                    UPDATE current_production_near_miss_episodes
+                    SET ended_at = clock_timestamp(), ended_reason = %s
+                    WHERE id = %s AND ended_at IS NULL
+                    """,
+                    (reason, episode["id"]),
+                )
+            else:
+                cursor.execute(
+                    """
+                    UPDATE current_production_near_miss_episodes
+                    SET canonical_candidate_identity = %s,
+                        canonical_candidate_event_id = %s,
+                        canonical_candidate_lower = %s,
+                        canonical_candidate_upper = %s,
+                        canonical_candidate_midpoint = %s,
+                        canonical_structural_location = %s,
+                        canonical_minimum_required_allowance_pct = %s,
+                        canonical_shortfall_percentage_points = %s,
+                        canonical_supporting_observation_count = %s,
+                        canonical_supporting_observation_ids = %s,
+                        canonical_candidate_timestamp = %s,
+                        canonical_snapshot_reliable = TRUE,
+                        canonical_updated_at = clock_timestamp(),
+                        ended_at = clock_timestamp(), ended_reason = %s
+                    WHERE id = %s AND ended_at IS NULL
+                    """,
+                    (
+                        previous_candidate["candidate_identity"],
+                        previous_candidate["candidate_event_id"],
+                        Decimal(str(previous_candidate["candidate_lower_boundary"])),
+                        Decimal(str(previous_candidate["candidate_upper_boundary"])),
+                        Decimal(str(previous_candidate["candidate_midpoint"])),
+                        previous_candidate["structural_location"],
+                        Decimal(
+                            str(previous_candidate["minimum_required_allowance_pct"])
+                        ),
+                        Decimal(str(previous_candidate["shortfall_percentage_points"])),
+                        int(previous_candidate["candidate_observation_count"]),
+                        Json(list(previous_candidate["supporting_observation_ids"])),
+                        previous_candidate["candidate_timestamp"],
+                        reason,
+                        episode["id"],
+                    ),
+                )
         for history, candidate in current_by_history.items():
             if history in open_by_history:
                 continue
@@ -1061,10 +1163,22 @@ class EdgeRepository:
                     minimum_required_allowance_pct,
                     production_threshold_pct, shortfall_percentage_points,
                     supporting_observation_count, supporting_observation_ids,
-                    candidate_timestamp, deliverable
+                    candidate_timestamp, deliverable,
+                    canonical_candidate_identity,
+                    canonical_candidate_event_id,
+                    canonical_candidate_lower, canonical_candidate_upper,
+                    canonical_candidate_midpoint, canonical_structural_location,
+                    canonical_minimum_required_allowance_pct,
+                    canonical_shortfall_percentage_points,
+                    canonical_supporting_observation_count,
+                    canonical_supporting_observation_ids,
+                    canonical_candidate_timestamp,
+                    canonical_snapshot_reliable, canonical_updated_at
                 ) VALUES (
                     %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, TRUE, clock_timestamp()
                 )
                 ON CONFLICT (episode_key) DO NOTHING
                 """,
@@ -1086,6 +1200,17 @@ class EdgeRepository:
                     Json(list(source["supporting_observation_ids"])),
                     source["candidate_timestamp"],
                     deliverable,
+                    candidate["candidate_identity"],
+                    candidate["candidate_event_id"],
+                    Decimal(str(candidate["candidate_lower_boundary"])),
+                    Decimal(str(candidate["candidate_upper_boundary"])),
+                    Decimal(str(candidate["candidate_midpoint"])),
+                    candidate["structural_location"],
+                    Decimal(str(candidate["minimum_required_allowance_pct"])),
+                    Decimal(str(candidate["shortfall_percentage_points"])),
+                    int(candidate["candidate_observation_count"]),
+                    Json(list(candidate["supporting_observation_ids"])),
+                    candidate["candidate_timestamp"],
                 ),
             )
 
@@ -1252,8 +1377,12 @@ class EdgeRepository:
 
     def activation_feasibility_inputs(
         self,
-    ) -> tuple[tuple[Observation, ...], tuple[str, ...]]:
-        """Return one current snapshot for feasibility and promotion visibility."""
+    ) -> tuple[
+        tuple[Observation, ...],
+        tuple[str, ...],
+        tuple[Mapping[str, Any], ...],
+    ]:
+        """Return one current snapshot for feasibility, history and promotion."""
         connection = connect(self.database_url)
         try:
             connection.set_session(readonly=True, isolation_level="REPEATABLE READ")
@@ -1275,7 +1404,26 @@ class EdgeRepository:
                 )
                 cursor.execute("SELECT symbol FROM active_mrz ORDER BY symbol")
                 active_symbols = tuple(str(row["symbol"]) for row in cursor.fetchall())
-                return observations, active_symbols
+                cursor.execute(
+                    """
+                    SELECT
+                        id, episode_key, symbol, route_owner, started_at,
+                        ended_at, ended_reason, canonical_candidate_identity,
+                        canonical_candidate_event_id, canonical_candidate_lower,
+                        canonical_candidate_upper, canonical_candidate_midpoint,
+                        canonical_structural_location,
+                        canonical_minimum_required_allowance_pct,
+                        canonical_shortfall_percentage_points,
+                        canonical_supporting_observation_count,
+                        canonical_supporting_observation_ids,
+                        canonical_candidate_timestamp,
+                        canonical_snapshot_reliable, canonical_updated_at
+                    FROM current_production_near_miss_episodes
+                    ORDER BY symbol ASC, route_owner ASC, started_at ASC, id ASC
+                    """
+                )
+                episodes = tuple(cursor.fetchall())
+                return observations, active_symbols, episodes
         finally:
             connection.close()
 

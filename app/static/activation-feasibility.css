@@ -192,6 +192,60 @@ button:disabled { cursor: progress; opacity: 0.65; }
 .diagnostic-card dt, .sample-summary dt { color: var(--muted); font-size: 0.75rem; }
 .diagnostic-card dd, .sample-summary dd { margin: 0; color: var(--text); font-size: 0.78rem; text-align: right; }
 .near-miss-card .promote-near-miss { width: 100%; margin-top: 16px; }
+.near-miss-diagnosis {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(98, 230, 181, 0.28);
+}
+.near-miss-diagnosis-eyebrow {
+  margin: 0 0 9px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.11em;
+}
+.near-miss-diagnosis-badge {
+  display: inline-flex;
+  padding: 5px 9px;
+  border: 1px solid rgba(98, 230, 181, 0.35);
+  border-radius: 999px;
+  background: rgba(98, 230, 181, 0.09);
+  color: var(--accent);
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+}
+.near-miss-diagnosis > dl { margin-top: 10px; }
+.near-miss-diagnosis-copy {
+  margin: 12px 0 0;
+  color: #c5cedb;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+.near-miss-history { margin-top: 12px; }
+.near-miss-history > summary {
+  width: fit-content;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.near-miss-history-list { display: grid; gap: 10px; margin-top: 12px; }
+.near-miss-history-episode {
+  padding: 12px;
+  border: 1px solid rgba(147, 160, 180, 0.16);
+  border-radius: 10px;
+  background: rgba(6, 10, 15, 0.34);
+}
+.near-miss-history-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 7px;
+}
+.near-miss-history-heading strong { font-size: 0.75rem; }
+.near-miss-history-heading span { color: var(--muted); font-size: 0.66rem; text-align: right; }
+.near-miss-history-episode dl div { padding: 6px 0; }
 .near-miss-card.focused-near-miss {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(98, 230, 181, 0.14);

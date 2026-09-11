@@ -304,6 +304,21 @@ class OperatorPromotionIntegrationTests(unittest.TestCase):
 
     def test_near_miss_notification_is_once_per_episode(self) -> None:
         first = self.seed_near_miss()
+        self.assertTrue(
+            self.scalar(
+                "SELECT canonical_snapshot_reliable "
+                "FROM current_production_near_miss_episodes WHERE ended_at IS NULL"
+            )
+        )
+        self.assertEqual(
+            self.scalar(
+                "SELECT canonical_candidate_identity "
+                "FROM current_production_near_miss_episodes WHERE ended_at IS NULL"
+            ),
+            first["candidate_identity"],
+        )
+        self.assertFalse(first["historical_diagnosis"]["available"])
+        self.assertEqual(first["historical_diagnosis"]["episode_count"], 1)
         self.assertEqual(
             self.scalar(
                 "SELECT COUNT(*) FROM web_push_notifications WHERE event_type = 'MRZ_NEAR_MISS'"
@@ -312,6 +327,25 @@ class OperatorPromotionIntegrationTests(unittest.TestCase):
         )
         continuation = self.payload(5, "943.10", low="850", high="950")
         self.post(continuation)
+        latest = self.client.get(
+            "/api/diagnostics/activation-feasibility"
+        ).json()["diagnosis"]["current_production_near_misses"][0]
+        self.assertNotEqual(latest["candidate_identity"], first["candidate_identity"])
+        self.assertEqual(
+            self.scalar(
+                "SELECT candidate_identity "
+                "FROM current_production_near_miss_episodes WHERE ended_at IS NULL"
+            ),
+            first["candidate_identity"],
+        )
+        self.assertEqual(
+            self.scalar(
+                "SELECT canonical_candidate_identity "
+                "FROM current_production_near_miss_episodes WHERE ended_at IS NULL"
+            ),
+            latest["candidate_identity"],
+        )
+        self.assertEqual(latest["historical_diagnosis"]["episode_count"], 1)
         self.assertEqual(
             self.scalar(
                 "SELECT COUNT(*) FROM web_push_notifications WHERE event_type = 'MRZ_NEAR_MISS'"
@@ -333,6 +367,23 @@ class OperatorPromotionIntegrationTests(unittest.TestCase):
             1,
         )
         self.post(self.payload(7, "930"))
+        recurrent = self.client.get(
+            "/api/diagnostics/activation-feasibility"
+        ).json()["diagnosis"]["current_production_near_misses"][0]
+        diagnosis = recurrent["historical_diagnosis"]
+        self.assertTrue(diagnosis["available"])
+        self.assertEqual(diagnosis["diagnosis"], "CONVERGING")
+        self.assertEqual(diagnosis["concentration_trend"], "TIGHTENING")
+        self.assertEqual(diagnosis["episode_count"], 2)
+        self.assertEqual(diagnosis["same_area_count"], 2)
+        self.assertTrue(diagnosis["episodes"][0]["overlaps_current"])
+        restarted_client = TestClient(create_app(self.settings))
+        restarted_diagnosis = restarted_client.get(
+            "/api/diagnostics/activation-feasibility"
+        ).json()["diagnosis"]["current_production_near_misses"][0][
+            "historical_diagnosis"
+        ]
+        self.assertEqual(restarted_diagnosis, diagnosis)
         self.assertEqual(
             self.scalar(
                 "SELECT COUNT(*) FROM web_push_notifications WHERE event_type = 'MRZ_NEAR_MISS'"

@@ -48,6 +48,60 @@ function historyLabel(count) {
   return Number(count) === 1 ? "history" : "histories";
 }
 
+function titleCaseDiagnostic(value) {
+  if (!value) return "—";
+  return String(value).toLowerCase().replace(/^./, (letter) => letter.toUpperCase());
+}
+
+function nearMissHistoryMarkup(diagnosis, timestampFormatter) {
+  const episodes = diagnosis?.episodes || [];
+  return `<details class="near-miss-history">
+    <summary>View history</summary>
+    <div class="near-miss-history-list">${episodes.map((episode) => {
+      const range = `${decimalText(episode.candidate_lower_boundary, 12)}–${decimalText(episode.candidate_upper_boundary, 12)}`;
+      const title = episode.status === "CURRENT" ? "CURRENT" : `Episode ${episode.episode_number}`;
+      const location = episode.structural_location_label
+        ? `<div><dt>Structural location</dt><dd>${escapeHtml(episode.structural_location_label)}</dd></div>`
+        : "";
+      const overlap = episode.status === "CURRENT" ? "Current candidate" : (episode.overlaps_current ? "Yes" : "No");
+      const windowStatus = episode.included_in_diagnosis ? "Included in diagnosis" : "Outside recent lookback";
+      return `<article class="near-miss-history-episode">
+        <div class="near-miss-history-heading"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(windowStatus)}</span></div>
+        <dl>
+          <div><dt>Route</dt><dd>${escapeHtml(episode.route)}</dd></div>
+          <div><dt>Candidate range</dt><dd>${range}</dd></div>
+          <div><dt>Midpoint</dt><dd>${decimalText(episode.candidate_midpoint, 12)}</dd></div>
+          <div><dt>Required allowance</dt><dd>${percentageText(episode.minimum_required_allowance_pct)}</dd></div>
+          <div><dt>Observation count</dt><dd>${episode.candidate_observation_count}</dd></div>
+          ${location}
+          <div><dt>Candidate time</dt><dd>${escapeHtml(timestampFormatter(episode.candidate_timestamp) || "—")}</dd></div>
+          <div><dt>Overlaps current</dt><dd>${overlap}</dd></div>
+          <div><dt>Status</dt><dd>${episode.status === "CURRENT" ? "Current" : "Historical"}</dd></div>
+        </dl>
+      </article>`;
+    }).join("")}</div>
+  </details>`;
+}
+
+function nearMissDiagnosisMarkup(diagnosis, timestampFormatter) {
+  if (!diagnosis?.available) return "";
+  const allowanceHistory = (diagnosis.allowance_history || [])
+    .map((value) => percentageText(value))
+    .join(" → ");
+  return `<section class="near-miss-diagnosis" aria-label="Near-miss diagnosis">
+    <p class="near-miss-diagnosis-eyebrow">NEAR-MISS DIAGNOSIS</p>
+    <strong class="near-miss-diagnosis-badge diagnosis-${escapeHtml(diagnosis.diagnosis.toLowerCase())}">${escapeHtml(diagnosis.diagnosis)}</strong>
+    <dl>
+      <div><dt>Near-miss episodes</dt><dd>${diagnosis.episode_count}</dd></div>
+      <div><dt>Same-area recurrence</dt><dd>${diagnosis.same_area_count} / ${diagnosis.episode_count}</dd></div>
+      <div><dt>Concentration</dt><dd>${escapeHtml(titleCaseDiagnostic(diagnosis.concentration_trend))}</dd></div>
+      <div><dt>Allowance history</dt><dd>${allowanceHistory}</dd></div>
+    </dl>
+    <p class="near-miss-diagnosis-copy">${escapeHtml(diagnosis.explanation)}</p>
+    ${nearMissHistoryMarkup(diagnosis, timestampFormatter)}
+  </section>`;
+}
+
 function productionMarkup(rule) {
   const frequency = rule?.result?.activation_frequency || {};
   const formed = frequency.numerator ?? 0;
@@ -81,6 +135,7 @@ function currentNearMissMarkup(items, timestampFormatter = (value) => value) {
         <div><dt>Observation count</dt><dd>${item.candidate_observation_count} of ${item.total_stored_route_observations}</dd></div>
         <div><dt>Current candidate time</dt><dd>${escapeHtml(timestamp)}</dd></div>
       </dl>
+      ${nearMissDiagnosisMarkup(item.historical_diagnosis, timestampFormatter)}
       <button type="button" class="promote-near-miss" data-symbol="${escapeHtml(item.symbol)}" data-route="${escapeHtml(item.route)}" data-candidate-identity="${escapeHtml(item.candidate_identity)}">Promote to Active MRZ</button>
     </article>`;
   }).join("")}</div>`;
@@ -311,6 +366,8 @@ if (typeof module === "object" && module.exports) {
     currentNearMissMarkup,
     frequencyPercentageText,
     nearMissTargetFromSearch,
+    nearMissDiagnosisMarkup,
+    nearMissHistoryMarkup,
     percentageText,
     productionMarkup,
     productionSampleMarkup,

@@ -435,10 +435,13 @@ def create_app(
 
     @application.get("/api/diagnostics/activation-feasibility")
     def activation_feasibility() -> JSONResponse:
-        observations, active_symbols = repository.activation_feasibility_inputs()
+        observations, active_symbols, near_miss_episodes = (
+            repository.activation_feasibility_inputs()
+        )
         service = ActivationFeasibilityService(
             lambda: observations,
             active_symbol_reader=lambda: active_symbols,
+            near_miss_episode_reader=lambda: near_miss_episodes,
         )
         return JSONResponse(
             service.generate_report(),

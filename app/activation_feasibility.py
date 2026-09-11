@@ -6,7 +6,7 @@ from collections import defaultdict, deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Callable, Iterable, Sequence
+from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from app.concentration import (
     ROUTE_OBSERVATION_WINDOW,
@@ -16,6 +16,7 @@ from app.concentration import (
     expand_selected_seed,
 )
 from app.domain import Observation, Route
+from app.near_miss_diagnosis import build_near_miss_diagnosis
 from app.structure import classify_structural_location
 
 
@@ -461,10 +462,14 @@ class ActivationFeasibilityService:
         observation_reader: Callable[[], Sequence[Observation]],
         *,
         active_symbol_reader: Callable[[], Sequence[str]] | None = None,
+        near_miss_episode_reader: (
+            Callable[[], Sequence[Mapping[str, Any]]] | None
+        ) = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._observation_reader = observation_reader
         self._active_symbol_reader = active_symbol_reader or (lambda: ())
+        self._near_miss_episode_reader = near_miss_episode_reader or (lambda: ())
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     def generate_report(self) -> dict[str, object]:
@@ -571,6 +576,7 @@ class ActivationFeasibilityService:
         report["diagnosis"] = self._diagnosis(
             report,
             active_symbols=set(self._active_symbol_reader()),
+            near_miss_episodes=tuple(self._near_miss_episode_reader()),
         )
         return report
 
@@ -931,6 +937,7 @@ class ActivationFeasibilityService:
         report: dict[str, object],
         *,
         active_symbols: set[str] | None = None,
+        near_miss_episodes: Sequence[Mapping[str, Any]] = (),
     ) -> dict[str, object]:
         """Generate fixed, auditable commentary from the completed report payload."""
         scenarios = {
@@ -1315,6 +1322,11 @@ class ActivationFeasibilityService:
             preliminary=preliminary,
             active_symbols=active_symbols,
         )
+        for current_near_miss in current_near_misses:
+            current_near_miss["historical_diagnosis"] = build_near_miss_diagnosis(
+                current_near_miss,
+                near_miss_episodes,
+            )
         historical_near_misses = production_near_misses(
             report["sequence_details"],
             "closest_evaluation",
