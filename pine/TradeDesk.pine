@@ -1,0 +1,1135 @@
+//@version=6
+indicator("TD_1.0", overlay = true, max_boxes_count = 25, max_labels_count = 200, max_lines_count = 500)
+
+string GROUP_CONFIGURATION = "MRZ CONFIGURATION"
+string GROUP_SLOT_A = "MRZ SLOT A"
+string GROUP_SLOT_B = "MRZ SLOT B"
+string GROUP_PREVIOUS_DISPLAY = "PREVIOUS MRZ DISPLAY"
+string GROUP_CHART_DISPLAY = "CHART DISPLAY"
+string GROUP_EQM_PD_ARRAYS = "ACTIVE DEALING RANGE EVIDENCE"
+string GROUP_EQM_INTERACTION = "MRZ EQM INTERACTION"
+string GROUP_IPDA_20W = "IPDA 20W"
+string GROUP_STATE_TRANSITION_OBSERVER = "State Transition Observer"
+
+string configuredSymbol = input.symbol("", "Configured Symbol", group = GROUP_CONFIGURATION, confirm = true)
+string activeMrzSlot = input.string("A", "Active MRZ Slot", options = ["A", "B"], group = GROUP_CONFIGURATION)
+
+float slotAUpper = input.float(0.0, "Upper", group = GROUP_SLOT_A, confirm = true)
+float slotALower = input.float(0.0, "Lower", group = GROUP_SLOT_A, confirm = true)
+int slotAActivationTime = input.time(0, "Activation Time", group = GROUP_SLOT_A, confirm = true)
+
+float slotBUpper = input.float(0.0, "Upper", group = GROUP_SLOT_B, confirm = true)
+float slotBLower = input.float(0.0, "Lower", group = GROUP_SLOT_B, confirm = true)
+int slotBActivationTime = input.time(0, "Activation Time", group = GROUP_SLOT_B, confirm = true)
+
+bool showPreviousMrz = input.bool(true, "Show Previous MRZ", group = GROUP_PREVIOUS_DISPLAY)
+
+bool showCurrentEnvelope = input.bool(true, "Show Current MRZ 1W / 2W", group = GROUP_CHART_DISPLAY)
+bool showPreviousEnvelope = input.bool(false, "Show Previous MRZ 1W / 2W", group = GROUP_CHART_DISPLAY)
+bool showEqmProximalZone = input.bool(true, "Show MRZ EQM Proximal Zone", group = GROUP_CHART_DISPLAY)
+int eqmProximalZoneWidthPercent = input.int(50, "EQM Proximal Zone Width (%)", minval = 10, maxval = 50, step = 10, group = GROUP_CHART_DISPLAY)
+
+bool enableEqmInteractionAlerts = input.bool(false, "Enable EQM Interaction Alerts", group = GROUP_EQM_INTERACTION)
+
+bool enableStateTransitionObserver = input.bool(true, "Enable State Transition Observer", group = GROUP_STATE_TRANSITION_OBSERVER)
+bool enableAnchorTransitionAlerts = input.bool(true, "Enable Anchor Transition Alerts", group = GROUP_STATE_TRANSITION_OBSERVER)
+bool showStateTransitionLabels = input.bool(true, "Show State Transition Labels", group = GROUP_STATE_TRANSITION_OBSERVER)
+bool showStateDebugPanel = input.bool(false, "Show State Debug Panel", group = GROUP_STATE_TRANSITION_OBSERVER)
+
+// IPDA 20W — source semantics: standalone ipda.pine.
+// Only the 20W structural range is merged here; 40W/60W, tables and IPDA alerts are intentionally excluded.
+bool showIpda20 = input.bool(true, "Show IPDA 20W", group = GROUP_IPDA_20W)
+bool showIpda20Labels = input.bool(true, "Show IPDA 20W Labels", group = GROUP_IPDA_20W)
+string ipdaType = input.string("CLASSIC+LTF", "IPDA Data Ranges Type", options = ["CLASSIC", "CLASSIC+LTF", "LTF"], group = GROUP_IPDA_20W, tooltip = "CLASSIC: preserves the standalone IPDA visibility behavior.\n\nCLASSIC+LTF: plots the weekly 20W range regardless of chart timeframe.\n\nLTF: plots the last 20 ranges of the current chart timeframe.")
+color ipdaDiscountColor = input.color(color.new(#000000, 0), "Discount / Low", group = GROUP_IPDA_20W, inline = "ipda_colors")
+color ipdaEquilibriumColor = input.color(color.new(#000000, 0), "EQM", group = GROUP_IPDA_20W, inline = "ipda_colors")
+color ipdaPremiumColor = input.color(color.new(#000000, 0), "Premium / High", group = GROUP_IPDA_20W, inline = "ipda_colors")
+color ipdaHalfZoneColor = input.color(color.new(color.gray, 0), "0.25 / 0.75", group = GROUP_IPDA_20W)
+
+bool showProximalDisplacement = input.bool(false, "Show Proximal Displacement", group = GROUP_EQM_PD_ARRAYS)
+string displacementType = input.string("Open to Close", "Displacement Type", options = ["Open to Close", "High to Low"], group = GROUP_EQM_PD_ARRAYS)
+int displacementStdDevLookback = input.int(100, "StdDev Lookback", minval = 1, group = GROUP_EQM_PD_ARRAYS)
+int displacementStdDevMultiplier = input.int(4, "StdDev Multiplier", minval = 0, group = GROUP_EQM_PD_ARRAYS)
+bool showDisplacementCe = input.bool(true, "Show Displacement CE", group = GROUP_EQM_PD_ARRAYS)
+int maxProximalDisplacementCes = input.int(50, "Max Proximal Displacement CEs", minval = 1, maxval = 400, group = GROUP_EQM_PD_ARRAYS)
+color bullishDisplacementCeColor = input.color(color.lime, "Bullish Displacement CE Color", group = GROUP_EQM_PD_ARRAYS)
+color bearishDisplacementCeColor = input.color(color.red, "Bearish Displacement CE Color", group = GROUP_EQM_PD_ARRAYS)
+color mitigatedDisplacementCeColor = input.color(color.gray, "Mitigated CE Color", group = GROUP_EQM_PD_ARRAYS)
+
+bool showProximalFvg = input.bool(false, "Show Proximal FVG", group = GROUP_EQM_PD_ARRAYS)
+bool showFvgCe = input.bool(true, "Show FVG CE", group = GROUP_EQM_PD_ARRAYS)
+bool showFvgLabels = input.bool(true, "Show FVG Labels", group = GROUP_EQM_PD_ARRAYS)
+int maxProximalFvgs = input.int(20, "Max Proximal FVGs", minval = 1, maxval = 30, group = GROUP_EQM_PD_ARRAYS)
+color bullishFvgColor = input.color(color.new(color.lime, 80), "Bullish FVG Color", group = GROUP_EQM_PD_ARRAYS)
+color bearishFvgColor = input.color(color.new(color.red, 80), "Bearish FVG Color", group = GROUP_EQM_PD_ARRAYS)
+color mitigatedFvgColor = input.color(color.new(color.gray, 82), "Mitigated FVG Color", group = GROUP_EQM_PD_ARRAYS)
+
+bool showProximalVi = input.bool(false, "Show Proximal VI", group = GROUP_EQM_PD_ARRAYS)
+bool showViCe = input.bool(true, "Show VI CE", group = GROUP_EQM_PD_ARRAYS)
+bool showViLabels = input.bool(true, "Show VI Labels", group = GROUP_EQM_PD_ARRAYS)
+int maxProximalVis = input.int(20, "Max Proximal VIs", minval = 1, maxval = 30, group = GROUP_EQM_PD_ARRAYS)
+color bullishViColor = input.color(color.new(#00e640, 80), "Bullish VI Color", group = GROUP_EQM_PD_ARRAYS)
+color bearishViColor = input.color(color.new(#e30000, 80), "Bearish VI Color", group = GROUP_EQM_PD_ARRAYS)
+color mitigatedViColor = input.color(color.new(color.gray, 82), "Mitigated VI Color", group = GROUP_EQM_PD_ARRAYS)
+
+bool showActiveOb = input.bool(false, "Show Active OB", group = GROUP_EQM_PD_ARRAYS)
+bool showObCe = input.bool(true, "Show OB CE", group = GROUP_EQM_PD_ARRAYS)
+bool showObLabels = input.bool(true, "Show OB Labels", group = GROUP_EQM_PD_ARRAYS)
+int maxActiveObs = input.int(20, "Max Active OBs", minval = 1, maxval = 20, group = GROUP_EQM_PD_ARRAYS)
+color bullishObColor = input.color(color.new(color.blue, 85), "Bullish OB Color", group = GROUP_EQM_PD_ARRAYS)
+color bearishObColor = input.color(color.new(color.red, 85), "Bearish OB Color", group = GROUP_EQM_PD_ARRAYS)
+color invalidatedObColor = input.color(color.new(color.gray, 85), "Invalidated OB Color", group = GROUP_EQM_PD_ARRAYS)
+
+// ──────────────────────────────────────────────────────────────────────────────
+// IPDA 20W STRUCTURAL RANGE
+// Faithful transplant of the standalone ipda.pine 20W calculation.
+// Keep request.security() placement and historical offsets unchanged.
+// ──────────────────────────────────────────────────────────────────────────────
+bool ipdaShowDLTF = ipdaType == "CLASSIC+LTF"
+bool ipdaShowLTF = ipdaType == "LTF"
+ipdaShowDLTF := ipdaShowLTF ? true : ipdaShowDLTF
+
+int ipda20Time = ipdaShowLTF ? time[20] : request.security(syminfo.tickerid, "W", time[20])
+float ipda20Low = ipdaShowLTF ? ta.lowest(low, 20)[1] : request.security(syminfo.tickerid, "W", ta.lowest(low, 20))[1]
+float ipda20High = ipdaShowLTF ? ta.highest(high, 20)[1] : request.security(syminfo.tickerid, "W", ta.highest(high, 20))[1]
+float ipda20Eqm = (ipda20Low + ipda20High) / 2.0
+float ipda20Quarter = (ipda20Low + ipda20Eqm) / 2.0
+float ipda20ThreeQuarter = (ipda20Eqm + ipda20High) / 2.0
+
+bool ipda20Ready = not na(ipda20Time) and not na(ipda20Low) and not na(ipda20High)
+bool ipda20Visible = showIpda20 and ipda20Ready and (ipdaShowDLTF ? true : timeframe.period == "W")
+
+bool slotAIsActive = activeMrzSlot == "A"
+float currentMrzUpper = slotAIsActive ? slotAUpper : slotBUpper
+float currentMrzLower = slotAIsActive ? slotALower : slotBLower
+int currentActivationTime = slotAIsActive ? slotAActivationTime : slotBActivationTime
+float previousMrzUpper = slotAIsActive ? slotBUpper : slotAUpper
+float previousMrzLower = slotAIsActive ? slotBLower : slotALower
+int previousActivationTime = slotAIsActive ? slotBActivationTime : slotAActivationTime
+
+bool symbolConfigured = configuredSymbol != ""
+string configuredTickerId = symbolConfigured ? ticker.standard(configuredSymbol) : ""
+string chartTickerId = ticker.standard(syminfo.tickerid)
+bool symbolMatches = symbolConfigured and configuredTickerId == chartTickerId
+
+bool currentMrzValid = currentMrzUpper > currentMrzLower
+bool previousMrzValid = previousMrzUpper > previousMrzLower
+bool currentMrzAvailable = symbolMatches and currentMrzValid and currentActivationTime > 0
+bool previousMrzAvailable = symbolMatches and previousMrzValid and previousActivationTime > 0
+bool currentMrzVisible = currentMrzAvailable
+bool previousMrzVisible = showPreviousMrz and previousMrzAvailable
+bool migrationEqmVisible = currentMrzAvailable and previousMrzAvailable
+bool currentEnvelopeVisible = currentMrzVisible and showCurrentEnvelope
+bool previousEnvelopeVisible = previousMrzVisible and showPreviousEnvelope
+
+// Horizontal plots begin on the first chart bar at or after their activation timestamp.
+bool currentPlotVisible = currentMrzVisible and time >= currentActivationTime
+bool previousPlotVisible = previousMrzVisible and time >= previousActivationTime
+bool activeDealingRangeAvailable = migrationEqmVisible and time >= currentActivationTime
+bool migrationEqmPlotVisible = activeDealingRangeAvailable
+bool currentEnvelopePlotVisible = currentEnvelopeVisible and time >= currentActivationTime
+bool previousEnvelopePlotVisible = previousEnvelopeVisible and time >= previousActivationTime
+bool eqmProximalZonePlotVisible = migrationEqmPlotVisible and showEqmProximalZone
+// Active two-MRZ geometry begins at current MRZ activation; presentation toggles do not control it.
+bool activeEvidenceGeometryAvailable = activeDealingRangeAvailable
+// The EQM zone remains visual/attention geometry inside the already-active dealing range.
+bool eqmProximalGeometryAvailable = activeDealingRangeAvailable
+
+float currentMrzMidpoint = math.round_to_mintick((currentMrzUpper + currentMrzLower) / 2.0)
+float previousMrzMidpoint = math.round_to_mintick((previousMrzUpper + previousMrzLower) / 2.0)
+float dealingRangeLow = math.min(currentMrzMidpoint, previousMrzMidpoint)
+float dealingRangeHigh = math.max(currentMrzMidpoint, previousMrzMidpoint)
+// Migration EQM = midpoint between current-MRZ midpoint and previous-MRZ midpoint.
+float migrationEqm = math.round_to_mintick((currentMrzMidpoint + previousMrzMidpoint) / 2.0)
+float evidenceEnvelopeLow = math.min(currentMrzLower, previousMrzLower)
+float evidenceEnvelopeHigh = math.max(currentMrzUpper, previousMrzUpper)
+// Previous midpoint is normalized anchor 0, Current midpoint is anchor 1, and 0.5 is Migration EQM.
+// The default 50% proximal interval is 0.25-0.75; the operator may only shrink it symmetrically around 0.5.
+float eqmProximalWidthNormalized = eqmProximalZoneWidthPercent / 100.0
+float eqmProximalHalfWidth = eqmProximalWidthNormalized / 2.0
+float eqmProximalBoundA = 0.5 - eqmProximalHalfWidth
+float eqmProximalBoundB = 0.5 + eqmProximalHalfWidth
+float midpointAnchorDistance = currentMrzMidpoint - previousMrzMidpoint
+float eqmProximalPriceA = previousMrzMidpoint + eqmProximalBoundA * midpointAnchorDistance
+float eqmProximalPriceB = previousMrzMidpoint + eqmProximalBoundB * midpointAnchorDistance
+float eqmProximalZoneLow = math.round_to_mintick(math.min(eqmProximalPriceA, eqmProximalPriceB))
+float eqmProximalZoneHigh = math.round_to_mintick(math.max(eqmProximalPriceA, eqmProximalPriceB))
+
+int EQM_SIDE_UNKNOWN = 0
+int EQM_SIDE_ABOVE = 1
+int EQM_SIDE_BELOW = -1
+int EQM_INTERACTION_IDLE = 0
+int EQM_INTERACTION_ACTIVE = 1
+
+varip int eqmOutsideSide = EQM_SIDE_UNKNOWN
+varip int eqmInteractionState = EQM_INTERACTION_IDLE
+varip int eqmInteractionTriggerBar = na
+
+bool eqmZoneIntersectsPrice = high >= eqmProximalZoneLow and low <= eqmProximalZoneHigh
+bool eqmFromTop = false
+bool eqmFromBottom = false
+
+if not eqmProximalGeometryAvailable
+    eqmOutsideSide := EQM_SIDE_UNKNOWN
+    eqmInteractionState := EQM_INTERACTION_IDLE
+    eqmInteractionTriggerBar := na
+else if eqmInteractionState == EQM_INTERACTION_ACTIVE
+    bool canRearmAfterTriggerBar = not na(eqmInteractionTriggerBar) and bar_index > eqmInteractionTriggerBar
+    if canRearmAfterTriggerBar and barstate.isconfirmed
+        if close > eqmProximalZoneHigh
+            eqmOutsideSide := EQM_SIDE_ABOVE
+            eqmInteractionState := EQM_INTERACTION_IDLE
+        else if close < eqmProximalZoneLow
+            eqmOutsideSide := EQM_SIDE_BELOW
+            eqmInteractionState := EQM_INTERACTION_IDLE
+else
+    if eqmOutsideSide == EQM_SIDE_ABOVE and eqmZoneIntersectsPrice
+        eqmFromTop := true
+        eqmInteractionState := EQM_INTERACTION_ACTIVE
+        eqmInteractionTriggerBar := bar_index
+    else if eqmOutsideSide == EQM_SIDE_BELOW and eqmZoneIntersectsPrice
+        eqmFromBottom := true
+        eqmInteractionState := EQM_INTERACTION_ACTIVE
+        eqmInteractionTriggerBar := bar_index
+    else if barstate.isconfirmed
+        if close > eqmProximalZoneHigh
+            eqmOutsideSide := EQM_SIDE_ABOVE
+        else if close < eqmProximalZoneLow
+            eqmOutsideSide := EQM_SIDE_BELOW
+
+f_eqmInteractionPayload(_direction) =>
+    string payload = '{"event_type":"MRZ_EQM_INTERACTION"'
+    payload += ',"symbol":"' + syminfo.tickerid + '"'
+    payload += ',"direction":"' + _direction + '"'
+    payload += ',"eqm_zone_low":' + str.tostring(eqmProximalZoneLow, format.mintick)
+    payload += ',"eqm_zone_high":' + str.tostring(eqmProximalZoneHigh, format.mintick)
+    payload += ',"migration_eqm":' + str.tostring(migrationEqm, format.mintick)
+    payload += ',"current_mrz_lower":' + str.tostring(currentMrzLower, format.mintick)
+    payload += ',"current_mrz_upper":' + str.tostring(currentMrzUpper, format.mintick)
+    payload += ',"previous_mrz_lower":' + str.tostring(previousMrzLower, format.mintick)
+    payload += ',"previous_mrz_upper":' + str.tostring(previousMrzUpper, format.mintick)
+    payload += ',"timeframe":"' + timeframe.period + '"'
+    payload += ',"observed_at":' + str.tostring(time)
+    payload += ',"price":' + str.tostring(close, format.mintick) + '}'
+    payload
+
+if enableEqmInteractionAlerts and eqmFromTop
+    alert(f_eqmInteractionPayload("FROM_TOP"), alert.freq_once_per_bar)
+if enableEqmInteractionAlerts and eqmFromBottom
+    alert(f_eqmInteractionPayload("FROM_BOTTOM"), alert.freq_once_per_bar)
+
+// Keep the source displacement definition unchanged; the active evidence envelope only filters displayed events.
+float candleDisplacementRange = displacementType == "Open to Close" ? math.abs(open - close) : high - low
+float displacementStdDevThreshold = ta.stdev(candleDisplacementRange, displacementStdDevLookback) * displacementStdDevMultiplier
+bool displacement = candleDisplacementRange > displacementStdDevThreshold
+bool bullishDisplacement = displacement and close > open
+bool bearishDisplacement = displacement and close < open
+bool displacementIntersectsEvidenceEnvelope = high >= evidenceEnvelopeLow and low <= evidenceEnvelopeHigh
+bool activeDisplacementQualified = activeEvidenceGeometryAvailable and displacementIntersectsEvidenceEnvelope and (bullishDisplacement or bearishDisplacement)
+bool proximalDisplacement = activeDisplacementQualified
+float displacementCe = (high + low) * 0.5
+color proximalDisplacementCandleColor = showProximalDisplacement and proximalDisplacement and barstate.isconfirmed ? color.new(bullishDisplacement ? bullishDisplacementCeColor : bearishDisplacementCeColor, 35) : na
+barcolor(proximalDisplacementCandleColor, title = "Proximal Displacement Candle")
+
+// Candle overlap decides MRZ relevance; the event's own CE remains its reference.
+// CE does not qualify proximity, and CE mitigation is not acceptance or rejection.
+float currentMrzWidth = currentMrzUpper - currentMrzLower
+float currentPlus1W = math.round_to_mintick(currentMrzUpper + currentMrzWidth)
+float currentMinus1W = math.round_to_mintick(currentMrzLower - currentMrzWidth)
+float currentPlus2W = math.round_to_mintick(currentMrzUpper + 2.0 * currentMrzWidth)
+float currentMinus2W = math.round_to_mintick(currentMrzLower - 2.0 * currentMrzWidth)
+float previousMrzWidth = previousMrzUpper - previousMrzLower
+float previousPlus1W = math.round_to_mintick(previousMrzUpper + previousMrzWidth)
+float previousMinus1W = math.round_to_mintick(previousMrzLower - previousMrzWidth)
+float previousPlus2W = math.round_to_mintick(previousMrzUpper + 2.0 * previousMrzWidth)
+float previousMinus2W = math.round_to_mintick(previousMrzLower - 2.0 * previousMrzWidth)
+
+// Minimal direction-neutral structural-anchor observer. Authoritative geometry
+// describes the environment; confirmed prospective contacts describe the path.
+const int OBS_STATE_PRE_ACTIVATION = 0
+const int OBS_STATE_OBSERVE_ANCHORS = 1
+const int OBS_ANCHOR_NONE = 0
+const int OBS_ANCHOR_CURRENT_MIDPOINT = 1
+const int OBS_ANCHOR_MIGRATION_EQM = 2
+const int OBS_ANCHOR_PREVIOUS_MIDPOINT = 3
+const int OBS_ANCHOR_MULTIPLE = 4
+const int OBS_CONTACT_CURRENT_MIDPOINT = 1
+const int OBS_CONTACT_MIGRATION_EQM = 2
+const int OBS_CONTACT_PREVIOUS_MIDPOINT = 4
+const int MAX_STATE_OBSERVER_LABELS = 100
+
+f_observerStateText(_state) =>
+    _state == OBS_STATE_OBSERVE_ANCHORS ? "OBSERVE_ANCHORS" : "PRE_ACTIVATION"
+
+f_observerPriceText(_value) =>
+    na(_value) ? "-" : str.tostring(_value, format.mintick)
+
+f_observerTimeText(_value) =>
+    na(_value) ? "-" : str.format_time(_value, "yyyy-MM-dd'T'HH:mm:ss'Z'", "UTC")
+
+f_observerAnchorName(_anchor) =>
+    _anchor == OBS_ANCHOR_CURRENT_MIDPOINT ? "CURRENT MIDPOINT" : _anchor == OBS_ANCHOR_MIGRATION_EQM ? "MIGRATION EQM" : _anchor == OBS_ANCHOR_PREVIOUS_MIDPOINT ? "PREVIOUS MIDPOINT" : _anchor == OBS_ANCHOR_MULTIPLE ? "COINCIDENT MIDPOINT ANCHORS" : "NONE"
+
+f_observerLastAnchorText(_anchor) =>
+    _anchor == OBS_ANCHOR_CURRENT_MIDPOINT ? "CURRENT MRZ MIDPOINT" : _anchor == OBS_ANCHOR_MIGRATION_EQM ? "MIGRATION EQM" : _anchor == OBS_ANCHOR_PREVIOUS_MIDPOINT ? "PREVIOUS MRZ MIDPOINT" : _anchor == OBS_ANCHOR_MULTIPLE ? "MULTIPLE / AMBIGUOUS" : "NONE"
+
+f_observerAdjacentText(_anchor, _price) =>
+    _anchor == OBS_ANCHOR_NONE ? "NONE" : f_observerAnchorName(_anchor) + " @ " + f_observerPriceText(_price)
+
+f_observerBetweenExclusive(_price, _anchorA, _anchorB) =>
+    _price > math.min(_anchorA, _anchorB) and _price < math.max(_anchorA, _anchorB)
+
+f_observerPriceRegion(_price, _currentLower, _currentUpper, _currentMid, _eqm, _previousLower, _previousUpper, _previousMid) =>
+    bool insideCurrentMrz = _price >= _currentLower and _price <= _currentUpper
+    bool insidePreviousMrz = _price >= _previousLower and _price <= _previousUpper
+    bool atCurrentMid = _price == _currentMid
+    bool atEqm = _price == _eqm
+    bool atPreviousMid = _price == _previousMid
+    int matchedAnchors = (atCurrentMid ? 1 : 0) + (atEqm ? 1 : 0) + (atPreviousMid ? 1 : 0)
+    string lowerEndpointMrz = _currentMid < _previousMid ? "CURRENT" : _previousMid < _currentMid ? "PREVIOUS" : "COINCIDENT"
+    string upperEndpointMrz = _currentMid > _previousMid ? "CURRENT" : _previousMid > _currentMid ? "PREVIOUS" : "COINCIDENT"
+    matchedAnchors > 1 ? "AT COINCIDENT MIDPOINT ANCHORS" : atCurrentMid ? "AT CURRENT MIDPOINT" : atEqm ? "AT MIGRATION EQM" : atPreviousMid ? "AT PREVIOUS MIDPOINT" : insideCurrentMrz and insidePreviousMrz ? "INSIDE OVERLAPPING MRZS" : insideCurrentMrz ? "INSIDE CURRENT MRZ" : insidePreviousMrz ? "INSIDE PREVIOUS MRZ" : f_observerBetweenExclusive(_price, _currentMid, _eqm) ? "BETWEEN CURRENT MIDPOINT AND EQM" : f_observerBetweenExclusive(_price, _eqm, _previousMid) ? "BETWEEN EQM AND PREVIOUS MIDPOINT" : _price < math.min(_currentMid, _previousMid) ? "BELOW " + lowerEndpointMrz + " MRZ" : _price > math.max(_currentMid, _previousMid) ? "ABOVE " + upperEndpointMrz + " MRZ" : "BETWEEN STRUCTURAL ANCHORS"
+
+f_observerContactList(_currentMidContact, _eqmContact, _previousMidContact) =>
+    string contactList = ""
+    if _currentMidContact
+        contactList := "CURRENT MRZ MIDPOINT"
+    if _eqmContact
+        contactList := contactList == "" ? "MIGRATION EQM" : contactList + " + MIGRATION EQM"
+    if _previousMidContact
+        contactList := contactList == "" ? "PREVIOUS MRZ MIDPOINT" : contactList + " + PREVIOUS MRZ MIDPOINT"
+    contactList
+
+f_observerAnchorTransitionPayload(_previousContact, _currentContact, _previousContactMask, _currentContactMask, _lastReachedAnchor, _pathStep, _observedAt) =>
+    string payload = '{"event_type":"MRZ_ANCHOR_TRANSITION"'
+    payload += ',"symbol":"' + syminfo.tickerid + '"'
+    payload += ',"previous_contact":"' + _previousContact + '"'
+    payload += ',"current_contact":"' + _currentContact + '"'
+    payload += ',"previous_contact_mask":' + str.tostring(_previousContactMask)
+    payload += ',"current_contact_mask":' + str.tostring(_currentContactMask)
+    payload += ',"last_reached_anchor":"' + f_observerLastAnchorText(_lastReachedAnchor) + '"'
+    payload += ',"path_step":' + str.tostring(_pathStep)
+    payload += ',"current_mrz_midpoint":' + str.tostring(currentMrzMidpoint, format.mintick)
+    payload += ',"migration_eqm":' + str.tostring(migrationEqm, format.mintick)
+    payload += ',"previous_mrz_midpoint":' + str.tostring(previousMrzMidpoint, format.mintick)
+    payload += ',"timeframe":"' + timeframe.period + '"'
+    payload += ',"observed_at":' + str.tostring(_observedAt)
+    payload += ',"price":' + str.tostring(close, format.mintick) + '}'
+    payload
+
+bool stateObserverGeometryAvailable = enableStateTransitionObserver and activeDealingRangeAvailable and currentMrzWidth > 0
+
+int observerUpperAdjacentAnchor = OBS_ANCHOR_NONE
+float observerUpperAdjacentPrice = na
+int observerLowerAdjacentAnchor = OBS_ANCHOR_NONE
+float observerLowerAdjacentPrice = na
+
+if stateObserverGeometryAvailable
+    if currentMrzMidpoint > close
+        observerUpperAdjacentAnchor := OBS_ANCHOR_CURRENT_MIDPOINT
+        observerUpperAdjacentPrice := currentMrzMidpoint
+    if migrationEqm > close
+        if na(observerUpperAdjacentPrice) or migrationEqm < observerUpperAdjacentPrice
+            observerUpperAdjacentAnchor := OBS_ANCHOR_MIGRATION_EQM
+            observerUpperAdjacentPrice := migrationEqm
+        else if migrationEqm == observerUpperAdjacentPrice
+            observerUpperAdjacentAnchor := OBS_ANCHOR_MULTIPLE
+    if previousMrzMidpoint > close
+        if na(observerUpperAdjacentPrice) or previousMrzMidpoint < observerUpperAdjacentPrice
+            observerUpperAdjacentAnchor := OBS_ANCHOR_PREVIOUS_MIDPOINT
+            observerUpperAdjacentPrice := previousMrzMidpoint
+        else if previousMrzMidpoint == observerUpperAdjacentPrice
+            observerUpperAdjacentAnchor := OBS_ANCHOR_MULTIPLE
+
+    if currentMrzMidpoint < close
+        observerLowerAdjacentAnchor := OBS_ANCHOR_CURRENT_MIDPOINT
+        observerLowerAdjacentPrice := currentMrzMidpoint
+    if migrationEqm < close
+        if na(observerLowerAdjacentPrice) or migrationEqm > observerLowerAdjacentPrice
+            observerLowerAdjacentAnchor := OBS_ANCHOR_MIGRATION_EQM
+            observerLowerAdjacentPrice := migrationEqm
+        else if migrationEqm == observerLowerAdjacentPrice
+            observerLowerAdjacentAnchor := OBS_ANCHOR_MULTIPLE
+    if previousMrzMidpoint < close
+        if na(observerLowerAdjacentPrice) or previousMrzMidpoint > observerLowerAdjacentPrice
+            observerLowerAdjacentAnchor := OBS_ANCHOR_PREVIOUS_MIDPOINT
+            observerLowerAdjacentPrice := previousMrzMidpoint
+        else if previousMrzMidpoint == observerLowerAdjacentPrice
+            observerLowerAdjacentAnchor := OBS_ANCHOR_MULTIPLE
+
+string observerPriceRegion = stateObserverGeometryAvailable ? f_observerPriceRegion(close, currentMrzLower, currentMrzUpper, currentMrzMidpoint, migrationEqm, previousMrzLower, previousMrzUpper, previousMrzMidpoint) : "UNAVAILABLE"
+
+var int observerState = OBS_STATE_PRE_ACTIVATION
+var int observerLastReachedAnchor = OBS_ANCHOR_NONE
+var int observerPreviousReachedAnchor = OBS_ANCHOR_NONE
+var int observerLastContactMask = 0
+var string observerLastContactSummary = "NONE"
+var int observerLastReachedAt = na
+var int observerLastReachedBar = na
+var int observerObservedPathSteps = 0
+var bool observerCurrentMidContactActive = false
+var bool observerEqmContactActive = false
+var bool observerPreviousMidContactActive = false
+var bool observerStructureIdentityStored = false
+var string observerStoredActiveMrzSlot = ""
+var string observerStoredTickerId = ""
+var float observerStoredCurrentLower = na
+var float observerStoredCurrentUpper = na
+var int observerStoredCurrentActivation = na
+var float observerStoredPreviousLower = na
+var float observerStoredPreviousUpper = na
+var int observerStoredPreviousActivation = na
+var label[] observerStateLabels = array.new_label()
+
+bool observerCurrentMidReachedEvent = false
+bool observerEqmReachedEvent = false
+bool observerPreviousMidReachedEvent = false
+bool observerMultiAnchorContactEvent = false
+bool observerAttentionTransition = false
+int observerPriorContactMaskForEvent = 0
+string observerPriorContactSummaryForEvent = "NONE"
+string observerContactSummary = ""
+float observerMultiAnchorLabelPrice = na
+
+bool observerStructureChanged = stateObserverGeometryAvailable and (not observerStructureIdentityStored or observerStoredActiveMrzSlot != activeMrzSlot or observerStoredTickerId != configuredTickerId or observerStoredCurrentLower != currentMrzLower or observerStoredCurrentUpper != currentMrzUpper or observerStoredCurrentActivation != currentActivationTime or observerStoredPreviousLower != previousMrzLower or observerStoredPreviousUpper != previousMrzUpper or observerStoredPreviousActivation != previousActivationTime)
+
+if not stateObserverGeometryAvailable
+    observerState := OBS_STATE_PRE_ACTIVATION
+    observerLastReachedAnchor := OBS_ANCHOR_NONE
+    observerPreviousReachedAnchor := OBS_ANCHOR_NONE
+    observerLastContactMask := 0
+    observerLastContactSummary := "NONE"
+    observerLastReachedAt := na
+    observerLastReachedBar := na
+    observerObservedPathSteps := 0
+    observerCurrentMidContactActive := false
+    observerEqmContactActive := false
+    observerPreviousMidContactActive := false
+    observerStructureIdentityStored := false
+    observerStoredActiveMrzSlot := ""
+    observerStoredTickerId := ""
+    observerStoredCurrentLower := na
+    observerStoredCurrentUpper := na
+    observerStoredCurrentActivation := na
+    observerStoredPreviousLower := na
+    observerStoredPreviousUpper := na
+    observerStoredPreviousActivation := na
+    while array.size(observerStateLabels) > 0
+        label inactiveObserverLabel = array.shift(observerStateLabels)
+        if not na(inactiveObserverLabel)
+            label.delete(inactiveObserverLabel)
+else if barstate.isconfirmed
+    bool observerCurrentMidContactOnBar = low <= currentMrzMidpoint and high >= currentMrzMidpoint
+    bool observerEqmContactOnBar = low <= migrationEqm and high >= migrationEqm
+    bool observerPreviousMidContactOnBar = low <= previousMrzMidpoint and high >= previousMrzMidpoint
+
+    if observerStructureChanged
+        // Start the new structure prospectively. Contacts on this reset bar are
+        // baselined, not emitted or inferred from price's existing location.
+        observerState := OBS_STATE_OBSERVE_ANCHORS
+        observerLastReachedAnchor := OBS_ANCHOR_NONE
+        observerPreviousReachedAnchor := OBS_ANCHOR_NONE
+        observerLastContactMask := 0
+        observerLastContactSummary := "NONE"
+        observerLastReachedAt := na
+        observerLastReachedBar := na
+        observerObservedPathSteps := 0
+        observerCurrentMidContactActive := observerCurrentMidContactOnBar
+        observerEqmContactActive := observerEqmContactOnBar
+        observerPreviousMidContactActive := observerPreviousMidContactOnBar
+        observerStructureIdentityStored := true
+        observerStoredActiveMrzSlot := activeMrzSlot
+        observerStoredTickerId := configuredTickerId
+        observerStoredCurrentLower := currentMrzLower
+        observerStoredCurrentUpper := currentMrzUpper
+        observerStoredCurrentActivation := currentActivationTime
+        observerStoredPreviousLower := previousMrzLower
+        observerStoredPreviousUpper := previousMrzUpper
+        observerStoredPreviousActivation := previousActivationTime
+        while array.size(observerStateLabels) > 0
+            label oldStructureObserverLabel = array.shift(observerStateLabels)
+            if not na(oldStructureObserverLabel)
+                label.delete(oldStructureObserverLabel)
+    else
+        if observerState == OBS_STATE_PRE_ACTIVATION
+            observerState := OBS_STATE_OBSERVE_ANCHORS
+
+        bool observerCurrentMidContactStarted = observerCurrentMidContactOnBar and not observerCurrentMidContactActive
+        bool observerEqmContactStarted = observerEqmContactOnBar and not observerEqmContactActive
+        bool observerPreviousMidContactStarted = observerPreviousMidContactOnBar and not observerPreviousMidContactActive
+        int observerAnchorContactsStarted = (observerCurrentMidContactStarted ? 1 : 0) + (observerEqmContactStarted ? 1 : 0) + (observerPreviousMidContactStarted ? 1 : 0)
+
+        if observerAnchorContactsStarted > 0
+            int observerNewContactMask = (observerCurrentMidContactStarted ? OBS_CONTACT_CURRENT_MIDPOINT : 0) + (observerEqmContactStarted ? OBS_CONTACT_MIGRATION_EQM : 0) + (observerPreviousMidContactStarted ? OBS_CONTACT_PREVIOUS_MIDPOINT : 0)
+            observerPriorContactMaskForEvent := observerLastContactMask
+            observerPriorContactSummaryForEvent := observerLastContactSummary
+            observerAttentionTransition := observerPriorContactMaskForEvent == 0 or observerNewContactMask != observerPriorContactMaskForEvent
+            observerPreviousReachedAnchor := observerLastReachedAnchor
+            observerLastReachedAnchor := observerAnchorContactsStarted > 1 ? OBS_ANCHOR_MULTIPLE : observerCurrentMidContactStarted ? OBS_ANCHOR_CURRENT_MIDPOINT : observerEqmContactStarted ? OBS_ANCHOR_MIGRATION_EQM : OBS_ANCHOR_PREVIOUS_MIDPOINT
+            observerLastContactMask := observerNewContactMask
+            observerLastReachedAt := time_close
+            observerLastReachedBar := bar_index
+            observerObservedPathSteps += 1
+            observerContactSummary := f_observerContactList(observerCurrentMidContactStarted, observerEqmContactStarted, observerPreviousMidContactStarted)
+            observerLastContactSummary := observerContactSummary
+            observerCurrentMidReachedEvent := observerAnchorContactsStarted == 1 and observerCurrentMidContactStarted
+            observerEqmReachedEvent := observerAnchorContactsStarted == 1 and observerEqmContactStarted
+            observerPreviousMidReachedEvent := observerAnchorContactsStarted == 1 and observerPreviousMidContactStarted
+            observerMultiAnchorContactEvent := observerAnchorContactsStarted > 1
+            if observerMultiAnchorContactEvent
+                float contactedLow = observerCurrentMidContactStarted ? currentMrzMidpoint : observerEqmContactStarted ? migrationEqm : previousMrzMidpoint
+                float contactedHigh = contactedLow
+                if observerEqmContactStarted
+                    contactedLow := math.min(contactedLow, migrationEqm)
+                    contactedHigh := math.max(contactedHigh, migrationEqm)
+                if observerPreviousMidContactStarted
+                    contactedLow := math.min(contactedLow, previousMrzMidpoint)
+                    contactedHigh := math.max(contactedHigh, previousMrzMidpoint)
+                observerMultiAnchorLabelPrice := math.round_to_mintick((contactedLow + contactedHigh) / 2.0)
+
+        observerCurrentMidContactActive := observerCurrentMidContactOnBar
+        observerEqmContactActive := observerEqmContactOnBar
+        observerPreviousMidContactActive := observerPreviousMidContactOnBar
+
+if observerCurrentMidReachedEvent and observerAttentionTransition and showStateTransitionLabels
+    string observerCurrentMidTooltip = "Path Step: " + str.tostring(observerObservedPathSteps) + "\nEvent: CURRENT MIDPOINT REACHED\nTimestamp: " + f_observerTimeText(observerLastReachedAt) + "\nContact: " + observerContactSummary + "\nPrior Contact: " + observerPriorContactSummaryForEvent + "\nPrior Reached Anchor: " + f_observerLastAnchorText(observerPreviousReachedAnchor) + "\nAnchor: " + f_observerPriceText(currentMrzMidpoint)
+    bool observerCurrentMidLabelAbove = currentMrzMidpoint >= close
+    label observerCurrentMidLabel = label.new(bar_index, observerCurrentMidLabelAbove ? high : low, "CURRENT MIDPOINT REACHED", xloc = xloc.bar_index, style = observerCurrentMidLabelAbove ? label.style_label_down : label.style_label_up, color = color.new(color.purple, 30), textcolor = color.white, size = size.tiny, tooltip = observerCurrentMidTooltip)
+    array.push(observerStateLabels, observerCurrentMidLabel)
+
+if observerEqmReachedEvent and observerAttentionTransition and showStateTransitionLabels
+    string observerEqmTooltip = "Path Step: " + str.tostring(observerObservedPathSteps) + "\nEvent: EQM REACHED\nTimestamp: " + f_observerTimeText(observerLastReachedAt) + "\nContact: " + observerContactSummary + "\nPrior Contact: " + observerPriorContactSummaryForEvent + "\nPrior Reached Anchor: " + f_observerLastAnchorText(observerPreviousReachedAnchor) + "\nAnchor: " + f_observerPriceText(migrationEqm)
+    bool observerEqmLabelAbove = migrationEqm >= close
+    label observerEqmLabel = label.new(bar_index, observerEqmLabelAbove ? high : low, "EQM REACHED", xloc = xloc.bar_index, style = observerEqmLabelAbove ? label.style_label_down : label.style_label_up, color = color.new(color.purple, 15), textcolor = color.white, size = size.tiny, tooltip = observerEqmTooltip)
+    array.push(observerStateLabels, observerEqmLabel)
+
+if observerPreviousMidReachedEvent and observerAttentionTransition and showStateTransitionLabels
+    string observerPreviousMidTooltip = "Path Step: " + str.tostring(observerObservedPathSteps) + "\nEvent: PREV_MID_PT\nTimestamp: " + f_observerTimeText(observerLastReachedAt) + "\nContact: " + observerContactSummary + "\nPrior Contact: " + observerPriorContactSummaryForEvent + "\nPrior Reached Anchor: " + f_observerLastAnchorText(observerPreviousReachedAnchor) + "\nAnchor: " + f_observerPriceText(previousMrzMidpoint)
+    bool observerPreviousMidLabelAbove = previousMrzMidpoint >= close
+    label observerPreviousMidLabel = label.new(bar_index, observerPreviousMidLabelAbove ? high : low, "PREV_MID_PT", xloc = xloc.bar_index, style = observerPreviousMidLabelAbove ? label.style_label_down : label.style_label_up, color = color.new(color.gray, 30), textcolor = color.white, size = size.tiny, tooltip = observerPreviousMidTooltip)
+    array.push(observerStateLabels, observerPreviousMidLabel)
+
+if observerMultiAnchorContactEvent and observerAttentionTransition and showStateTransitionLabels
+    string observerMultiAnchorTooltip = "Path Step: " + str.tostring(observerObservedPathSteps) + "\nEvent: MULTI-ANCHOR CONTACT\nTimestamp: " + f_observerTimeText(observerLastReachedAt) + "\nContacts: " + observerContactSummary + "\nPrior Contact: " + observerPriorContactSummaryForEvent + "\nAnchor Order: AMBIGUOUS\nPrior Reached Anchor: " + f_observerLastAnchorText(observerPreviousReachedAnchor)
+    bool observerMultiAnchorLabelAbove = observerMultiAnchorLabelPrice >= close
+    label observerMultiAnchorLabel = label.new(bar_index, observerMultiAnchorLabelAbove ? high : low, "MULTI-ANCHOR CONTACT", xloc = xloc.bar_index, style = observerMultiAnchorLabelAbove ? label.style_label_down : label.style_label_up, color = color.new(color.orange, 20), textcolor = color.white, size = size.tiny, tooltip = observerMultiAnchorTooltip)
+    array.push(observerStateLabels, observerMultiAnchorLabel)
+
+if enableAnchorTransitionAlerts and observerAttentionTransition and barstate.isconfirmed
+    alert(f_observerAnchorTransitionPayload(observerPriorContactSummaryForEvent, observerContactSummary, observerPriorContactMaskForEvent, observerLastContactMask, observerLastReachedAnchor, observerObservedPathSteps, observerLastReachedAt), alert.freq_once_per_bar_close)
+
+while array.size(observerStateLabels) > MAX_STATE_OBSERVER_LABELS
+    label oldestObserverLabel = array.shift(observerStateLabels)
+    if not na(oldestObserverLabel)
+        label.delete(oldestObserverLabel)
+
+var table stateObserverPanel = table.new(position.bottom_right, 2, 9)
+if barstate.islast and showStateDebugPanel
+    color observerPanelBackground = color.new(color.black, 18)
+    color observerPanelLabelColor = color.new(color.silver, 0)
+    table.cell(stateObserverPanel, 0, 0, "Observer Status", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 1, 0, f_observerStateText(observerState), text_color = color.white, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 0, 1, "Price Region", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 1, 1, observerPriceRegion, text_color = color.white, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 0, 2, "Upper Anchor", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 1, 2, f_observerAdjacentText(observerUpperAdjacentAnchor, observerUpperAdjacentPrice), text_color = color.white, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 0, 3, "Lower Anchor", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 1, 3, f_observerAdjacentText(observerLowerAdjacentAnchor, observerLowerAdjacentPrice), text_color = color.white, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 0, 4, "Last Reached Anchor", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 1, 4, f_observerLastAnchorText(observerLastReachedAnchor), text_color = color.white, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 0, 5, "Previous Reached Anchor", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 1, 5, f_observerLastAnchorText(observerPreviousReachedAnchor), text_color = color.white, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 0, 6, "Path Step #", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 1, 6, str.tostring(observerObservedPathSteps), text_color = color.white, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 0, 7, "Last Contact At", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 1, 7, f_observerTimeText(observerLastReachedAt), text_color = color.white, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 0, 8, "Last Contact", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 1, 8, observerLastContactSummary, text_color = color.white, bgcolor = observerPanelBackground)
+
+color currentUpperColor = color.rgb(214, 80, 80)
+color currentMidpointColor = color.new(color.purple, 0)
+color currentLowerColor = color.rgb(65, 145, 220)
+color migrationEqmColor = color.new(color.rgb(142, 109, 201), 0)
+color eqmProximalBoundaryColor = color.new(migrationEqmColor, 65)
+color eqmProximalZoneColor = color.new(migrationEqmColor, 90)
+color previousBoundaryColor = color.new(color.gray, 45)
+color previousMidpointColor = color.new(color.silver, 0)
+color previousEnvelopeColor = color.new(color.gray, 60)
+color currentZoneColor = color.new(currentMidpointColor, 95)
+color previousZoneColor = color.new(color.gray, 95)
+
+currentUpperPlot = plot(currentPlotVisible ? currentMrzUpper : na, "Current MRZ Upper", color = currentUpperColor, linewidth = 1, style = plot.style_linebr)
+plot(currentPlotVisible ? currentMrzMidpoint : na, "Current MRZ Midpoint", color = currentMidpointColor, linewidth = 1, style = plot.style_linebr)
+currentLowerPlot = plot(currentPlotVisible ? currentMrzLower : na, "Current MRZ Lower", color = currentLowerColor, linewidth = 1, style = plot.style_linebr)
+fill(currentUpperPlot, currentLowerPlot, color = currentZoneColor, title = "Current MRZ Zone", fillgaps = false)
+
+plot(currentEnvelopePlotVisible ? currentPlus1W : na, "Current MRZ +1W", color = color.new(currentUpperColor, 0), linewidth = 1, style = plot.style_linebr)
+plot(currentEnvelopePlotVisible ? currentPlus2W : na, "Current MRZ +2W", color = color.new(currentUpperColor, 28), linewidth = 2, style = plot.style_linebr)
+plot(currentEnvelopePlotVisible ? currentMinus1W : na, "Current MRZ -1W", color = color.new(currentLowerColor, 0), linewidth = 1, style = plot.style_linebr)
+plot(currentEnvelopePlotVisible ? currentMinus2W : na, "Current MRZ -2W", color = color.new(currentLowerColor, 28), linewidth = 2, style = plot.style_linebr)
+
+eqmProximalLowPlot = plot(eqmProximalZonePlotVisible ? eqmProximalZoneLow : na, "MRZ EQM Proximal Low", color = eqmProximalBoundaryColor, linewidth = 1, style = plot.style_linebr)
+eqmProximalHighPlot = plot(eqmProximalZonePlotVisible ? eqmProximalZoneHigh : na, "MRZ EQM Proximal High", color = eqmProximalBoundaryColor, linewidth = 1, style = plot.style_linebr)
+fill(eqmProximalLowPlot, eqmProximalHighPlot, color = eqmProximalZoneColor, title = "MRZ EQM Proximal Zone", fillgaps = false)
+plot(migrationEqmPlotVisible ? migrationEqm : na, "Migration EQM", color = migrationEqmColor, linewidth = 1, style = plot.style_linebr)
+previousUpperPlot = plot(previousPlotVisible ? previousMrzUpper : na, "Previous MRZ Upper", color = previousBoundaryColor, linewidth = 1, style = plot.style_linebr)
+plot(previousPlotVisible ? previousMrzMidpoint : na, "Previous MRZ Midpoint", color = previousMidpointColor, linewidth = 1, style = plot.style_linebr)
+previousLowerPlot = plot(previousPlotVisible ? previousMrzLower : na, "Previous MRZ Lower", color = previousBoundaryColor, linewidth = 1, style = plot.style_linebr)
+fill(previousUpperPlot, previousLowerPlot, color = previousZoneColor, title = "Previous MRZ Zone", fillgaps = false)
+
+plot(previousEnvelopePlotVisible ? previousPlus1W : na, "Previous MRZ +1W", color = previousEnvelopeColor, linewidth = 1, style = plot.style_linebr)
+plot(previousEnvelopePlotVisible ? previousPlus2W : na, "Previous MRZ +2W", color = previousEnvelopeColor, linewidth = 2, style = plot.style_linebr)
+plot(previousEnvelopePlotVisible ? previousMinus1W : na, "Previous MRZ -1W", color = previousEnvelopeColor, linewidth = 1, style = plot.style_linebr)
+plot(previousEnvelopePlotVisible ? previousMinus2W : na, "Previous MRZ -2W", color = previousEnvelopeColor, linewidth = 2, style = plot.style_linebr)
+
+// ──────────────────────────────────────────────────────────────────────────────
+// IPDA 20W DISPLAY
+// Uses persistent objects so the merged MRZ display does not recreate objects on
+// every last-bar update. Price levels come directly from the standalone IPDA logic.
+// ──────────────────────────────────────────────────────────────────────────────
+var line ipda20HighLine = na
+var line ipda20ThreeQuarterLine = na
+var line ipda20EqmLine = na
+var line ipda20QuarterLine = na
+var line ipda20LowLine = na
+
+var label ipda20HighLabel = na
+var label ipda20ThreeQuarterLabel = na
+var label ipda20EqmLabel = na
+var label ipda20QuarterLabel = na
+var label ipda20LowLabel = na
+
+if barstate.islast
+    int ipda20RightTime = na(time[1]) ? time : time[1]
+
+    if ipda20Visible
+        if na(ipda20HighLine)
+            ipda20HighLine := line.new(ipda20Time, ipda20High, ipda20RightTime, ipda20High, xloc = xloc.bar_time, color = ipdaPremiumColor, width = 1, extend = extend.right)
+        else
+            line.set_xy1(ipda20HighLine, ipda20Time, ipda20High)
+            line.set_xy2(ipda20HighLine, ipda20RightTime, ipda20High)
+            line.set_color(ipda20HighLine, ipdaPremiumColor)
+
+        if na(ipda20ThreeQuarterLine)
+            ipda20ThreeQuarterLine := line.new(ipda20Time, ipda20ThreeQuarter, ipda20RightTime, ipda20ThreeQuarter, xloc = xloc.bar_time, color = ipdaHalfZoneColor, width = 1, style = line.style_dashed, extend = extend.right)
+        else
+            line.set_xy1(ipda20ThreeQuarterLine, ipda20Time, ipda20ThreeQuarter)
+            line.set_xy2(ipda20ThreeQuarterLine, ipda20RightTime, ipda20ThreeQuarter)
+            line.set_color(ipda20ThreeQuarterLine, ipdaHalfZoneColor)
+            line.set_style(ipda20ThreeQuarterLine, line.style_dashed)
+
+        if na(ipda20EqmLine)
+            ipda20EqmLine := line.new(ipda20Time, ipda20Eqm, ipda20RightTime, ipda20Eqm, xloc = xloc.bar_time, color = ipdaEquilibriumColor, width = 1, extend = extend.right)
+        else
+            line.set_xy1(ipda20EqmLine, ipda20Time, ipda20Eqm)
+            line.set_xy2(ipda20EqmLine, ipda20RightTime, ipda20Eqm)
+            line.set_color(ipda20EqmLine, ipdaEquilibriumColor)
+
+        if na(ipda20QuarterLine)
+            ipda20QuarterLine := line.new(ipda20Time, ipda20Quarter, ipda20RightTime, ipda20Quarter, xloc = xloc.bar_time, color = ipdaHalfZoneColor, width = 1, style = line.style_dashed, extend = extend.right)
+        else
+            line.set_xy1(ipda20QuarterLine, ipda20Time, ipda20Quarter)
+            line.set_xy2(ipda20QuarterLine, ipda20RightTime, ipda20Quarter)
+            line.set_color(ipda20QuarterLine, ipdaHalfZoneColor)
+            line.set_style(ipda20QuarterLine, line.style_dashed)
+
+        if na(ipda20LowLine)
+            ipda20LowLine := line.new(ipda20Time, ipda20Low, ipda20RightTime, ipda20Low, xloc = xloc.bar_time, color = ipdaDiscountColor, width = 1, extend = extend.right)
+        else
+            line.set_xy1(ipda20LowLine, ipda20Time, ipda20Low)
+            line.set_xy2(ipda20LowLine, ipda20RightTime, ipda20Low)
+            line.set_color(ipda20LowLine, ipdaDiscountColor)
+
+        if showIpda20Labels
+            if na(ipda20HighLabel)
+                ipda20HighLabel := label.new(last_bar_index, ipda20High, "20w hi", xloc = xloc.bar_index, yloc = yloc.price, color = na, style = label.style_label_left, textcolor = ipdaPremiumColor, textalign = text.align_right, tooltip = "ipda20 premium")
+            else
+                label.set_x(ipda20HighLabel, last_bar_index)
+                label.set_y(ipda20HighLabel, ipda20High)
+                label.set_textcolor(ipda20HighLabel, ipdaPremiumColor)
+
+            if na(ipda20ThreeQuarterLabel)
+                ipda20ThreeQuarterLabel := label.new(last_bar_index, ipda20ThreeQuarter, "20w 0.75", xloc = xloc.bar_index, yloc = yloc.price, color = na, style = label.style_label_left, textcolor = ipdaHalfZoneColor, textalign = text.align_right, tooltip = "ipda20 upper half premium")
+            else
+                label.set_x(ipda20ThreeQuarterLabel, last_bar_index)
+                label.set_y(ipda20ThreeQuarterLabel, ipda20ThreeQuarter)
+                label.set_textcolor(ipda20ThreeQuarterLabel, ipdaHalfZoneColor)
+
+            if na(ipda20EqmLabel)
+                ipda20EqmLabel := label.new(last_bar_index, ipda20Eqm, "20w eqm", xloc = xloc.bar_index, yloc = yloc.price, color = na, style = label.style_label_left, textcolor = ipdaEquilibriumColor, textalign = text.align_right, tooltip = "ipda20 eqm")
+            else
+                label.set_x(ipda20EqmLabel, last_bar_index)
+                label.set_y(ipda20EqmLabel, ipda20Eqm)
+                label.set_textcolor(ipda20EqmLabel, ipdaEquilibriumColor)
+
+            if na(ipda20QuarterLabel)
+                ipda20QuarterLabel := label.new(last_bar_index, ipda20Quarter, "20w 0.25", xloc = xloc.bar_index, yloc = yloc.price, color = na, style = label.style_label_left, textcolor = ipdaHalfZoneColor, textalign = text.align_right, tooltip = "ipda20 lower half discount")
+            else
+                label.set_x(ipda20QuarterLabel, last_bar_index)
+                label.set_y(ipda20QuarterLabel, ipda20Quarter)
+                label.set_textcolor(ipda20QuarterLabel, ipdaHalfZoneColor)
+
+            if na(ipda20LowLabel)
+                ipda20LowLabel := label.new(last_bar_index, ipda20Low, "20w lo", xloc = xloc.bar_index, yloc = yloc.price, color = na, style = label.style_label_left, textcolor = ipdaDiscountColor, textalign = text.align_right, tooltip = "ipda20 discount")
+            else
+                label.set_x(ipda20LowLabel, last_bar_index)
+                label.set_y(ipda20LowLabel, ipda20Low)
+                label.set_textcolor(ipda20LowLabel, ipdaDiscountColor)
+        else
+            if not na(ipda20HighLabel)
+                label.delete(ipda20HighLabel)
+                ipda20HighLabel := na
+            if not na(ipda20ThreeQuarterLabel)
+                label.delete(ipda20ThreeQuarterLabel)
+                ipda20ThreeQuarterLabel := na
+            if not na(ipda20EqmLabel)
+                label.delete(ipda20EqmLabel)
+                ipda20EqmLabel := na
+            if not na(ipda20QuarterLabel)
+                label.delete(ipda20QuarterLabel)
+                ipda20QuarterLabel := na
+            if not na(ipda20LowLabel)
+                label.delete(ipda20LowLabel)
+                ipda20LowLabel := na
+    else
+        if not na(ipda20HighLine)
+            line.delete(ipda20HighLine)
+            ipda20HighLine := na
+        if not na(ipda20ThreeQuarterLine)
+            line.delete(ipda20ThreeQuarterLine)
+            ipda20ThreeQuarterLine := na
+        if not na(ipda20EqmLine)
+            line.delete(ipda20EqmLine)
+            ipda20EqmLine := na
+        if not na(ipda20QuarterLine)
+            line.delete(ipda20QuarterLine)
+            ipda20QuarterLine := na
+        if not na(ipda20LowLine)
+            line.delete(ipda20LowLine)
+            ipda20LowLine := na
+        if not na(ipda20HighLabel)
+            label.delete(ipda20HighLabel)
+            ipda20HighLabel := na
+        if not na(ipda20ThreeQuarterLabel)
+            label.delete(ipda20ThreeQuarterLabel)
+            ipda20ThreeQuarterLabel := na
+        if not na(ipda20EqmLabel)
+            label.delete(ipda20EqmLabel)
+            ipda20EqmLabel := na
+        if not na(ipda20QuarterLabel)
+            label.delete(ipda20QuarterLabel)
+            ipda20QuarterLabel := na
+        if not na(ipda20LowLabel)
+            label.delete(ipda20LowLabel)
+            ipda20LowLabel := na
+
+// One confirmed proximal displacement creates at most one persistent CE entry.
+// Stage A retains factual evidence independently from Stage B object visibility.
+var line[] proximalDisplacementCeLines = array.new_line()
+var float[] proximalDisplacementCeLevels = array.new_float()
+var int[] proximalDisplacementCreationBars = array.new_int()
+var int[] proximalDisplacementDirections = array.new_int()
+var bool[] proximalDisplacementMitigated = array.new_bool()
+var int lastProximalDisplacementBar = na
+
+bool displacementBarNotRegistered = na(lastProximalDisplacementBar) or bar_index != lastProximalDisplacementBar
+bool createProximalDisplacement = proximalDisplacement and barstate.isconfirmed and displacementBarNotRegistered
+if createProximalDisplacement
+    int displacementDirection = bullishDisplacement ? 1 : -1
+    array.push(proximalDisplacementCeLines, na)
+    array.push(proximalDisplacementCeLevels, displacementCe)
+    array.push(proximalDisplacementCreationBars, bar_index)
+    array.push(proximalDisplacementDirections, displacementDirection)
+    array.push(proximalDisplacementMitigated, false)
+    lastProximalDisplacementBar := bar_index
+
+    while array.size(proximalDisplacementCeLevels) > maxProximalDisplacementCes
+        line oldestCeLine = array.shift(proximalDisplacementCeLines)
+        if not na(oldestCeLine)
+            line.delete(oldestCeLine)
+        array.shift(proximalDisplacementCeLevels)
+        array.shift(proximalDisplacementCreationBars)
+        array.shift(proximalDisplacementDirections)
+        array.shift(proximalDisplacementMitigated)
+
+// Only a later candle body can mitigate CE; wick-only and creation-bar contact do not count.
+int proximalDisplacementCount = array.size(proximalDisplacementCeLevels)
+if proximalDisplacementCount > 0
+    float bodyLow = math.min(open, close)
+    float bodyHigh = math.max(open, close)
+    for displacementIndex = 0 to proximalDisplacementCount - 1
+        bool isMitigated = array.get(proximalDisplacementMitigated, displacementIndex)
+        int creationBar = array.get(proximalDisplacementCreationBars, displacementIndex)
+        float ceLevel = array.get(proximalDisplacementCeLevels, displacementIndex)
+        bool bodyTouchesCe = bodyLow <= ceLevel and bodyHigh >= ceLevel
+        if not isMitigated and bar_index > creationBar and bodyTouchesCe
+            array.set(proximalDisplacementMitigated, displacementIndex, true)
+            isMitigated := true
+
+        // Presentation objects are disposable; retained arrays above are canonical.
+        line displacementCeLine = array.get(proximalDisplacementCeLines, displacementIndex)
+        bool displacementCeVisible = showProximalDisplacement and showDisplacementCe
+        int displacementDirection = array.get(proximalDisplacementDirections, displacementIndex)
+        color displacementDisplayColor = isMitigated ? color.new(mitigatedDisplacementCeColor, 35) : displacementDirection == 1 ? bullishDisplacementCeColor : bearishDisplacementCeColor
+        if displacementCeVisible
+            if na(displacementCeLine)
+                displacementCeLine := line.new(creationBar, ceLevel, creationBar + 1, ceLevel, xloc = xloc.bar_index, extend = extend.right, color = displacementDisplayColor, style = isMitigated ? line.style_dashed : line.style_dotted, width = 1)
+                array.set(proximalDisplacementCeLines, displacementIndex, displacementCeLine)
+            else
+                line.set_color(displacementCeLine, displacementDisplayColor)
+                line.set_style(displacementCeLine, isMitigated ? line.style_dashed : line.style_dotted)
+                line.set_extend(displacementCeLine, extend.right)
+        else if not na(displacementCeLine)
+            line.delete(displacementCeLine)
+            array.set(proximalDisplacementCeLines, displacementIndex, na)
+
+// Canonical chart-timeframe FVG conditions remain unchanged.
+bool bearishFvgBreakaway = low[2] <= open[1] and high >= close[1] and close < low[1] and low[2] - high > 0
+bool bearishFvgRunaway = low[2] <= open[1] and high >= close[1] and close > low[1] and low[2] - high > 0
+bool bullishFvgBreakaway = high[2] >= open[1] and low <= close[1] and close > high[1] and low - high[2] > 0
+bool bullishFvgRunaway = high[2] >= open[1] and low <= close[1] and close < high[1] and low - high[2] > 0
+
+bool bearishFvgIntersectsEvidenceEnvelope = low[2] >= evidenceEnvelopeLow and high <= evidenceEnvelopeHigh
+bool bullishFvgIntersectsEvidenceEnvelope = low >= evidenceEnvelopeLow and high[2] <= evidenceEnvelopeHigh
+bool bearishRunawayFromActiveDisplacement = bearishFvgRunaway and bearishDisplacement[1] and displacementIntersectsEvidenceEnvelope[1] and activeEvidenceGeometryAvailable[1] and bearishFvgIntersectsEvidenceEnvelope
+bool bullishRunawayFromActiveDisplacement = bullishFvgRunaway and bullishDisplacement[1] and displacementIntersectsEvidenceEnvelope[1] and activeEvidenceGeometryAvailable[1] and bullishFvgIntersectsEvidenceEnvelope
+bool bearishBreakerFvgQualified = bearishFvgBreakaway and bearishFvgIntersectsEvidenceEnvelope
+bool bullishBreakerFvgQualified = bullishFvgBreakaway and bullishFvgIntersectsEvidenceEnvelope
+bool createBearishProximalFvg = activeEvidenceGeometryAvailable and barstate.isconfirmed and (bearishRunawayFromActiveDisplacement or bearishBreakerFvgQualified)
+bool createBullishProximalFvg = activeEvidenceGeometryAvailable and barstate.isconfirmed and (bullishRunawayFromActiveDisplacement or bullishBreakerFvgQualified)
+
+var line[] proximalFvgCeLines = array.new_line()
+var label[] proximalFvgLabels = array.new_label()
+var float[] proximalFvgTops = array.new_float()
+var float[] proximalFvgBottoms = array.new_float()
+var float[] proximalFvgCeLevels = array.new_float()
+var int[] proximalFvgDirections = array.new_int()
+var int[] proximalFvgCreationBars = array.new_int()
+var bool[] proximalFvgMitigated = array.new_bool()
+var int[] proximalFvgMitigationBars = array.new_int()
+
+if createBearishProximalFvg or createBullishProximalFvg
+    int fvgDirection = createBullishProximalFvg ? 1 : -1
+    float fvgTop = fvgDirection == 1 ? low : low[2]
+    float fvgBottom = fvgDirection == 1 ? high[2] : high
+    float fvgCe = (fvgTop + fvgBottom) / 2.0
+    array.push(proximalFvgCeLines, na)
+    array.push(proximalFvgLabels, na)
+    array.push(proximalFvgTops, fvgTop)
+    array.push(proximalFvgBottoms, fvgBottom)
+    array.push(proximalFvgCeLevels, fvgCe)
+    array.push(proximalFvgDirections, fvgDirection)
+    array.push(proximalFvgCreationBars, bar_index)
+    array.push(proximalFvgMitigated, false)
+    array.push(proximalFvgMitigationBars, na)
+
+    while array.size(proximalFvgCeLevels) > maxProximalFvgs
+        line oldestFvgCeLine = array.shift(proximalFvgCeLines)
+        if not na(oldestFvgCeLine)
+            line.delete(oldestFvgCeLine)
+        label oldestFvgLabel = array.shift(proximalFvgLabels)
+        if not na(oldestFvgLabel)
+            label.delete(oldestFvgLabel)
+        array.shift(proximalFvgTops)
+        array.shift(proximalFvgBottoms)
+        array.shift(proximalFvgCeLevels)
+        array.shift(proximalFvgDirections)
+        array.shift(proximalFvgCreationBars)
+        array.shift(proximalFvgMitigated)
+        array.shift(proximalFvgMitigationBars)
+
+int proximalFvgCount = array.size(proximalFvgCeLevels)
+if proximalFvgCount > 0
+    for fvgIndex = 0 to proximalFvgCount - 1
+        // Stage A: advance the retained lifecycle before rendering its current state.
+        bool fvgMitigated = array.get(proximalFvgMitigated, fvgIndex)
+        int fvgCreationBar = array.get(proximalFvgCreationBars, fvgIndex)
+        int fvgDirection = array.get(proximalFvgDirections, fvgIndex)
+        float fvgCe = array.get(proximalFvgCeLevels, fvgIndex)
+        int fvgMitigationBar = array.get(proximalFvgMitigationBars, fvgIndex)
+        if barstate.isconfirmed and not fvgMitigated and bar_index > fvgCreationBar
+            bool fvgCloseThroughCe = fvgDirection == 1 ? close < fvgCe : close > fvgCe
+            if fvgCloseThroughCe
+                array.set(proximalFvgMitigated, fvgIndex, true)
+                array.set(proximalFvgMitigationBars, fvgIndex, bar_index)
+                fvgMitigated := true
+                fvgMitigationBar := bar_index
+
+        // Stage B: create, update, or delete presentation objects only.
+        color fvgColor = fvgDirection == 1 ? bullishFvgColor : bearishFvgColor
+        line fvgCeLine = array.get(proximalFvgCeLines, fvgIndex)
+        if showProximalFvg and showFvgCe
+            int fvgCeRightBar = fvgMitigated and not na(fvgMitigationBar) ? fvgMitigationBar : fvgCreationBar + 1
+            if na(fvgCeLine)
+                fvgCeLine := line.new(fvgCreationBar, fvgCe, fvgCeRightBar, fvgCe, xloc = xloc.bar_index, extend = fvgMitigated ? extend.none : extend.right, color = fvgMitigated ? color.new(mitigatedFvgColor, 20) : color.new(fvgColor, 20), style = line.style_dashed, width = 1)
+                array.set(proximalFvgCeLines, fvgIndex, fvgCeLine)
+            else
+                line.set_extend(fvgCeLine, fvgMitigated ? extend.none : extend.right)
+                line.set_x2(fvgCeLine, fvgCeRightBar)
+                line.set_color(fvgCeLine, fvgMitigated ? color.new(mitigatedFvgColor, 20) : color.new(fvgColor, 20))
+        else if not na(fvgCeLine)
+            line.delete(fvgCeLine)
+            array.set(proximalFvgCeLines, fvgIndex, na)
+
+        label fvgLabel = array.get(proximalFvgLabels, fvgIndex)
+        if showProximalFvg and showFvgLabels
+            if na(fvgLabel)
+                fvgLabel := label.new(fvgCreationBar, fvgCe, "FVG", xloc = xloc.bar_index, style = label.style_none, textcolor = fvgMitigated ? color.new(mitigatedFvgColor, 0) : color.new(fvgColor, 0), size = size.tiny)
+                array.set(proximalFvgLabels, fvgIndex, fvgLabel)
+            else
+                label.set_textcolor(fvgLabel, fvgMitigated ? color.new(mitigatedFvgColor, 0) : color.new(fvgColor, 0))
+        else if not na(fvgLabel)
+            label.delete(fvgLabel)
+            array.set(proximalFvgLabels, fvgIndex, na)
+
+// Canonical Classic Type 1 current-timeframe VI conditions and structural bounds.
+bool bullishViSignal = open > close[1] and low <= high[1] and close > open and close[1] > open[1]
+bool bearishViSignal = open < close[1] and high >= low[1] and close < open and close[1] < open[1]
+
+float viTop = math.max(open, close[1])
+float viBottom = math.min(open, close[1])
+bool viIntersectsEvidenceEnvelope = viTop >= evidenceEnvelopeLow and viBottom <= evidenceEnvelopeHigh
+bool createBullishProximalVi = activeEvidenceGeometryAvailable and barstate.isconfirmed and bullishViSignal and viIntersectsEvidenceEnvelope
+bool createBearishProximalVi = activeEvidenceGeometryAvailable and barstate.isconfirmed and bearishViSignal and viIntersectsEvidenceEnvelope
+
+var line[] proximalViCeLines = array.new_line()
+var label[] proximalViLabels = array.new_label()
+var float[] proximalViTops = array.new_float()
+var float[] proximalViBottoms = array.new_float()
+var float[] proximalViCeLevels = array.new_float()
+var int[] proximalViDirections = array.new_int()
+var int[] proximalViCreationBars = array.new_int()
+var bool[] proximalViMitigated = array.new_bool()
+var int[] proximalViMitigationBars = array.new_int()
+
+if createBullishProximalVi or createBearishProximalVi
+    int viDirection = createBullishProximalVi ? 1 : -1
+    float viCe = (viTop + viBottom) / 2.0
+    array.push(proximalViCeLines, na)
+    array.push(proximalViLabels, na)
+    array.push(proximalViTops, viTop)
+    array.push(proximalViBottoms, viBottom)
+    array.push(proximalViCeLevels, viCe)
+    array.push(proximalViDirections, viDirection)
+    array.push(proximalViCreationBars, bar_index)
+    array.push(proximalViMitigated, false)
+    array.push(proximalViMitigationBars, na)
+
+    while array.size(proximalViCeLevels) > maxProximalVis
+        line oldestViCeLine = array.shift(proximalViCeLines)
+        if not na(oldestViCeLine)
+            line.delete(oldestViCeLine)
+        label oldestViLabel = array.shift(proximalViLabels)
+        if not na(oldestViLabel)
+            label.delete(oldestViLabel)
+        array.shift(proximalViTops)
+        array.shift(proximalViBottoms)
+        array.shift(proximalViCeLevels)
+        array.shift(proximalViDirections)
+        array.shift(proximalViCreationBars)
+        array.shift(proximalViMitigated)
+        array.shift(proximalViMitigationBars)
+
+int proximalViCount = array.size(proximalViCeLevels)
+if proximalViCount > 0
+    for viIndex = 0 to proximalViCount - 1
+        // Stage A: advance the retained lifecycle before rendering its current state.
+        bool viMitigated = array.get(proximalViMitigated, viIndex)
+        int viCreationBar = array.get(proximalViCreationBars, viIndex)
+        int viDirection = array.get(proximalViDirections, viIndex)
+        float viCe = array.get(proximalViCeLevels, viIndex)
+        int viMitigationBar = array.get(proximalViMitigationBars, viIndex)
+        if barstate.isconfirmed and not viMitigated and bar_index > viCreationBar
+            bool viCloseThroughCe = viDirection == 1 ? close < viCe : close > viCe
+            if viCloseThroughCe
+                array.set(proximalViMitigated, viIndex, true)
+                array.set(proximalViMitigationBars, viIndex, bar_index)
+                viMitigated := true
+                viMitigationBar := bar_index
+
+        // Stage B: create, update, or delete presentation objects only.
+        color viColor = viDirection == 1 ? bullishViColor : bearishViColor
+        line viCeLine = array.get(proximalViCeLines, viIndex)
+        if showProximalVi and showViCe
+            int viCeRightBar = viMitigated and not na(viMitigationBar) ? viMitigationBar : viCreationBar + 1
+            if na(viCeLine)
+                viCeLine := line.new(viCreationBar, viCe, viCeRightBar, viCe, xloc = xloc.bar_index, extend = viMitigated ? extend.none : extend.right, color = viMitigated ? color.new(mitigatedViColor, 20) : color.new(viColor, 20), style = line.style_solid, width = 1)
+                array.set(proximalViCeLines, viIndex, viCeLine)
+            else
+                line.set_extend(viCeLine, viMitigated ? extend.none : extend.right)
+                line.set_x2(viCeLine, viCeRightBar)
+                line.set_color(viCeLine, viMitigated ? color.new(mitigatedViColor, 20) : color.new(viColor, 20))
+        else if not na(viCeLine)
+            line.delete(viCeLine)
+            array.set(proximalViCeLines, viIndex, na)
+
+        label viLabel = array.get(proximalViLabels, viIndex)
+        if showProximalVi and showViLabels
+            if na(viLabel)
+                viLabel := label.new(viCreationBar, viCe, "VI", xloc = xloc.bar_index, style = label.style_none, textcolor = viMitigated ? color.new(mitigatedViColor, 0) : color.new(viColor, 0), size = size.tiny)
+                array.set(proximalViLabels, viIndex, viLabel)
+            else
+                label.set_textcolor(viLabel, viMitigated ? color.new(mitigatedViColor, 0) : color.new(viColor, 0))
+        else if not na(viLabel)
+            label.delete(viLabel)
+            array.set(proximalViLabels, viIndex, na)
+
+// Canonical current-timeframe OB pattern from pine/OB.pine. The opposite candle at [3]
+// supplies the structural bounds; the signal is registered only on its confirmed edge.
+bool bullishObSignal = close[4] > open[4] and close[3] < open[3] and close[2] > open[2] and close[1] > open[1] and close > open
+bool bearishObSignal = close[4] < open[4] and close[3] > open[3] and close[2] < open[2] and close[1] < open[1] and close < open
+bool newBullishObSignal = barstate.isconfirmed and bullishObSignal and not bullishObSignal[1]
+bool newBearishObSignal = barstate.isconfirmed and bearishObSignal and not bearishObSignal[1]
+float obTop = high[3]
+float obBottom = low[3]
+bool obIntersectsEvidenceEnvelope = obTop >= evidenceEnvelopeLow and obBottom <= evidenceEnvelopeHigh
+bool bullishActiveObQualified = activeEvidenceGeometryAvailable and newBullishObSignal and obIntersectsEvidenceEnvelope
+bool bearishActiveObQualified = activeEvidenceGeometryAvailable and newBearishObSignal and obIntersectsEvidenceEnvelope
+bool createBullishActiveOb = bullishActiveObQualified
+bool createBearishActiveOb = bearishActiveObQualified
+
+var box[] activeObBoxes = array.new_box()
+var line[] activeObCeLines = array.new_line()
+var label[] activeObLabels = array.new_label()
+var float[] activeObTops = array.new_float()
+var float[] activeObBottoms = array.new_float()
+var int[] activeObDirections = array.new_int()
+var color[] activeObBaseColors = array.new_color()
+var int[] activeObCreationBars = array.new_int()
+var int[] activeObLeftTimes = array.new_int()
+var bool[] activeObInteracted = array.new_bool()
+var bool[] activeObCeInteracted = array.new_bool()
+var bool[] activeObInvalidated = array.new_bool()
+
+if createBullishActiveOb or createBearishActiveOb
+    int obDirection = createBullishActiveOb ? 1 : -1
+    float activeObCe = (obTop + obBottom) / 2.0
+    color activeObColor = obDirection == 1 ? bullishObColor : bearishObColor
+    // Clamp the canonical source-candle start to the active episode boundary.
+    int activeObLeftTime = math.max(time[3], currentActivationTime)
+    array.push(activeObBoxes, na)
+    array.push(activeObCeLines, na)
+    array.push(activeObLabels, na)
+    array.push(activeObTops, obTop)
+    array.push(activeObBottoms, obBottom)
+    array.push(activeObDirections, obDirection)
+    array.push(activeObBaseColors, activeObColor)
+    array.push(activeObCreationBars, bar_index)
+    array.push(activeObLeftTimes, activeObLeftTime)
+    array.push(activeObInteracted, false)
+    array.push(activeObCeInteracted, false)
+    array.push(activeObInvalidated, false)
+
+    while array.size(activeObTops) > maxActiveObs
+        box oldestObBox = array.shift(activeObBoxes)
+        if not na(oldestObBox)
+            box.delete(oldestObBox)
+        line oldestObCeLine = array.shift(activeObCeLines)
+        if not na(oldestObCeLine)
+            line.delete(oldestObCeLine)
+        label oldestObLabel = array.shift(activeObLabels)
+        if not na(oldestObLabel)
+            label.delete(oldestObLabel)
+        array.shift(activeObTops)
+        array.shift(activeObBottoms)
+        array.shift(activeObDirections)
+        array.shift(activeObBaseColors)
+        array.shift(activeObCreationBars)
+        array.shift(activeObLeftTimes)
+        array.shift(activeObInteracted)
+        array.shift(activeObCeInteracted)
+        array.shift(activeObInvalidated)
+
+// OB interaction and CE interaction are observational, latched states. A confirmed
+// distal-bound close permanently invalidates the OB; later reclaims cannot resurrect it.
+int activeObCount = array.size(activeObTops)
+if activeObCount > 0
+    for obIndex = 0 to activeObCount - 1
+        box activeObBox = array.get(activeObBoxes, obIndex)
+        line activeObCeLine = array.get(activeObCeLines, obIndex)
+        label activeObLabel = array.get(activeObLabels, obIndex)
+        float activeObTop = array.get(activeObTops, obIndex)
+        float activeObBottom = array.get(activeObBottoms, obIndex)
+        int activeObDirection = array.get(activeObDirections, obIndex)
+        color activeObBaseColor = array.get(activeObBaseColors, obIndex)
+        int activeObCreationBar = array.get(activeObCreationBars, obIndex)
+        int activeObLeftTime = array.get(activeObLeftTimes, obIndex)
+        bool obInvalidated = array.get(activeObInvalidated, obIndex)
+        if barstate.isconfirmed and bar_index > activeObCreationBar and not obInvalidated
+            float activeObCe = (activeObTop + activeObBottom) / 2.0
+            bool obRangeInteracted = high >= activeObBottom and low <= activeObTop
+            bool obCeWasInteracted = low <= activeObCe and high >= activeObCe
+            if obRangeInteracted
+                array.set(activeObInteracted, obIndex, true)
+            if obCeWasInteracted
+                array.set(activeObCeInteracted, obIndex, true)
+            bool obInvalidationConfirmed = activeObDirection == 1 ? close < activeObBottom : close > activeObTop
+            if obInvalidationConfirmed
+                array.set(activeObInvalidated, obIndex, true)
+                obInvalidated := true
+        // Stage B renders the retained terminal lifecycle state without mutating it.
+        color activeObDisplayColor = obInvalidated ? invalidatedObColor : activeObBaseColor
+
+        if showActiveOb
+            if na(activeObBox)
+                activeObBox := box.new(activeObLeftTime, activeObTop, time, activeObBottom, xloc = xloc.bar_time, bgcolor = activeObDisplayColor, border_color = obInvalidated ? na : color.new(activeObBaseColor, 0))
+                array.set(activeObBoxes, obIndex, activeObBox)
+            else
+                box.set_right(activeObBox, time)
+                box.set_bgcolor(activeObBox, activeObDisplayColor)
+                box.set_border_color(activeObBox, obInvalidated ? na : color.new(activeObBaseColor, 0))
+        else if not na(activeObBox)
+            box.delete(activeObBox)
+            array.set(activeObBoxes, obIndex, na)
+
+        if showActiveOb and showObCe
+            float activeObCe = (activeObTop + activeObBottom) / 2.0
+            if na(activeObCeLine)
+                activeObCeLine := line.new(activeObLeftTime, activeObCe, time, activeObCe, xloc = xloc.bar_time, extend = extend.right, color = color.new(activeObDisplayColor, obInvalidated ? 65 : 20), style = line.style_dotted, width = 1)
+                array.set(activeObCeLines, obIndex, activeObCeLine)
+            else
+                line.set_color(activeObCeLine, color.new(activeObDisplayColor, obInvalidated ? 65 : 20))
+                line.set_extend(activeObCeLine, extend.right)
+        else if not na(activeObCeLine)
+            line.delete(activeObCeLine)
+            array.set(activeObCeLines, obIndex, na)
+
+        if showActiveOb and showObLabels
+            float activeObCe = (activeObTop + activeObBottom) / 2.0
+            if na(activeObLabel)
+                activeObLabel := label.new(activeObLeftTime, activeObCe, activeObDirection == 1 ? "OB+" : "OB-", xloc = xloc.bar_time, style = label.style_none, textcolor = color.new(activeObDisplayColor, obInvalidated ? 55 : 0), size = size.tiny)
+                array.set(activeObLabels, obIndex, activeObLabel)
+            else
+                label.set_textcolor(activeObLabel, color.new(activeObDisplayColor, obInvalidated ? 55 : 0))
+        else if not na(activeObLabel)
+            label.delete(activeObLabel)
+            array.set(activeObLabels, obIndex, na)
+
+var line currentActivationLine = na
+var line previousActivationLine = na
+if barstate.islast
+    if currentMrzVisible
+        if na(currentActivationLine)
+            currentActivationLine := line.new(currentActivationTime, currentMrzLower, currentActivationTime, currentMrzUpper, xloc = xloc.bar_time, extend = extend.both, color = color.new(currentMidpointColor, 10), style = line.style_dashed, width = 1)
+        else
+            line.set_xy1(currentActivationLine, currentActivationTime, currentMrzLower)
+            line.set_xy2(currentActivationLine, currentActivationTime, currentMrzUpper)
+    else if not na(currentActivationLine)
+        line.delete(currentActivationLine)
+        currentActivationLine := na
+
+    if previousMrzVisible
+        if na(previousActivationLine)
+            previousActivationLine := line.new(previousActivationTime, previousMrzLower, previousActivationTime, previousMrzUpper, xloc = xloc.bar_time, extend = extend.both, color = previousBoundaryColor, style = line.style_dashed, width = 1)
+        else
+            line.set_xy1(previousActivationLine, previousActivationTime, previousMrzLower)
+            line.set_xy2(previousActivationLine, previousActivationTime, previousMrzUpper)
+    else if not na(previousActivationLine)
+        line.delete(previousActivationLine)
+        previousActivationLine := na
+
+var table symbolGuard = table.new(position.top_right, 1, 1)
+if barstate.islast
+    string guardText = not symbolConfigured ? "Configure MRZ symbol" : not symbolMatches ? "MRZ hidden — configured for " + configuredSymbol : ""
+    color guardBackground = not symbolConfigured ? color.new(color.orange, 15) : not symbolMatches ? color.new(color.red, 15) : color.new(color.black, 100)
+    table.cell(symbolGuard, 0, 0, guardText, text_color = color.white, bgcolor = guardBackground)

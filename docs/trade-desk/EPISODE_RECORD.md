@@ -16,14 +16,21 @@ reason; never select whichever historical view best explains the result.
 Recommendations are distinct from operator execution. No recommendation
 implies an order or fill, and no trade may be reconstructed retrospectively.
 
+**STRUCTURAL EPISODE != TRADE.** A structural episode follows one authoritative
+migration-defined MRZ structure. It may contain no trade, and a trade may receive
+multiple management decisions or remain open into a later structural episode.
+MRZ migration does not automatically close a position.
+
 ## Episode template
 
 - **Episode ID:** [unique ID]
+- **Structural episode ID / migration reference:** [authoritative structure]
 - **Symbol:** [instrument / venue if needed]
 - **Start time:** [timestamp with UTC offset and named timezone]
 - **Timeframes selected at start:** [timeframes; no default preference]
 - **Evidence sources / as-of time:** [EDGE state reference, chart capture or other workspace evidence; timestamp]
 - **Start context:** [migration and active current + previous MRZ structure; missing state if any]
+- **Trade / position continuity:** [no trade / new trade ID / open trade carried from prior episode, with source]
 
 ### Live model and allowance
 
@@ -57,8 +64,13 @@ data problems; do not replace EDGE levels with inferred chart levels.
 | Previous MRZ | [ID, bounds, midpoint, activation time] |
 | Migration chronology / direction | [event reference and descriptive state] |
 | Route authority / structural location | [WHO / WHERE and authoritative current–previous relationship] |
-| Active dealing range / MRZ EQM | [low, high, EQM; unavailable if required MRZ state is missing] |
-| Relevant MRZ Display evidence | [displayed PD arrays, CE levels, OB lifecycle states, or capture reference as needed] |
+| Current MRZ midpoint | [authoritative value or source reference] |
+| Migration EQM | [midpoint of Current and Previous MRZ midpoints, or unavailable] |
+| Previous MRZ midpoint | [authoritative value or source reference] |
+| Relevant TradeDesk.pine observations | [Price Region, anchor contacts/chronology, displayed evidence, lifecycle states, or capture reference as needed] |
+
+These anchors are authoritative structural references. They do not define
+Astra's discretionary trading dealing range.
 
 ### T0 — decision log
 
@@ -68,11 +80,12 @@ and directly visible price observations from inferred price-action labels.
 - **Decision ID:** [episode ID + unique sequence]
 - **Timestamp / timezone:** [recorded before subsequent outcome]
 - **Decision model / reasoning effort:** [actual author; reference the applicable model-start or handoff record]
+- **Wake context:** [MRZ_ANCHOR_TRANSITION / MRZ_EQM_INTERACTION / MRZ_MIGRATED / OPERATOR_REVIEW / OTHER; context only, not the cause of the decision]
 - **Prior decision / thesis link:** [ID or none; identify a new extension thesis explicitly]
 - **Timeframes / evidence as of this decision:** [references; record additions and reason]
 - **Structural snapshot update:** [new source / changed authoritative facts, or unchanged]
 - **Position context:** [operator-reported position / no position / unknown; distinguish any recommendation awaiting execution]
-- **Decision:** [WAIT / ENTER LONG / ENTER SHORT / HOLD / REDUCE / EXIT / NO TRADE]
+- **Decision:** [WAIT / ENTER / HOLD / REDUCE / EXIT / NO TRADE]
 - **Observed facts:** [authoritative EDGE state and visible price facts, with sources]
 - **Astra interpretation:** [what price may be attempting; distinguish inference from fact]
 - **Relevant evidence:** [what mattered; what seemed irrelevant or misleading if useful]
@@ -81,6 +94,48 @@ and directly visible price observations from inferred price-action labels.
 - **What would change my view:** [new information or behavior to reassess]
 - **Thesis invalidation:** [if applicable; otherwise not applicable]
 - **Confidence / uncertainty (optional):** [limits of the view]
+
+#### ENTER contract — required only when Decision = ENTER
+
+Complete every field in the same prospective T0 entry. The values are
+Astra-defined from current evidence; this template prescribes no stop distance,
+risk/reward, target anchor, PD array, dealing range, or timeframe.
+
+- **Action:** ENTER
+- **Position direction:** [direction]
+- **Entry rationale:** [current prospective rationale]
+- **Initial invalidation:** [condition or event]
+- **Management conditions / reassessment events:** [conditions or events]
+- **Current exit intent:** [current intent]
+- **Position State:** OPEN
+
+#### Evidence inspected — optional factual metadata
+
+Record only what Astra actually inspected. Omit the block or mark items `NO`
+when not inspected. The list is not a checklist, score, hierarchy, or inspection
+order, and `YES` carries no implied predictive value.
+
+- **Raw price / candles:** [YES / NO; timeframe or reference if useful]
+- **Swing structure:** [YES / NO; timeframe or reference if useful]
+- **Displacement:** [YES / NO]
+- **FVG:** [YES / NO]
+- **VI:** [YES / NO]
+- **OB:** [YES / NO]
+- **CE:** [YES / NO; evidence class if useful]
+- **IPDA:** [YES / NO]
+- **Other:** [description or none]
+
+#### Discretionary dealing range — optional Astra analysis
+
+Use only if Astra independently adopts a dealing range for this decision. It is
+derived from price swing structure, is not authoritative EDGE state, and is not
+populated from MRZ midpoint anchors.
+
+- **Used:** [YES / NO]
+- **Swing high:** [value, observation precision and source]
+- **Swing low:** [value, observation precision and source]
+- **Timeframe:** [timeframe Astra used]
+- **Rationale:** [why this swing structure was relevant]
 
 ### Model interruption / handoff log
 
@@ -114,6 +169,19 @@ Append only when execution information is available; link the relevant T0.
 - **Execution status:** [operator-reported execution / explicitly no execution / unknown]
 - **Actual action / fills:** [timestamp, direction, quantity, price and source if reported; otherwise not available]
 - **Differences from recommendation:** [if any; never infer fills from the chart]
+
+### Migration during an open trade
+
+Append when an authoritative migration occurs while a position remains open.
+Begin the linked structural episode without closing or rewriting the trade.
+
+- **migration_during_trade:** YES
+- **migration_event_time:** [authoritative timestamp]
+- **pre_migration_position:** [operator-reported state and source]
+- **post_migration_structure:** [linked new structural episode / snapshot]
+- **post_migration_decision:** [new prospective T0 decision ID when Astra is invoked, or pending]
+- **eventual_exit:** [later execution reference, or open]
+- **trade_outcome:** [complete later in T1, or pending]
 
 ### T1 — outcome review
 

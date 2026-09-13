@@ -44,18 +44,18 @@ Copy the authoritative timestamp and provenance without inferring one from the
 other. Late observations can cause EDGE to reconcile derived history; preserve
 the state actually available at T0 and append any later correction.
 
-## Current two-MRZ dealing structure
+## Current two-MRZ structural geometry
 
 When current and previous authoritative MRZs exist, their midpoints are the
-two outer decision anchors of the active dealing range:
+outer reference anchors of the **MRZ midpoint span**:
 
 ```text
 currentMrzMidpoint  = midpoint(currentMrzLower, currentMrzUpper)
 previousMrzMidpoint = midpoint(previousMrzLower, previousMrzUpper)
 
-dealingRangeLow  = min(currentMrzMidpoint, previousMrzMidpoint)
-dealingRangeHigh = max(currentMrzMidpoint, previousMrzMidpoint)
-migrationEqm    = midpoint(currentMrzMidpoint, previousMrzMidpoint)
+mrzMidpointSpanLow  = min(currentMrzMidpoint, previousMrzMidpoint)
+mrzMidpointSpanHigh = max(currentMrzMidpoint, previousMrzMidpoint)
+migrationEqm        = midpoint(currentMrzMidpoint, previousMrzMidpoint)
 
 Higher core MRZ midpoint
           │
@@ -64,32 +64,60 @@ Higher core MRZ midpoint
 Lower core MRZ midpoint
 ```
 
-Either current or previous may be the higher anchor. **Dealing range** means
+Either current or previous may be the higher anchor. **MRZ midpoint span** means
 this midpoint-to-midpoint interval. **MRZ EQM**, also called **Migration EQM**,
 is its midpoint, distinct from an individual core midpoint, IPDA EQM, and the
-route emitter's EQM20.
-The local Display rounds each core midpoint and then Migration EQM to the
-instrument's minimum tick. Record authoritative raw values and Display values
-separately if they differ; do not silently correct one into the other.
+route emitter's EQM20. This span is structural geometry; it is not automatically
+Astra's discretionary trading dealing range.
 
-The Display's **evidence envelope** instead runs from the lower of the two
+TradeDesk.pine rounds each core midpoint and then Migration EQM to the
+instrument's minimum tick. Record authoritative raw values and TradingView
+values separately if they differ; do not silently correct one into the other.
+
+TradeDesk.pine's **evidence envelope** instead runs from the lower of the two
 core lower bounds to the higher of their upper bounds. It filters displayed
-evidence and is distinct from the dealing range. The **MRZ EQM proximal zone**
-is a configured symmetric region around Migration EQM inside that range.
+evidence and is distinct from the MRZ midpoint span. The **MRZ EQM proximal
+zone** is a configured symmetric region around Migration EQM within the
+midpoint-based structural geometry.
 An interaction with that zone is distinguishable from an exact EQM-level touch.
 
 With valid configured current/previous data, the active Display geometry begins
 on the first chart bar at or after current activation. It does not wait for
 the first EQM interaction. Display visibility toggles are not authority changes.
-If a predecessor is missing, do not invent a two-MRZ range.
+If a predecessor is missing, do not invent a two-MRZ span.
 
-## MRZ Display evidence
+TradeDesk.pine retains internal identifiers such as `dealingRangeLow`,
+`dealingRangeHigh`, and `activeDealingRangeAvailable`, plus the settings-group
+label `ACTIVE DEALING RANGE EVIDENCE`. These are legacy/internal names for
+midpoint-based MRZ structural geometry and its available evidence. They do not
+establish a mandate-level trading dealing range.
 
-Use the configured MRZ Display's detections and CE levels as supplied. Settings,
+If Astra elects to use a discretionary trading dealing range, Astra derives it
+from relevant price swing points as part of its interpretation. EDGE does not
+supply that range, and no swing selection or timeframe is prescribed.
+
+## Structural-anchor observer
+
+| Term | Factual meaning in TradeDesk.pine |
+| --- | --- |
+| Canonical reference anchors | Current MRZ midpoint, Migration EQM, and Previous MRZ midpoint. They carry no required trading meaning. |
+| Price Region | A descriptive classification of the observed close relative to MRZ bounds and reference anchors. |
+| Upper / Lower Anchor | The nearest available canonical reference anchor above or below the observed close. |
+| Raw contact | A fresh prospective contact episode with one or more canonical anchors. Repeated contact after leaving remains a new observation. |
+| Path Step # | A chronological count of raw contact episodes for the active observer structure. It is not setup progress, confidence, or signal strength. |
+| Attention transition | A raw contact whose contact set differs from the immediately preceding contact set, including the first recorded contact after no prior set. |
+| `MRZ_ANCHOR_TRANSITION` | A local attention alert for an attention transition. It requests possible reassessment and is not a trading signal. |
+| `MRZ_EQM_INTERACTION` | Interaction with the broader Migration-EQM proximal zone, optionally carrying `FROM_TOP` or `FROM_BOTTOM` approach metadata. It is distinct from exact-anchor contact. |
+
+## TradeDesk.pine evidence display
+
+Use the configured TradeDesk.pine detections and CE levels as supplied. Settings,
 chart timeframe, activation gating, the evidence envelope, and retention limits
-affect visibility. Absence of a mark is not evidence that a pattern never existed.
+affect visibility. Evidence detection and lifecycle are independent of whether
+a layer is displayed. Turning a layer off does not mean its evidence did not
+exist, and absence from the viewport is not proof of absence.
 
-| Term | Factual meaning in the local Display |
+| Term | Factual meaning in TradeDesk.pine |
 | --- | --- |
 | Raw candles | The chart's open, high, low, and close over each selected interval. Record whether the current candle is still forming or confirmed. |
 | PD arrays | Display-identified price structures and reference levels, including displacement, FVG, VI, and OB evidence. They are not automatic trading signals. |
@@ -103,7 +131,7 @@ affect visibility. Absence of a mark is not evidence that a pattern never existe
 | OB | Order block: the Display's identified five-candle pattern. The full high/low of the opposite-direction candle three bars before detection supplies its bounds; creation is registered at the confirmed pattern edge. |
 | OB CE | `(OB top + OB bottom) / 2`. |
 
-Display mitigation conventions differ by array: displacement CE records a later
+TradeDesk.pine mitigation conventions differ by array: displacement CE records a later
 candle-body intersection; FVG/VI record a later confirmed close through their CE
 in the detector's specified direction. These display states do not prescribe
 trading meaning and do not define OB invalidation.
@@ -147,7 +175,8 @@ establish a trading signal.
 ## Factual provenance
 
 Definitions were checked against the repository's [README](../../README.md),
-[state engine](../../app/state_engine.py), and local
-[mRZ Display source](../../pine/mrz.pine). These links identify factual sources,
-not additional trading doctrine. See the [scope notes](README.md#repository-scope-notes)
-for source-status and configuration limitations.
+[state engine](../../app/state_engine.py), and current local Trade Desk observer
+source, [TradeDesk.pine](../../pine/TradeDesk.pine). These links identify factual
+sources, not additional trading doctrine. See the
+[scope notes](README.md#repository-scope-notes) for source-status and
+configuration limitations.

@@ -1,9 +1,13 @@
-# Astra Trade Desk for EDGE 2.0
+# EDGE Trade Desk
 
-This directory establishes a neutral discretionary research desk. EDGE supplies
-authoritative situational facts; Astra learns what may matter through
-prospective episodes and later outcome review. Initial mode is **BLIND
-DISCOVERY MODE**. No trading hypotheses are seeded.
+This directory defines the persistent, operator-controlled EDGE trading
+workspace. EDGE supplies authoritative structure, TradingView and
+TradeDesk.pine provide deterministic observation and available evidence, Astra
+serves as the invoked discretionary decision adviser, and the operator currently
+orchestrates synchronization, wake, and securities execution. The workspace
+retains state whether Astra is active or unavailable.
+
+Initial mode is **BLIND DISCOVERY MODE**. No trading hypotheses are seeded.
 Default live episode model: **GPT-6 Astra Medium**; keep model and reasoning
 effort constant throughout each prospective episode whenever possible.
 
@@ -12,16 +16,17 @@ effort constant throughout each prospective episode whenever possible.
 | File | Purpose |
 | --- | --- |
 | [MANDATE.md](MANDATE.md) | Operating constitution, authority boundaries, Blind Discovery, bias firewall, and recording discipline. |
-| [EDGE_GLOSSARY.md](EDGE_GLOSSARY.md) | Factual EDGE and MRZ Display vocabulary, dealing geometry, and OB lifecycle. |
+| [EDGE_GLOSSARY.md](EDGE_GLOSSARY.md) | Factual EDGE and TradeDesk.pine vocabulary, structural geometry, observer events, and evidence lifecycle. |
 | [EPISODE_RECORD.md](EPISODE_RECORD.md) | Reusable compact record with frozen T0 decisions and separate T1 reviews. |
 | [HYPOTHESIS_LOG.md](HYPOTHESIS_LOG.md) | Initially empty log with instructions and a blank discovery/falsification template. |
 | [README.md](README.md) | Setup, episode workflow, startup prompt, and repository scope notes. |
 
 ## Initialize a fresh Astra Work thread
 
-1. Start a fresh Work thread for the Trade Desk and make these five documents
-   available in its workspace. A fresh thread does not guarantee isolation from
-   outside memory; the mandate's firewall still applies.
+1. Start a fresh Work thread for Astra as the Trade Desk's discretionary adviser
+   and make these five documents available in the persistent workspace. A fresh
+   thread does not guarantee isolation from outside memory; the mandate's
+   firewall still applies.
 2. Provide authoritative EDGE state and chart access or timestamped captures as
    available. Do not load prior strategy discussions, preferred setups, trading
    conclusions, or operator hypotheses as starting knowledge.
@@ -57,6 +62,24 @@ do not assume more reasoning improves trading. Reserve models may help maintain
 files and records while preserving authorship, but cannot silently take over
 live judgment.
 
+## Current operating workflow
+
+```text
+EDGE migration
+  → operator synchronization where required
+  → TradeDesk.pine deterministic observation
+  → local TradingView attention alert
+  → neutral operator invocation of Astra
+  → WAIT / ENTER / HOLD / REDUCE / EXIT / NO TRADE
+  → operator securities execution where applicable
+```
+
+The current research workflow uses manual operator synchronization and Astra
+wake. Astra is not expected to poll or monitor TradingView continuously, and a
+native automatic Astra wake is not assumed. Gmail, Slack, or another external
+trigger is not documented as a production wake mechanism. Attention events
+request possible reassessment; they do not cause a trade decision.
+
 ## Run an episode
 
 1. The operator starts the episode. Copy [EPISODE_RECORD.md](EPISODE_RECORD.md)
@@ -66,11 +89,11 @@ live judgment.
    master template reusable.
 2. Capture authoritative current/previous MRZ state, source and timestamps,
    route, structural locations, migration chronology, and displayed geometry.
-   Check that the chart symbol, active slot, bounds, activation times, and
-   relevant Display settings match the supplied state. Record unavailable
-   fields or discrepancies explicitly.
+   Check that the TradeDesk.pine chart symbol, active slot, bounds, activation
+   times, and relevant presentation settings match the supplied state. Record
+   unavailable fields or discrepancies explicitly.
 3. An active current-plus-previous structure following migration establishes
-   the dealing environment. Observation may begin before any EQM interaction.
+   the structural environment. Observation may begin before any EQM interaction.
    If the desk starts later, begin its prospective record then; do not invent
    earlier decisions. Without the required pair, record the missing context
    rather than constructing a predecessor from the chart.
@@ -78,24 +101,36 @@ live judgment.
    decision ID. Separate facts from interpretation, record the reason,
    contradictory evidence, and what would change or invalidate the view.
    Include only useful evidence; there is no indicator checklist to satisfy.
-5. Freeze the T0 entry. Append a new entry when judgment changes, a timeframe
-   is added, or a position-management recommendation is made. Record any actual
-   operator execution separately with its reported fill details. A recommendation
-   alone is not an executed trade.
+5. Freeze the T0 entry. ENTER requires direction, rationale, initial
+   invalidation, management/reassessment conditions, current exit intent, and
+   `Position State = OPEN`. Append a new entry when judgment changes, a
+   timeframe is added, or a position-management recommendation is made. Record
+   actual operator execution separately; a recommendation alone is not a fill.
 6. At a new migration, preserve the old snapshot and begin a linked episode for
-   the new structure. At an operator stop, record the end time and any reported
-   position state. Neither event dictates a trade action.
+   the new structure. Preserve any open trade unless the operator reports an
+   execution change; migration is not an automatic exit. At an operator stop,
+   record the end time and reported position state. Neither event dictates a
+   trade action.
+
+A structural episode is tied to one authoritative migration-defined structure;
+it is not the same thing as a trade. An episode may contain no trade, while one
+trade may receive multiple management decisions and continue into the next
+structural episode.
 
 ### Evidence inspection
 
-The 5-minute saved layout is only a landing view, not a preferred timeframe.
-If evidence is unclear, Astra may independently zoom or pan, isolate Display
-components, inspect another timeframe, or use available TradingView inspection
-tools before deciding. The current viewport is not a complete evidence inventory;
-"not visible" must not be interpreted as "does not exist." Record approximate
-readings as approximate, and unresolved precision as not reliably determined.
-Astra decides what needs attention; follow the mandate's
-[Evidence Readability](MANDATE.md#evidence-readability) rule and Blind Discovery.
+The saved structural chart is a neutral landing view; its saved timeframe is
+presentation, not a preferred analytical timeframe. Proximal evidence layers
+may be visually off by default. Detection and lifecycle remain independent of
+visibility, so "not visible" must not be interpreted as "does not exist."
+
+If evidence is unclear, Astra may independently zoom or pan, inspect another
+timeframe, selectively expose or hide evidence and CE layers, isolate evidence,
+or return to a cleaner chart. Visibility choice is not a trading signal, and no
+evidence layer or inspection order is preferred. Record approximate readings as
+approximate and unresolved precision as not reliably determined. Follow the
+mandate's [Evidence Readability](MANDATE.md#evidence-readability) rule and Blind
+Discovery.
 
 ## Review and learn
 
@@ -137,7 +172,9 @@ audit, not technical memory isolation or immutable file storage.
 Copy the following prompt into the fresh thread:
 
 ```text
-You are the Astra Trade Desk for EDGE 2.0.
+You are Astra, the invoked discretionary decision adviser to the EDGE Trade
+Desk. The Trade Desk is the persistent operator-controlled workspace; it is not
+you.
 
 Read and follow the Trade Desk Mandate and EDGE Glossary available in this
 workspace.
@@ -163,7 +200,10 @@ Treat usage as an operational constraint, not market evidence, and do not
 alter trading judgment to conserve tokens.
 
 EDGE provides authoritative situational facts.
-You provide discretionary trading judgment.
+TradeDesk.pine provides deterministic structural observation and available
+chart evidence.
+You provide discretionary trading judgment when the operator invokes you.
+The operator currently provides orchestration and securities execution.
 
 Do not assume that any EDGE variable has predictive value merely because
 it is shown to you.
@@ -194,12 +234,15 @@ Never redefine authoritative EDGE state.
 Your available decisions are:
 
 WAIT
-ENTER LONG
-ENTER SHORT
+ENTER
 HOLD
 REDUCE
 EXIT
 NO TRADE
+
+If you decide ENTER, simultaneously record position direction, entry rationale,
+initial invalidation, management or reassessment conditions, current exit
+intent, and Position State = OPEN.
 
 Confirm that you understand the mandate and are ready for the first
 prospective EDGE trading episode.
@@ -223,18 +266,21 @@ Inspection at initialization found the following limitations:
   The root README's legacy exclusion list also mentions manual activation and
   chronology despite its current promotion and migration-history descriptions;
   that list is not used to define Trade Desk authority.
-- `pine/mrz.pine` was already untracked during inspection. Its local definitions
-  inform the glossary, but its availability in another checkout or deployment
-  is not established. It takes manually configured current/previous slots;
+- `pine/TradeDesk.pine` is the current local TradingView Trade Desk observer and
+  evidence-display source. It takes manually configured current/previous slots;
   chart configuration alone does not verify authoritative predecessor chronology.
-  The operator must reconcile it with EDGE before use.
+  The operator must reconcile it with EDGE before use. `pine/mrz.pine`, if
+  retained, is historical/reference code rather than the canonical observer.
 - Backend MRZ midpoints are arithmetic values; the Display rounds to chart
   ticks. Backend zero-width MRZs can exist, while the local Display requires
   upper greater than lower. Keep discrepancies explicit rather than changing
   authority to make the chart fit.
-- MRZ EQM, IPDA EQM, the midpoint dealing range, and the outer-bounds evidence
-  envelope are distinct geometries. Chart IPDA mode can also use a different
-  frame from the authoritative observation. The glossary keeps them separate.
+- MRZ EQM, IPDA EQM, the MRZ midpoint span, and the outer-bounds evidence
+  envelope are distinct geometries. The midpoint span is structural reference
+  geometry, not Astra's discretionary trading dealing range. Where Astra uses a
+  dealing range, it derives it from relevant price swings without a prescribed
+  timeframe. Chart IPDA mode can also use a different frame from the
+  authoritative observation.
 
 Initialization is documentation only. No application or PineScript files are
 changed; no orders, commits, or deployments are created.
