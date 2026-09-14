@@ -11,6 +11,7 @@ from app.config import Settings
 from app.db import connect, transaction
 from app.notifications import (
     PRESSURE_EVENT_TYPE,
+    build_push_destination,
     is_retryable_push_failure,
     should_notify_pressure_transition,
 )
@@ -72,6 +73,44 @@ class PressureTransitionPolicyTests(unittest.TestCase):
                     should_notify_pressure_transition(*transition),
                     expected,
                 )
+
+
+class PushDestinationTests(unittest.TestCase):
+    def test_every_supported_event_has_one_contextual_destination(self) -> None:
+        candidate_identity = "a" * 64
+        self.assertEqual(
+            build_push_destination("MRZ_ACTIVATED", "BTCUSDT"),
+            "/diagnostics/mrz-robustness?symbol=BTCUSDT#active-mrz",
+        )
+        self.assertEqual(
+            build_push_destination("MRZ_MIGRATED", "BTCUSDT"),
+            "/diagnostics/mrz-robustness?symbol=BTCUSDT#migration-history",
+        )
+        self.assertEqual(
+            build_push_destination(PRESSURE_EVENT_TYPE, "ZECUSDT"),
+            "/diagnostics/mrz-robustness?symbol=ZECUSDT#post-activation",
+        )
+        self.assertEqual(
+            build_push_destination(
+                "MRZ_NEAR_MISS",
+                "RGTI",
+                {"candidate_identity": candidate_identity},
+            ),
+            "/diagnostics/activation-feasibility?symbol=RGTI&candidate="
+            f"{candidate_identity}#current-production-near-misses",
+        )
+
+    def test_invalid_or_unsupported_context_falls_back_to_root(self) -> None:
+        self.assertEqual(build_push_destination("UNKNOWN", "BTCUSDT"), "/")
+        self.assertEqual(build_push_destination("MRZ_ACTIVATED", "bad symbol"), "/")
+        self.assertEqual(
+            build_push_destination(
+                "MRZ_NEAR_MISS",
+                "RGTI",
+                {"candidate_identity": "not-a-candidate"},
+            ),
+            "/",
+        )
 
 
 class NotificationIntegrationTests(unittest.TestCase):
@@ -265,9 +304,10 @@ class NotificationIntegrationTests(unittest.TestCase):
         self.assertEqual(event["successor_status"], "NO_QUALIFYING_SUCCESSOR")
         self.assertEqual(event["successor_label"], "No qualifying successor")
         self.assertEqual(
-            event["url"],
+            event["destination"],
             "/diagnostics/mrz-robustness?symbol=SPXUSDT#post-activation",
         )
+        self.assertEqual(event["url"], event["destination"])
         self.assertIn("above-envelope", event["body"])
 
         self.post_spx(11, "170")
@@ -283,6 +323,10 @@ class NotificationIntegrationTests(unittest.TestCase):
         event = self.pressure_events()[0]
         self.assertEqual(event["previous_state"], "NEUTRAL")
         self.assertEqual(event["current_state"], "DOWN")
+        self.assertEqual(
+            event["destination"],
+            "/diagnostics/mrz-robustness?symbol=SPXUSDT#post-activation",
+        )
         self.assertIn("below-envelope", event["body"])
 
         self.post_spx(7, "20")
@@ -390,6 +434,13 @@ class NotificationIntegrationTests(unittest.TestCase):
         payloads = [json.loads(call["data"]) for call in self.sender.calls]
         self.assertTrue(
             all(item["source_event_key"] == pressure_key for item in payloads)
+        )
+        self.assertTrue(
+            all(
+                item["destination"]
+                == "/diagnostics/mrz-robustness?symbol=SPXUSDT#post-activation"
+                for item in payloads
+            )
         )
         self.assertEqual(self.active_authority_signature(), authority_before)
 
@@ -547,7 +598,10 @@ class NotificationIntegrationTests(unittest.TestCase):
         )
         payload = self.sender.calls[0]["data"]
         self.assertIn('"event_type":"MRZ_ACTIVATED"', payload)
-        self.assertIn('"url":"/?symbol=SPXUSDT"', payload)
+        self.assertIn(
+            '"destination":"/diagnostics/mrz-robustness?symbol=SPXUSDT#active-mrz"',
+            payload,
+        )
         self.assertNotIn(PRIVATE_KEY, payload)
 
         site_events = self.client.get("/api/notifications/events?after=0")
@@ -557,6 +611,10 @@ class NotificationIntegrationTests(unittest.TestCase):
         self.assertEqual(
             site_events.json()["events"][0]["event_type"],
             "MRZ_ACTIVATED",
+        )
+        self.assertEqual(
+            site_events.json()["events"][0]["destination"],
+            "/diagnostics/mrz-robustness?symbol=SPXUSDT#active-mrz",
         )
         self.assertEqual(
             site_events.json()["events"][0]["url"],
@@ -710,10 +768,11 @@ class NotificationIntegrationTests(unittest.TestCase):
         self.assertEqual(first_payload["supporting_observation_count"], 4)
         self.assertEqual(len(first_payload["candidate_identity"]), 64)
         self.assertEqual(
-            first_payload["url"],
+            first_payload["destination"],
             "/diagnostics/activation-feasibility?symbol=MU&candidate="
             f"{first_payload['candidate_identity']}#current-production-near-misses",
         )
+        self.assertEqual(first_payload["url"], first_payload["destination"])
 
         self.client.app.state.notification_service.recover()
         self.assertEqual(len(self.sender.calls), 2)
@@ -728,6 +787,10 @@ class NotificationIntegrationTests(unittest.TestCase):
         self.assertEqual(
             json.loads(self.sender.calls[1]["data"])["source_event_key"],
             first_payload["source_event_key"],
+        )
+        self.assertEqual(
+            json.loads(self.sender.calls[1]["data"])["destination"],
+            first_payload["destination"],
         )
 
     def test_transient_exceptions_are_bounded_to_three_attempts(self) -> None:
@@ -816,6 +879,14 @@ class NotificationIntegrationTests(unittest.TestCase):
         self.assertEqual(
             migrated_payload["source_event_key"],
             "BTCUSDT:2:MRZ_MIGRATED:btc-event-8",
+        )
+        self.assertEqual(
+            activated_payload["destination"],
+            "/diagnostics/mrz-robustness?symbol=BTCUSDT#active-mrz",
+        )
+        self.assertEqual(
+            migrated_payload["destination"],
+            "/diagnostics/mrz-robustness?symbol=BTCUSDT#migration-history",
         )
 
         # Notification provenance is copied from the persisted migration event,

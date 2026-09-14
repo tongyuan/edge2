@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const {
   currentNearMissMarkup,
+  focusNearMissDeepLink,
   nearMissDiagnosisMarkup,
   nearMissTargetFromSearch,
   productionMarkup,
@@ -118,6 +119,71 @@ assert.deepEqual(
 );
 assert.equal(nearMissTargetFromSearch("?symbol=WLDUSDT&candidate=stale"), null);
 assert.equal(nearMissTargetFromSearch(`?symbol=<script>&candidate=${"a".repeat(64)}`), null);
+
+function fakeNearMissCard(symbol) {
+  return {
+    dataset: { nearMissSymbol: symbol },
+    classList: {
+      values: new Set(),
+      add(value) { this.values.add(value); },
+    },
+    tabIndex: null,
+    scrollOptions: null,
+    focusOptions: null,
+    scrollIntoView(options) { this.scrollOptions = options; },
+    focus(options) { this.focusOptions = options; },
+  };
+}
+
+const focusedNearMissCard = fakeNearMissCard("WLDUSDT");
+const nearMissSection = {
+  scrollOptions: null,
+  scrollIntoView(options) { this.scrollOptions = options; },
+};
+const nearMissDocument = {
+  querySelectorAll() { return [fakeNearMissCard("OTHER"), focusedNearMissCard]; },
+  getElementById() { return nearMissSection; },
+};
+const deepLinkOutcomes = [];
+const showDeepLinkOutcome = (message, symbol) => deepLinkOutcomes.push({ message, symbol });
+assert.equal(
+  focusNearMissDeepLink(
+    { diagnosis: { current_production_near_misses: nearMisses } },
+    `?symbol=WLDUSDT&candidate=${"a".repeat(64)}`,
+    nearMissDocument,
+    showDeepLinkOutcome,
+  ),
+  true,
+);
+assert.equal(focusedNearMissCard.classList.values.has("focused-near-miss"), true);
+assert.equal(focusedNearMissCard.tabIndex, -1);
+assert.deepEqual(focusedNearMissCard.scrollOptions, { block: "center" });
+assert.deepEqual(focusedNearMissCard.focusOptions, { preventScroll: true });
+assert.deepEqual(deepLinkOutcomes, []);
+
+assert.equal(
+  focusNearMissDeepLink(
+    { diagnosis: { current_production_near_misses: [] } },
+    `?symbol=WLDUSDT&candidate=${"a".repeat(64)}`,
+    nearMissDocument,
+    showDeepLinkOutcome,
+  ),
+  false,
+);
+assert.match(deepLinkOutcomes[0].message, /no longer a current production near miss/);
+assert.equal(deepLinkOutcomes[0].symbol, "WLDUSDT");
+assert.deepEqual(nearMissSection.scrollOptions, { block: "center" });
+
+assert.equal(
+  focusNearMissDeepLink(
+    { diagnosis: { current_production_near_misses: nearMisses } },
+    `?symbol=WLDUSDT&candidate=${"b".repeat(64)}`,
+    nearMissDocument,
+    showDeepLinkOutcome,
+  ),
+  true,
+);
+assert.match(deepLinkOutcomes[1].message, /candidate changed/);
 const promotionConfirmation = promotionConfirmationMarkup(
   nearMisses[0],
   () => "21 Aug 2026 · 20:30 UTC−4",

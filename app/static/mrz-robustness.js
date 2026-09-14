@@ -322,7 +322,7 @@ function robustnessCardMarkup(
   const focusedClass = report.symbol === focusedSymbol ? " focused-operator-card" : "";
   const focusAttribute = report.symbol === focusedSymbol ? ' tabindex="-1"' : "";
   return `<section class="mrz-report${focusedClass}" data-symbol="${escapeHtml(report.symbol)}"${focusAttribute}>
-    <header class="compact-authority" aria-label="Current structural authority">
+    <header class="compact-authority" aria-label="Current structural authority" data-section="active-mrz">
       <section class="compact-group structure-group" aria-label="Structure">
         <span class="section-label">STRUCTURE</span>
         <div class="mrz-heading">
@@ -403,7 +403,10 @@ function operatorCardSymbolFromSearch(search = "") {
 }
 
 function operatorCardSectionFromHash(hash = "") {
-  return hash === "#post-activation" ? "post-activation" : null;
+  const section = hash.startsWith("#") ? hash.slice(1) : "";
+  return ["active-mrz", "migration-history", "post-activation"].includes(section)
+    ? section
+    : null;
 }
 
 function focusOperatorCard(container, symbol, section = null) {
@@ -411,12 +414,17 @@ function focusOperatorCard(container, symbol, section = null) {
   const card = Array.from(container.querySelectorAll(".mrz-report"))
     .find((item) => item.dataset.symbol === symbol);
   if (!card) return false;
+  let target = card;
   if (section) {
-    const disclosure = card.querySelector(`details[data-section="${section}"]`);
-    if (disclosure) disclosure.open = true;
+    const sectionTarget = card.querySelector(`[data-section="${section}"]`);
+    if (sectionTarget) {
+      target = sectionTarget;
+      if (sectionTarget.tagName === "DETAILS") sectionTarget.open = true;
+    }
   }
-  card.scrollIntoView({ block: "start" });
-  card.focus({ preventScroll: true });
+  target.tabIndex = -1;
+  target.scrollIntoView({ block: "start" });
+  target.focus({ preventScroll: true });
   return true;
 }
 

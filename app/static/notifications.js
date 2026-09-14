@@ -2,6 +2,11 @@
   const REQUESTED_STORAGE_KEY = "edgeMRZNotificationsRequested";
   const SYMBOL_PATTERN = /^[A-Z0-9][A-Z0-9:._-]{0,39}$/;
   const CANDIDATE_PATTERN = /^[a-f0-9]{64}$/;
+  const OPERATOR_CARD_SECTIONS = new Set([
+    "active-mrz",
+    "migration-history",
+    "post-activation",
+  ]);
 
   function supportsWebPush(environment = globalObject) {
     return Boolean(
@@ -37,7 +42,9 @@
       if (!symbol || !SYMBOL_PATTERN.test(symbol)) return "/";
       if (parsed.pathname === "/") return `/?symbol=${encodeURIComponent(symbol)}`;
       if (parsed.pathname === "/diagnostics/mrz-robustness") {
-        return `/diagnostics/mrz-robustness?symbol=${encodeURIComponent(symbol)}#post-activation`;
+        const section = parsed.hash.startsWith("#") ? parsed.hash.slice(1) : "";
+        if (!OPERATOR_CARD_SECTIONS.has(section)) return "/";
+        return `/diagnostics/mrz-robustness?symbol=${encodeURIComponent(symbol)}#${section}`;
       }
       if (parsed.pathname !== "/diagnostics/activation-feasibility") return "/";
       const candidateIdentity = parsed.searchParams.get("candidate");
@@ -282,7 +289,7 @@
       body.textContent = event.body || "An authoritative MRZ changed.";
       copy.append(title, body);
       const link = document.createElement("a");
-      link.href = safeNotificationPath(event.url);
+      link.href = safeNotificationPath(event.destination);
       link.textContent = "Open symbol";
       toast.append(copy, link);
       this.toastHost.append(toast);

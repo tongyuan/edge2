@@ -173,6 +173,37 @@ function nearMissTargetFromSearch(search = "") {
   return { symbol, candidateIdentity };
 }
 
+function focusNearMissDeepLink(report, search, documentObject, showOutcome) {
+  const target = nearMissTargetFromSearch(search);
+  if (!target) return false;
+  const current = report?.diagnosis?.current_production_near_misses || [];
+  const latest = current.find((item) => item.symbol === target.symbol);
+  if (!latest) {
+    showOutcome(
+      `${target.symbol} is no longer a current production near miss. The episode changed or resolved.`,
+      target.symbol,
+    );
+    documentObject.getElementById("current-production-near-misses")
+      ?.scrollIntoView({ block: "center" });
+    return false;
+  }
+  const card = [...documentObject.querySelectorAll(
+    "#current-production-near-misses .near-miss-card",
+  )].find((item) => item.dataset.nearMissSymbol === target.symbol);
+  if (!card) return false;
+  card.classList.add("focused-near-miss");
+  card.tabIndex = -1;
+  card.scrollIntoView({ block: "center" });
+  card.focus({ preventScroll: true });
+  if (latest.candidate_identity !== target.candidateIdentity) {
+    showOutcome(
+      `${target.symbol}'s near-miss candidate changed. Showing the latest candidate.`,
+      target.symbol,
+    );
+  }
+  return true;
+}
+
 async function submitPromotion(item, fetchImpl = fetch) {
   const response = await fetchImpl(
     `/api/diagnostics/activation-feasibility/near-misses/${encodeURIComponent(item.symbol)}/promote`,
@@ -270,34 +301,6 @@ if (typeof document !== "undefined") {
       promotionOutcome.innerHTML = `<strong>${escapeHtml(message)}</strong> <a href="/?symbol=${encodeURIComponent(symbol)}">Open current ${escapeHtml(symbol)} state</a>`;
     }
 
-    function focusNearMissDeepLink() {
-      const target = nearMissTargetFromSearch(globalThis.location?.search || "");
-      if (!target) return;
-      const current = report?.diagnosis?.current_production_near_misses || [];
-      const latest = current.find((item) => item.symbol === target.symbol);
-      if (!latest) {
-        showPromotionOutcome(
-          `${target.symbol} is no longer a current production near miss. The episode changed or resolved.`,
-          target.symbol,
-        );
-        document.getElementById("current-production-near-misses")?.scrollIntoView({ block: "center" });
-        return;
-      }
-      const card = [...document.querySelectorAll("#current-production-near-misses .near-miss-card")]
-        .find((item) => item.dataset.nearMissSymbol === target.symbol);
-      if (!card) return;
-      card.classList.add("focused-near-miss");
-      card.tabIndex = -1;
-      card.scrollIntoView({ block: "center" });
-      card.focus({ preventScroll: true });
-      if (latest.candidate_identity !== target.candidateIdentity) {
-        showPromotionOutcome(
-          `${target.symbol}'s near-miss candidate changed. Showing the latest candidate.`,
-          target.symbol,
-        );
-      }
-    }
-
     async function loadReport() {
       refreshButton.disabled = true;
       status.hidden = false;
@@ -310,7 +313,12 @@ if (typeof document !== "undefined") {
         renderReport(await response.json());
         status.hidden = true;
         content.hidden = false;
-        focusNearMissDeepLink();
+        focusNearMissDeepLink(
+          report,
+          globalThis.location?.search || "",
+          document,
+          showPromotionOutcome,
+        );
       } catch (error) {
         status.classList.add("error");
         status.textContent = `Unable to generate the diagnostics. ${error.message}`;
@@ -370,6 +378,7 @@ if (typeof document !== "undefined") {
 if (typeof module === "object" && module.exports) {
   module.exports = {
     currentNearMissMarkup,
+    focusNearMissDeepLink,
     frequencyPercentageText,
     nearMissTargetFromSearch,
     nearMissDiagnosisMarkup,

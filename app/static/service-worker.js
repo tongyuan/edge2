@@ -1,6 +1,11 @@
 const EDGE_ORIGIN = self.location.origin;
 const SYMBOL_PATTERN = /^[A-Z0-9][A-Z0-9:._-]{0,39}$/;
 const CANDIDATE_PATTERN = /^[a-f0-9]{64}$/;
+const OPERATOR_CARD_SECTIONS = new Set([
+  "active-mrz",
+  "migration-history",
+  "post-activation",
+]);
 
 function safeNotificationPath(candidate) {
   try {
@@ -10,7 +15,9 @@ function safeNotificationPath(candidate) {
     if (!symbol || !SYMBOL_PATTERN.test(symbol)) return "/";
     if (parsed.pathname === "/") return `/?symbol=${encodeURIComponent(symbol)}`;
     if (parsed.pathname === "/diagnostics/mrz-robustness") {
-      return `/diagnostics/mrz-robustness?symbol=${encodeURIComponent(symbol)}#post-activation`;
+      const section = parsed.hash.startsWith("#") ? parsed.hash.slice(1) : "";
+      if (!OPERATOR_CARD_SECTIONS.has(section)) return "/";
+      return `/diagnostics/mrz-robustness?symbol=${encodeURIComponent(symbol)}#${section}`;
     }
     if (parsed.pathname !== "/diagnostics/activation-feasibility") return "/";
     const candidateIdentity = parsed.searchParams.get("candidate");
@@ -43,7 +50,7 @@ self.addEventListener("push", (event) => {
   ].includes(payload.event_type)
     ? payload.event_type
     : null;
-  const url = safeNotificationPath(payload.url);
+  const destination = safeNotificationPath(payload.destination);
   event.waitUntil(self.registration.showNotification(payload.title || "EDGE MRZ", {
     body: payload.body || "An authoritative MRZ changed.",
     icon: "/static/edge-mrz-icon-192.png",
@@ -54,14 +61,15 @@ self.addEventListener("push", (event) => {
       event_id: eventId,
       event_type: eventType,
       symbol: typeof payload.symbol === "string" ? payload.symbol : null,
-      url,
+      destination,
+      url: destination,
     },
   }));
 });
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const path = safeNotificationPath(event.notification.data?.url);
+  const path = safeNotificationPath(event.notification.data?.destination);
   const targetUrl = new URL(path, EDGE_ORIGIN).href;
   event.waitUntil((async () => {
     const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
@@ -73,8 +81,14 @@ self.addEventListener("notificationclick", (event) => {
       }
     });
     if (existing) {
-      if (typeof existing.navigate === "function") await existing.navigate(targetUrl);
-      return existing.focus();
+      try {
+        if (typeof existing.navigate === "function") {
+          const navigated = await existing.navigate(targetUrl);
+          return (navigated || existing).focus();
+        }
+      } catch {
+        // Fall through to a direct destination launch.
+      }
     }
     return self.clients.openWindow(targetUrl);
   })());

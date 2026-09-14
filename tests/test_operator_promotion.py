@@ -263,9 +263,13 @@ class OperatorPromotionIntegrationTests(unittest.TestCase):
         self.assertEqual(near_miss_notification["production_threshold_pct"], "1")
         self.assertEqual(near_miss_notification["supporting_observation_count"], 4)
         self.assertEqual(
-            near_miss_notification["url"],
+            near_miss_notification["destination"],
             "/diagnostics/activation-feasibility?symbol=MU&candidate="
             f"{candidate['candidate_identity']}#current-production-near-misses",
+        )
+        self.assertEqual(
+            near_miss_notification["url"],
+            near_miss_notification["destination"],
         )
 
         with self.assertRaises(Exception):

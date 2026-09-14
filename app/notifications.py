@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -23,11 +24,47 @@ MAX_DELIVERY_ATTEMPTS = 3
 RETRYABLE_PROVIDER_FAILURES = {408, 425, 429}
 PRESSURE_EVENT_TYPE = "POST_ACTIVATION_PRESSURE_CHANGED"
 PRESSURE_DIRECTIONS = {"UP", "DOWN"}
+PUSH_OPERATOR_CARD_SECTIONS = {
+    "MRZ_ACTIVATED": "active-mrz",
+    "MRZ_MIGRATED": "migration-history",
+    PRESSURE_EVENT_TYPE: "post-activation",
+}
+PUSH_SYMBOL_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9:._-]{0,39}$")
+PUSH_CANDIDATE_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 
 
 def should_notify_pressure_transition(previous_state: str, current_state: str) -> bool:
     """Return whether a persisted state change enters directional pressure."""
     return previous_state != current_state and current_state in PRESSURE_DIRECTIONS
+
+
+def build_push_destination(
+    event_type: str,
+    symbol: str,
+    event_context: Mapping[str, Any] | None = None,
+) -> str:
+    """Return one validated internal landing path for a supported push event."""
+    if not PUSH_SYMBOL_PATTERN.fullmatch(symbol):
+        return "/"
+    encoded_symbol = quote(symbol, safe="")
+    section = PUSH_OPERATOR_CARD_SECTIONS.get(event_type)
+    if section is not None:
+        return (
+            f"/diagnostics/mrz-robustness?symbol={encoded_symbol}"
+            f"#{section}"
+        )
+    if event_type == "MRZ_NEAR_MISS":
+        candidate_identity = str(
+            (event_context or {}).get("candidate_identity") or ""
+        )
+        if not PUSH_CANDIDATE_PATTERN.fullmatch(candidate_identity):
+            return "/"
+        return (
+            "/diagnostics/activation-feasibility?symbol="
+            f"{encoded_symbol}&candidate={quote(candidate_identity, safe='')}"
+            "#current-production-near-misses"
+        )
+    return "/"
 
 
 class PushSubscriptionKeys(BaseModel):
@@ -913,6 +950,10 @@ def notification_payload(row: Mapping[str, Any]) -> dict[str, Any]:
     event_key = str(row["source_event_key"])
     event_type = str(row["event_type"])
     occurred_at = iso(row["occurred_at"])
+    destination = build_push_destination(event_type, symbol, row)
+    legacy_url = destination
+    if destination != "/" and event_type in {"MRZ_ACTIVATED", "MRZ_MIGRATED"}:
+        legacy_url = f"/?symbol={quote(symbol, safe='')}"
     if event_type == PRESSURE_EVENT_TYPE:
         direction = str(row["current_pressure_state"])
         side = "above" if direction == "UP" else "below"
@@ -954,7 +995,7 @@ def notification_payload(row: Mapping[str, Any]) -> dict[str, Any]:
         )
 
     payload = {
-        "version": 1,
+        "version": 2,
         "event_type": event_type,
         "event_id": event_key,
         "source_event_key": event_key,
@@ -971,7 +1012,9 @@ def notification_payload(row: Mapping[str, Any]) -> dict[str, Any]:
         "mrz_lower": lower,
         "mrz_upper": upper,
         "occurred_at": occurred_at,
-        "url": f"/?symbol={quote(symbol, safe='')}",
+        "destination": destination,
+        # Preserve the prior behavior while older installed workers update.
+        "url": legacy_url,
     }
     if event_type == PRESSURE_EVENT_TYPE:
         displacement_value = row.get("displacement")
@@ -999,10 +1042,6 @@ def notification_payload(row: Mapping[str, Any]) -> dict[str, Any]:
             ),
             "successor_status": str(row["successor_status"]),
             "successor_label": str(row["successor_label"]),
-            "url": (
-                "/diagnostics/mrz-robustness?symbol="
-                f"{quote(symbol, safe='')}#post-activation"
-            ),
         })
     elif event_type == "MRZ_NEAR_MISS":
         candidate_identity = str(row["candidate_identity"])
@@ -1028,11 +1067,6 @@ def notification_payload(row: Mapping[str, Any]) -> dict[str, Any]:
                 row["supporting_observation_count"]
             ),
             "candidate_timestamp": iso(row["candidate_timestamp"]),
-            "url": (
-                "/diagnostics/activation-feasibility?symbol="
-                f"{quote(symbol, safe='')}&candidate="
-                f"{quote(candidate_identity, safe='')}#current-production-near-misses"
-            ),
         })
     elif event_type == "MRZ_ACTIVATED":
         payload["activated_at"] = occurred_at

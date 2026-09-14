@@ -37,17 +37,35 @@ assert.equal(operatorCardSymbolFromSearch("?symbol=BTCUSDT"), "BTCUSDT");
 assert.equal(operatorCardSymbolFromSearch("?symbol=NASDAQ%3ANDX"), "NASDAQ:NDX");
 assert.equal(operatorCardSymbolFromSearch(""), null);
 assert.equal(operatorCardSectionFromHash("#post-activation"), "post-activation");
+assert.equal(operatorCardSectionFromHash("#active-mrz"), "active-mrz");
+assert.equal(operatorCardSectionFromHash("#migration-history"), "migration-history");
 assert.equal(operatorCardSectionFromHash("#other"), null);
+
+function fakeSection(tagName) {
+  return {
+    tagName,
+    open: false,
+    scrollOptions: null,
+    focusOptions: null,
+    tabIndex: null,
+    scrollIntoView(options) { this.scrollOptions = options; },
+    focus(options) { this.focusOptions = options; },
+  };
+}
 
 function fakeOperatorCard(symbol) {
   return {
     dataset: { symbol },
     scrollOptions: null,
     focusOptions: null,
-    disclosure: { open: false },
+    sections: {
+      "active-mrz": fakeSection("HEADER"),
+      "migration-history": fakeSection("DETAILS"),
+      "post-activation": fakeSection("DETAILS"),
+    },
     querySelector(selector) {
-      assert.equal(selector, 'details[data-section="post-activation"]');
-      return this.disclosure;
+      const match = selector.match(/^\[data-section="([a-z-]+)"\]$/);
+      return match ? this.sections[match[1]] || null : null;
     },
     scrollIntoView(options) { this.scrollOptions = options; },
     focus(options) { this.focusOptions = options; },
@@ -78,7 +96,22 @@ assert.equal(
   focusOperatorCard(operatorCardContainer, "BTCUSDT", "post-activation"),
   true,
 );
-assert.equal(btcCard.disclosure.open, true);
+assert.equal(btcCard.sections["post-activation"].open, true);
+assert.deepEqual(
+  btcCard.sections["post-activation"].scrollOptions,
+  { block: "start" },
+);
+assert.equal(
+  focusOperatorCard(operatorCardContainer, "BTCUSDT", "migration-history"),
+  true,
+);
+assert.equal(btcCard.sections["migration-history"].open, true);
+assert.equal(
+  focusOperatorCard(operatorCardContainer, "BTCUSDT", "active-mrz"),
+  true,
+);
+assert.equal(btcCard.sections["active-mrz"].open, false);
+assert.deepEqual(btcCard.sections["active-mrz"].focusOptions, { preventScroll: true });
 
 const operationCardSource = fs.readFileSync(
   require.resolve("../app/static/mrz-robustness.js"),
@@ -277,6 +310,7 @@ const orderedDisclosures = [
   'data-section="successor-watch"',
   'data-section="migration-history"',
 ];
+assert.match(btcMarkup, /data-section="active-mrz"/);
 let previousIndex = -1;
 for (const section of orderedDisclosures) {
   const currentIndex = btcMarkup.indexOf(section);

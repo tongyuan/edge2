@@ -121,13 +121,32 @@ activation, migration, or pressure state in the browser. The service worker has 
 `fetch` handler and does not cache or intercept operational HTML or MRZ API
 responses.
 
-## Payload and deep link
+## Payload and deep link contract
+
+Every new payload carries one server-built, machine-readable `destination`.
+The worker never infers a route from title or body text. Route construction is
+centralized in `build_push_destination`; unsupported or malformed context
+falls back to `/`.
+
+| Event type | Destination |
+| --- | --- |
+| `MRZ_ACTIVATED` | `/diagnostics/mrz-robustness?symbol=<symbol>#active-mrz` |
+| `MRZ_MIGRATED` | `/diagnostics/mrz-robustness?symbol=<symbol>#migration-history` |
+| `POST_ACTIVATION_PRESSURE_CHANGED` | `/diagnostics/mrz-robustness?symbol=<symbol>#post-activation` |
+| `MRZ_NEAR_MISS` | `/diagnostics/activation-feasibility?symbol=<symbol>&candidate=<64-hex-id>#current-production-near-misses` |
+
+`PRODUCTION_CONFIRMATION` is not a Web Push event in the current repository;
+this navigation-only change does not introduce a new notification semantic.
+The existing `url` key remains as a compatibility field while installed
+workers update: activation and migration retain their prior symbol-aware
+monitor URL there, while the current worker reads only `destination`. A legacy
+payload without `destination` therefore safely opens `/` in the current worker.
 
 The compact JSON payload contains:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "event_type": "MRZ_MIGRATED",
   "event_id": "BTCUSDT:2:MRZ_MIGRATED:event-8",
   "source_event_key": "BTCUSDT:2:MRZ_MIGRATED:event-8",
@@ -144,6 +163,7 @@ The compact JSON payload contains:
   "mrz_upper": "82226.01",
   "occurred_at": "2026-08-20T12:00:08Z",
   "migrated_at": "2026-08-20T12:00:08Z",
+  "destination": "/diagnostics/mrz-robustness?symbol=BTCUSDT#migration-history",
   "url": "/?symbol=BTCUSDT"
 }
 ```
@@ -177,10 +197,12 @@ state is embedded in the URL.
 All MRZ fields are copied from the persisted authoritative event. Migration old
 bounds come from `MRZ_MIGRATED` provenance, never from current `active_mrz` UI
 state. The service worker accepts only the same-origin `/` monitor route with a
-validated symbol query, the exact symbol Operator Card pressure path, or the
-exact Activation Feasibility candidate path above.
-It focuses and navigates an existing EDGE window when possible, or opens one new
-window. External or unexpected paths fall back to `/`.
+validated symbol query, the exact symbol Operator Card path with one of the
+`active-mrz`, `migration-history`, or `post-activation` sections, or the exact
+Activation Feasibility candidate path above. It closes the notification and
+navigates then focuses an existing EDGE window when possible, or opens one new
+window directly at the destination. External or unexpected paths fall back to
+`/`.
 
 ## Deployment
 
@@ -234,9 +256,10 @@ Use development/test data only; do not manufacture production MRZ authority.
    for the near-miss episode and for each notifiable transition, with no separate
    `ROUTE_CHANGED` alert.
 8. Tap the near-miss notification and verify EDGE focuses the exact candidate;
-   tap authority transition notifications and verify the correct
-   `/?symbol=...` monitor detail; tap the pressure notification and verify the
-   current symbol Operator Card opens with Post-activation observations expanded.
+   tap an activation notification and verify the Active MRZ header is focused;
+   tap a migration notification and verify migration history is expanded; tap
+   the pressure notification and verify the current symbol Operator Card opens
+   with Post-activation observations expanded.
 9. Continue a near-miss episode, retry confirming webhooks, run recovery, and
    restart the service. Confirm that no duplicate logical notification or
    system alert is produced.

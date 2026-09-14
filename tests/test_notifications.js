@@ -138,12 +138,14 @@ async function testServiceWorkerPushAndClick() {
   const listeners = {};
   const shown = [];
   const navigated = [];
-  let focused = false;
+  const opened = [];
+  let focusCount = 0;
   const existingClient = {
-    url: "https://edge.example.test/",
+    url: "https://edge.example.test/diagnostics/activation-feasibility?symbol=OTHER",
     async navigate(url) { navigated.push(url); },
-    async focus() { focused = true; },
+    async focus() { focusCount += 1; },
   };
+  let currentClients = [existingClient];
   const self = {
     location: { origin: "https://edge.example.test" },
     addEventListener(type, listener) { listeners[type] = listener; },
@@ -153,8 +155,8 @@ async function testServiceWorkerPushAndClick() {
     },
     clients: {
       async claim() {},
-      async matchAll() { return [existingClient]; },
-      async openWindow() { throw new Error("existing EDGE window should be reused"); },
+      async matchAll() { return currentClients; },
+      async openWindow(url) { opened.push(url); },
     },
   };
   const source = fs.readFileSync(
@@ -168,126 +170,125 @@ async function testServiceWorkerPushAndClick() {
   assert.equal(typeof listeners.notificationclick, "function");
   assert.equal(listeners.fetch, undefined, "worker must not cache or intercept MRZ API reads");
 
-  let pushWork;
-  listeners.push({
-    data: {
-      json() {
-        return {
-          event_id: "WLDUSDT:1:MRZ_ACTIVATED:event-4",
-          event_type: "MRZ_ACTIVATED",
-          title: "EDGE MRZ",
-          body: "WLDUSDT · BTD MRZ activated\nShallow Discount · 0.3502–0.3541",
-          symbol: "WLDUSDT",
-          url: "/?symbol=WLDUSDT",
-        };
-      },
-    },
-    waitUntil(promise) { pushWork = promise; },
+  async function push(payload) {
+    let work;
+    listeners.push({
+      data: { json() { return payload; } },
+      waitUntil(promise) { work = promise; },
+    });
+    await work;
+    return shown[shown.length - 1];
+  }
+
+  async function click(notification) {
+    let work;
+    listeners.notificationclick({
+      notification: { data: notification.options.data, close() {} },
+      waitUntil(promise) { work = promise; },
+    });
+    await work;
+  }
+
+  const activation = await push({
+    event_id: "BTCUSDT:1:MRZ_ACTIVATED:event-4",
+    event_type: "MRZ_ACTIVATED",
+    title: "BTCUSDT MRZ Activated",
+    body: "BTD · 77,309.19–77,436.91",
+    symbol: "BTCUSDT",
+    destination: "/diagnostics/mrz-robustness?symbol=BTCUSDT#active-mrz",
+    url: "/diagnostics/mrz-robustness?symbol=BTCUSDT#active-mrz",
   });
-  await pushWork;
+  assert.equal(activation.options.data.event_type, "MRZ_ACTIVATED");
+  assert.equal(
+    activation.options.data.destination,
+    "/diagnostics/mrz-robustness?symbol=BTCUSDT#active-mrz",
+  );
 
-  assert.equal(shown.length, 1);
-  assert.equal(shown[0].title, "EDGE MRZ");
-  assert.match(shown[0].options.body, /WLDUSDT · BTD MRZ activated/);
-  assert.equal(shown[0].options.data.url, "/?symbol=WLDUSDT");
-  assert.equal(shown[0].options.data.event_type, "MRZ_ACTIVATED");
-
-  let migrationPushWork;
-  listeners.push({
-    data: {
-      json() {
-        return {
-          event_id: "WLDUSDT:2:MRZ_MIGRATED:event-8",
-          event_type: "MRZ_MIGRATED",
-          title: "WLDUSDT MRZ Migrated",
-          body: "BTD → STR · 0.3502–0.3541 → 0.4001–0.4042",
-          symbol: "WLDUSDT",
-          url: "/?symbol=WLDUSDT",
-        };
-      },
-    },
-    waitUntil(promise) { migrationPushWork = promise; },
+  const migration = await push({
+    event_id: "BTCUSDT:2:MRZ_MIGRATED:event-8",
+    event_type: "MRZ_MIGRATED",
+    title: "BTCUSDT MRZ Migrated",
+    body: "BTD · 77,309.19–77,436.91 → 78,919.34–79,030",
+    symbol: "BTCUSDT",
+    destination: "/diagnostics/mrz-robustness?symbol=BTCUSDT#migration-history",
   });
-  await migrationPushWork;
+  assert.equal(migration.options.data.event_type, "MRZ_MIGRATED");
+  assert.equal(
+    migration.options.data.destination,
+    "/diagnostics/mrz-robustness?symbol=BTCUSDT#migration-history",
+  );
 
-  assert.equal(shown.length, 2);
-  assert.equal(shown[1].title, "WLDUSDT MRZ Migrated");
-  assert.equal(shown[1].options.data.event_type, "MRZ_MIGRATED");
-
-  let nearMissPushWork;
   const candidateIdentity = "a".repeat(64);
-  listeners.push({
-    data: {
-      json() {
-        return {
-          event_id: `near-miss:WLDUSDT:STR:${candidateIdentity}`,
-          event_type: "MRZ_NEAR_MISS",
-          title: "WLDUSDT Production Near Miss",
-          body: "STR · 1.02% required · 1.00% production threshold",
-          symbol: "WLDUSDT",
-          url: `/diagnostics/activation-feasibility?symbol=WLDUSDT&candidate=${candidateIdentity}#current-production-near-misses`,
-        };
-      },
-    },
-    waitUntil(promise) { nearMissPushWork = promise; },
+  const nearMissDestination = `/diagnostics/activation-feasibility?symbol=RGTI&candidate=${candidateIdentity}#current-production-near-misses`;
+  const nearMiss = await push({
+    event_id: `near-miss:RGTI:STR:${candidateIdentity}`,
+    event_type: "MRZ_NEAR_MISS",
+    title: "RGTI MRZ Near Miss",
+    body: "STR · 1.02% required · 1.00% production threshold",
+    symbol: "RGTI",
+    candidate_identity: candidateIdentity,
+    destination: nearMissDestination,
   });
-  await nearMissPushWork;
-  assert.equal(shown.length, 3);
-  assert.equal(shown[2].options.data.event_type, "MRZ_NEAR_MISS");
-  assert.match(shown[2].options.data.url, /activation-feasibility\?symbol=WLDUSDT&candidate=/);
+  assert.equal(nearMiss.options.data.event_type, "MRZ_NEAR_MISS");
+  assert.equal(nearMiss.options.data.destination, nearMissDestination);
 
-  let pressurePushWork;
-  listeners.push({
-    data: {
-      json() {
-        return {
-          event_id: "POST_ACTIVATION_PRESSURE_CHANGED:WLDUSDT:event-4:event-6:UP",
-          event_type: "POST_ACTIVATION_PRESSURE_CHANGED",
-          title: "WLDUSDT · Upward Pressure",
-          body: "Post-activation activity materially favors above-envelope observations",
-          symbol: "WLDUSDT",
-          url: "/diagnostics/mrz-robustness?symbol=WLDUSDT#post-activation",
-        };
-      },
-    },
-    waitUntil(promise) { pressurePushWork = promise; },
+  const pressure = await push({
+    event_id: "POST_ACTIVATION_PRESSURE_CHANGED:ZECUSDT:event-4:event-6:DOWN",
+    event_type: "POST_ACTIVATION_PRESSURE_CHANGED",
+    title: "ZECUSDT · Downward Pressure",
+    body: "Post-activation activity materially favors below-envelope observations",
+    symbol: "ZECUSDT",
+    destination: "/diagnostics/mrz-robustness?symbol=ZECUSDT#post-activation",
   });
-  await pressurePushWork;
   assert.equal(shown.length, 4);
   assert.equal(
-    shown[3].options.data.event_type,
+    pressure.options.data.event_type,
     "POST_ACTIVATION_PRESSURE_CHANGED",
   );
   assert.equal(
-    shown[3].options.data.url,
-    "/diagnostics/mrz-robustness?symbol=WLDUSDT#post-activation",
+    pressure.options.data.destination,
+    "/diagnostics/mrz-robustness?symbol=ZECUSDT#post-activation",
   );
 
-  let clickWork;
-  listeners.notificationclick({
-    notification: {
-      data: shown[0].options.data,
-      close() {},
-    },
-    waitUntil(promise) { clickWork = promise; },
-  });
-  await clickWork;
-  assert.deepEqual(navigated, ["https://edge.example.test/?symbol=WLDUSDT"]);
-  assert.equal(focused, true);
-
-  let pressureClickWork;
-  listeners.notificationclick({
-    notification: {
-      data: shown[3].options.data,
-      close() {},
-    },
-    waitUntil(promise) { pressureClickWork = promise; },
-  });
-  await pressureClickWork;
+  await click(activation);
+  await click(migration);
+  await click(pressure);
+  await click(nearMiss);
   assert.deepEqual(navigated, [
-    "https://edge.example.test/?symbol=WLDUSDT",
-    "https://edge.example.test/diagnostics/mrz-robustness?symbol=WLDUSDT#post-activation",
+    "https://edge.example.test/diagnostics/mrz-robustness?symbol=BTCUSDT#active-mrz",
+    "https://edge.example.test/diagnostics/mrz-robustness?symbol=BTCUSDT#migration-history",
+    "https://edge.example.test/diagnostics/mrz-robustness?symbol=ZECUSDT#post-activation",
+    `https://edge.example.test${nearMissDestination}`,
   ]);
+  assert.equal(focusCount, 4, "the existing EDGE client is focused after navigation");
+
+  currentClients = [];
+  await click(pressure);
+  assert.equal(
+    opened[0],
+    "https://edge.example.test/diagnostics/mrz-robustness?symbol=ZECUSDT#post-activation",
+    "a cold launch opens the exact destination",
+  );
+
+  const legacy = await push({
+    event_id: "legacy",
+    event_type: "MRZ_ACTIVATED",
+    symbol: "BTCUSDT",
+    url: "/?symbol=BTCUSDT",
+  });
+  assert.equal(legacy.options.data.destination, "/");
+  await click(legacy);
+  assert.equal(opened[1], "https://edge.example.test/");
+
+  const external = await push({
+    event_id: "invalid-external",
+    event_type: "MRZ_ACTIVATED",
+    symbol: "BTCUSDT",
+    destination: "https://attacker.example/phish",
+  });
+  assert.equal(external.options.data.destination, "/");
+  await click(external);
+  assert.equal(opened[2], "https://edge.example.test/");
   assert.equal(context.safeNotificationPath("https://attacker.example/phish"), "/");
 }
 
@@ -308,6 +309,27 @@ async function main() {
       "https://edge.example.test",
     ),
     "/diagnostics/mrz-robustness?symbol=WLDUSDT#post-activation",
+  );
+  assert.equal(
+    safeNotificationPath(
+      "/diagnostics/mrz-robustness?symbol=WLDUSDT#active-mrz",
+      "https://edge.example.test",
+    ),
+    "/diagnostics/mrz-robustness?symbol=WLDUSDT#active-mrz",
+  );
+  assert.equal(
+    safeNotificationPath(
+      "/diagnostics/mrz-robustness?symbol=WLDUSDT#migration-history",
+      "https://edge.example.test",
+    ),
+    "/diagnostics/mrz-robustness?symbol=WLDUSDT#migration-history",
+  );
+  assert.equal(
+    safeNotificationPath(
+      "/diagnostics/mrz-robustness?symbol=WLDUSDT#unknown",
+      "https://edge.example.test",
+    ),
+    "/",
   );
   assert.equal(
     safeNotificationPath(
