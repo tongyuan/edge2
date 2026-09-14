@@ -136,10 +136,15 @@ assert.doesNotMatch(
   `${operationCardSource}\n${operationCardHtml}`,
   /<select|type=["']search["']|data-sort|data-filter/i,
 );
-assert.match(operationCardHtml, /id="filterAll"[^>]*aria-pressed="true"[^>]*>All</);
+assert.match(operationCardHtml, /id="filterAll"[^>]*aria-pressed="false"[^>]*>All</);
 assert.match(
   operationCardHtml,
-  /id="filterMigrated"[^>]*aria-pressed="false"[^>]*>Migrated only</,
+  /id="filterMigrated"[^>]*aria-pressed="true"[^>]*>Migrated only</,
+);
+assert.match(
+  operationCardSource,
+  /let filterMode = "migrated";/,
+  "Migrated only must be the initial Operator Card filter",
 );
 assert.match(
   operationCardSource,
@@ -288,27 +293,15 @@ const btcMarkup = robustnessCardMarkup(
     : "26 Aug 2026 · 01:37 UTC−4",
 );
 const btcCompactSummary = btcMarkup.slice(0, btcMarkup.indexOf("</header>") + 9);
-const compactGroupOrder = [
-  'class="compact-group structure-group"',
-  'class="compact-group formation-group"',
-  'class="compact-group post-activation-group"',
-];
-let previousGroupIndex = -1;
-for (const group of compactGroupOrder) {
-  const currentGroupIndex = btcCompactSummary.indexOf(group);
-  assert.ok(currentGroupIndex > previousGroupIndex, `${group} follows the inference sequence`);
-  previousGroupIndex = currentGroupIndex;
-}
-const structureGroupIndex = btcCompactSummary.indexOf(compactGroupOrder[0]);
-const formationGroupIndex = btcCompactSummary.indexOf(compactGroupOrder[1]);
-const postActivationGroupIndex = btcCompactSummary.indexOf(compactGroupOrder[2]);
-const structureGroupMarkup = btcCompactSummary.slice(structureGroupIndex, formationGroupIndex);
-const formationGroupMarkup = btcCompactSummary.slice(formationGroupIndex, postActivationGroupIndex);
-const postActivationGroupMarkup = btcCompactSummary.slice(postActivationGroupIndex);
+const authorityIndex = btcCompactSummary.indexOf('class="mrz-authority-context"');
+const currentPressureIndex = btcCompactSummary.indexOf('class="current-pressure-panel');
+assert.ok(authorityIndex >= 0, "MRZ Authority renders on the default surface");
+assert.ok(currentPressureIndex > authorityIndex, "Current Pressure follows MRZ Authority");
 const orderedDisclosures = [
   'data-section="post-activation"',
-  'data-section="successor-watch"',
   'data-section="migration-history"',
+  'data-section="successor-watch"',
+  'data-section="formation-details"',
 ];
 assert.match(btcMarkup, /data-section="active-mrz"/);
 let previousIndex = -1;
@@ -321,14 +314,17 @@ const firstDisclosureIndex = btcMarkup.indexOf("<details");
 for (const summaryValue of [
   "BTCUSDT · STR",
   "Deep Premium",
-  "CURRENT AUTHORITATIVE MRZ",
+  "MRZ AUTHORITY",
+  "CURRENT MRZ",
+  "PREVIOUS MRZ",
   "77,309.19 – 77,436.91",
-  "First qualifying rejection",
+  "Midpoint",
   "Activated",
-  "Formation duration",
-  "MRZ age",
-  "State",
-  "Successor",
+  "CURRENT PRESSURE",
+  "Upward Pressure",
+  "4 observations",
+  "Above upper envelope",
+  "Below lower envelope",
 ]) {
   const summaryValueIndex = btcMarkup.indexOf(summaryValue);
   assert.ok(summaryValueIndex >= 0, `${summaryValue} renders in the compact summary`);
@@ -337,36 +333,9 @@ for (const summaryValue of [
     `${summaryValue} remains visible before collapsed details`,
   );
 }
-assert.match(structureGroupMarkup, /STRUCTURE/);
-assert.match(structureGroupMarkup, /BTCUSDT · STR/);
-assert.match(structureGroupMarkup, /Deep Premium/);
-assert.match(structureGroupMarkup, /CURRENT AUTHORITATIVE MRZ/);
-assert.match(formationGroupMarkup, /FORMATION/);
-assert.match(formationGroupMarkup, /First qualifying rejection/);
-assert.match(formationGroupMarkup, /Activated/);
-assert.match(formationGroupMarkup, /Formation duration/);
-assert.match(formationGroupMarkup, /MRZ age/);
-assert.match(postActivationGroupMarkup, /POST-ACTIVATION STATE/);
-assert.match(postActivationGroupMarkup, /State/);
-assert.match(postActivationGroupMarkup, /Successor/);
-assert.ok(
-  formationGroupMarkup.indexOf("First qualifying rejection")
-    < formationGroupMarkup.indexOf("Activated"),
-  "first qualifying observation precedes activation",
-);
-assert.ok(
-  formationGroupMarkup.indexOf("Activated")
-    < formationGroupMarkup.indexOf("Formation duration"),
-  "activation precedes formation duration",
-);
-assert.ok(
-  formationGroupMarkup.indexOf("Formation duration")
-    < formationGroupMarkup.indexOf("MRZ age"),
-  "formation duration precedes MRZ age",
-);
 assert.match(btcMarkup, /<header class="compact-authority"/);
 assert.match(btcMarkup, /<summary>/);
-assert.equal((btcMarkup.match(/<details/g) || []).length, 3);
+assert.equal((btcMarkup.match(/<details/g) || []).length, 4);
 assert.doesNotMatch(btcMarkup, /<details[^>]*\sopen(?:\s|>)/);
 assert.doesNotMatch(btcMarkup, /data-section="evidence"/);
 assert.doesNotMatch(btcMarkup, /evidence-disclosure/);
@@ -378,23 +347,27 @@ assert.match(
   btcMarkup,
   /data-section="successor-watch"[\s\S]*Minimum evidence[\s\S]*<\/details>/,
 );
+assert.match(
+  btcMarkup,
+  /data-section="formation-details"[\s\S]*First qualifying rejection[\s\S]*Formation duration[\s\S]*<\/details>/,
+);
 assert.match(btcMarkup, /BTCUSDT · STR/);
 assert.match(btcMarkup, /Deep Premium/);
 assert.match(btcMarkup, /Authoritative/);
 assert.match(btcMarkup, /77,309\.19 – 77,436\.91/);
+assert.match(btcMarkup, /Midpoint<\/dt><dd>77,373\.05/);
 assert.match(btcMarkup, /26 Aug 2026 · 01:37 UTC−4/);
 assert.match(btcMarkup, /Formation duration<\/dt><dd>1d 15h/);
 assert.doesNotMatch(btcMarkup, /4 qualifying rejection observations/);
 assert.match(btcMarkup, /First qualifying rejection/);
 assert.match(btcMarkup, /24 Aug 2026 · 10:25 UTC−4/);
 assert.match(btcMarkup, /Formation duration<\/dt><dd>1d 15h/);
-assert.match(
-  btcCompactSummary,
-  /First qualifying rejection<\/dt><dd>24 Aug 2026 · 10:25 UTC−4<\/dd>/,
-);
-assert.doesNotMatch(btcCompactSummary, /<dt>Robustness<\/dt>/);
-assert.match(btcCompactSummary, /<dt>State<\/dt>/);
-assert.match(btcCompactSummary, /<dt>Successor<\/dt>/);
+assert.match(btcCompactSummary, /No previous MRZ/);
+assert.match(btcCompactSummary, /2d 13h old/);
+assert.doesNotMatch(btcCompactSummary, /First qualifying rejection/);
+assert.doesNotMatch(btcCompactSummary, /Formation duration/);
+assert.doesNotMatch(btcCompactSummary, /Successor/);
+assert.doesNotMatch(btcCompactSummary, /MIGRATION EQM/);
 assert.match(
   btcMarkup,
   /data-section="post-activation"[\s\S]*Upward Pressure[\s\S]*<\/details>/,
@@ -409,9 +382,8 @@ assert.equal(
   Number(btcReport.formation_evidence.duration_seconds),
 );
 assert.match(btcMarkup, /Upward Pressure/);
-assert.match(btcMarkup, /↑ Upward/);
-assert.match(btcMarkup, /Upper migration boundary/);
-assert.match(btcMarkup, /Still authoritative/);
+assert.match(btcCompactSummary, /Above upper envelope<\/dt><dd>3/);
+assert.match(btcCompactSummary, /Below lower envelope<\/dt><dd>0/);
 assert.match(btcMarkup, /Observation Position/);
 assert.match(btcMarkup, /Above MRZ<\/dt><dd>3/);
 assert.match(btcMarkup, /Inside MRZ<\/dt><dd>1/);
@@ -422,7 +394,6 @@ assert.match(btcMarkup, /Below envelope<\/dt><dd>0/);
 assert.match(btcMarkup, /MRZ Displacement/);
 assert.match(btcMarkup, /↑ \+6\.2%/);
 assert.match(btcMarkup, /Median displacement above midpoint/);
-assert.match(btcMarkup, /centered above the active MRZ midpoint/);
 assert.match(btcMarkup, /Normalized by full IPDA 20W width stored at activation/);
 assert.match(btcMarkup, /External observations detected/);
 assert.match(btcMarkup, /Higher external<\/dt><dd>3/);
@@ -430,7 +401,6 @@ assert.match(btcMarkup, /Lower external<\/dt><dd>0/);
 assert.match(btcMarkup, /Minimum evidence<\/dt><dd>4 observations/);
 assert.match(btcMarkup, /Insufficient observations/);
 assert.match(btcMarkup, /no side-and-route pool has enough evidence/i);
-assert.match(btcMarkup, /2d 13h/);
 assert.doesNotMatch(btcMarkup, /Midpoint Stability/);
 assert.doesNotMatch(btcMarkup, /Distance From MRZ Midpoint/);
 assert.doesNotMatch(btcMarkup, /bb_mrz/);
@@ -516,15 +486,11 @@ const ethBalancedSummary = ethBalancedMarkup.slice(
   0,
   ethBalancedMarkup.indexOf("</header>") + 9,
 );
-assert.match(
-  ethBalancedSummary,
-  /<dt>State<\/dt><dd>Two-sided \/ Consolidating<\/dd>/,
-);
-assert.match(
-  ethBalancedSummary,
-  /<dt>Successor<\/dt><dd>No qualifying successor<\/dd>/,
-);
-assert.match(ethBalancedMarkup, /22 post-activation observations/);
+assert.match(ethBalancedSummary, /CURRENT PRESSURE/);
+assert.match(ethBalancedSummary, /Two-sided \/ Consolidating/);
+assert.match(ethBalancedSummary, /22 observations/);
+assert.doesNotMatch(ethBalancedSummary, /No qualifying successor/);
+assert.match(ethBalancedMarkup, /Two-sided \/ Consolidating · 22 observations/);
 assert.match(ethBalancedMarkup, /Above MRZ<\/dt><dd>10/);
 assert.match(ethBalancedMarkup, /Inside MRZ<\/dt><dd>2/);
 assert.match(ethBalancedMarkup, /Below MRZ<\/dt><dd>10/);
@@ -536,36 +502,63 @@ assert.match(ethBalancedMarkup, /Median displacement below midpoint/);
 assert.match(ethBalancedMarkup, /no meaningful directional dominance/i);
 assert.doesNotMatch(ethBalancedMarkup, /Under Pressure|↓ Downward/);
 
+const downwardPressureMarkup = robustnessCardMarkup({
+  ...btcReport,
+  post_activation_robustness: {
+    ...btcReport.post_activation_robustness,
+    label: "Downward Pressure",
+  },
+  boundary_pressure: {
+    ...btcReport.boundary_pressure,
+    above_upper_envelope_observation_count: 0,
+    below_lower_envelope_observation_count: 4,
+  },
+  migration_pressure: {
+    ...btcReport.migration_pressure,
+    label: "Downward Pressure",
+    direction: "DOWN",
+    direction_label: "Downward",
+    above_upper_envelope_observation_count: 0,
+    below_lower_envelope_observation_count: 4,
+  },
+});
+const downwardPressureSummary = downwardPressureMarkup.slice(
+  0,
+  downwardPressureMarkup.indexOf("</header>") + 9,
+);
+assert.match(downwardPressureSummary, /CURRENT PRESSURE[\s\S]*Downward Pressure/);
+assert.match(downwardPressureSummary, /Above upper envelope<\/dt><dd>0/);
+assert.match(downwardPressureSummary, /Below lower envelope<\/dt><dd>4/);
+
 assert.match(operationCardCss, /\.operator-disclosure\[open\] > summary/);
 assert.match(operationCardCss, /\.operator-disclosure > summary:focus-visible/);
 assert.match(operationCardCss, /min-height:\s*64px/);
 assert.match(operationCardCss, /@media \(max-width: 460px\)/);
 assert.match(
   operationCardCss,
-  /\.formation-facts\s*\{\s*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)/,
+  /\.mrz-authority-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/,
 );
 assert.match(
   operationCardCss,
-  /\.post-activation-facts\s*\{\s*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/,
+  /\.current-pressure-counts\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/,
 );
 assert.match(
   operationCardCss,
-  /@media \(max-width: 460px\)[\s\S]*\.formation-facts, \.post-activation-facts\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\)/,
+  /@media \(max-width: 720px\)[\s\S]*\.report-meta, \.mrz-authority-grid[^{]*\{\s*grid-template-columns:\s*minmax\(0, 1fr\)/,
 );
 assert.match(
   operationCardCss,
-  /\.migration-pair-grid\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(135px, 0\.65fr\) minmax\(0, 1fr\)/,
+  /@media \(max-width: 460px\)[\s\S]*\.current-pressure-counts\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\)/,
 );
 assert.match(
   operationCardCss,
-  /@media \(max-width: 720px\)[\s\S]*\.report-meta, \.migration-pair-grid, \.post-migration-state, \.post-migration-state dl[^{]*\{\s*grid-template-columns:\s*minmax\(0, 1fr\)/,
+  /\.authority-range\s*\{[^}]*overflow-wrap:\s*anywhere/,
 );
 assert.match(
   operationCardCss,
   /@media \(max-width: 720px\)[\s\S]*\.filter-option\s*\{[^}]*min-height:\s*44px/,
 );
-assert.match(operationCardCss, /\.current-mrz strong[^}]*overflow-wrap:\s*anywhere/);
-assert.match(operationCardCss, /\.migration-zone > strong, \.migration-eqm > strong[^}]*overflow-wrap:\s*anywhere/);
+assert.match(operationCardCss, /\.migration-timeline li > div > strong[^}]*overflow-wrap:\s*anywhere/);
 assert.doesNotMatch(operationCardCss, /overflow-x:\s*(?:auto|scroll)/);
 assert.doesNotMatch(operationCardCss, /\border\s*:/);
 
@@ -594,7 +587,7 @@ assert.match(migrationMarkup, /↑ MIGRATED UPWARD/);
 assert.match(migrationMarkup, /24 Aug 2026 · 12:00 UTC−4/);
 assert.match(migrationMarkup, /0\.3936 – 0\.3966/);
 assert.match(migrationMarkup, /0\.4034 – 0\.4083/);
-assert.match(migrationMarkup, /PREVIOUS MRZ/);
+assert.match(migrationMarkup, /PREVIOUS AUTHORITY/);
 assert.match(migrationMarkup, /Midpoint 0\.3951/);
 assert.match(migrationMarkup, /Activated 23 Aug 2026 · 04:15 UTC−4/);
 assert.ok(
@@ -609,11 +602,9 @@ assert.notEqual(
 );
 assert.match(migrationMarkup, /MIGRATION EQM/);
 assert.match(migrationMarkup, /0\.400475/);
-assert.match(migrationMarkup, /CURRENT MRZ/);
+assert.match(migrationMarkup, /CURRENT AUTHORITY/);
 assert.match(migrationMarkup, /Midpoint 0\.40585/);
-assert.match(migrationMarkup, /POST-MIGRATION/);
-assert.match(migrationMarkup, /State<\/dt><dd>Stable/);
-assert.match(migrationMarkup, /Successor<\/dt><dd>No successor candidate/);
+assert.doesNotMatch(migrationMarkup, /POST-MIGRATION|State<\/dt>|Successor<\/dt>/);
 assert.equal(migrationEqmValue(wldMigration, "0.40585"), 0.400475);
 assert.match(
   migrationProvenanceMarkup(
@@ -623,13 +614,13 @@ assert.match(
   ),
   /↓ MIGRATED DOWNWARD/,
 );
-assert.doesNotMatch(
+assert.match(
   migrationProvenanceMarkup(
     { ...wldMigration, previous_activated_at: null },
     { currentMidpoint: "0.40585" },
     () => null,
   ),
-  /Activated/,
+  /Activated Unavailable/,
 );
 
 const btcMigrationChainMarkup = migrationProvenanceMarkup(
@@ -770,7 +761,6 @@ assert.match(wldMarkup, /WLDUSDT · BTD/);
 assert.match(wldMarkup, /Shallow Discount/);
 assert.match(wldMarkup, /↑ MIGRATED UPWARD/);
 assert.match(wldMarkup, /Contained \/ Quiet/);
-assert.match(wldMarkup, /Neutral/);
 assert.match(wldMarkup, /↓ -1\.0%/);
 assert.match(wldMarkup, /Median displacement below midpoint/);
 assert.match(wldMarkup, /No successor candidate/);
@@ -785,13 +775,22 @@ assert.doesNotMatch(
 );
 assert.doesNotMatch(wldMarkup, /4 qualifying reclaim observations/);
 assert.match(wldMarkup, /First qualifying reclaim/);
-assert.match(
-  wldCompactSummary,
-  /First qualifying reclaim<\/dt><dd>28 Aug 2026 · 21:13 UTC−4<\/dd>/,
+assert.match(wldCompactSummary, /CURRENT MRZ/);
+assert.match(wldCompactSummary, /0\.4034 – 0\.4083/);
+assert.match(wldCompactSummary, /Midpoint<\/dt><dd>0\.40585/);
+assert.match(wldCompactSummary, /Activated<\/dt><dd>29 Aug 2026 · 13:50 UTC−4/);
+assert.match(wldCompactSummary, /PREVIOUS MRZ/);
+assert.match(wldCompactSummary, /0\.3936 – 0\.3966/);
+assert.match(wldCompactSummary, /Midpoint<\/dt><dd>0\.3951/);
+assert.match(wldCompactSummary, /Activated<\/dt><dd>24 Aug 2026 · 12:00 UTC−4/);
+assert.match(wldCompactSummary, /MIGRATION EQM/);
+assert.match(wldCompactSummary, /0\.400475/);
+assert.ok(
+  wldCompactSummary.indexOf("current-authority-zone")
+    < wldCompactSummary.indexOf("previous-authority-zone"),
+  "Current MRZ precedes Previous MRZ in the responsive DOM order",
 );
-assert.doesNotMatch(wldCompactSummary, /<dt>Robustness<\/dt>/);
-assert.match(wldCompactSummary, /<dt>State<\/dt>/);
-assert.match(wldCompactSummary, /<dt>Successor<\/dt>/);
+assert.doesNotMatch(wldCompactSummary, /First qualifying reclaim|Formation duration|No successor candidate/);
 assert.doesNotMatch(wldMarkup, /<dt>First reclaim<\/dt>/);
 
 const secondMigratedReport = {
@@ -908,8 +907,9 @@ const unavailableCompactSummary = unavailableFormationMarkup.slice(
 );
 assert.match(
   unavailableCompactSummary,
-  /First qualifying rejection<\/dt><dd>Unavailable<\/dd>/,
+  /No previous MRZ/,
 );
+assert.doesNotMatch(unavailableCompactSummary, /First qualifying rejection|Formation duration/);
 
 const zeroEvidenceReport = {
   ...wldReport,
@@ -972,9 +972,8 @@ const zeroEvidenceReport = {
 };
 const zeroMarkup = robustnessCardMarkup(zeroEvidenceReport);
 assert.match(zeroMarkup, /Not yet assessable/);
-assert.match(zeroMarkup, /0 post-activation observations/);
+assert.match(zeroMarkup, /0 observations/);
 assert.match(zeroMarkup, /No evidence/);
-assert.match(zeroMarkup, /Neutral/);
 assert.match(zeroMarkup, /MRZ Displacement<\/h3>\s*<strong class="metric-primary">—<\/strong>/);
 assert.match(zeroMarkup, /No post-activation evidence/);
 

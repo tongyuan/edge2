@@ -152,7 +152,9 @@ function migrationProvenanceMarkup(
   currentState = {},
   timestampFormatter = (value) => value,
 ) {
-  if (!migration?.has_migrated) return "";
+  if (!migration?.has_migrated) {
+    return '<div class="history-empty">No recorded migration. Current MRZ is the first recorded authority.</div>';
+  }
   const downward = migration.direction === "DOWN";
   const arrow = downward ? "↓" : "↑";
   const direction = downward ? "DOWNWARD" : "UPWARD";
@@ -161,42 +163,46 @@ function migrationProvenanceMarkup(
   const previousMidpoint = midpointValue(migration.previous_lower, migration.previous_upper);
   const currentMidpoint = currentState.currentMidpoint;
   const migrationEqm = migrationEqmValue(migration, currentMidpoint);
-  const previousActivatedAt = timestampFormatter(migration.previous_activated_at);
-  const previousActivatedMarkup = previousActivatedAt
-    ? `<small>Activated ${escapeHtml(previousActivatedAt)}</small>`
-    : "";
-  return `<aside class="migration-provenance" aria-label="Current MRZ migration provenance">
-    <div class="migration-provenance-heading">
-      <div>
-        <span class="section-label">CURRENT MRZ PROVENANCE</span>
-        <strong>${arrow} MIGRATED ${direction}</strong>
-      </div>
-      <span class="migration-provenance-time">${escapeHtml(timestampFormatter(migration.migrated_at) || "—")}</span>
+  const previousActivatedAt = migration.previous_activated_at
+    ? timestampFormatter(migration.previous_activated_at)
+    : null;
+  const migratedAt = timestampFormatter(migration.migrated_at) || "—";
+  const currentActivatedAt = currentState.currentActivatedAt
+    ? timestampFormatter(currentState.currentActivatedAt)
+    : null;
+  return `<aside class="migration-chronology" aria-label="MRZ migration chronology">
+    <div class="migration-chronology-heading">
+      <span class="section-label">MIGRATION CHRONOLOGY</span>
+      <strong>${arrow} MIGRATED ${direction}</strong>
     </div>
-    <div class="migration-pair-grid">
-      <section class="migration-zone previous-zone" aria-label="Previous MRZ">
-        <span>PREVIOUS MRZ</span>
-        <strong>${previousRange}</strong>
-        <small>Midpoint ${priceText(previousMidpoint)}</small>
-        ${previousActivatedMarkup}
-      </section>
-      <div class="migration-eqm">
-        <span>MIGRATION EQM</span>
-        <strong>${priceText(migrationEqm)}</strong>
-      </div>
-      <section class="migration-zone current-zone" aria-label="Current MRZ">
-        <span>CURRENT MRZ</span>
-        <strong>${currentRange}</strong>
-        <small>Midpoint ${priceText(currentMidpoint)}</small>
-      </section>
-    </div>
-    <div class="post-migration-state" aria-label="Post-migration state">
-      <span class="section-label">POST-MIGRATION</span>
-      <dl>
-        <div><dt>State</dt><dd>${escapeHtml(currentState.stateLabel || currentState.pressureLabel || "—")}</dd></div>
-        <div><dt>Successor</dt><dd>${escapeHtml(currentState.successorLabel || "—")}</dd></div>
-      </dl>
-    </div>
+    <ol class="migration-timeline">
+      <li class="previous-authority-event">
+        <span class="timeline-marker" aria-hidden="true"></span>
+        <div>
+          <span>PREVIOUS AUTHORITY</span>
+          <strong>${previousRange}</strong>
+          <small>Midpoint ${priceText(previousMidpoint)}</small>
+          <small>Activated ${escapeHtml(previousActivatedAt || "Unavailable")}</small>
+        </div>
+      </li>
+      <li class="migration-event">
+        <span class="timeline-marker" aria-hidden="true"></span>
+        <div>
+          <span>${arrow} MIGRATED ${direction}</span>
+          <small>${escapeHtml(migratedAt)}</small>
+        </div>
+      </li>
+      <li class="current-authority-event">
+        <span class="timeline-marker" aria-hidden="true"></span>
+        <div>
+          <span>CURRENT AUTHORITY</span>
+          <strong>${currentRange}</strong>
+          <small>Midpoint ${priceText(currentMidpoint)}</small>
+          ${currentActivatedAt ? `<small>Activated ${escapeHtml(currentActivatedAt)}</small>` : ""}
+        </div>
+      </li>
+    </ol>
+    <div class="history-eqm"><span>MIGRATION EQM</span><strong>${priceText(migrationEqm)}</strong></div>
   </aside>`;
 }
 
@@ -219,7 +225,6 @@ function robustnessCardMarkup(
   const authority = report.structural_authority;
   const active = report.active_mrz;
   const formation = report.formation_evidence;
-  const robustness = report.robustness_evidence;
   const behavior = report.post_activation_robustness;
   const position = report.observation_position;
   const boundary = report.boundary_pressure;
@@ -227,7 +232,6 @@ function robustnessCardMarkup(
   const pressure = report.migration_pressure;
   const successor = report.successor_watch;
   const age = report.mrz_age;
-  const structuralSummary = report.structural_summary;
   const qualifyingObservationName = report.route_owner === "BTD" ? "reclaim" : "rejection";
   const firstQualifyingLabel = `First qualifying ${qualifyingObservationName}`;
   const formationStartedAt = timestampFormatter(formation.started_at) || "Unavailable";
@@ -238,22 +242,41 @@ function robustnessCardMarkup(
     : durationText(formation.duration_seconds);
   const activeTimestamp = timestampFormatter(active.activated_at) || "—";
   const activeDuration = durationText(age.active_duration_seconds);
+  const postActivationObservationText = `${behavior.post_activation_observation_count} observation${behavior.post_activation_observation_count === 1 ? "" : "s"}`;
   const pressureDirection = directionText(pressure.direction, pressure.direction_label);
   const stateSummary = pressure.label === "Under Pressure" && pressure.direction !== "NEUTRAL"
     ? `${pressure.label} · ${pressureDirection}`
     : pressure.label || pressureDirection;
   const migrationSummary = report.migration?.has_migrated
-    ? `Migrated ${String(report.migration.direction || "").toLowerCase()} · ${stateSummary}`
-    : `No recorded migration · ${stateSummary}`;
-  const relevantBoundary = pressure.relevant_boundary_label
-    ? `<dt>${escapeHtml(pressure.relevant_boundary_label)}</dt><dd>${priceText(pressure.relevant_boundary)}</dd>`
-    : "<dt>Relevant boundary</dt><dd>—</dd>";
+    ? `Migrated ${String(report.migration.direction || "").toLowerCase()}`
+    : "No recorded migration";
+  const hasPreviousMrz = hasValidMigrationProvenance(report);
+  const previousMidpoint = hasPreviousMrz
+    ? midpointValue(report.migration.previous_lower, report.migration.previous_upper)
+    : null;
+  const migrationEqm = hasPreviousMrz
+    ? migrationEqmValue(report.migration, active.midpoint)
+    : null;
+  const previousActivatedAt = hasPreviousMrz
+    ? (report.migration.previous_activated_at
+      ? timestampFormatter(report.migration.previous_activated_at)
+      : null) || "Unavailable"
+    : null;
+  const previousMrzMarkup = hasPreviousMrz
+    ? `<strong class="authority-range">${priceText(report.migration.previous_lower)} – ${priceText(report.migration.previous_upper)}</strong>
+      <dl class="authority-facts">
+        <div><dt>Midpoint</dt><dd>${priceText(previousMidpoint)}</dd></div>
+        <div><dt>Activated</dt><dd>${escapeHtml(previousActivatedAt)}</dd></div>
+      </dl>`
+    : '<strong class="authority-empty">No previous MRZ</strong>';
+  const migrationEqmMarkup = hasPreviousMrz
+    ? `<div class="authority-eqm" aria-label="Migration EQM">
+        <span>MIGRATION EQM</span>
+        <strong>${priceText(migrationEqm)}</strong>
+      </div>`
+    : "";
 
-  const postActivationContent = `<div class="robustness-panel ${statusClass(behavior.status)}">
-    <strong class="robustness-state">${escapeHtml(behavior.label)}</strong>
-    <span>${behavior.post_activation_observation_count} post-activation observations</span>
-    <p>${escapeHtml(behavior.reason)}</p>
-  </div>
+  const postActivationContent = `<p class="detail-explanation">${escapeHtml(behavior.reason)}</p>
   <div class="evidence-grid">
     <article class="metric-card">
       <h3>Observation Position</h3>
@@ -290,69 +313,63 @@ function robustnessCardMarkup(
     report.migration,
     {
       currentMidpoint: active.midpoint,
-      stateLabel: stateSummary,
-      successorLabel: successor.label,
+      currentActivatedAt: active.activated_at,
     },
     timestampFormatter,
-  )}
-    <div class="detail-card pressure ${statusClass(pressure.status)}">
-      <div class="detail-status"><span>DIRECTION</span><strong class="direction-value">${escapeHtml(pressureDirection)}</strong></div>
-      <div class="detail-status"><span>STATE</span><strong>${escapeHtml(stateSummary)}</strong></div>
-      <dl class="detail-grid">
-        <div>${relevantBoundary}</div>
-        <div><dt>Observations beyond envelope</dt><dd>${pressure.observations_beyond_envelope}</dd></div>
-        <div><dt>Above upper envelope</dt><dd>${pressure.above_upper_envelope_observation_count}</dd></div>
-        <div><dt>Below lower envelope</dt><dd>${pressure.below_lower_envelope_observation_count}</dd></div>
-        <div><dt>Current MRZ</dt><dd>Still authoritative</dd></div>
-      </dl>
-      <p>${escapeHtml(pressure.reason)}</p>
-    </div>
-    <div class="structural-summary" aria-label="Structural Summary">
-      <dl class="summary-grid">
-        <div><dt>Current authority</dt><dd>${escapeHtml(structuralSummary.current_authority)}</dd></div>
-        <div><dt>Robustness</dt><dd>${escapeHtml(structuralSummary.robustness_label)}</dd></div>
-        <div><dt>State</dt><dd>${escapeHtml(stateSummary)}</dd></div>
-        <div><dt>Successor</dt><dd>${escapeHtml(structuralSummary.successor_label)}</dd></div>
-      </dl>
-      <p class="summary-authority">${escapeHtml(structuralSummary.authority_statement)}</p>
-      <p>${escapeHtml(structuralSummary.displacement_statement)}</p>
-      <p>${escapeHtml(structuralSummary.detail_statement)}</p>
-    </div>`;
+  )}`;
+
+  const formationContent = `<div class="detail-card formation-detail">
+    <dl class="detail-grid formation-detail-grid">
+      <div><dt>${escapeHtml(firstQualifyingLabel)}</dt><dd>${escapeHtml(formationStartedAt)}</dd></div>
+      <div><dt>Formation duration</dt><dd>${escapeHtml(formationDuration)}</dd></div>
+      <div><dt>Qualifying observations</dt><dd>${formation.confirming_observation_count}</dd></div>
+    </dl>
+    <p>${escapeHtml(formation.meaning || "Formation evidence retained for research context.")}</p>
+  </div>`;
 
   const focusedClass = report.symbol === focusedSymbol ? " focused-operator-card" : "";
   const focusAttribute = report.symbol === focusedSymbol ? ' tabindex="-1"' : "";
   return `<section class="mrz-report${focusedClass}" data-symbol="${escapeHtml(report.symbol)}"${focusAttribute}>
     <header class="compact-authority" aria-label="Current structural authority" data-section="active-mrz">
-      <section class="compact-group structure-group" aria-label="Structure">
-        <span class="section-label">STRUCTURE</span>
-        <div class="mrz-heading">
+      <div class="mrz-heading">
+        <div>
+          <h2>${escapeHtml(report.symbol)} · ${escapeHtml(report.route_owner)}</h2>
+          <p class="structural-location">${escapeHtml(authority.structural_location_label)}</p>
+        </div>
+        <strong class="status-pill authoritative">${escapeHtml(authority.label)}</strong>
+      </div>
+
+      <section class="mrz-authority-context" aria-label="MRZ Authority">
+        <span class="section-label">MRZ AUTHORITY</span>
+        <div class="mrz-authority-grid">
+          <section class="authority-zone current-authority-zone" aria-label="Current MRZ">
+            <span class="authority-zone-label">CURRENT MRZ</span>
+            <strong class="authority-range">${priceText(active.lower)} – ${priceText(active.upper)}</strong>
+            <dl class="authority-facts">
+              <div><dt>Midpoint</dt><dd>${priceText(active.midpoint)}</dd></div>
+              <div><dt>Activated</dt><dd>${escapeHtml(activeTimestamp)}</dd></div>
+            </dl>
+            <small class="mrz-age">${escapeHtml(activeDuration)} old</small>
+          </section>
+          <section class="authority-zone previous-authority-zone" aria-label="Previous MRZ">
+            <span class="authority-zone-label">PREVIOUS MRZ</span>
+            ${previousMrzMarkup}
+          </section>
+        </div>
+        ${migrationEqmMarkup}
+      </section>
+
+      <section class="current-pressure-panel ${statusClass(pressure.status)}" aria-label="Current Pressure">
+        <div class="current-pressure-heading">
           <div>
-            <h2>${escapeHtml(report.symbol)} · ${escapeHtml(report.route_owner)}</h2>
-            <p class="structural-location">${escapeHtml(authority.structural_location_label)}</p>
+            <span class="section-label">CURRENT PRESSURE</span>
+            <strong>${escapeHtml(stateSummary)}</strong>
           </div>
-          <strong class="status-pill authoritative">${escapeHtml(authority.label)}</strong>
+          <span class="pressure-observation-count">${postActivationObservationText}</span>
         </div>
-        <div class="current-mrz">
-          <span>CURRENT AUTHORITATIVE MRZ</span>
-          <strong>${priceText(active.lower)} – ${priceText(active.upper)}</strong>
-        </div>
-      </section>
-
-      <section class="compact-group formation-group" aria-label="Formation">
-        <span class="section-label">FORMATION</span>
-        <dl class="compact-facts formation-facts">
-          <div><dt>${escapeHtml(firstQualifyingLabel)}</dt><dd>${escapeHtml(formationStartedAt)}</dd></div>
-          <div><dt>Activated</dt><dd>${escapeHtml(activeTimestamp)}</dd></div>
-          <div class="formation-duration"><dt>Formation duration</dt><dd>${escapeHtml(formationDuration)}</dd></div>
-          <div><dt>MRZ age</dt><dd>${escapeHtml(activeDuration)}</dd></div>
-        </dl>
-      </section>
-
-      <section class="compact-group post-activation-group" aria-label="Post-activation state">
-        <span class="section-label">POST-ACTIVATION STATE</span>
-        <dl class="compact-facts post-activation-facts">
-          <div class="${statusClass(pressure.status)}"><dt>State</dt><dd>${escapeHtml(stateSummary)}</dd></div>
-          <div class="${statusClass(successor.status)}"><dt>Successor</dt><dd>${escapeHtml(successor.label)}</dd></div>
+        <dl class="current-pressure-counts">
+          <div><dt>Above upper envelope</dt><dd>${boundary.above_upper_envelope_observation_count}</dd></div>
+          <div><dt>Below lower envelope</dt><dd>${boundary.below_lower_envelope_observation_count}</dd></div>
         </dl>
       </section>
     </header>
@@ -361,8 +378,14 @@ function robustnessCardMarkup(
       ${disclosureMarkup(
     "post-activation",
     "Post-activation observations",
-    `${behavior.label} · ${robustness.post_activation_observation_count} observations`,
+    `${behavior.label} · ${postActivationObservationText}`,
     postActivationContent,
+  )}
+      ${disclosureMarkup(
+    "migration-history",
+    "Migration / history",
+    migrationSummary,
+    migrationContent,
   )}
       ${disclosureMarkup(
     "successor-watch",
@@ -371,10 +394,10 @@ function robustnessCardMarkup(
     successorContent,
   )}
       ${disclosureMarkup(
-    "migration-history",
-    "Migration / history",
-    migrationSummary,
-    migrationContent,
+    "formation-details",
+    "Formation details",
+    `${formation.confirming_observation_count} qualifying observations`,
+    formationContent,
   )}
     </div>
   </section>`;
@@ -439,7 +462,7 @@ if (typeof document !== "undefined") {
     const requestedSymbol = operatorCardSymbolFromSearch(window.location.search);
     const requestedSection = operatorCardSectionFromHash(window.location.hash);
     let reports = [];
-    let filterMode = "all";
+    let filterMode = "migrated";
     let requestedCardFocused = false;
 
     function renderReports() {
