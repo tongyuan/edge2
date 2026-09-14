@@ -111,8 +111,10 @@ const distributionFields = {
     historyEmpty: document.querySelector("#distributionDeepDiscountHistoryEmpty"),
     higher: document.querySelector("#distributionDeepDiscountHigher"),
     higherButton: document.querySelector("#distributionDeepDiscountHigherButton"),
+    higherCount: document.querySelector("#distributionDeepDiscountHigherCount"),
     lower: document.querySelector("#distributionDeepDiscountLower"),
     lowerButton: document.querySelector("#distributionDeepDiscountLowerButton"),
+    lowerCount: document.querySelector("#distributionDeepDiscountLowerCount"),
     samples: document.querySelector("#distributionDeepDiscountSamples"),
   },
   shallow_discount: {
@@ -122,8 +124,10 @@ const distributionFields = {
     historyEmpty: document.querySelector("#distributionShallowDiscountHistoryEmpty"),
     higher: document.querySelector("#distributionShallowDiscountHigher"),
     higherButton: document.querySelector("#distributionShallowDiscountHigherButton"),
+    higherCount: document.querySelector("#distributionShallowDiscountHigherCount"),
     lower: document.querySelector("#distributionShallowDiscountLower"),
     lowerButton: document.querySelector("#distributionShallowDiscountLowerButton"),
+    lowerCount: document.querySelector("#distributionShallowDiscountLowerCount"),
     samples: document.querySelector("#distributionShallowDiscountSamples"),
   },
   shallow_premium: {
@@ -133,8 +137,10 @@ const distributionFields = {
     historyEmpty: document.querySelector("#distributionShallowPremiumHistoryEmpty"),
     higher: document.querySelector("#distributionShallowPremiumHigher"),
     higherButton: document.querySelector("#distributionShallowPremiumHigherButton"),
+    higherCount: document.querySelector("#distributionShallowPremiumHigherCount"),
     lower: document.querySelector("#distributionShallowPremiumLower"),
     lowerButton: document.querySelector("#distributionShallowPremiumLowerButton"),
+    lowerCount: document.querySelector("#distributionShallowPremiumLowerCount"),
     samples: document.querySelector("#distributionShallowPremiumSamples"),
   },
   deep_premium: {
@@ -144,8 +150,10 @@ const distributionFields = {
     historyEmpty: document.querySelector("#distributionDeepPremiumHistoryEmpty"),
     higher: document.querySelector("#distributionDeepPremiumHigher"),
     higherButton: document.querySelector("#distributionDeepPremiumHigherButton"),
+    higherCount: document.querySelector("#distributionDeepPremiumHigherCount"),
     lower: document.querySelector("#distributionDeepPremiumLower"),
     lowerButton: document.querySelector("#distributionDeepPremiumLowerButton"),
+    lowerCount: document.querySelector("#distributionDeepPremiumLowerCount"),
     samples: document.querySelector("#distributionDeepPremiumSamples"),
   },
 };
@@ -706,16 +714,20 @@ function configureMigrationDirection(fieldsForLocation, locationKey, direction, 
   const directionKey = direction.toLowerCase();
   const button = fieldsForLocation[`${directionKey}Button`];
   const value = fieldsForLocation[directionKey];
+  const count = fieldsForLocation[`${directionKey}Count`];
   const interactive = migration[`${directionKey}Interactive`];
-  value.textContent = migration[`${directionKey}Label`];
+  value.textContent = migration[`${directionKey}PercentageLabel`];
+  count.textContent = migration[`${directionKey}CountLabel`];
   button.disabled = !interactive;
   button.onclick = interactive
     ? () => openMigrationEvidence(locationKey, direction, button)
     : null;
   if (interactive) {
+    const accessiblePercentage = migration[`${directionKey}PercentageLabel`]
+      .replace("%", " percent");
     button.setAttribute(
       "aria-label",
-      `Inspect ${formatLocation(locationKey)} ${directionKey} migration evidence, ${migration[`${directionKey}Label`]}`,
+      `${formatLocation(locationKey)}, ${directionKey} migration evidence, ${accessiblePercentage}, ${migration[`${directionKey}CountLabel`]} migration${migration[`${directionKey}Count`] === 1 ? "" : "s"}`,
     );
   } else {
     button.removeAttribute("aria-label");

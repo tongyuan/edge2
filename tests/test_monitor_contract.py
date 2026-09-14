@@ -37,7 +37,7 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("Symbol Lab", HTML)
 
     def test_monitor_assets_are_versioned_together(self) -> None:
-        version = "migration-evidence-20260909"
+        version = "distribution-hierarchy-20260914"
         self.assertIn(f'/static/styles.css?v={version}', HTML)
         self.assertIn(f'/static/heatmap-state.js?v={version}', HTML)
         self.assertIn(f'/static/operator-time.js?v={version}', HTML)
@@ -289,10 +289,41 @@ class MonitorContractTests(unittest.TestCase):
         )
         self.assertIn("max-width: 100%;", CSS.split(".location-distribution-grid", 1)[1])
         self.assertIn("min-width: 0;", CSS.split(".location-distribution-cell", 1)[1])
+        self.assertIn("min-height: 66px;", CSS)
+        self.assertIn(".migration-direction-label {", CSS)
+        self.assertIn(".migration-direction-count {", CSS)
+        self.assertIn("@media (max-width: 360px)", CSS)
         self.assertIn(
             ".location-migration-directions { grid-template-columns: 1fr; gap: 4px; }",
             CSS,
         )
+
+    def test_migration_statistics_are_separate_progressive_disclosure_buttons(self) -> None:
+        self.assertEqual(HTML.count('class="migration-direction-label"'), 8)
+        self.assertEqual(HTML.count('class="migration-direction-count"'), 8)
+        self.assertNotIn("migration-evidence-chevron", HTML)
+        self.assertNotIn("View evidence", HTML)
+        for prefix in (
+            "DeepDiscount",
+            "ShallowDiscount",
+            "ShallowPremium",
+            "DeepPremium",
+        ):
+            with self.subTest(prefix=prefix):
+                self.assertIn(f'id="distribution{prefix}HigherButton" disabled', HTML)
+                self.assertIn(f'id="distribution{prefix}LowerButton" disabled', HTML)
+                self.assertIn(f'id="distribution{prefix}HigherCount">0<', HTML)
+                self.assertIn(f'id="distribution{prefix}LowerCount">0<', HTML)
+
+        configurator = JAVASCRIPT.split(
+            "function configureMigrationDirection", 1
+        )[1].split("function renderMonitorOverview", 1)[0]
+        self.assertIn("openMigrationEvidence(locationKey, direction, button)", configurator)
+        self.assertIn("button.disabled = !interactive;", configurator)
+        self.assertIn("PercentageLabel", configurator)
+        self.assertIn("CountLabel", configurator)
+        self.assertEqual(HTML.count('id="migrationEvidenceDialog"'), 1)
+        self.assertIn("outline: 2px solid var(--accent);", CSS)
 
     def test_heatmap_has_exactly_four_primary_and_three_fallback_keys(self) -> None:
         primary = HEATMAP_STATE.split("const primaryLocationKeys = [", 1)[1].split("];", 1)[0]
