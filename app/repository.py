@@ -1020,13 +1020,18 @@ class EdgeRepository:
         previous_active = set(current_active)
         if not was_active:
             previous_active.discard(symbol)
+        # Episode lifecycle follows the complete eligible population. Reusing the
+        # top-five UI cap here makes unchanged candidates falsely exit and re-enter
+        # whenever another symbol changes display ranking.
         current_candidates = current_production_near_misses(
             observations,
             active_symbols=current_active,
+            limit=None,
         )
         previous_candidates = current_production_near_misses(
             previous_observations,
             active_symbols=previous_active,
+            limit=None,
         )
         current_by_history = {
             (str(row["symbol"]), str(row["route"])): row

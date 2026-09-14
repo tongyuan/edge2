@@ -45,6 +45,7 @@ class OperatorPromotionIntegrationTests(unittest.TestCase):
         price: str,
         *,
         event_id: str | None = None,
+        symbol: str = "MU",
         low: str = "200",
         high: str = NEAR_MISS_IPDA_HIGH,
         observed_at: datetime | None = None,
@@ -52,8 +53,8 @@ class OperatorPromotionIntegrationTests(unittest.TestCase):
         timestamp = observed_at or (self.base_time + timedelta(seconds=index))
         return {
             "schema_version": "4.3",
-            "event_id": event_id or f"mu-event-{index}",
-            "symbol": "MU",
+            "event_id": event_id or f"{symbol.lower()}-event-{index}",
+            "symbol": symbol,
             "route": "STR",
             "observation_type": "rejection",
             "observation_price": price,
@@ -319,6 +320,20 @@ class OperatorPromotionIntegrationTests(unittest.TestCase):
         )
         self.assertFalse(first["historical_diagnosis"]["available"])
         self.assertEqual(first["historical_diagnosis"]["episode_count"], 1)
+        repeated_reports = [
+            self.client.get("/api/diagnostics/activation-feasibility").json()
+            for _ in range(3)
+        ]
+        self.assertTrue(all(
+            report["diagnosis"]["current_production_near_misses"][0][
+                "historical_diagnosis"
+            ]["episode_count"] == 1
+            for report in repeated_reports
+        ))
+        self.assertEqual(
+            self.scalar("SELECT COUNT(*) FROM current_production_near_miss_episodes"),
+            1,
+        )
         self.assertEqual(
             self.scalar(
                 "SELECT COUNT(*) FROM web_push_notifications WHERE event_type = 'MRZ_NEAR_MISS'"
@@ -399,6 +414,40 @@ class OperatorPromotionIntegrationTests(unittest.TestCase):
         ]
         self.assertEqual(identities[0], first["candidate_identity"])
         self.assertNotEqual(identities[0], identities[1])
+
+    def test_episode_lifecycle_is_not_limited_by_top_five_ui_ranking(self) -> None:
+        symbols = tuple(f"RANK{index}" for index in range(1, 7))
+        for symbol_index, symbol in enumerate(symbols, 1):
+            prices = ("941.52", "941.52", "941.52", str(949 + symbol_index))
+            for observation_index, price in enumerate(prices, 1):
+                self.post(self.payload(observation_index, price, symbol=symbol))
+
+        report = self.client.get("/api/diagnostics/activation-feasibility").json()
+        self.assertEqual(
+            len(report["diagnosis"]["current_production_near_misses"]),
+            5,
+        )
+        self.assertEqual(
+            self.scalar(
+                "SELECT COUNT(*) FROM current_production_near_miss_episodes "
+                "WHERE ended_at IS NULL"
+            ),
+            6,
+        )
+        self.assertEqual(
+            self.scalar(
+                "SELECT COUNT(*) FROM current_production_near_miss_episodes "
+                "WHERE ended_at IS NOT NULL"
+            ),
+            0,
+        )
+        self.assertEqual(
+            self.scalar(
+                "SELECT COUNT(*) FROM web_push_notifications "
+                "WHERE event_type = 'MRZ_NEAR_MISS'"
+            ),
+            6,
+        )
 
     def test_preexisting_near_miss_is_baselined_without_replay_push(self) -> None:
         with transaction(self.database_url) as connection:

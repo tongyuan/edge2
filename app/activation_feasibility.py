@@ -343,9 +343,9 @@ def production_near_misses(
     scope: str,
     preliminary: bool,
     active_symbols: set[str] | None = None,
-    limit: int = 5,
+    limit: int | None = 5,
 ) -> list[dict[str, object]]:
-    """Return the exact actionable near-miss cards used by the operator UI."""
+    """Return canonical near misses, optionally capped for operator display."""
     production_id = Scenario(ALGORITHM_A, 4, Decimal("0.01")).scenario_id
     configured_allowance = Decimal("1")
     active = active_symbols or set()
@@ -420,14 +420,14 @@ def production_near_misses(
             item["route"],
         )
     )
-    return near_misses[:limit]
+    return near_misses if limit is None else near_misses[:limit]
 
 
 def current_production_near_misses(
     observations: Sequence[Observation],
     *,
     active_symbols: set[str] | None = None,
-    limit: int = 5,
+    limit: int | None = 5,
 ) -> list[dict[str, object]]:
     """Evaluate only the canonical production scenario for command/episode use."""
     grouped: dict[tuple[str, Route], list[Observation]] = defaultdict(list)

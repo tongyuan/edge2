@@ -145,6 +145,18 @@ class NearMissDiagnosisTests(unittest.TestCase):
         self.assertEqual(result["allowance_history"], ["1.25"])
         self.assertFalse(result["available"])
 
+    def test_repeated_diagnosis_reads_do_not_change_episode_metrics(self) -> None:
+        open_snapshot = episode(1, "1.25", ended=False)
+        results = [
+            build_near_miss_diagnosis(candidate("1.25"), [open_snapshot])
+            for _ in range(4)
+        ]
+        self.assertTrue(all(result == results[0] for result in results[1:]))
+        self.assertEqual(results[0]["episode_count"], 1)
+        self.assertEqual(results[0]["same_area_count"], 1)
+        self.assertEqual(results[0]["allowance_history"], ["1.25"])
+        self.assertFalse(results[0]["available"])
+
     def test_route_isolation(self) -> None:
         rows = [
             episode(1, "1.40", route="STR"),
@@ -188,6 +200,40 @@ class NearMissDiagnosisTests(unittest.TestCase):
         self.assertEqual(result["excluded_unreliable_episode_count"], 1)
         self.assertEqual(result["episode_count"], 1)
         self.assertFalse(result["available"])
+
+    def test_duplicate_persisted_rows_collapse_by_canonical_candidate(self) -> None:
+        duplicate_rows = [episode(1, "1.88"), episode(2, "1.88")]
+        for row in duplicate_rows:
+            row["canonical_candidate_identity"] = "f" * 64
+            row["canonical_candidate_lower"] = Decimal("15.11")
+            row["canonical_candidate_upper"] = Decimal("15.39")
+            row["canonical_candidate_midpoint"] = Decimal("15.25")
+            row["canonical_candidate_timestamp"] = BASE_TIME
+        result = build_near_miss_diagnosis(
+            candidate("1.88", lower="15.11", upper="15.39"),
+            duplicate_rows,
+        )
+        self.assertEqual(result["episode_count"], 1)
+        self.assertEqual(result["same_area_count"], 1)
+        self.assertEqual(result["allowance_history"], ["1.88"])
+        self.assertFalse(result["available"])
+        self.assertEqual(result["collapsed_duplicate_episode_row_count"], 2)
+        self.assertEqual(result["source_trustworthy_episode_row_count"], 3)
+        self.assertEqual(len(result["episodes"]), 1)
+        self.assertEqual(result["episodes"][0]["status"], "CURRENT")
+        self.assertEqual(result["episodes"][0]["source_episode_ids"], [1, 2])
+
+    def test_two_completed_episodes_and_current_are_each_counted_once(self) -> None:
+        rows = [episode(1, "1.40"), episode(2, "1.20")]
+        result = build_near_miss_diagnosis(candidate("1.08"), rows)
+        self.assertEqual(result["episode_count"], 3)
+        self.assertEqual(result["same_area_count"], 3)
+        self.assertEqual(result["allowance_history"], ["1.40", "1.20", "1.08"])
+        self.assertEqual(
+            [item["status"] for item in result["episodes"]],
+            ["HISTORICAL", "HISTORICAL", "CURRENT"],
+        )
+        self.assertEqual(result["collapsed_duplicate_episode_row_count"], 0)
 
     def test_epsilon_and_production_constants_are_isolated(self) -> None:
         self.assertEqual(CONCENTRATION_TREND_EPSILON_PP, Decimal("0.02"))

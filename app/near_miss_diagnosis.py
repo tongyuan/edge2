@@ -165,6 +165,75 @@ def _current_episode(
     }
 
 
+def _distinct_logical_episodes(
+    snapshots: Sequence[Mapping[str, Any]],
+) -> tuple[list[dict[str, Any]], int]:
+    """Collapse persisted pseudo-episodes for one canonical candidate.
+
+    Candidate identity is derived from canonical candidate facts and observation
+    identities. Repeated rows with that same identity are therefore audit
+    snapshots of one logical episode, even when an older synchronizer split them
+    after global display-ranking churn. Raw persistence remains untouched.
+    """
+    grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    for snapshot in snapshots:
+        item = dict(snapshot)
+        key = (
+            str(item["symbol"]),
+            str(item["route"]),
+            str(item["candidate_identity"]),
+        )
+        grouped.setdefault(key, []).append(item)
+
+    logical: list[dict[str, Any]] = []
+    collapsed = 0
+    for group in grouped.values():
+        collapsed += len(group) - 1
+        current = next(
+            (item for item in reversed(group) if item["status"] == "CURRENT"),
+            None,
+        )
+        representative = dict(current or group[-1])
+        source_episode_ids = sorted({
+            int(item["episode_id"])
+            for item in group
+            if item.get("episode_id") is not None
+        })
+        started = [
+            str(item["episode_started_at"])
+            for item in group
+            if item.get("episode_started_at") is not None
+        ]
+        representative["episode_id"] = (
+            int(current["episode_id"])
+            if current is not None and current.get("episode_id") is not None
+            else (source_episode_ids[0] if source_episode_ids else None)
+        )
+        representative["episode_started_at"] = min(started) if started else None
+        representative["source_episode_ids"] = source_episode_ids
+        representative["source_episode_row_count"] = len(group)
+        if current is None:
+            ended = [
+                str(item["episode_ended_at"])
+                for item in group
+                if item.get("episode_ended_at") is not None
+            ]
+            representative["episode_ended_at"] = max(ended) if ended else None
+        else:
+            representative["episode_ended_at"] = None
+            representative["ended_reason"] = None
+        logical.append(representative)
+
+    logical.sort(
+        key=lambda item: (
+            item["status"] == "CURRENT",
+            item.get("episode_started_at") or "",
+            item.get("episode_id") or 0,
+        )
+    )
+    return logical, collapsed
+
+
 def build_near_miss_diagnosis(
     candidate: Mapping[str, Any],
     episode_rows: Sequence[Mapping[str, Any]],
@@ -195,8 +264,11 @@ def build_near_miss_diagnosis(
             int(row["id"]),
         )
     )
-    detailed = [_historical_episode(row) for row in trustworthy_closed]
-    detailed.append(_current_episode(candidate, open_row))
+    persisted_snapshots = [_historical_episode(row) for row in trustworthy_closed]
+    persisted_snapshots.append(_current_episode(candidate, open_row))
+    detailed, collapsed_duplicates = _distinct_logical_episodes(
+        persisted_snapshots
+    )
     window = detailed[-lookback_episodes:]
     included_ids = {id(item) for item in window}
     current_lower = Decimal(str(candidate["candidate_lower_boundary"]))
@@ -244,6 +316,8 @@ def build_near_miss_diagnosis(
         "lookback_episode_limit": lookback_episodes,
         "concentration_trend_epsilon_pp": _decimal_text(epsilon_pp),
         "total_trustworthy_episode_count": len(detailed),
+        "source_trustworthy_episode_row_count": len(persisted_snapshots),
+        "collapsed_duplicate_episode_row_count": collapsed_duplicates,
         "excluded_unreliable_episode_count": excluded_unreliable,
         "episodes": detailed,
     }
