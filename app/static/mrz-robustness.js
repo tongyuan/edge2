@@ -462,7 +462,7 @@ if (typeof document !== "undefined") {
     const requestedSymbol = operatorCardSymbolFromSearch(window.location.search);
     const requestedSection = operatorCardSectionFromHash(window.location.hash);
     let reports = [];
-    let filterMode = "all";
+    let filterMode = "migrated";
     let requestedCardFocused = false;
 
     function renderReports() {

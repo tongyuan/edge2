@@ -136,10 +136,15 @@ assert.doesNotMatch(
   `${operationCardSource}\n${operationCardHtml}`,
   /<select|type=["']search["']|data-sort|data-filter/i,
 );
-assert.match(operationCardHtml, /id="filterAll"[^>]*aria-pressed="true"[^>]*>All</);
+assert.match(operationCardHtml, /id="filterAll"[^>]*aria-pressed="false"[^>]*>All</);
 assert.match(
   operationCardHtml,
-  /id="filterMigrated"[^>]*aria-pressed="false"[^>]*>Migrated only</,
+  /id="filterMigrated"[^>]*aria-pressed="true"[^>]*>Migrated only</,
+);
+assert.match(
+  operationCardSource,
+  /let filterMode = "migrated";/,
+  "Migrated only must be the initial Operator Card filter",
 );
 assert.match(
   operationCardSource,
