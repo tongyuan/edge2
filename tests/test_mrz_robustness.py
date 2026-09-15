@@ -143,7 +143,7 @@ class MRZRobustnessTests(unittest.TestCase):
             },
         )
 
-    def test_cards_order_by_shortest_formation_then_activation_then_symbol(self) -> None:
+    def test_cards_order_by_latest_migration_then_activation_with_symbol_ties(self) -> None:
         formation = tuple(
             observation(index, price)
             for index, price in enumerate(("110", "110.2", "110.4", "110.6"), 1)
@@ -171,24 +171,71 @@ class MRZRobustnessTests(unittest.TestCase):
             )
 
         active_mrzs = (
-            active("SLOW", 120, 500),
-            active("TIE_B", 60, 300),
-            active("UNAVAILABLE", None, 600),
-            active("RECENT", 60, 400),
-            active("TIE_A", 60, 300),
+            active("NEVER_OLD", 1, 200),
+            active("MIGRATED_OLD", 1, 600),
+            active("NEVER_TIE_B", 1, 300),
+            active("MIGRATED_TIE_B", 120, 700),
+            active("NEVER_RECENT", 120, 900),
+            active("MIGRATED_NEW", None, 800),
+            active("MIGRATED_TIE_A", 1, 700),
+            active("NEVER_TIE_A", None, 300),
         )
-        report = MRZRobustnessService(
-            lambda: (
-                active_mrzs,
-                (),
-                {item.symbol: {"has_migrated": False} for item in active_mrzs},
-            ),
+        migration_offsets = {
+            "MIGRATED_OLD": 600,
+            "MIGRATED_TIE_A": 700,
+            "MIGRATED_TIE_B": 700,
+            "MIGRATED_NEW": 800,
+        }
+        migration_provenance = {
+            item.symbol: (
+                {
+                    "has_migrated": True,
+                    "migrated_at": (
+                        BASE_TIME + timedelta(seconds=migration_offsets[item.symbol])
+                    ).isoformat(),
+                }
+                if item.symbol in migration_offsets
+                else {"has_migrated": False}
+            )
+            for item in active_mrzs
+        }
+        inputs = [active_mrzs, ()]
+        service = MRZRobustnessService(
+            lambda: (inputs[0], inputs[1], migration_provenance),
             clock=lambda: FIXED_NOW,
-        ).generate_report()
+        )
+        before_refresh = service.generate_report()
 
         self.assertEqual(
-            [item["symbol"] for item in report["active_mrzs"]],
-            ["RECENT", "TIE_A", "TIE_B", "SLOW", "UNAVAILABLE"],
+            [item["symbol"] for item in before_refresh["active_mrzs"]],
+            [
+                "MIGRATED_NEW", "MIGRATED_TIE_A", "MIGRATED_TIE_B",
+                "MIGRATED_OLD", "NEVER_RECENT", "NEVER_TIE_A",
+                "NEVER_TIE_B", "NEVER_OLD",
+            ],
+        )
+        self.assertEqual(
+            before_refresh["active_mrzs"][3]["migration"]["migrated_at"],
+            (BASE_TIME + timedelta(seconds=600)).isoformat(),
+        )
+
+        inputs[0] = tuple(reversed(active_mrzs))
+        inputs[1] = (
+            observation(
+                101, "110.3", symbol="MIGRATED_OLD", observed_offset=1000,
+            ),
+        )
+        after_refresh = service.generate_report()
+        self.assertEqual(
+            [item["symbol"] for item in after_refresh["active_mrzs"]],
+            [item["symbol"] for item in before_refresh["active_mrzs"]],
+            "a later observation and refresh must not move a card without migration",
+        )
+        self.assertEqual(
+            after_refresh["active_mrzs"][3]["robustness_evidence"][
+                "post_activation_observation_count"
+            ],
+            1,
         )
 
     def test_containment_boundary_pressure_and_signed_midpoint_displacement(self) -> None:
@@ -875,6 +922,66 @@ class MRZRobustnessDatabaseSafetyTests(unittest.TestCase):
             "observed_at": BASE_TIME.replace(second=index),
         })
         self.repository.ingest(payload, Decimal("0.01"))
+
+    def test_card_order_uses_latest_persisted_migration_not_observation_time(self) -> None:
+        def ingest_symbol(symbol: str, index: int, price: str, offset: int) -> None:
+            payload = ObservationPayload.model_validate({
+                "schema_version": "4.3",
+                "event_id": f"order-{symbol}-{index}",
+                "symbol": symbol,
+                "route": "BTD",
+                "observation_type": "reclaim",
+                "observation_price": price,
+                "ipda_20w_high": "200",
+                "ipda_20w_low": "100",
+                "observed_at": BASE_TIME + timedelta(seconds=offset),
+            })
+            self.repository.ingest(payload, Decimal("0.01"))
+
+        for index, price in enumerate(("110", "110.2", "110.4", "110.6"), 1):
+            ingest_symbol("OLDER", index, price, index)
+            ingest_symbol("NEWER", index, price, index + 10)
+            ingest_symbol("INITIAL", index, price, index + 50)
+        for index, price in enumerate(("120", "120.2", "120.4", "120.6"), 5):
+            ingest_symbol("OLDER", index, price, index)
+            ingest_symbol("NEWER", index, price, index + 10)
+        for index, price in enumerate(("130", "130.2", "130.4", "130.6"), 9):
+            ingest_symbol("NEWER", index, price, index + 20)
+
+        service = MRZRobustnessService(
+            self.repository.mrz_robustness_inputs,
+            clock=lambda: FIXED_NOW,
+        )
+        before = service.generate_report()
+        self.assertEqual(
+            [item["symbol"] for item in before["active_mrzs"]],
+            ["NEWER", "OLDER", "INITIAL"],
+        )
+        events = self.repository.audit_events("NEWER")
+        migrations = [
+            event for event in events if event["event_type"] == "MRZ_MIGRATED"
+        ]
+        self.assertEqual(len(migrations), 2)
+        self.assertEqual(
+            before["active_mrzs"][0]["migration"]["migrated_at"],
+            migrations[-1]["occurred_at"].isoformat().replace("+00:00", "Z"),
+        )
+
+        ingest_symbol("OLDER", 99, "120.3", 100)
+        after = service.generate_report()
+        self.assertEqual(
+            [item["symbol"] for item in after["active_mrzs"]],
+            ["NEWER", "OLDER", "INITIAL"],
+        )
+        self.assertEqual(
+            after["active_mrzs"][1]["migration"]["migrated_at"],
+            before["active_mrzs"][1]["migration"]["migrated_at"],
+        )
+        self.assertEqual(
+            len(self.repository.audit_events("OLDER")),
+            2,
+            "the late observation cannot create an extra migration",
+        )
 
     def test_generating_report_does_not_mutate_operational_state(self) -> None:
         for index, price in enumerate(("110", "110.2", "110.4", "110.6", "120"), 1):

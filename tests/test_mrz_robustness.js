@@ -842,7 +842,7 @@ assert.deepEqual(
 assert.deepEqual(
   filterReports(backendOrderedReports, "migrated").map((report) => report.symbol),
   ["WLDUSDT", "XAGUSD"],
-  "migrated filtering preserves the backend formation-duration order",
+  "migrated filtering preserves the authoritative API order",
 );
 const allReportsMarkup = reportMarkup(backendOrderedReports);
 assert.match(allReportsMarkup, /BTCUSDT/);

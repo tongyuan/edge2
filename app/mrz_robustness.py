@@ -79,15 +79,27 @@ def current_formation_provenance(
     return started_at, completed_at, derived_duration
 
 
-def active_mrz_order_key(active: ActiveMRZ) -> tuple[object, ...]:
-    formation = current_formation_provenance(active)
-    activation_recency = datetime.max.replace(tzinfo=timezone.utc) - (
-        active.activated_at.astimezone(timezone.utc)
+def operator_card_order_key(
+    active: ActiveMRZ,
+    migration: Mapping[str, object],
+) -> tuple[object, ...]:
+    migrated_at = (
+        migration.get("migrated_at")
+        if migration.get("has_migrated") is True
+        else None
     )
+    migration_time = None
+    if isinstance(migrated_at, str):
+        try:
+            parsed = datetime.fromisoformat(migrated_at.replace("Z", "+00:00"))
+            if parsed.tzinfo is not None:
+                migration_time = parsed.astimezone(timezone.utc)
+        except ValueError:
+            pass
+    authority_time = migration_time or active.activated_at.astimezone(timezone.utc)
     return (
-        formation is None,
-        formation[2] if formation is not None else Decimal("0"),
-        activation_recency,
+        migration_time is None,
+        datetime.max.replace(tzinfo=timezone.utc) - authority_time,
         active.symbol,
     )
 
@@ -384,7 +396,13 @@ class MRZRobustnessService:
                     {"has_migrated": False},
                 ),
             )
-            for active in sorted(active_mrzs, key=active_mrz_order_key)
+            for active in sorted(
+                active_mrzs,
+                key=lambda item: operator_card_order_key(
+                    item,
+                    migration_provenance.get(item.symbol, {}),
+                ),
+            )
         ]
         return {
             "generated_at": iso(generated_at),
