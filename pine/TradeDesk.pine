@@ -6,7 +6,7 @@ string GROUP_SLOT_A = "MRZ SLOT A"
 string GROUP_SLOT_B = "MRZ SLOT B"
 string GROUP_PREVIOUS_DISPLAY = "PREVIOUS MRZ DISPLAY"
 string GROUP_CHART_DISPLAY = "CHART DISPLAY"
-string GROUP_EQM_PD_ARRAYS = "ACTIVE DEALING RANGE EVIDENCE"
+string GROUP_EQM_PD_ARRAYS = "MRZ PROXIMAL EVIDENCE"
 string GROUP_EQM_INTERACTION = "MRZ EQM INTERACTION"
 string GROUP_IPDA_20W = "IPDA 20W"
 string GROUP_STATE_TRANSITION_OBSERVER = "State Transition Observer"
@@ -24,7 +24,7 @@ int slotBActivationTime = input.time(0, "Activation Time", group = GROUP_SLOT_B,
 
 bool showPreviousMrz = input.bool(true, "Show Previous MRZ", group = GROUP_PREVIOUS_DISPLAY)
 
-bool showCurrentEnvelope = input.bool(true, "Show Current MRZ 1W / 2W", group = GROUP_CHART_DISPLAY)
+bool showCurrentEnvelope = input.bool(false, "Show Current MRZ 1W / 2W", group = GROUP_CHART_DISPLAY)
 bool showPreviousEnvelope = input.bool(false, "Show Previous MRZ 1W / 2W", group = GROUP_CHART_DISPLAY)
 bool showEqmProximalZone = input.bool(true, "Show MRZ EQM Proximal Zone", group = GROUP_CHART_DISPLAY)
 int eqmProximalZoneWidthPercent = input.int(50, "EQM Proximal Zone Width (%)", minval = 10, maxval = 50, step = 10, group = GROUP_CHART_DISPLAY)
@@ -33,8 +33,9 @@ bool enableEqmInteractionAlerts = input.bool(false, "Enable EQM Interaction Aler
 
 bool enableStateTransitionObserver = input.bool(true, "Enable State Transition Observer", group = GROUP_STATE_TRANSITION_OBSERVER)
 bool enableAnchorTransitionAlerts = input.bool(true, "Enable Anchor Transition Alerts", group = GROUP_STATE_TRANSITION_OBSERVER)
+bool enableSecondEqmContactAlert = input.bool(true, "Enable Second EQM Contact Alert", group = GROUP_STATE_TRANSITION_OBSERVER)
 bool showStateTransitionLabels = input.bool(true, "Show State Transition Labels", group = GROUP_STATE_TRANSITION_OBSERVER)
-bool showStateDebugPanel = input.bool(false, "Show State Debug Panel", group = GROUP_STATE_TRANSITION_OBSERVER)
+bool showStateDebugPanel = input.bool(true, "Show State Debug Panel", group = GROUP_STATE_TRANSITION_OBSERVER)
 
 // IPDA 20W — source semantics: standalone ipda.pine.
 // Only the 20W structural range is merged here; 40W/60W, tables and IPDA alerts are intentionally excluded.
@@ -197,8 +198,13 @@ else
         else if close < eqmProximalZoneLow
             eqmOutsideSide := EQM_SIDE_BELOW
 
+f_alertSymbol() =>
+    syminfo.ticker
+
 f_eqmInteractionPayload(_direction) =>
-    string payload = '{"event_type":"MRZ_EQM_INTERACTION"'
+    string approachText = _direction == "FROM_BOTTOM" ? "FROM BELOW" : _direction == "FROM_TOP" ? "FROM ABOVE" : _direction
+    string payload = '{"alert":"' + f_alertSymbol() + ' · EQM PROXIMAL · ' + approachText + '"'
+    payload += ',"event_type":"MRZ_EQM_INTERACTION"'
     payload += ',"symbol":"' + syminfo.tickerid + '"'
     payload += ',"direction":"' + _direction + '"'
     payload += ',"eqm_zone_low":' + str.tostring(eqmProximalZoneLow, format.mintick)
@@ -267,6 +273,9 @@ f_observerPriceText(_value) =>
 f_observerTimeText(_value) =>
     na(_value) ? "-" : str.format_time(_value, "yyyy-MM-dd'T'HH:mm:ss'Z'", "UTC")
 
+f_observerPanelTimeText(_value) =>
+    na(_value) ? "-" : str.format_time(_value, "dd MMM yyyy '·' HH:mm", "UTC-4") + " UTC−4"
+
 f_observerAnchorName(_anchor) =>
     _anchor == OBS_ANCHOR_CURRENT_MIDPOINT ? "CURRENT MIDPOINT" : _anchor == OBS_ANCHOR_MIGRATION_EQM ? "MIGRATION EQM" : _anchor == OBS_ANCHOR_PREVIOUS_MIDPOINT ? "PREVIOUS MIDPOINT" : _anchor == OBS_ANCHOR_MULTIPLE ? "COINCIDENT MIDPOINT ANCHORS" : "NONE"
 
@@ -300,8 +309,16 @@ f_observerContactList(_currentMidContact, _eqmContact, _previousMidContact) =>
         contactList := contactList == "" ? "PREVIOUS MRZ MIDPOINT" : contactList + " + PREVIOUS MRZ MIDPOINT"
     contactList
 
+f_observerAlertContactText(_contactMask) =>
+    _contactMask == OBS_CONTACT_CURRENT_MIDPOINT ? "CURRENT MID" : _contactMask == OBS_CONTACT_MIGRATION_EQM ? "EQM" : _contactMask == OBS_CONTACT_PREVIOUS_MIDPOINT ? "PREV MID" : _contactMask == 0 ? "NONE" : "MULTI-ANCHOR"
+
+f_observerAnchorTransitionAlert(_previousContactMask, _currentContactMask) =>
+    bool singleAnchorContact = _currentContactMask == OBS_CONTACT_CURRENT_MIDPOINT or _currentContactMask == OBS_CONTACT_MIGRATION_EQM or _currentContactMask == OBS_CONTACT_PREVIOUS_MIDPOINT
+    singleAnchorContact ? f_alertSymbol() + " · " + f_observerAlertContactText(_previousContactMask) + " → " + f_observerAlertContactText(_currentContactMask) : f_alertSymbol() + " · MULTI-ANCHOR CONTACT"
+
 f_observerAnchorTransitionPayload(_previousContact, _currentContact, _previousContactMask, _currentContactMask, _lastReachedAnchor, _pathStep, _observedAt) =>
-    string payload = '{"event_type":"MRZ_ANCHOR_TRANSITION"'
+    string payload = '{"alert":"' + f_observerAnchorTransitionAlert(_previousContactMask, _currentContactMask) + '"'
+    payload += ',"event_type":"MRZ_ANCHOR_TRANSITION"'
     payload += ',"symbol":"' + syminfo.tickerid + '"'
     payload += ',"previous_contact":"' + _previousContact + '"'
     payload += ',"current_contact":"' + _currentContact + '"'
@@ -312,6 +329,20 @@ f_observerAnchorTransitionPayload(_previousContact, _currentContact, _previousCo
     payload += ',"current_mrz_midpoint":' + str.tostring(currentMrzMidpoint, format.mintick)
     payload += ',"migration_eqm":' + str.tostring(migrationEqm, format.mintick)
     payload += ',"previous_mrz_midpoint":' + str.tostring(previousMrzMidpoint, format.mintick)
+    payload += ',"timeframe":"' + timeframe.period + '"'
+    payload += ',"observed_at":' + str.tostring(_observedAt)
+    payload += ',"price":' + str.tostring(close, format.mintick) + '}'
+    payload
+
+f_observerSecondEqmContactPayload(_eqmContactCount, _pathStep, _observedAt) =>
+    string payload = '{"alert":"' + f_alertSymbol() + ' · 2ND EQM CONTACT"'
+    payload += ',"event_type":"MRZ_SECOND_EQM_CONTACT"'
+    payload += ',"symbol":"' + syminfo.tickerid + '"'
+    payload += ',"eqm_contact_count":' + str.tostring(_eqmContactCount)
+    payload += ',"migration_eqm":' + str.tostring(migrationEqm, format.mintick)
+    payload += ',"current_mrz_midpoint":' + str.tostring(currentMrzMidpoint, format.mintick)
+    payload += ',"previous_mrz_midpoint":' + str.tostring(previousMrzMidpoint, format.mintick)
+    payload += ',"path_step":' + str.tostring(_pathStep)
     payload += ',"timeframe":"' + timeframe.period + '"'
     payload += ',"observed_at":' + str.tostring(_observedAt)
     payload += ',"price":' + str.tostring(close, format.mintick) + '}'
@@ -358,6 +389,10 @@ if stateObserverGeometryAvailable
             observerLowerAdjacentAnchor := OBS_ANCHOR_MULTIPLE
 
 string observerPriceRegion = stateObserverGeometryAvailable ? f_observerPriceRegion(close, currentMrzLower, currentMrzUpper, currentMrzMidpoint, migrationEqm, previousMrzLower, previousMrzUpper, previousMrzMidpoint) : "UNAVAILABLE"
+// These panel fields expose deterministic structural context so downstream
+// discretionary analysis does not need to re-derive known facts.
+string observerMrzMigration = not currentMrzAvailable or not previousMrzAvailable ? "UNAVAILABLE" : currentMrzMidpoint > previousMrzMidpoint ? "HIGHER" : currentMrzMidpoint < previousMrzMidpoint ? "LOWER" : "COINCIDENT"
+string observerIpda20Zone = not ipda20Ready or na(close) ? "UNAVAILABLE" : close < ipda20Low ? "BELOW 20W LOW" : close < ipda20Quarter ? "DEEP DISCOUNT" : close < ipda20Eqm ? "SHALLOW DISCOUNT" : close < ipda20ThreeQuarter ? "SHALLOW PREMIUM" : close <= ipda20High ? "DEEP PREMIUM" : "ABOVE 20W HIGH"
 
 var int observerState = OBS_STATE_PRE_ACTIVATION
 var int observerLastReachedAnchor = OBS_ANCHOR_NONE
@@ -367,6 +402,8 @@ var string observerLastContactSummary = "NONE"
 var int observerLastReachedAt = na
 var int observerLastReachedBar = na
 var int observerObservedPathSteps = 0
+var int observerEqmDistinctContactCount = 0
+var bool observerSecondEqmContactEligible = true
 var bool observerCurrentMidContactActive = false
 var bool observerEqmContactActive = false
 var bool observerPreviousMidContactActive = false
@@ -386,6 +423,7 @@ bool observerEqmReachedEvent = false
 bool observerPreviousMidReachedEvent = false
 bool observerMultiAnchorContactEvent = false
 bool observerAttentionTransition = false
+bool observerSecondEqmContactEvent = false
 int observerPriorContactMaskForEvent = 0
 string observerPriorContactSummaryForEvent = "NONE"
 string observerContactSummary = ""
@@ -402,6 +440,8 @@ if not stateObserverGeometryAvailable
     observerLastReachedAt := na
     observerLastReachedBar := na
     observerObservedPathSteps := 0
+    observerEqmDistinctContactCount := 0
+    observerSecondEqmContactEligible := true
     observerCurrentMidContactActive := false
     observerEqmContactActive := false
     observerPreviousMidContactActive := false
@@ -434,6 +474,8 @@ else if barstate.isconfirmed
         observerLastReachedAt := na
         observerLastReachedBar := na
         observerObservedPathSteps := 0
+        observerEqmDistinctContactCount := 0
+        observerSecondEqmContactEligible := true
         observerCurrentMidContactActive := observerCurrentMidContactOnBar
         observerEqmContactActive := observerEqmContactOnBar
         observerPreviousMidContactActive := observerPreviousMidContactOnBar
@@ -470,6 +512,11 @@ else if barstate.isconfirmed
             observerLastReachedAt := time_close
             observerLastReachedBar := bar_index
             observerObservedPathSteps += 1
+            if observerEqmContactStarted
+                observerEqmDistinctContactCount += 1
+                if observerEqmDistinctContactCount == 2 and observerSecondEqmContactEligible
+                    observerSecondEqmContactEvent := true
+                    observerSecondEqmContactEligible := false
             observerContactSummary := f_observerContactList(observerCurrentMidContactStarted, observerEqmContactStarted, observerPreviousMidContactStarted)
             observerLastContactSummary := observerContactSummary
             observerCurrentMidReachedEvent := observerAnchorContactsStarted == 1 and observerCurrentMidContactStarted
@@ -518,33 +565,40 @@ if observerMultiAnchorContactEvent and observerAttentionTransition and showState
 if enableAnchorTransitionAlerts and observerAttentionTransition and barstate.isconfirmed
     alert(f_observerAnchorTransitionPayload(observerPriorContactSummaryForEvent, observerContactSummary, observerPriorContactMaskForEvent, observerLastContactMask, observerLastReachedAnchor, observerObservedPathSteps, observerLastReachedAt), alert.freq_once_per_bar_close)
 
+if enableSecondEqmContactAlert and observerSecondEqmContactEvent and barstate.isconfirmed
+    alert(f_observerSecondEqmContactPayload(observerEqmDistinctContactCount, observerObservedPathSteps, observerLastReachedAt), alert.freq_once_per_bar_close)
+
 while array.size(observerStateLabels) > MAX_STATE_OBSERVER_LABELS
     label oldestObserverLabel = array.shift(observerStateLabels)
     if not na(oldestObserverLabel)
         label.delete(oldestObserverLabel)
 
-var table stateObserverPanel = table.new(position.bottom_right, 2, 9)
+var table stateObserverPanel = table.new(position.bottom_right, 2, 11)
 if barstate.islast and showStateDebugPanel
     color observerPanelBackground = color.new(color.black, 18)
     color observerPanelLabelColor = color.new(color.silver, 0)
     table.cell(stateObserverPanel, 0, 0, "Observer Status", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
     table.cell(stateObserverPanel, 1, 0, f_observerStateText(observerState), text_color = color.white, bgcolor = observerPanelBackground)
-    table.cell(stateObserverPanel, 0, 1, "Price Region", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
-    table.cell(stateObserverPanel, 1, 1, observerPriceRegion, text_color = color.white, bgcolor = observerPanelBackground)
-    table.cell(stateObserverPanel, 0, 2, "Upper Anchor", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
-    table.cell(stateObserverPanel, 1, 2, f_observerAdjacentText(observerUpperAdjacentAnchor, observerUpperAdjacentPrice), text_color = color.white, bgcolor = observerPanelBackground)
-    table.cell(stateObserverPanel, 0, 3, "Lower Anchor", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
-    table.cell(stateObserverPanel, 1, 3, f_observerAdjacentText(observerLowerAdjacentAnchor, observerLowerAdjacentPrice), text_color = color.white, bgcolor = observerPanelBackground)
-    table.cell(stateObserverPanel, 0, 4, "Last Reached Anchor", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
-    table.cell(stateObserverPanel, 1, 4, f_observerLastAnchorText(observerLastReachedAnchor), text_color = color.white, bgcolor = observerPanelBackground)
-    table.cell(stateObserverPanel, 0, 5, "Previous Reached Anchor", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
-    table.cell(stateObserverPanel, 1, 5, f_observerLastAnchorText(observerPreviousReachedAnchor), text_color = color.white, bgcolor = observerPanelBackground)
-    table.cell(stateObserverPanel, 0, 6, "Path Step #", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
-    table.cell(stateObserverPanel, 1, 6, str.tostring(observerObservedPathSteps), text_color = color.white, bgcolor = observerPanelBackground)
-    table.cell(stateObserverPanel, 0, 7, "Last Contact At", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
-    table.cell(stateObserverPanel, 1, 7, f_observerTimeText(observerLastReachedAt), text_color = color.white, bgcolor = observerPanelBackground)
-    table.cell(stateObserverPanel, 0, 8, "Last Contact", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
-    table.cell(stateObserverPanel, 1, 8, observerLastContactSummary, text_color = color.white, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 0, 1, "MRZ Migration", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 1, 1, observerMrzMigration, text_color = color.white, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 0, 2, "IPDA 20W Zone", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 1, 2, observerIpda20Zone, text_color = color.white, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 0, 3, "Price Region", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 1, 3, observerPriceRegion, text_color = color.white, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 0, 4, "Upper Anchor", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 1, 4, f_observerAdjacentText(observerUpperAdjacentAnchor, observerUpperAdjacentPrice), text_color = color.white, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 0, 5, "Lower Anchor", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 1, 5, f_observerAdjacentText(observerLowerAdjacentAnchor, observerLowerAdjacentPrice), text_color = color.white, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 0, 6, "Last Reached Anchor", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 1, 6, f_observerLastAnchorText(observerLastReachedAnchor), text_color = color.white, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 0, 7, "Previous Reached Anchor", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 1, 7, f_observerLastAnchorText(observerPreviousReachedAnchor), text_color = color.white, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 0, 8, "Path Step #", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 1, 8, str.tostring(observerObservedPathSteps), text_color = color.white, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 0, 9, "Last Contact At", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 1, 9, f_observerPanelTimeText(observerLastReachedAt), text_color = color.white, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 0, 10, "Last Contact", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 1, 10, observerLastContactSummary, text_color = color.white, bgcolor = observerPanelBackground)
 
 color currentUpperColor = color.rgb(214, 80, 80)
 color currentMidpointColor = color.new(color.purple, 0)

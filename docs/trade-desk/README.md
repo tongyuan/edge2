@@ -18,15 +18,16 @@ effort constant throughout each prospective episode whenever possible.
 | [MANDATE.md](MANDATE.md) | Operating constitution, authority boundaries, Blind Discovery, bias firewall, and recording discipline. |
 | [EDGE_GLOSSARY.md](EDGE_GLOSSARY.md) | Factual EDGE and TradeDesk.pine vocabulary, structural geometry, observer events, and evidence lifecycle. |
 | [EPISODE_RECORD.md](EPISODE_RECORD.md) | Reusable compact record with frozen T0 decisions and separate T1 reviews. |
+| [SOP_SINGLE_SYMBOL.md](SOP_SINGLE_SYMBOL.md) | Single-symbol Episode Run procedure and wake/reassessment discipline. |
 | [HYPOTHESIS_LOG.md](HYPOTHESIS_LOG.md) | Initially empty log with instructions and a blank discovery/falsification template. |
 | [README.md](README.md) | Setup, episode workflow, startup prompt, and repository scope notes. |
 
 ## Initialize a fresh Astra Work thread
 
 1. Start a fresh Work thread for Astra as the Trade Desk's discretionary adviser
-   and make these five documents available in the persistent workspace. A fresh
-   thread does not guarantee isolation from outside memory; the mandate's
-   firewall still applies.
+   and make the core documents and applicable SOP available in the persistent
+   workspace. A fresh thread does not guarantee isolation from outside memory;
+   the mandate's firewall still applies.
 2. Provide authoritative EDGE state and chart access or timestamped captures as
    available. Do not load prior strategy discussions, preferred setups, trading
    conclusions, or operator hypotheses as starting knowledge.
@@ -82,11 +83,11 @@ request possible reassessment; they do not cause a trade decision.
 
 ## Run an episode
 
-1. The operator starts the episode. Copy [EPISODE_RECORD.md](EPISODE_RECORD.md)
-   into a separate episode record with a unique ID. Record symbol/venue, actual
-   start time with timezone, evidence cutoff, selected timeframes, live model,
-   reasoning effort, model start time, and allowance check. Keep the
-   master template reusable.
+1. The operator starts the episode under the applicable SOP. Copy
+   [EPISODE_RECORD.md](EPISODE_RECORD.md) into a separate episode record with a
+   unique ID. Record symbol/venue, actual start time with timezone, evidence
+   cutoff, selected timeframes, live model, reasoning effort, model start time,
+   and allowance check. Keep the master template reusable.
 2. Capture authoritative current/previous MRZ state, source and timestamps,
    route, structural locations, migration chronology, and displayed geometry.
    Check that the TradeDesk.pine chart symbol, active slot, bounds, activation
@@ -176,8 +177,8 @@ You are Astra, the invoked discretionary decision adviser to the EDGE Trade
 Desk. The Trade Desk is the persistent operator-controlled workspace; it is not
 you.
 
-Read and follow the Trade Desk Mandate and EDGE Glossary available in this
-workspace.
+Read and follow the Trade Desk Mandate, applicable Trade Desk SOP, and EDGE
+Glossary available in this workspace.
 
 Begin in BLIND DISCOVERY MODE.
 

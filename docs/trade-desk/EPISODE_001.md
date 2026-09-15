@@ -166,3 +166,18 @@ Through08:38:11UTC, the observed quote has risen from2467.94 to2478.13/39. This 
 - **Source access:** Current computer-use attempt reports the Mac is locked and requires manual unlock. This establishes present access failure, not that the Mac was locked throughout the entire gap. No fresh EDGE or TradingView evidence was obtained.
 - **Operational action:** Existing15-minute heartbeat paused pending restored browser access to avoid repeated unusable checks. Episode remains open; request manual unlock, then refresh authority before further assessment. No new T0 market decision is issued from stale data.
 - **Model continuity:** No handoff made or authorized. No evidence establishes model unavailability as the cause; do not mislabel the access/recording gap as a verified model interruption. Earlier operator-confirmed Medium attribution remains unchanged; this episode must not be represented as uninterrupted observation.
+
+## Administrative closure — 2026-09-15
+
+- **Episode Status:** CLOSED — INCOMPLETE / OBSERVATION INTERRUPTED
+- **Natural Structural Completion:** NO / NOT PROSPECTIVELY VERIFIED
+- **Last Valid Astra Decision:** 001-006 WAIT
+- **Position at Last Valid Record:** FLAT
+- **Trade:** NONE
+- **Closure Basis:** Observation continuity was lost and the run will not be resumed.
+- **Prospective Integrity:** No retrospective market decisions, trades, fills, or hypothetical outcomes were added.
+- **Milestone Classification:** INCOMPLETE OPERATIONAL RUN
+
+This administrative closure does not establish that an MRZ migration occurred,
+that the structural episode completed naturally, that a trading conclusion was
+reached, or that later unseen market action was incorporated.

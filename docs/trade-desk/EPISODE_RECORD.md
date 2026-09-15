@@ -1,8 +1,9 @@
 # Prospective episode record
 
-Use with [MANDATE.md](MANDATE.md) and [EDGE_GLOSSARY.md](EDGE_GLOSSARY.md).
-Copy the template below for each episode. Keep entries brief; cite only the
-evidence considered. Use `unknown` or `not available` for missing facts.
+Use with [MANDATE.md](MANDATE.md), [EDGE_GLOSSARY.md](EDGE_GLOSSARY.md), and the
+applicable SOP. Copy the template below for each episode. Keep entries brief;
+cite only the evidence considered. Use `unknown` or `not available` for missing
+facts.
 
 Record each T0 decision before its subsequent outcome is known, then freeze
 it. Append a new decision with its own ID for any changed view, management
@@ -24,6 +25,10 @@ MRZ migration does not automatically close a position.
 ## Episode template
 
 - **Episode ID:** [unique ID]
+- **Episode Run Status:** [ACTIVE / COMPLETE / CLOSED-INCOMPLETE]
+- **SOP Version:** [e.g. SINGLE-SYMBOL v0.1]
+- **Initial Wake Rule:** [e.g. SECOND DISTINCT MIGRATION EQM CONTACT]
+- **Natural Completion Rule:** [e.g. NEXT AUTHORITATIVE MRZ MIGRATION]
 - **Structural episode ID / migration reference:** [authoritative structure]
 - **Symbol:** [instrument / venue if needed]
 - **Start time:** [timestamp with UTC offset and named timezone]
@@ -72,6 +77,18 @@ data problems; do not replace EDGE levels with inferred chart levels.
 These anchors are authoritative structural references. They do not define
 Astra's discretionary trading dealing range.
 
+### Initial wake metadata — first Astra assessment only
+
+- **TWAKE timestamp / timezone:** [operator wake time]
+- **Wake trigger:** [factual alert or authoritative event]
+- **Chart timeframe at wake:** [displayed timeframe; not a preference]
+- **Path Step at wake:** [deterministic observer value]
+- **Distinct EQM contact count at wake:** [deterministic count]
+- **Current deterministic observer context:** [Observer Status, Price Region, adjacent/last anchors, Last Contact At and Last Contact, or source reference]
+- **Current MRZ Migration:** [deterministic panel value or source reference]
+- **Current IPDA 20W Zone:** [deterministic panel value or source reference]
+- **Evidence / timeframes Astra actually inspected:** [factual inspection metadata or linked T0 block]
+
 ### T0 — decision log
 
 Repeat this block for every decision. Distinguish authoritative EDGE facts
@@ -80,7 +97,7 @@ and directly visible price observations from inferred price-action labels.
 - **Decision ID:** [episode ID + unique sequence]
 - **Timestamp / timezone:** [recorded before subsequent outcome]
 - **Decision model / reasoning effort:** [actual author; reference the applicable model-start or handoff record]
-- **Wake context:** [MRZ_ANCHOR_TRANSITION / MRZ_EQM_INTERACTION / MRZ_MIGRATED / OPERATOR_REVIEW / OTHER; context only, not the cause of the decision]
+- **Wake context:** [MRZ_SECOND_EQM_CONTACT / PRIOR_REASSESSMENT_CONDITION / MRZ_ANCHOR_TRANSITION / MRZ_EQM_INTERACTION / MRZ_MIGRATED / OPERATOR_REVIEW / OTHER; context only, not the cause of the decision]
 - **Prior decision / thesis link:** [ID or none; identify a new extension thesis explicitly]
 - **Timeframes / evidence as of this decision:** [references; record additions and reason]
 - **Structural snapshot update:** [new source / changed authoritative facts, or unchanged]
@@ -92,8 +109,13 @@ and directly visible price observations from inferred price-action labels.
 - **Contradictory evidence:** [evidence against the view, or none observed]
 - **Reason for decision:** [why action or inaction is justified now]
 - **What would change my view:** [new information or behavior to reassess]
+- **Next Reassessment Conditions:** [prospectively defined observable developments]
 - **Thesis invalidation:** [if applicable; otherwise not applicable]
 - **Confidence / uncertainty (optional):** [limits of the view]
+
+After the first Astra assessment, each later wake must cite either a previously
+recorded Next Reassessment Condition or a material authoritative structural
+event. Keep these operational conditions distinct from general commentary.
 
 #### ENTER contract — required only when Decision = ENTER
 
@@ -170,6 +192,23 @@ Append only when execution information is available; link the relevant T0.
 - **Actual action / fills:** [timestamp, direction, quantity, price and source if reported; otherwise not available]
 - **Differences from recommendation:** [if any; never infer fills from the chart]
 
+#### Executed-trade performance — only for an actually executed trade
+
+Never populate hypothetical performance for WAIT or NO TRADE.
+
+- **Trade ID:** [linked lifecycle ID]
+- **Entry timestamp:** [reported timestamp and source]
+- **Entry price:** [reported price and source]
+- **Exit timestamp:** [reported timestamp and source, or open]
+- **Exit price:** [reported price and source, or open]
+- **Direction:** [reported executed direction]
+- **Realized return %:** [calculation and source, or pending]
+- **Holding duration:** [entry-to-exit duration, or open]
+- **MFE:** [value, units, window and source, or not measured]
+- **MAE:** [value, units, window and source, or not measured]
+- **migration_during_trade:** [YES / NO]
+- **Final trade outcome:** [completed factual result, or pending]
+
 ### Migration during an open trade
 
 Append when an authoritative migration occurs while a position remains open.
@@ -204,6 +243,19 @@ Medium T0. Reviewer identity does not change the episode's live-model attributio
 - **Lessons / open questions:** [what was learned and what remains uncertain]
 - **Possible hypothesis generated (optional):** [new hypothesis ID in HYPOTHESIS_LOG.md, or none]
 - **Episode end / stop time (if complete):** [timestamp and operator stop or other end context]
+
+### Episode Run milestone review
+
+- **Initial wake utility:** [assessment]
+- **Structural insight beyond deterministic panel:** [assessment]
+- **Evidence-selection observations:** [assessment]
+- **Reassessment-condition quality:** [assessment]
+- **Operator friction:** [assessment]
+- **Lifecycle-continuity issues:** [assessment]
+- **Trade performance, if applicable:** [executed-trade reference or not applicable]
+- **SOP change candidate:** [candidate or none]
+- **Change justified now:** [YES / NO]
+- **Reason:** [basis]
 
 Never write “I would have entered here” after seeing the completed move.
 A favorable outcome cannot retroactively supply a missing decision or turn
