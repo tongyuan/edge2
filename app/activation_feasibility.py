@@ -1321,6 +1321,7 @@ class ActivationFeasibilityService:
             scope="CURRENT",
             preliminary=preliminary,
             active_symbols=active_symbols,
+            limit=None,
         )
         for current_near_miss in current_near_misses:
             current_near_miss["historical_diagnosis"] = build_near_miss_diagnosis(

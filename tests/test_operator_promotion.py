@@ -420,23 +420,43 @@ class OperatorPromotionIntegrationTests(unittest.TestCase):
         self.assertNotEqual(identities[0], identities[1])
 
     def test_episode_lifecycle_is_not_limited_by_top_five_ui_ranking(self) -> None:
-        symbols = tuple(f"RANK{index}" for index in range(1, 7))
+        symbols = tuple(f"RANK{index}" for index in range(1, 9))
         for symbol_index, symbol in enumerate(symbols, 1):
             prices = ("941.52", "941.52", "941.52", str(949 + symbol_index))
             for observation_index, price in enumerate(prices, 1):
                 self.post(self.payload(observation_index, price, symbol=symbol))
 
+            if symbol_index == 6:
+                six = self.client.get(
+                    "/api/diagnostics/activation-feasibility"
+                ).json()["diagnosis"]["current_production_near_misses"]
+                self.assertEqual(len(six), 6)
+                self.assertEqual([item["symbol"] for item in six], list(symbols[:6]))
+                self.assertEqual(six[5]["symbol"], "RANK6")
+                self.assertTrue(all("historical_diagnosis" in item for item in six))
+
         report = self.client.get("/api/diagnostics/activation-feasibility").json()
+        current = report["diagnosis"]["current_production_near_misses"]
         self.assertEqual(
-            len(report["diagnosis"]["current_production_near_misses"]),
-            5,
+            len(current),
+            8,
         )
+        self.assertEqual([item["symbol"] for item in current], list(symbols))
+        self.assertEqual(
+            [Decimal(item["minimum_required_allowance_pct"]) for item in current],
+            sorted(Decimal(item["minimum_required_allowance_pct"]) for item in current),
+        )
+        self.assertTrue(all(
+            item["historical_diagnosis"]["episode_count"] == 1
+            and not item["historical_diagnosis"]["available"]
+            for item in current
+        ))
         self.assertEqual(
             self.scalar(
                 "SELECT COUNT(*) FROM current_production_near_miss_episodes "
                 "WHERE ended_at IS NULL"
             ),
-            6,
+            8,
         )
         self.assertEqual(
             self.scalar(
@@ -450,8 +470,27 @@ class OperatorPromotionIntegrationTests(unittest.TestCase):
                 "SELECT COUNT(*) FROM web_push_notifications "
                 "WHERE event_type = 'MRZ_NEAR_MISS'"
             ),
-            6,
+            8,
         )
+        sixth = current[5]
+        promoted = self.client.post(
+            "/api/diagnostics/activation-feasibility/near-misses/RANK6/promote",
+            json={
+                "route": sixth["route"],
+                "candidate_identity": sixth["candidate_identity"],
+            },
+        )
+        self.assertEqual(promoted.status_code, 201, promoted.text)
+        self.assertEqual(promoted.json()["symbol"], "RANK6")
+        self.assertEqual(
+            self.scalar("SELECT COUNT(*) FROM active_mrz WHERE symbol = 'RANK6'"),
+            1,
+        )
+        after = self.client.get(
+            "/api/diagnostics/activation-feasibility"
+        ).json()["diagnosis"]["current_production_near_misses"]
+        self.assertEqual(len(after), 7)
+        self.assertNotIn("RANK6", [item["symbol"] for item in after])
 
     def test_preexisting_near_miss_is_baselined_without_replay_push(self) -> None:
         with transaction(self.database_url) as connection:

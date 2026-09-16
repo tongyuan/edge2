@@ -147,6 +147,10 @@ function currentNearMissMarkup(items, timestampFormatter = (value) => value) {
   }).join("")}</div>`;
 }
 
+function currentNearMissHeading(items) {
+  return `Current production near misses · ${items?.length ?? 0}`;
+}
+
 function promotionConfirmationMarkup(item, timestampFormatter = (value) => value) {
   return `<div class="promotion-confirmation-copy">
     <p>This exact candidate will become authoritative through an operator override.</p>
@@ -285,6 +289,9 @@ if (typeof document !== "undefined") {
       sampleWarning.hidden = !value.diagnosis?.sample_assessment?.small_sample;
 
       document.getElementById("productionContent").innerHTML = productionMarkup(value.current_production_rule);
+      document.getElementById("near-miss-title").textContent = currentNearMissHeading(
+        value.diagnosis?.current_production_near_misses,
+      );
       document.getElementById("currentNearMissContent").innerHTML = currentNearMissMarkup(
         value.diagnosis?.current_production_near_misses,
         formatOperatorTimestampUtcMinus4,
@@ -377,6 +384,7 @@ if (typeof document !== "undefined") {
 
 if (typeof module === "object" && module.exports) {
   module.exports = {
+    currentNearMissHeading,
     currentNearMissMarkup,
     focusNearMissDeepLink,
     frequencyPercentageText,

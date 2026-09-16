@@ -2,6 +2,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const {
+  currentNearMissHeading,
   currentNearMissMarkup,
   focusNearMissDeepLink,
   nearMissDiagnosisMarkup,
@@ -108,6 +109,35 @@ const dispersingNearMiss = currentNearMissMarkup([{
 assert.match(dispersingNearMiss, /DISPERSING/);
 assert.match(dispersingNearMiss, /Promote to Active MRZ/);
 assert.match(currentNearMissMarkup([]), /No current production near misses/);
+assert.equal(currentNearMissHeading([]), "Current production near misses · 0");
+const orderedCurrent = ["1.08", "1.15", "1.29", "1.43", "1.69", "1.77", "1.85", "1.96"]
+  .map((allowance, index) => ({
+    ...nearMisses[0],
+    symbol: `RANK${index + 1}`,
+    candidate_identity: String(index + 1).repeat(64),
+    minimum_required_allowance_pct: allowance,
+    shortfall_percentage_points: (Number(allowance) - 1).toFixed(2),
+    historical_diagnosis: index % 2 === 0
+      ? { available: false }
+      : nearMisses[0].historical_diagnosis,
+  }));
+for (const count of [6, 8]) {
+  const visible = orderedCurrent.slice(0, count);
+  const markup = currentNearMissMarkup(visible);
+  assert.equal(currentNearMissHeading(visible), `Current production near misses · ${count}`);
+  assert.equal((markup.match(/class="diagnostic-card near-miss-card"/g) || []).length, count);
+  assert.equal((markup.match(/Promote to Active MRZ/g) || []).length, count);
+  for (let index = 0; index < count; index++) {
+    assert.match(markup, new RegExp(`RANK${index + 1} · BTD`));
+    assert.match(markup, new RegExp(`data-candidate-identity="${String(index + 1).repeat(64)}"`));
+  }
+  assert.match(markup, /HISTORY BUILDING/);
+  assert.match(markup, /CONVERGING/);
+  const headings = [...markup.matchAll(/<h3>(RANK\d+) · BTD<\/h3>/g)]
+    .map((match) => match[1]);
+  assert.deepEqual(headings, visible.map((item) => item.symbol));
+}
+assert.match(currentNearMissMarkup(orderedCurrent.slice(0, 6)), /RANK6 · BTD/);
 const pendingDiagnosis = nearMissDiagnosisMarkup({ available: false }, String);
 assert.match(pendingDiagnosis, /HISTORY BUILDING/);
 assert.match(pendingDiagnosis, /Diagnosis available after another distinct near-miss episode/);
@@ -241,6 +271,7 @@ for (const contextId of [
 assert.match(pageHtml, /SYMBOL-ROUTE HISTORIES/);
 assert.match(pageHtml, /id="productionContent"/);
 assert.match(pageHtml, /id="currentNearMissContent"/);
+assert.match(pageHtml, /id="near-miss-title">Current production near misses · 0/);
 assert.match(pageHtml, /id="current-production-near-misses"/);
 assert.match(pageHtml, /id="promotionDialog"/);
 assert.match(pageHtml, /id="confirmPromotion"/);

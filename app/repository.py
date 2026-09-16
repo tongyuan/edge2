@@ -689,6 +689,7 @@ class EdgeRepository:
                 candidates = current_production_near_misses(
                     observations,
                     active_symbols=active_symbols,
+                    limit=None,
                 )
                 candidate = next(
                     (
