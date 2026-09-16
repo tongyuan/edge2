@@ -10,7 +10,10 @@ const {
   productionMarkup,
   productionSampleMarkup,
   promotionConfirmationMarkup,
-  qualificationMarkup,
+  qualificationHistoryItems,
+  qualificationHistoryMarkup,
+  qualificationHistoryViewFromSearch,
+  qualificationSummaryCount,
 } = require("../app/static/activation-feasibility.js");
 
 const productionRule = {
@@ -227,18 +230,52 @@ assert.match(promotionConfirmation, /1\.00%/);
 assert.match(promotionConfirmation, /0\.59 percentage points/);
 assert.match(promotionConfirmation, /Production status<\/dt><dd>Near miss/);
 
-const qualifications = qualificationMarkup(
-  productionRule.activations,
+const qualificationRecords = [
+  productionRule.activations[0],
+  { ...productionRule.activations[0], symbol: "AAA", route: "BTD", activated_at: "2026-08-25T02:21:00Z" },
+  { ...productionRule.activations[0], symbol: "ZZZ", route: "STR", activated_at: "2026-08-26T02:21:00Z" },
+];
+assert.equal(qualificationSummaryCount(qualificationRecords), "3 historical formations");
+assert.equal(qualificationSummaryCount(productionRule.activations), "1 historical formation");
+assert.equal(qualificationSummaryCount([]), "0 historical formations");
+assert.equal(qualificationHistoryViewFromSearch("?view=qualification-history"), true);
+assert.equal(qualificationHistoryViewFromSearch("?symbol=BTCUSDT"), false);
+assert.deepEqual(
+  qualificationHistoryItems(qualificationRecords).map((item) => item.symbol),
+  ["ZZZ", "AAA", "BTCUSDT"],
+);
+assert.deepEqual(
+  qualificationHistoryItems(qualificationRecords, { symbol: "btcu" }).map((item) => item.symbol),
+  ["BTCUSDT"],
+);
+assert.deepEqual(
+  qualificationHistoryItems(qualificationRecords, { route: "BTD" }).map((item) => item.symbol),
+  ["AAA"],
+);
+assert.deepEqual(
+  qualificationHistoryItems(qualificationRecords, { sort: "oldest" }).map((item) => item.symbol),
+  ["BTCUSDT", "AAA", "ZZZ"],
+);
+assert.deepEqual(qualificationHistoryItems(qualificationRecords, { symbol: "none" }), []);
+assert.deepEqual(qualificationRecords.map((item) => item.symbol), ["BTCUSDT", "AAA", "ZZZ"]);
+const qualifications = qualificationHistoryMarkup(
+  qualificationHistoryItems(productionRule.activations),
   () => "23 Aug 2026 · 22:21 UTC−4",
 );
-assert.match(qualifications, /BTCUSDT · STR/);
+assert.match(qualifications, /<th scope="row">BTCUSDT<\/th>/);
+assert.match(qualifications, /<td>STR<\/td>/);
 assert.match(qualifications, /First qualifying MRZ/);
 assert.match(qualifications, /77,309\.19–77,436\.91/);
 assert.match(qualifications, /First qualified/);
 assert.match(qualifications, /23 Aug 2026 · 22:21 UTC−4/);
 assert.match(qualifications, /4 observations · 1\.00%/);
 assert.doesNotMatch(qualifications, />Activated</);
-assert.match(qualificationMarkup([]), /No symbol-route history formed an MRZ/);
+assert.match(qualificationHistoryMarkup([]), /No production qualifications match this view/);
+const largeHistory = Array.from({ length: 40 }, (_, index) => ({
+  ...productionRule.activations[0], symbol: `ARCHIVE${index + 1}`,
+}));
+assert.equal(qualificationHistoryItems(largeHistory).length, 40);
+assert.equal((qualificationHistoryMarkup(largeHistory).match(/<tr>/g) || []).length, 41);
 
 const sample = productionSampleMarkup({
   current_production_rule: productionRule,
@@ -257,7 +294,9 @@ const pageHtml = fs.readFileSync(
   path.join(__dirname, "../app/static/activation-feasibility.html"),
   "utf8",
 );
-assert.match(pageHtml, /<h1>MRZ Formation Diagnostics<\/h1>/);
+assert.match(pageHtml, /<h1 id="pageTitle">MRZ Formation Diagnostics<\/h1>/);
+assert.match(pageHtml, /id="pageSubtitle"/);
+assert.match(pageHtml, /id="interpretationNotice"/);
 assert.match(pageHtml, /Observed MRZ formation frequency is descriptive, not a predictive probability/);
 for (const contextId of [
   "generatedAt",
@@ -275,9 +314,15 @@ assert.match(pageHtml, /id="near-miss-title">Current production near misses · 0
 assert.match(pageHtml, /id="current-production-near-misses"/);
 assert.match(pageHtml, /id="promotionDialog"/);
 assert.match(pageHtml, /id="confirmPromotion"/);
-assert.match(pageHtml, /id="qualificationContent"/);
+assert.match(pageHtml, /id="qualificationCount"[^>]*>0 historical formations/);
+assert.match(pageHtml, /href="\/diagnostics\/activation-feasibility\?view=qualification-history">View history/);
+assert.match(pageHtml, /id="qualificationHistoryView"[^>]*hidden/);
+assert.match(pageHtml, /id="qualificationSymbolSearch"/);
+assert.match(pageHtml, /id="qualificationRouteFilter"/);
+assert.match(pageHtml, /id="qualificationSort"/);
+assert.match(pageHtml, /id="qualificationHistoryContent"/);
 assert.match(pageHtml, /id="productionSampleContent"/);
-assert.match(pageHtml, /Qualified under production rule/);
+assert.doesNotMatch(pageHtml, /id="qualificationContent"|Qualified under production rule/);
 assert.match(pageHtml, /do not assert current active-MRZ authority/);
 
 for (const removed of [
@@ -297,6 +342,8 @@ const presentationSource = fs.readFileSync(
   path.join(__dirname, "../app/static/activation-feasibility.js"),
   "utf8",
 );
+assert.match(presentationSource, /document\.title = "EDGE 2\.0 · Production Qualification History"/);
+assert.match(presentationSource, /if \(isQualificationHistoryView\) renderQualificationHistory\(\)/);
 for (const retiredData of [
   "value.scenarios",
   "value.sequence_details",

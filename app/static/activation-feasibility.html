@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="EDGE 2.0 MRZ formation diagnostics" />
     <title>EDGE 2.0 · MRZ Formation Diagnostics</title>
-    <link rel="stylesheet" href="/static/activation-feasibility.css?v=near-miss-all-current-20260916" />
+    <link rel="stylesheet" href="/static/activation-feasibility.css?v=qualification-history-20260916" />
     <link rel="stylesheet" href="/static/diagnostics-nav.css?v=views-menu-20260907" />
   </head>
   <body>
@@ -13,8 +13,8 @@
       <header class="report-header">
         <div>
           <p class="eyebrow">EDGE 2.0 · DIAGNOSTIC</p>
-          <h1>MRZ Formation Diagnostics</h1>
-          <p class="subtitle">Current production formation evidence from stored route observations</p>
+          <h1 id="pageTitle">MRZ Formation Diagnostics</h1>
+          <p class="subtitle" id="pageSubtitle">Current production formation evidence from stored route observations</p>
         </div>
         <div class="header-actions">
           <nav class="page-nav operator-navigation" aria-label="Operator navigation" data-diagnostics-nav>
@@ -33,7 +33,7 @@
         </div>
       </header>
 
-      <aside class="notice" aria-label="Interpretation notice">
+      <aside class="notice" id="interpretationNotice" aria-label="Interpretation notice">
         Observed MRZ formation frequency is descriptive, not a predictive probability.
         Results are preliminary while the stored sample remains small.
       </aside>
@@ -68,12 +68,12 @@
           <div id="currentNearMissContent"></div>
         </section>
 
-        <section class="report-section" aria-labelledby="qualification-title">
+        <section class="report-section qualification-summary" aria-labelledby="qualification-title">
           <div class="section-heading">
-            <div><p class="eyebrow">OBSERVED FORMATIONS</p><h2 id="qualification-title">Qualified under production rule</h2></div>
+            <div><p class="eyebrow">PRODUCTION QUALIFICATIONS</p><h2 id="qualification-title">Historical formations</h2></div>
           </div>
-          <p class="section-description">Historical first qualifications in the stored sample; these cards do not assert current active-MRZ authority.</p>
-          <div id="qualificationContent"></div>
+          <p id="qualificationCount" class="qualification-count">0 historical formations</p>
+          <a class="qualification-history-link" href="/diagnostics/activation-feasibility?view=qualification-history">View history</a>
         </section>
 
         <section class="report-section sample-section" aria-labelledby="sample-title">
@@ -83,6 +83,33 @@
           <div id="productionSampleContent"></div>
         </section>
       </div>
+      <section class="report-section qualification-history-view" id="qualificationHistoryView" aria-labelledby="qualification-history-title" hidden>
+        <div class="section-heading">
+          <div><p class="eyebrow">HISTORICAL AUDIT</p><h2 id="qualification-history-title">Production qualification history</h2></div>
+          <a href="/diagnostics/activation-feasibility">Back to current diagnostics</a>
+        </div>
+        <p class="section-description">Read-only first qualifications under the production rule. These records do not assert current active-MRZ authority.</p>
+        <div class="qualification-history-filters">
+          <label for="qualificationSymbolSearch">Symbol
+            <input id="qualificationSymbolSearch" type="search" autocomplete="off" placeholder="Search symbol" />
+          </label>
+          <label for="qualificationRouteFilter">Route
+            <select id="qualificationRouteFilter">
+              <option value="">All routes</option>
+              <option value="BTD">BTD</option>
+              <option value="STR">STR</option>
+            </select>
+          </label>
+          <label for="qualificationSort">First qualified
+            <select id="qualificationSort">
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+            </select>
+          </label>
+        </div>
+        <p id="qualificationHistoryCount" class="qualification-history-count" aria-live="polite">0 historical formations</p>
+        <div id="qualificationHistoryContent"></div>
+      </section>
     </main>
     <dialog class="promotion-dialog" id="promotionDialog" aria-labelledby="promotionTitle">
       <form method="dialog">
@@ -98,6 +125,6 @@
     </dialog>
     <script src="/static/diagnostics-nav.js?v=views-menu-20260907" defer></script>
     <script src="/static/operator-time.js?v=operator-clarity-20260824" defer></script>
-    <script src="/static/activation-feasibility.js?v=near-miss-all-current-20260916" defer></script>
+    <script src="/static/activation-feasibility.js?v=qualification-history-20260916" defer></script>
   </body>
 </html>

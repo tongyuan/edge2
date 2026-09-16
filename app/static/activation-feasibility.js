@@ -229,19 +229,43 @@ async function submitPromotion(item, fetchImpl = fetch) {
   return payload;
 }
 
-function qualificationMarkup(activations, timestampFormatter = (value) => value) {
+function qualificationHistoryViewFromSearch(search = "") {
+  return new URLSearchParams(search).get("view") === "qualification-history";
+}
+
+function qualificationSummaryCount(activations) {
+  const count = activations?.length ?? 0;
+  return `${count} historical ${count === 1 ? "formation" : "formations"}`;
+}
+
+function qualificationHistoryItems(activations, filters = {}) {
+  const symbol = String(filters.symbol || "").trim().toUpperCase();
+  const route = filters.route === "BTD" || filters.route === "STR" ? filters.route : "";
+  const oldestFirst = filters.sort === "oldest";
+  return [...(activations || [])]
+    .filter((item) => (!symbol || item.symbol.toUpperCase().includes(symbol))
+      && (!route || item.route === route))
+    .sort((left, right) => {
+      const byTime = Date.parse(right.activated_at) - Date.parse(left.activated_at);
+      if (byTime) return oldestFirst ? -byTime : byTime;
+      return left.symbol.localeCompare(right.symbol) || left.route.localeCompare(right.route);
+    });
+}
+
+function qualificationHistoryMarkup(activations, timestampFormatter = (value) => value) {
   if (!activations?.length) {
-    return '<p class="neutral empty-state">No symbol-route history formed an MRZ under the current production rule in this sample.</p>';
+    return '<p class="neutral empty-state">No production qualifications match this view.</p>';
   }
-  return `<div class="diagnostic-card-grid">${activations.map((activation) => `
-    <article class="diagnostic-card qualification-card">
-      <h3>${escapeHtml(activation.symbol)} · ${escapeHtml(activation.route)}</h3>
-      <dl>
-        <div><dt>First qualifying MRZ</dt><dd>${decimalText(activation.core_mrz_lower, 12)}–${decimalText(activation.core_mrz_upper, 12)}</dd></div>
-        <div><dt>First qualified</dt><dd>${escapeHtml(timestampFormatter(activation.activated_at) || "—")}</dd></div>
-        <div><dt>Rule</dt><dd>${activation.minimum_observations} observations · ${percentageText(activation.allowance_percent)}</dd></div>
-      </dl>
-    </article>`).join("")}</div>`;
+  return `<div class="qualification-table-wrap"><table class="qualification-table">
+    <thead><tr><th scope="col">Symbol</th><th scope="col">Route</th><th scope="col">First qualifying MRZ</th><th scope="col">First qualified</th><th scope="col">Production rule</th></tr></thead>
+    <tbody>${activations.map((activation) => `<tr>
+      <th scope="row">${escapeHtml(activation.symbol)}</th>
+      <td>${escapeHtml(activation.route)}</td>
+      <td>${decimalText(activation.core_mrz_lower, 12)}–${decimalText(activation.core_mrz_upper, 12)}</td>
+      <td>${escapeHtml(timestampFormatter(activation.activated_at) || "—")}</td>
+      <td>${escapeHtml(activation.minimum_observations)} observations · ${percentageText(activation.allowance_percent)}</td>
+    </tr>`).join("")}</tbody>
+  </table></div>`;
 }
 
 function productionSampleMarkup(report) {
@@ -266,6 +290,17 @@ if (typeof document !== "undefined") {
     const refreshButton = document.getElementById("refreshReport");
     const status = document.getElementById("reportStatus");
     const content = document.getElementById("reportContent");
+    const qualificationHistoryView = document.getElementById("qualificationHistoryView");
+    const qualificationSymbolSearch = document.getElementById("qualificationSymbolSearch");
+    const qualificationRouteFilter = document.getElementById("qualificationRouteFilter");
+    const qualificationSort = document.getElementById("qualificationSort");
+    const isQualificationHistoryView = qualificationHistoryViewFromSearch(globalThis.location?.search || "");
+    if (isQualificationHistoryView) {
+      document.title = "EDGE 2.0 · Production Qualification History";
+      document.getElementById("pageTitle").textContent = "Production Qualification History";
+      document.getElementById("pageSubtitle").textContent = "Read-only first qualifications under the production rule";
+      document.getElementById("interpretationNotice").hidden = true;
+    }
     const sampleWarning = document.getElementById("sampleWarning");
     const currentNearMissContent = document.getElementById("currentNearMissContent");
     const promotionDialog = document.getElementById("promotionDialog");
@@ -276,6 +311,19 @@ if (typeof document !== "undefined") {
     const promotionOutcome = document.getElementById("promotionOutcome");
     let report = null;
     let pendingPromotion = null;
+
+    function renderQualificationHistory() {
+      const all = report?.current_production_rule?.activations || [];
+      const filtered = qualificationHistoryItems(all, {
+        symbol: qualificationSymbolSearch.value,
+        route: qualificationRouteFilter.value,
+        sort: qualificationSort.value,
+      });
+      document.getElementById("qualificationHistoryCount").textContent =
+        `Showing ${filtered.length} of ${qualificationSummaryCount(all)}`;
+      document.getElementById("qualificationHistoryContent").innerHTML =
+        qualificationHistoryMarkup(filtered, formatOperatorTimestampUtcMinus4);
+    }
 
     function renderReport(value) {
       report = value;
@@ -296,10 +344,10 @@ if (typeof document !== "undefined") {
         value.diagnosis?.current_production_near_misses,
         formatOperatorTimestampUtcMinus4,
       );
-      document.getElementById("qualificationContent").innerHTML = qualificationMarkup(
+      document.getElementById("qualificationCount").textContent = qualificationSummaryCount(
         value.current_production_rule?.activations,
-        formatOperatorTimestampUtcMinus4,
       );
+      if (isQualificationHistoryView) renderQualificationHistory();
       document.getElementById("productionSampleContent").innerHTML = productionSampleMarkup(value);
     }
 
@@ -314,18 +362,22 @@ if (typeof document !== "undefined") {
       status.classList.remove("error");
       status.textContent = "Calculating the latest diagnostics…";
       content.hidden = true;
+      qualificationHistoryView.hidden = true;
       try {
         const response = await fetch("/api/diagnostics/activation-feasibility", { cache: "no-store" });
         if (!response.ok) throw new Error(`Report request failed (${response.status})`);
         renderReport(await response.json());
         status.hidden = true;
-        content.hidden = false;
-        focusNearMissDeepLink(
-          report,
-          globalThis.location?.search || "",
-          document,
-          showPromotionOutcome,
-        );
+        content.hidden = isQualificationHistoryView;
+        qualificationHistoryView.hidden = !isQualificationHistoryView;
+        if (!isQualificationHistoryView) {
+          focusNearMissDeepLink(
+            report,
+            globalThis.location?.search || "",
+            document,
+            showPromotionOutcome,
+          );
+        }
       } catch (error) {
         status.classList.add("error");
         status.textContent = `Unable to generate the diagnostics. ${error.message}`;
@@ -378,6 +430,9 @@ if (typeof document !== "undefined") {
       }
     });
     refreshButton.addEventListener("click", loadReport);
+    qualificationSymbolSearch.addEventListener("input", renderQualificationHistory);
+    qualificationRouteFilter.addEventListener("change", renderQualificationHistory);
+    qualificationSort.addEventListener("change", renderQualificationHistory);
     loadReport();
   });
 }
@@ -395,7 +450,10 @@ if (typeof module === "object" && module.exports) {
     productionMarkup,
     productionSampleMarkup,
     promotionConfirmationMarkup,
-    qualificationMarkup,
+    qualificationHistoryItems,
+    qualificationHistoryMarkup,
+    qualificationHistoryViewFromSearch,
+    qualificationSummaryCount,
     submitPromotion,
   };
 }
