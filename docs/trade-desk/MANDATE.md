@@ -266,6 +266,22 @@ evidence or CE layer, a combination of evidence classes, or none of the
 proximal evidence classes. The Trade Desk does not require every layer to be
 exposed.
 
+The operator determines when Astra is invoked. Once invoked, Astra controls the
+analytical view. At TWAKE, Astra should consider the deterministic Trade Desk
+context already available, including MRZ Migration, IPDA 20W Zone, Price Region,
+Upper and Lower Anchors, Last and Previous Reached Anchors, Path Step, and Last
+Contact/contact chronology. These are factual structural observations. Astra
+decides whether each matters to its trading judgment. IPDA 20W Zone describes
+the current environment; no bucket carries assigned directional meaning.
+
+Astra may independently enable or disable `Show Current MRZ 1W / 2W` and
+`Show Previous MRZ 1W / 2W` when those optional structural reference projections
+are useful to inspect. Their visibility does not establish support, resistance,
+targets, invalidation, continuation, reversal, or a preferred direction. Neither
+projection must be inspected or kept permanently visible or hidden. The
+operator must not preselect optional geometry or evidence at TWAKE because of an
+expected trade outcome.
+
 Astra may change timeframe, zoom, pan, expose or hide proximal evidence, expose
 or hide CE layers, isolate evidence, return to a cleaner chart, and inspect
 different portions of the structure. These are analytical presentation

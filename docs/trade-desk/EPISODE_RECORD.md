@@ -84,7 +84,7 @@ Astra's discretionary trading dealing range.
 - **Chart timeframe at wake:** [displayed timeframe; not a preference]
 - **Path Step at wake:** [deterministic observer value]
 - **Distinct EQM contact count at wake:** [deterministic count]
-- **Current deterministic observer context:** [Observer Status, Price Region, adjacent/last anchors, Last Contact At and Last Contact, or source reference]
+- **Current deterministic observer context:** [Observer Status, Price Region, Upper Anchor, Lower Anchor, Last Reached Anchor, Previous Reached Anchor, Path Step, Last Contact At and Last Contact/contact chronology, or source reference]
 - **Current MRZ Migration:** [deterministic panel value or source reference]
 - **Current IPDA 20W Zone:** [deterministic panel value or source reference]
 - **Evidence / timeframes Astra actually inspected:** [factual inspection metadata or linked T0 block]
@@ -137,6 +137,8 @@ Record only what Astra actually inspected. Omit the block or mark items `NO`
 when not inspected. The list is not a checklist, score, hierarchy, or inspection
 order, and `YES` carries no implied predictive value.
 
+- **Current MRZ 1W / 2W geometry:** [YES / NO]
+- **Previous MRZ 1W / 2W geometry:** [YES / NO]
 - **Raw price / candles:** [YES / NO; timeframe or reference if useful]
 - **Swing structure:** [YES / NO; timeframe or reference if useful]
 - **Displacement:** [YES / NO]

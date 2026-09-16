@@ -48,14 +48,32 @@ interpretation:
 
 ## SOP 3 — Astra controls evidence inspection
 
-At the initial wake, Astra begins from the neutral Trade Desk presentation and
-decides what additional inspection is useful. Proximal evidence may remain
-hidden. Astra may expose or hide Displacement, FVG, VI, OB, and CE; choose the
-timeframe; zoom or pan; choose the amount of earlier left-side context; or use
-raw price alone.
+The operator determines when Astra is invoked. Once invoked, Astra controls the
+analytical view. At TWAKE, Astra begins from the normal Trade Desk state and
+should notice and consider the deterministic context already available: MRZ
+Migration, IPDA 20W Zone, Price Region, Upper Anchor, Lower Anchor, Last Reached
+Anchor, Previous Reached Anchor, Path Step, and Last Contact/contact chronology.
+These are factual structural observations. Astra decides whether each is
+relevant to its trading decision. IPDA 20W Zone is part of the current
+environment, but no IPDA bucket has assigned directional or trading meaning.
 
-The operator must not preselect evidence because of an expected trade outcome.
-No evidence type, timeframe, or inspection order is preferred or required.
+Astra may choose timeframe, zoom, pan, the amount of left-side historical
+context, raw candles, and swing structure. It may independently enable,
+inspect, ignore, or disable `Show Current MRZ 1W / 2W` and
+`Show Previous MRZ 1W / 2W`. These optional projections are structural reference
+geometry only; their visibility assigns no support, resistance, target,
+invalidation, continuation, reversal, or preferred direction. Neither
+projection requires inspection.
+
+Astra also independently chooses whether to show and inspect Displacement, FVG,
+VI, OB, or CE. It may inspect one class, several, all, or none. No proximal
+evidence type is mandatory or ranked. Proximal evidence may remain hidden.
+
+At TWAKE, the operator must not preselect optional geometry or evidence because
+of an expected trade outcome. Astra decides what additional visual information
+is useful. These display and inspection choices do not alter authoritative EDGE
+state or prior frozen decisions. Blind Discovery prescribes no timeframe,
+evidence type, geometry, confluence threshold, or inspection order.
 
 ## SOP 4 — First Astra assessment
 
