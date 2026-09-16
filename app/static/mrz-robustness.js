@@ -275,6 +275,11 @@ function robustnessCardMarkup(
         <strong>${priceText(migrationEqm)}</strong>
       </div>`
     : "";
+  const migrationDirection = report.migration?.direction;
+  const migrationDirectionMarkup = hasPreviousMrz
+    && (migrationDirection === "UP" || migrationDirection === "DOWN")
+    ? `<strong class="authority-migration-direction">${migrationDirection === "UP" ? "↑ MIGRATED UP" : "↓ MIGRATED DOWN"}</strong>`
+    : "";
 
   const postActivationContent = `<p class="detail-explanation">${escapeHtml(behavior.reason)}</p>
   <div class="evidence-grid">
@@ -340,7 +345,10 @@ function robustnessCardMarkup(
       </div>
 
       <section class="mrz-authority-context" aria-label="MRZ Authority">
-        <span class="section-label">MRZ AUTHORITY</span>
+        <div class="mrz-authority-heading">
+          <span class="section-label">MRZ AUTHORITY</span>
+          ${migrationDirectionMarkup}
+        </div>
         <div class="mrz-authority-grid">
           <section class="authority-zone current-authority-zone" aria-label="Current MRZ">
             <span class="authority-zone-label">CURRENT MRZ</span>

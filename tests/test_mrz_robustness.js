@@ -363,6 +363,7 @@ assert.match(btcMarkup, /First qualifying rejection/);
 assert.match(btcMarkup, /24 Aug 2026 · 10:25 UTC−4/);
 assert.match(btcMarkup, /Formation duration<\/dt><dd>1d 15h/);
 assert.match(btcCompactSummary, /No previous MRZ/);
+assert.doesNotMatch(btcCompactSummary, /authority-migration-direction|MIGRATED UP|MIGRATED DOWN/);
 assert.match(btcCompactSummary, /2d 13h old/);
 assert.doesNotMatch(btcCompactSummary, /First qualifying rejection/);
 assert.doesNotMatch(btcCompactSummary, /Formation duration/);
@@ -559,6 +560,8 @@ assert.match(
   /@media \(max-width: 720px\)[\s\S]*\.filter-option\s*\{[^}]*min-height:\s*44px/,
 );
 assert.match(operationCardCss, /\.migration-timeline li > div > strong[^}]*overflow-wrap:\s*anywhere/);
+assert.match(operationCardCss, /\.mrz-authority-heading\s*\{[^}]*flex-wrap:\s*wrap/);
+assert.match(operationCardCss, /\.authority-migration-direction\s*\{/);
 assert.doesNotMatch(operationCardCss, /overflow-x:\s*(?:auto|scroll)/);
 assert.doesNotMatch(operationCardCss, /\border\s*:/);
 
@@ -776,6 +779,12 @@ assert.doesNotMatch(
 assert.doesNotMatch(wldMarkup, /4 qualifying reclaim observations/);
 assert.match(wldMarkup, /First qualifying reclaim/);
 assert.match(wldCompactSummary, /CURRENT MRZ/);
+assert.match(wldCompactSummary, /MRZ AUTHORITY[\s\S]*↑ MIGRATED UP/);
+assert.ok(
+  wldCompactSummary.indexOf("↑ MIGRATED UP")
+    < wldCompactSummary.indexOf('class="mrz-authority-grid"'),
+  "authoritative upward direction is visible before the MRZ ranges",
+);
 assert.match(wldCompactSummary, /0\.4034 – 0\.4083/);
 assert.match(wldCompactSummary, /Midpoint<\/dt><dd>0\.40585/);
 assert.match(wldCompactSummary, /Activated<\/dt><dd>29 Aug 2026 · 13:50 UTC−4/);
@@ -792,6 +801,43 @@ assert.ok(
 );
 assert.doesNotMatch(wldCompactSummary, /First qualifying reclaim|Formation duration|No successor candidate/);
 assert.doesNotMatch(wldMarkup, /<dt>First reclaim<\/dt>/);
+assert.match(wldMarkup, /data-section="migration-history"[\s\S]*↑ MIGRATED UPWARD/);
+assert.doesNotMatch(wldMarkup, /<details[^>]*\sopen(?:\s|>)/);
+
+const zecReport = {
+  ...wldReport,
+  symbol: "ZECUSDT",
+  migration: {
+    ...wldMigration,
+    direction: "DOWN",
+    previous_lower: "1177.8",
+    previous_upper: "1188.67",
+    current_lower: "1124.21",
+    current_upper: "1132.89",
+  },
+  active_mrz: {
+    ...wldReport.active_mrz,
+    lower: "1124.21",
+    upper: "1132.89",
+    midpoint: "1128.55",
+  },
+};
+const zecMarkup = robustnessCardMarkup(zecReport);
+const zecCompactSummary = zecMarkup.slice(0, zecMarkup.indexOf("</header>") + 9);
+assert.match(zecCompactSummary, /MRZ AUTHORITY[\s\S]*↓ MIGRATED DOWN/);
+assert.ok(
+  zecCompactSummary.indexOf("↓ MIGRATED DOWN")
+    < zecCompactSummary.indexOf('class="mrz-authority-grid"'),
+  "authoritative downward direction is visible before the MRZ ranges",
+);
+assert.match(zecCompactSummary, /1,124\.21 – 1,132\.89/);
+assert.match(zecCompactSummary, /Midpoint<\/dt><dd>1,128\.55/);
+assert.match(zecCompactSummary, /1,177\.8 – 1,188\.67/);
+assert.match(zecCompactSummary, /Midpoint<\/dt><dd>1,183\.235/);
+assert.match(zecCompactSummary, /Activated<\/dt><dd>2026-08-29T17:50:00Z/);
+assert.match(zecCompactSummary, /MIGRATION EQM[\s\S]*1,155\.8925/);
+assert.match(zecMarkup, /data-section="migration-history"[\s\S]*↓ MIGRATED DOWNWARD/);
+assert.doesNotMatch(zecMarkup, /<details[^>]*\sopen(?:\s|>)/);
 
 const secondMigratedReport = {
   ...wldReport,
