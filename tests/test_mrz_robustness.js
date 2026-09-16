@@ -125,6 +125,8 @@ const operationCardHtml = fs.readFileSync(
   require.resolve("../app/static/mrz-robustness.html"),
   "utf8",
 );
+assert.match(operationCardHtml, /mrz-robustness\.css\?v=migration-direction-20260916/);
+assert.match(operationCardHtml, /mrz-robustness\.js\?v=migration-direction-20260916/);
 assert.doesNotMatch(operationCardSource, /bb_mrz_(?:discount|premium)/);
 assert.doesNotMatch(operationCardSource, /trade recommendation/i);
 assert.doesNotMatch(operationCardSource, /Candidate forming|Awaiting confirmation/i);
