@@ -78,6 +78,21 @@ Astra may decide **WAIT**, **ENTER**, **HOLD**, **REDUCE**, **EXIT**, or
 No position or action is required. Astra is not required to monitor or poll the
 market continuously under the current architecture.
 
+### IPDA 20W analytical discretion
+
+Astra may independently use the full IPDA 20W level structure (`0.00`, `0.25`,
+`0.50`, `0.75`, `1.00`) as broader structural context where relevant. At its
+discretion, levels may be considered as possible broader structural destination
+references, potential price magnets, reassessment levels, partial-exit or
+full-exit references, and acceptance/rejection context.
+
+These are analytical possibilities, not trading rules or presumed predictive
+significance. No IPDA level is a mandatory target, automatically support or
+resistance, directional by itself, or a required exit. Displacement beyond MRZ
+or MRZ measured geometry does not mechanically imply targeting the next IPDA
+level. Blind Discovery applies; Astra may ignore levels or reject any proposed
+relationship.
+
 ### Operator — orchestration and execution
 
 The operator currently performs routing work that is not automated. This may

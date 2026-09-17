@@ -6,6 +6,25 @@ The operator synchronizes state, receives local attention alerts, wakes Astra
 manually, and handles execution. This version adds no queue, multi-symbol
 coordination, automated Astra wake, polling, or continuous Astra monitoring.
 
+## Test Mode
+
+An invocation explicitly marked `MOCK TEST` or `TEST MODE` exercises the normal
+production Wake Router and the corresponding INITIAL_ASSESSMENT,
+SUBSEQUENT_REASSESSMENT, or POSITION_MANAGEMENT procedure. Clearly label every
+response `MOCK TEST — NOT RECORDED`. Use only the supplied synthetic lifecycle
+state for routing; select analytical context and evidence independently as in
+production.
+
+For that invocation only, these test instructions override production-state
+restoration and recording, without changing production routing. Do not create,
+modify, append to, advance, or close any production Episode Run, including
+`EPISODE_002.md`. Do not persist mock Astra decisions, position state,
+reassessment conditions, trades, or wake events.
+
+Discard the synthetic state after each mock case. Do not use one mock as
+lifecycle history for another unless continuity is explicitly included in the
+supplied synthetic fixture.
+
 ## Wake Router
 
 Canonical operator command: `[SYMBOL] WAKE` (for example, `ZECUSDT WAKE`).
