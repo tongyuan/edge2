@@ -69,8 +69,9 @@ live judgment.
 EDGE migration
   → operator synchronization where required
   → TradeDesk.pine deterministic observation
-  → local TradingView attention alert
-  → neutral operator invocation of Astra
+  → operator selects attention moment (local alerts optional)
+  → [SYMBOL] WAKE
+  → restore lifecycle state / apply SOP Wake Router
   → WAIT / ENTER / HOLD / REDUCE / EXIT / NO TRADE
   → operator securities execution where applicable
 ```
@@ -80,6 +81,14 @@ wake. Astra is not expected to poll or monitor TradingView continuously, and a
 native automatic Astra wake is not assumed. Gmail, Slack, or another external
 trigger is not documented as a production wake mechanism. Attention events
 request possible reassessment; they do not cause a trade decision.
+
+The permanent operator command is `[SYMBOL] WAKE`, with no reason or analytical
+suffix. Send it whenever the operator considers the symbol worthy of attention;
+no EQM contact count or prior reassessment condition grants or limits permission.
+The [SOP Wake Router](SOP_SINGLE_SYMBOL.md#wake-router) restores lifecycle state
+and selects Initial Assessment, Subsequent Reassessment, or Position Management.
+Astra independently chooses the evidence and analysis; it must not ask for or
+infer the operator's wake reason.
 
 ## Run an episode
 

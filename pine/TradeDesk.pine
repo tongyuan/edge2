@@ -573,7 +573,7 @@ while array.size(observerStateLabels) > MAX_STATE_OBSERVER_LABELS
     if not na(oldestObserverLabel)
         label.delete(oldestObserverLabel)
 
-var table stateObserverPanel = table.new(position.bottom_right, 2, 11)
+var table stateObserverPanel = table.new(position.bottom_right, 2, 12)
 if barstate.islast and showStateDebugPanel
     color observerPanelBackground = color.new(color.black, 18)
     color observerPanelLabelColor = color.new(color.silver, 0)
@@ -595,10 +595,12 @@ if barstate.islast and showStateDebugPanel
     table.cell(stateObserverPanel, 1, 7, f_observerLastAnchorText(observerPreviousReachedAnchor), text_color = color.white, bgcolor = observerPanelBackground)
     table.cell(stateObserverPanel, 0, 8, "Path Step #", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
     table.cell(stateObserverPanel, 1, 8, str.tostring(observerObservedPathSteps), text_color = color.white, bgcolor = observerPanelBackground)
-    table.cell(stateObserverPanel, 0, 9, "Last Contact At", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
-    table.cell(stateObserverPanel, 1, 9, f_observerPanelTimeText(observerLastReachedAt), text_color = color.white, bgcolor = observerPanelBackground)
-    table.cell(stateObserverPanel, 0, 10, "Last Contact", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
-    table.cell(stateObserverPanel, 1, 10, observerLastContactSummary, text_color = color.white, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 0, 9, "Distinct EQM Contacts", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 1, 9, str.tostring(observerEqmDistinctContactCount), text_color = color.white, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 0, 10, "Last Contact At", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 1, 10, f_observerPanelTimeText(observerLastReachedAt), text_color = color.white, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 0, 11, "Last Contact", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 1, 11, observerLastContactSummary, text_color = color.white, bgcolor = observerPanelBackground)
 
 color currentUpperColor = color.rgb(214, 80, 80)
 color currentMidpointColor = color.new(color.purple, 0)

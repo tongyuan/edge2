@@ -9,12 +9,90 @@ available sources, record each Astra decision before its subsequent outcome,
 freeze every T0 entry, and keep later T1 review separate. No market decision has
 been made in this skeleton.
 
+## Episode 002 Objective
+
+Episode 002 is the first clean prospective run of the current Trade Desk
+operator/Astra workflow. This objective is frozen before mock validation and the
+real run.
+
+### Primary objective
+
+Determine whether Astra adds useful discretionary trading judgment beyond the
+deterministic EDGE / Trade Desk state when the operator selectively requests
+attention using `[SYMBOL] WAKE`.
+
+The operator determines when Astra attention is warranted but does not provide
+the analytical reason for the wake.
+
+Astra independently:
+
+- restores the current Trade Desk lifecycle
+- selects the chart context, timeframe, structural geometry, and evidence it
+  considers relevant
+- interprets the situation prospectively
+- makes the appropriate Trade Desk decision
+- preserves continuity across subsequent wakes
+
+### Secondary objective
+
+Preserve the objective state present at each wake so later Episode Run analysis
+can investigate which observable situations were associated with useful Astra
+assessments. This may include, without assigning significance in advance:
+
+- EQM contact chronology
+- anchor chronology
+- MRZ structural state
+- IPDA context
+- price location
+- evidence present or subsequently inspected by Astra
+
+Episode 002 does not assume that any EQM contact number, touch point, evidence
+type, or structural condition has trading significance.
+
+### What Episode 002 is testing
+
+1. Whether Astra independently identifies relevant evidence rather than merely
+   repeating deterministic Trade Desk facts.
+2. Whether Astra adds useful discretionary interpretation or decision value.
+3. Whether Astra maintains prospective continuity across multiple WAKE calls.
+4. Whether a clean factual wake record can later support discovery of better
+   attention-selection rules.
+
+### Success criteria
+
+Episode 002 is a valid successful research run even if no trade occurs. The run
+should produce:
+
+- prospective frozen Astra decisions
+- independent Astra evidence selection
+- continuity across repeated wakes
+- no operator analytical prompting
+- no retrospective rewriting
+- coherent trade management if an ENTER occurs
+- sufficient factual wake-state data for later milestone review
+
+### Out of scope
+
+Episode 002 does not attempt to:
+
+- prove that any specific EQM contact number is optimal
+- optimize wake frequency
+- automate Astra wake
+- prove statistical trading edge
+- redesign MRZ logic
+- introduce a database
+- introduce multi-symbol orchestration
+
 ## Frozen methodology
 
 - **Episode Run:** 002
 - **Episode Run Status:** [set ACTIVE when the prospective run begins]
-- **SOP Version:** SINGLE-SYMBOL v0.1
-- **Initial Wake Rule:** SECOND DISTINCT MIGRATION EQM CONTACT
+- **SOP Version:** SINGLE-SYMBOL v0.2
+- **Canonical Operator Command:** [SYMBOL] WAKE
+- **Initial Astra Attention:** Operator-selected prospectively
+- **Wake Routing:** Per SOP Wake Router
+- **Operator Wake Reason:** Not supplied to Astra
+- **Objective State at Wake:** Captured prospectively where applicable
 - **Natural Completion Rule:** NEXT AUTHORITATIVE MRZ MIGRATION
 - **Mode:** BLIND DISCOVERY
 - **Discipline:** Prospective / append-only; T1 must not rewrite T0
@@ -54,7 +132,7 @@ been made in this skeleton.
 - **Migration EQM:** [pending]
 - **Previous MRZ midpoint:** [pending]
 - **TradeDesk.pine configuration reconciliation:** [pending]
-- **Second EQM Contact Alert enabled / alert reference:** [pending operator verification]
+- **Optional Second EQM Contact Alert / alert reference:** [not yet supplied; no wake requirement]
 - **Initial deterministic observer context:** [pending]
 - **Initial distinct EQM contact count:** [pending]
 - **Position state:** [pending operator report]
@@ -62,16 +140,17 @@ been made in this skeleton.
 
 ## TWAKE — first Astra assessment
 
-- **TWAKE timestamp / timezone:** [pending]
-- **Wake trigger:** [pending; must satisfy the frozen Initial Wake Rule]
+- **Wake Timestamp / timezone:** [pending]
+- **Wake Command:** [actual SYMBOL WAKE; no analytical suffix]
+- **Wake Route:** [pending; per SOP lifecycle state]
+- **Position State at Wake:** [pending operator report; FLAT / OPEN]
 - **Chart timeframe at wake:** [pending]
 - **Path Step at wake:** [pending]
-- **Distinct EQM contact count at wake:** [pending]
-- **Current deterministic observer context:** [pending]
+- **Distinct EQM Contacts at Wake:** [pending deterministic value]
+- **Current deterministic observer context:** [pending; include Last Reached Anchor, Previous Reached Anchor and Last Contact/contact chronology, or frozen source reference]
 - **Current MRZ Migration:** [pending]
 - **Current IPDA 20W Zone:** [pending]
 - **Evidence / timeframes Astra actually inspected:** [pending Astra selection]
-- **Neutral operator instruction:** [use SOP 2 without directional additions]
 
 ### First Astra decision — complete prospectively
 
@@ -80,7 +159,7 @@ been made in this skeleton.
 - **Decision model / reasoning effort:** [pending actual author]
 - **Prior decision / thesis link:** [none or reference]
 - **Position context:** [pending operator report]
-- **Decision:** [WAIT / ENTER / NO TRADE]
+- **Decision:** [per Wake Route; FLAT: WAIT / ENTER / NO TRADE; OPEN: HOLD / REDUCE / EXIT]
 - **Observed facts:** [pending]
 - **Astra interpretation:** [pending]
 - **Relevant evidence:** [pending]
@@ -117,9 +196,10 @@ been made in this skeleton.
 ## Subsequent T0 decisions
 
 Append each later decision using the complete T0 block in
-[EPISODE_RECORD.md](EPISODE_RECORD.md). Cite either a previously frozen Next
-Reassessment Condition or a material authoritative structural event as the wake
-context. Preserve the same trade lifecycle across HOLD, REDUCE, and EXIT.
+[EPISODE_RECORD.md](EPISODE_RECORD.md). Freeze objective state for each
+`[SYMBOL] WAKE` and apply the SOP Wake Router. Prior reassessment conditions are
+guidance, not wake gates. Preserve the same trade lifecycle across HOLD, REDUCE,
+and EXIT.
 
 ## Operator execution and trade performance
 

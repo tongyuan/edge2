@@ -26,8 +26,8 @@ MRZ migration does not automatically close a position.
 
 - **Episode ID:** [unique ID]
 - **Episode Run Status:** [ACTIVE / COMPLETE / CLOSED-INCOMPLETE]
-- **SOP Version:** [e.g. SINGLE-SYMBOL v0.1]
-- **Initial Wake Rule:** [e.g. SECOND DISTINCT MIGRATION EQM CONTACT]
+- **SOP Version:** [e.g. SINGLE-SYMBOL v0.2]
+- **Canonical Operator Command:** [SYMBOL] WAKE
 - **Natural Completion Rule:** [e.g. NEXT AUTHORITATIVE MRZ MIGRATION]
 - **Structural episode ID / migration reference:** [authoritative structure]
 - **Symbol:** [instrument / venue if needed]
@@ -77,13 +77,19 @@ data problems; do not replace EDGE levels with inferred chart levels.
 These anchors are authoritative structural references. They do not define
 Astra's discretionary trading dealing range.
 
-### Initial wake metadata — first Astra assessment only
+### Wake snapshot — each Astra invocation
 
-- **TWAKE timestamp / timezone:** [operator wake time]
-- **Wake trigger:** [factual alert or authoritative event]
+Freeze objective state at each wake. Reuse an auditable snapshot/reference for
+values already recorded; capture only missing state. Do not record or infer the
+operator's wake reason. The command communicates attention only.
+
+- **Wake Timestamp / timezone:** [operator wake time]
+- **Wake Command:** [actual SYMBOL WAKE; no analytical suffix]
+- **Wake Route:** [INITIAL_ASSESSMENT / SUBSEQUENT_REASSESSMENT / POSITION_MANAGEMENT; per SOP lifecycle state]
+- **Position State at Wake:** [FLAT / OPEN; source reference, or unknown if unverified]
 - **Chart timeframe at wake:** [displayed timeframe; not a preference]
 - **Path Step at wake:** [deterministic observer value]
-- **Distinct EQM contact count at wake:** [deterministic count]
+- **Distinct EQM Contacts at Wake:** [deterministic count or frozen snapshot reference]
 - **Current deterministic observer context:** [Observer Status, Price Region, Upper Anchor, Lower Anchor, Last Reached Anchor, Previous Reached Anchor, Path Step, Last Contact At and Last Contact/contact chronology, or source reference]
 - **Current MRZ Migration:** [deterministic panel value or source reference]
 - **Current IPDA 20W Zone:** [deterministic panel value or source reference]
@@ -97,7 +103,7 @@ and directly visible price observations from inferred price-action labels.
 - **Decision ID:** [episode ID + unique sequence]
 - **Timestamp / timezone:** [recorded before subsequent outcome]
 - **Decision model / reasoning effort:** [actual author; reference the applicable model-start or handoff record]
-- **Wake context:** [MRZ_SECOND_EQM_CONTACT / PRIOR_REASSESSMENT_CONDITION / MRZ_ANCHOR_TRANSITION / MRZ_EQM_INTERACTION / MRZ_MIGRATED / OPERATOR_REVIEW / OTHER; context only, not the cause of the decision]
+- **Wake snapshot:** [reference this invocation's frozen objective state; not the operator's reason]
 - **Prior decision / thesis link:** [ID or none; identify a new extension thesis explicitly]
 - **Timeframes / evidence as of this decision:** [references; record additions and reason]
 - **Structural snapshot update:** [new source / changed authoritative facts, or unchanged]
@@ -113,9 +119,9 @@ and directly visible price observations from inferred price-action labels.
 - **Thesis invalidation:** [if applicable; otherwise not applicable]
 - **Confidence / uncertainty (optional):** [limits of the view]
 
-After the first Astra assessment, each later wake must cite either a previously
-recorded Next Reassessment Condition or a material authoritative structural
-event. Keep these operational conditions distinct from general commentary.
+Next Reassessment Conditions are operator guidance, not permission gates for
+`[SYMBOL] WAKE`. On reassessment, restore the prior prospective assessment and
+let Astra independently determine what has materially changed.
 
 #### ENTER contract — required only when Decision = ENTER
 

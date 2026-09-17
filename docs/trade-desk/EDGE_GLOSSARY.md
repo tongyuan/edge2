@@ -104,11 +104,11 @@ supply that range, and no swing selection or timeframe is prescribed.
 | Upper / Lower Anchor | The nearest available canonical reference anchor above or below the observed close. |
 | Raw contact | A fresh prospective contact episode with one or more canonical anchors. Repeated contact after leaving remains a new observation. |
 | Path Step # | A chronological count of raw contact episodes for the active observer structure. It is not setup progress, confidence, or signal strength. |
-| Distinct Migration-EQM contact count | A chronological count incremented when a fresh raw contact episode includes Migration EQM. Continuous intersection without leaving remains one contact. The count resets with observer structure identity. |
+| Distinct EQM Contacts | The panel's existing chronological Migration-EQM contact count, incremented when a fresh raw contact episode includes Migration EQM. Continuous intersection without leaving remains one contact. The count resets with observer structure identity. It is research data, not wake eligibility or confidence. |
 | Attention transition | A raw contact whose contact set differs from the immediately preceding contact set, including the first recorded contact after no prior set. |
 | `MRZ_ANCHOR_TRANSITION` | A local attention alert for an attention transition. It requests possible reassessment and is not a trading signal. |
 | `MRZ_EQM_INTERACTION` | Interaction with the broader Migration-EQM proximal zone, optionally carrying `FROM_TOP` or `FROM_BOTTOM` approach metadata. It is distinct from exact-anchor contact. |
-| `MRZ_SECOND_EQM_CONTACT` | An optional Episode Run attention alert emitted once when the distinct Migration-EQM contact count becomes two for the active observer structure. It carries no required trading meaning. |
+| `MRZ_SECOND_EQM_CONTACT` | An optional factual alert emitted once when the distinct Migration-EQM contact count becomes two for the active observer structure. It requires no Astra wake, has no routing authority, and carries no assigned trading meaning. |
 
 ## TradeDesk.pine evidence display
 

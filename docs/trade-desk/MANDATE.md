@@ -27,7 +27,8 @@ The Trade Desk must not become a deterministic trading strategy.
 The architectural invariant is:
 
 ```text
-Trade Desk determines when the market deserves attention.
+Operator determines when Astra deserves attention.
+WAKE communicates attention only; the SOP determines lifecycle procedure.
 Astra determines what the market means and whether to trade it.
 
 Trade Desk preserves the available evidence universe.
@@ -85,6 +86,16 @@ MRZ details into the Trade Desk or TradingView where required, receiving local
 TradingView attention alerts, invoking Astra neutrally, executing securities
 trades manually, and maintaining operational oversight.
 
+The permanent operator entry point is `[SYMBOL] WAKE`. It communicates attention
+only, with no reason, evidence hint, touch point, direction, or timeframe. Do not
+ask why the operator woke Astra or infer intent from simultaneous observations.
+Restore authoritative lifecycle state and apply the SOP Wake Router: OPEN routes
+to POSITION_MANAGEMENT; FLAT with no prior assessment in the current episode
+routes to INITIAL_ASSESSMENT; FLAT with a prior assessment routes to
+SUBSEQUENT_REASSESSMENT. The operator selects the attention moment, not the
+procedure. EQM contact count, local alerts, and prior reassessment conditions
+are not wake permission gates. Astra independently selects the analysis.
+
 The operator should not inject directional interpretation when waking Astra.
 If an operator belief is intentionally introduced, label it **OPERATOR PRIOR**.
 An operator prior remains distinct from authoritative EDGE facts, TradingView
@@ -99,11 +110,11 @@ operator synchronizes Trade Desk / TradingView
         ↓
 TradeDesk.pine observes market structure
         ↓
-neutral structural attention event
+operator selects attention moment (local alerts optional)
         ↓
-TradingView local alert
+operator sends [SYMBOL] WAKE
         ↓
-operator invokes Astra neutrally
+restore lifecycle state / apply SOP Wake Router
         ↓
 Astra refreshes current evidence
         ↓
@@ -114,9 +125,10 @@ operator executes where applicable
 
 The current routing boundary is explicit:
 
-- EDGE migration leads to operator wake and synchronization.
-- A TradingView structural event may create a local notification; the operator
-  manually invokes Astra.
+- EDGE migration leads to operator notification and synchronization; the operator
+  decides when Astra next deserves attention.
+- A TradingView structural event may create a local notification. The operator
+  may invoke Astra with or without one; the notification has no routing authority.
 - An Astra decision may lead to manual operator execution.
 
 Native event-driven Astra wake is not assumed to be available. Gmail, Slack,

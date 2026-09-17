@@ -1,4 +1,4 @@
-# Single-Symbol Trade Desk SOP — v0.1
+# Single-Symbol Trade Desk SOP — v0.2
 
 Use with [MANDATE.md](MANDATE.md), which remains authoritative. This SOP governs
 one symbol at a time through sequential Episode Runs in Blind Discovery mode.
@@ -6,53 +6,47 @@ The operator synchronizes state, receives local attention alerts, wakes Astra
 manually, and handles execution. This version adds no queue, multi-symbol
 coordination, automated Astra wake, polling, or continuous Astra monitoring.
 
-## SOP 1 — Initial Astra wake
+## Wake Router
 
-For Episode 002, the initial Astra wake condition is:
+Canonical operator command: `[SYMBOL] WAKE` (for example, `ZECUSDT WAKE`).
+A deliberate WAKE means only that the operator considers this symbol worthy of
+Astra attention now. Do not supply, ask for, or infer the operator's reason,
+preferred evidence, touch point, direction, interpretation, or timeframe.
 
-**SECOND DISTINCT MIGRATION EQM CONTACT**
+Restore the authoritative lifecycle state, then route:
 
-This is a structural maturity and attention condition only. It does not mean
-resistance, support, rejection, continuation, reversal, bearish, bullish, long,
-short, confirmation, or entry.
+- OPEN position → **POSITION_MANAGEMENT**
+- FLAT + no prior Astra assessment in the current episode → **INITIAL_ASSESSMENT**
+- FLAT + prior Astra assessment in the current episode → **SUBSEQUENT_REASSESSMENT**
 
-A distinct contact follows this chronology:
+The operator determines when attention is warranted, not which procedure runs.
+The SOP determines procedure only; it does not judge the operator's reason for
+attention. Astra independently determines the analysis. This router is Markdown
+operating behavior, not a backend or automated invocation mechanism.
 
-```text
-Migration EQM contact
-  → price leaves EQM contact
-  → price later returns and contacts Migration EQM again
-```
+## Initial Assessment
 
-Consecutive bars that continuously intersect Migration EQM without leaving are
-one distinct contact episode.
+For FLAT with no prior Astra assessment in the current episode, any deliberate
+`[SYMBOL] WAKE` starts INITIAL_ASSESSMENT. There is no minimum EQM contact count
+and no early, on-time, or late classification. The operator may wake at contact
+#1, #2, #3+, another touch point, or any other observation, or keep observing.
+No count or touch point has routing privilege or assigned trading meaning.
 
-- First distinct EQM contact: **OBSERVE ONLY**
-- Second distinct EQM contact: **INITIAL ASTRA WAKE**
+`MRZ_SECOND_EQM_CONTACT` reports only that the second distinct Migration EQM
+contact occurred in the current observer structure. The operator may respond or
+ignore it. The alert neither requires a WAKE nor controls routing.
 
-Before relying on this condition, the operator reconciles the active
-current/previous MRZ structure and enables `Enable Second EQM Contact Alert` in
-the applicable TradingView alert configuration. The alert requests manual
-operator attention; it does not wake Astra automatically.
+Astra returns WAIT, ENTER, or NO TRADE and prospectively records the inspected
+context and evidence, interpretation, rationale, and reassessment conditions.
 
-## SOP 2 — Initial wake instruction
-
-The operator uses this neutral instruction without adding directional
-interpretation:
-
-> [SYMBOL] generated a new Trade Desk attention event. Refresh the current EDGE
-> and TradingView state. Inspect sufficient historical price and structural
-> context to understand the present situation prospectively, using whatever
-> timeframe, zoom, and available evidence you consider relevant. Then make the
-> next Trade Desk decision under the mandate.
-
-## SOP 3 — Astra controls evidence inspection
+## Astra controls evidence inspection
 
 The operator determines when Astra is invoked. Once invoked, Astra controls the
 analytical view. At TWAKE, Astra begins from the normal Trade Desk state and
 should notice and consider the deterministic context already available: MRZ
 Migration, IPDA 20W Zone, Price Region, Upper Anchor, Lower Anchor, Last Reached
-Anchor, Previous Reached Anchor, Path Step, and Last Contact/contact chronology.
+Anchor, Previous Reached Anchor, Path Step, Distinct EQM Contacts, and Last
+Contact/contact chronology.
 These are factual structural observations. Astra decides whether each is
 relevant to its trading decision. IPDA 20W Zone is part of the current
 environment, but no IPDA bucket has assigned directional or trading meaning.
@@ -75,37 +69,24 @@ is useful. These display and inspection choices do not alter authoritative EDGE
 state or prior frozen decisions. Blind Discovery prescribes no timeframe,
 evidence type, geometry, confluence threshold, or inspection order.
 
-## SOP 4 — First Astra assessment
+The operator's reason for requesting attention is not analytical input and must
+not constrain Astra's evidence selection or be inferred from visible evidence.
 
-For a flat symbol, Astra returns one of:
+## Subsequent Reassessment
 
-```text
-WAIT
-ENTER
-NO TRADE
-```
+For FLAT with a prior Astra assessment in the current episode, any deliberate
+`[SYMBOL] WAKE` starts SUBSEQUENT_REASSESSMENT. Restore the prior prospective
+assessment; Astra independently determines what has materially changed.
+Next Reassessment Conditions remain useful operator guidance, not permission
+gates. They need not have occurred for the operator to request attention.
 
-Astra also records:
+## Position Management
 
-- the structure and context inspected
-- the evidence and timeframes inspected
-- its current interpretation
-- why the decision is justified
-- observable developments that would warrant reassessment
-
-## SOP 5 — Subsequent wakes
-
-The second distinct EQM contact governs the initial Astra wake only. After the
-first assessment, a third, fourth, or later EQM contact and the arbitrary passage
-of time do not automatically wake Astra.
-
-Astra must state prospective reassessment conditions. Continue deterministic
-observation until one of those previously stated conditions occurs or a material
-authoritative structural change occurs. The next wake must cite that condition
-or event. The operator must not invent an intervening discretionary wake
-condition.
-
-## SOP 6 — Position lifecycle
+For OPEN, `[SYMBOL] WAKE` starts POSITION_MANAGEMENT. Restore the recorded trade
+lifecycle: original ENTER, thesis, entry, initial invalidation, management
+conditions, prior HOLD/REDUCE decisions, latest reassessment conditions,
+`migration_during_trade`, and current authoritative structure. Expected
+management decisions remain HOLD, REDUCE, and EXIT.
 
 If Astra decides ENTER, the same prospective decision must provide:
 
@@ -121,7 +102,7 @@ Subsequent Astra wakes manage the same trade lifecycle through HOLD, REDUCE, or
 EXIT decisions. MRZ migration supplies new structural information; it is not an
 automatic exit.
 
-## SOP 7 — Episode completion
+## Episode completion
 
 Natural structural Episode Run completion is:
 
@@ -130,14 +111,21 @@ Natural structural Episode Run completion is:
 A trade may never occur, may open and close inside the Episode Run, or may remain
 open when the structural Episode Run ends. Episode is distinct from trade.
 
+With FLAT or OPEN, an authoritative migration completes the old structural
+episode and begins the next; the observer resets according to existing
+semantics. With OPEN, preserve the trade as OPEN and record
+`migration_during_trade`; a later WAKE routes to POSITION_MANAGEMENT. With FLAT,
+the next WAKE routes according to assessments in the new episode. The operator
+decides when to wake Astra; migration imposes no EQM-count requirement.
+
 An interrupted run may instead be administratively closed as
 `CLOSED-INCOMPLETE`. Interruption is not natural structural completion.
 
-## SOP 8 — Episode milestone review
+## Episode milestone review
 
 After every Episode Run, review:
 
-1. Was the initial second-EQM-contact wake useful?
+1. Was the operator-selected attention moment useful?
 2. Did Astra derive useful information from T0 to TWAKE beyond repeating the
    deterministic Trade Desk panel?
 3. Which evidence and timeframes did Astra independently inspect?
@@ -149,3 +137,7 @@ After every Episode Run, review:
 
 Do not change the SOP merely because of one inconvenient observation. Episode
 Runs are milestone tests of Astra and the operator procedure.
+
+Distinct EQM contact count and objective wake snapshots are prospective research
+data, not wake eligibility or confidence. Any useful contact-count or
+evidence-selection relationship must be discovered later, not assumed here.
