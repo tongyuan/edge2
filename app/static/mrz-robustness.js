@@ -55,8 +55,17 @@ function hasValidMigrationProvenance(report) {
 }
 
 function filterReports(reports, filterMode = "all") {
+  if (filterMode === "pressure") {
+    return reports.filter((report) => report.structural_authority?.status === "AUTHORITATIVE"
+      && report.migration_pressure?.status === "UNDER_PRESSURE"
+      && ["UP", "DOWN"].includes(report.migration_pressure.direction));
+  }
   if (filterMode !== "migrated") return [...reports];
   return reports.filter((report) => hasValidMigrationProvenance(report));
+}
+
+function operatorViewCounts(reports) {
+  return { all: reports.length, pressure: filterReports(reports, "pressure").length };
 }
 
 function percentageText(value) {
@@ -418,6 +427,9 @@ function reportMarkup(
   focusedSymbol = null,
 ) {
   const visibleReports = filterReports(reports, filterMode);
+  if (filterMode === "pressure" && !visibleReports.length) {
+    return '<section class="empty-report">No directional pressure currently detected.</section>';
+  }
   if (filterMode === "migrated" && !visibleReports.length) {
     return '<section class="empty-report">No migrated MRZ pairs currently available.</section>';
   }
@@ -466,11 +478,14 @@ if (typeof document !== "undefined") {
     const content = document.getElementById("reportContent");
     const activeReports = document.getElementById("activeReports");
     const allFilterButton = document.getElementById("filterAll");
-    const migratedFilterButton = document.getElementById("filterMigrated");
+    const pressureFilterButton = document.getElementById("filterPressure");
+    const allCount = document.getElementById("allCount");
+    const pressureCount = document.getElementById("pressureCount");
+    const viewButtons = [allFilterButton, pressureFilterButton];
     const requestedSymbol = operatorCardSymbolFromSearch(window.location.search);
     const requestedSection = operatorCardSectionFromHash(window.location.hash);
     let reports = [];
-    let filterMode = "migrated";
+    let filterMode = "all";
     let requestedCardFocused = false;
 
     function renderReports() {
@@ -480,17 +495,20 @@ if (typeof document !== "undefined") {
         filterMode,
         requestedSymbol,
       );
-      allFilterButton.classList.toggle("active", filterMode === "all");
-      migratedFilterButton.classList.toggle("active", filterMode === "migrated");
-      allFilterButton.setAttribute("aria-pressed", String(filterMode === "all"));
-      migratedFilterButton.setAttribute(
-        "aria-pressed",
-        String(filterMode === "migrated"),
-      );
+      const counts = operatorViewCounts(reports);
+      allCount.textContent = counts.all;
+      pressureCount.textContent = counts.pressure;
+      viewButtons.forEach((button) => {
+        const selected = button === (filterMode === "pressure" ? pressureFilterButton : allFilterButton);
+        button.classList.toggle("active", selected);
+        button.setAttribute("aria-selected", String(selected));
+        button.tabIndex = selected ? 0 : -1;
+      });
+      activeReports.setAttribute("aria-labelledby", filterMode === "pressure" ? "filterPressure" : "filterAll");
     }
 
     function selectFilter(nextFilterMode) {
-      filterMode = nextFilterMode === "migrated" ? "migrated" : "all";
+      filterMode = nextFilterMode === "pressure" ? "pressure" : "all";
       renderReports();
     }
 
@@ -507,6 +525,12 @@ if (typeof document !== "undefined") {
         document.getElementById("generatedAt").textContent = formatOperatorTimestampUtcMinus4(report.generated_at) || "—";
         document.getElementById("activeMrzCount").textContent = report.active_mrz_count;
         reports = report.active_mrzs;
+        // Reveal a push-targeted card before its initial focus, even after a tab switch
+        // during loading. Explicit operator tab choices after focus remain respected.
+        if (!requestedCardFocused && requestedSymbol
+          && reports.some((item) => item.symbol === requestedSymbol)) {
+          filterMode = "all";
+        }
         renderReports();
         status.hidden = true;
         content.hidden = false;
@@ -527,7 +551,20 @@ if (typeof document !== "undefined") {
 
     refreshButton.addEventListener("click", loadReport);
     allFilterButton.addEventListener("click", () => selectFilter("all"));
-    migratedFilterButton.addEventListener("click", () => selectFilter("migrated"));
+    pressureFilterButton.addEventListener("click", () => selectFilter("pressure"));
+    viewButtons.forEach((button, index) => {
+      button.addEventListener("keydown", (event) => {
+        let nextIndex;
+        if (event.key === "ArrowRight") nextIndex = (index + 1) % viewButtons.length;
+        else if (event.key === "ArrowLeft") nextIndex = (index + viewButtons.length - 1) % viewButtons.length;
+        else if (event.key === "Home") nextIndex = 0;
+        else if (event.key === "End") nextIndex = viewButtons.length - 1;
+        else return;
+        event.preventDefault();
+        selectFilter(nextIndex === 1 ? "pressure" : "all");
+        viewButtons[nextIndex].focus({ preventScroll: true });
+      });
+    });
     loadReport();
   });
 }
@@ -538,6 +575,7 @@ if (typeof module === "object" && module.exports) {
     durationText,
     directionText,
     filterReports,
+    operatorViewCounts,
     hasValidMigrationProvenance,
     midpointValue,
     migrationEqmValue,

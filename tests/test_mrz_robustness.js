@@ -1,10 +1,12 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const vm = require("node:vm");
 const {
   displacementText,
   durationText,
   directionText,
   filterReports,
+  operatorViewCounts,
   focusOperatorCard,
   hasValidMigrationProvenance,
   midpointValue,
@@ -125,8 +127,8 @@ const operationCardHtml = fs.readFileSync(
   require.resolve("../app/static/mrz-robustness.html"),
   "utf8",
 );
-assert.match(operationCardHtml, /mrz-robustness\.css\?v=migration-direction-20260916/);
-assert.match(operationCardHtml, /mrz-robustness\.js\?v=migration-direction-20260916/);
+assert.match(operationCardHtml, /mrz-robustness\.css\?v=pressure-view-20260917/);
+assert.match(operationCardHtml, /mrz-robustness\.js\?v=pressure-view-20260917/);
 assert.doesNotMatch(operationCardSource, /bb_mrz_(?:discount|premium)/);
 assert.doesNotMatch(operationCardSource, /trade recommendation/i);
 assert.doesNotMatch(operationCardSource, /Candidate forming|Awaiting confirmation/i);
@@ -138,19 +140,22 @@ assert.doesNotMatch(
   `${operationCardSource}\n${operationCardHtml}`,
   /<select|type=["']search["']|data-sort|data-filter/i,
 );
-assert.match(operationCardHtml, /id="filterAll"[^>]*aria-pressed="false"[^>]*>All</);
+assert.match(operationCardHtml, /role="tablist" aria-label="Operator Card view"/);
+assert.match(operationCardHtml, /id="filterAll"[^>]*role="tab"[^>]*aria-selected="true"[^>]*>All /);
 assert.match(
   operationCardHtml,
-  /id="filterMigrated"[^>]*aria-pressed="true"[^>]*>Migrated only</,
+  /id="filterPressure"[^>]*role="tab"[^>]*aria-selected="false"[^>]*>Pressure /,
+);
+assert.match(operationCardHtml, /id="activeReports" role="tabpanel" aria-labelledby="filterAll"/);
+assert.doesNotMatch(operationCardHtml, /Migrated only|filterMigrated/);
+assert.match(
+  operationCardSource,
+  /let filterMode = "all";/,
+  "All must be the initial Operator Card view",
 );
 assert.match(
   operationCardSource,
-  /let filterMode = "migrated";/,
-  "Migrated only must be the initial Operator Card filter",
-);
-assert.match(
-  operationCardSource,
-  /reports = report\.active_mrzs;\s*renderReports\(\);/,
+  /reports = report\.active_mrzs;[\s\S]*renderReports\(\);/,
   "the async response must populate report state before rendering",
 );
 const reportLoadSource = operationCardSource.split("async function loadReport()", 2)[1];
@@ -932,6 +937,76 @@ assert.match(
   /No migrated MRZ pairs currently available/,
 );
 
+const downwardNoMigrationReport = {
+  ...wldReport,
+  symbol: "9988",
+  migration: { has_migrated: false },
+  post_activation_robustness: {
+    ...wldReport.post_activation_robustness,
+    status: "UNDER_PRESSURE",
+    label: "Downward Pressure",
+    post_activation_observation_count: 5,
+  },
+  migration_pressure: {
+    ...wldReport.migration_pressure,
+    status: "UNDER_PRESSURE",
+    label: "Downward Pressure",
+    direction: "DOWN",
+    direction_label: "Downward",
+  },
+  boundary_pressure: {
+    ...wldReport.boundary_pressure,
+    above_upper_envelope_observation_count: 0,
+    below_lower_envelope_observation_count: 4,
+  },
+};
+const upwardReport = { ...btcReport, symbol: "XYZ" };
+const consolidatingReport = { ...ethBalancedReport, symbol: "ABC" };
+const quietReport = { ...wldReport, symbol: "DEF" };
+const pressureDataset = [zecReport, quietReport, upwardReport, downwardNoMigrationReport, consolidatingReport];
+const pressureDatasetBefore = structuredClone(pressureDataset);
+assert.deepEqual(operatorViewCounts(pressureDataset), { all: 5, pressure: 2 });
+assert.deepEqual(
+  filterReports(pressureDataset, "pressure").map((report) => report.symbol),
+  ["XYZ", "9988"],
+  "Pressure uses canonical pressure direction, not migration direction or history",
+);
+assert.deepEqual(
+  filterReports(pressureDataset, "all").map((report) => report.symbol),
+  pressureDataset.map((report) => report.symbol),
+  "All preserves the authoritative backend ordering and complete population",
+);
+assert.equal(filterReports([{
+  ...upwardReport,
+  structural_authority: { ...upwardReport.structural_authority, status: "REPLACED" },
+}], "pressure").length, 0, "only authoritative pressure cards are included");
+assert.equal(filterReports([{
+  ...upwardReport,
+  migration_pressure: { ...upwardReport.migration_pressure, status: "STABLE", direction: "NEUTRAL" },
+  boundary_pressure: { above_upper_envelope_observation_count: 999, below_lower_envelope_observation_count: 0 },
+}], "pressure").length, 0, "the frontend never reclassifies pressure from envelope counts or stale labels");
+
+const pressureReportsMarkup = reportMarkup(pressureDataset, (value) => value, "pressure");
+assert.match(pressureReportsMarkup, /XYZ · STR/);
+assert.match(pressureReportsMarkup, /9988 · BTD/);
+assert.doesNotMatch(pressureReportsMarkup, /data-symbol="(?:ABC|DEF|ZECUSDT)"/);
+assert.ok(pressureReportsMarkup.indexOf('data-symbol="XYZ"') < pressureReportsMarkup.indexOf('data-symbol="9988"'));
+assert.equal(pressureReportsMarkup, reportMarkup(pressureDataset, (value) => value, "pressure"), "refresh renders stable order");
+const noMigrationPressureMarkup = robustnessCardMarkup(downwardNoMigrationReport);
+assert.ok(pressureReportsMarkup.includes(noMigrationPressureMarkup), "Pressure reuses the exact existing Operator Card markup");
+const noMigrationPressureSummary = noMigrationPressureMarkup.split("</header>", 1)[0];
+assert.match(noMigrationPressureSummary, /Shallow Discount/);
+assert.match(noMigrationPressureSummary, /CURRENT PRESSURE[\s\S]*Downward Pressure/);
+assert.match(noMigrationPressureSummary, /5 observations/);
+assert.match(noMigrationPressureSummary, /Above upper envelope<\/dt><dd>0/);
+assert.match(noMigrationPressureSummary, /Below lower envelope<\/dt><dd>4/);
+assert.match(noMigrationPressureSummary, /No previous MRZ/);
+assert.doesNotMatch(noMigrationPressureSummary, /authority-migration-direction|MIGRATION EQM/);
+assert.deepEqual(pressureDataset, pressureDatasetBefore, "filtering and rendering never mutate authoritative data");
+assert.deepEqual(operatorViewCounts([consolidatingReport, quietReport]), { all: 2, pressure: 0 });
+assert.match(reportMarkup([consolidatingReport, quietReport], (value) => value, "pressure"), /No directional pressure currently detected\./);
+assert.match(reportMarkup([], (value) => value, "pressure"), /No directional pressure currently detected\./);
+
 const unavailableFormationMarkup = robustnessCardMarkup({
   ...btcReport,
   formation_evidence: {
@@ -1083,3 +1158,143 @@ const empty = reportMarkup([]);
 assert.match(empty, /No active MRZ is available for an operation card/);
 
 console.log("MRZ operation card presentation tests passed");
+
+function browserHarness(initialReports, search = "", hash = "") {
+  let currentReports = initialReports;
+  let onReady;
+  const elements = {};
+  const focusedCards = [];
+  for (const id of [
+    "refreshReport", "reportStatus", "reportContent", "activeReports",
+    "filterAll", "filterPressure", "allCount", "pressureCount",
+    "generatedAt", "activeMrzCount",
+  ]) {
+    elements[id] = {
+      hidden: id === "reportContent",
+      disabled: false,
+      innerHTML: "",
+      textContent: "",
+      attributes: {},
+      listeners: {},
+      classes: new Set(),
+      focusOptions: null,
+      setAttribute(name, value) { this.attributes[name] = value; },
+      addEventListener(name, callback) { this.listeners[name] = callback; },
+      focus(options) { this.focusOptions = options; },
+    };
+    const element = elements[id];
+    element.classList = {
+      toggle(name, selected) { selected ? element.classes.add(name) : element.classes.delete(name); },
+      add(name) { element.classes.add(name); },
+      remove(name) { element.classes.delete(name); },
+    };
+  }
+  elements.activeReports.querySelectorAll = (selector) => {
+    assert.equal(selector, ".mrz-report");
+    return [...elements.activeReports.innerHTML.matchAll(/data-symbol="([^"]+)"/g)]
+      .map((match) => {
+        const card = fakeOperatorCard(match[1]);
+        const recordFocus = (section) => {
+          assert.equal(elements.reportContent.hidden, false, "deep-link focus runs after the list is visible");
+          focusedCards.push({ symbol: match[1], section, open: card.sections[section]?.open });
+        };
+        card.focus = () => recordFocus(null);
+        for (const [section, target] of Object.entries(card.sections)) {
+          target.focus = () => recordFocus(section);
+        }
+        return card;
+      });
+  };
+  const sandbox = {
+    document: {
+      getElementById(id) { assert.ok(elements[id], `expected element ${id}`); return elements[id]; },
+      addEventListener(name, callback) { assert.equal(name, "DOMContentLoaded"); onReady = callback; },
+    },
+    window: { location: { search, hash } },
+    URLSearchParams,
+    formatOperatorTimestampUtcMinus4: (value) => value,
+    fetch: async (url, options) => {
+      assert.equal(url, "/api/diagnostics/mrz-robustness");
+      assert.equal(options.cache, "no-store");
+      return { ok: true, json: async () => ({
+        generated_at: "2026-09-17T01:00:00Z",
+        active_mrz_count: currentReports.length,
+        active_mrzs: currentReports,
+      }) };
+    },
+  };
+  vm.runInNewContext(operationCardSource, sandbox);
+  onReady();
+  return { elements, focusedCards, replaceReports(next) { currentReports = next; } };
+}
+
+async function testPressureTabInteractions() {
+  const fortyTwoReports = [
+    downwardNoMigrationReport,
+    upwardReport,
+    ...Array.from({ length: 6 }, (_, index) => ({ ...btcReport, symbol: `PRESSURE${index}` })),
+    ...Array.from({ length: 34 }, (_, index) => ({ ...quietReport, symbol: `QUIET${index}` })),
+  ];
+  assert.deepEqual(operatorViewCounts(fortyTwoReports), { all: 42, pressure: 8 });
+  const harness = browserHarness(fortyTwoReports);
+  await new Promise((resolve) => setImmediate(resolve));
+  const { elements } = harness;
+  assert.equal(elements.filterAll.attributes["aria-selected"], "true");
+  assert.equal(elements.filterAll.tabIndex, 0);
+  assert.equal(elements.filterPressure.tabIndex, -1);
+  assert.equal(String(elements.allCount.textContent), "42", "All 42 is visible");
+  assert.equal(String(elements.pressureCount.textContent), "8", "Pressure 8 is visible");
+  assert.equal((elements.activeReports.innerHTML.match(/data-symbol=/g) || []).length, 42);
+  const allMarkupBefore = elements.activeReports.innerHTML;
+  elements.filterPressure.listeners.click();
+  assert.equal(elements.filterPressure.attributes["aria-selected"], "true");
+  assert.ok(elements.filterPressure.classes.has("active"));
+  assert.equal(elements.activeReports.attributes["aria-labelledby"], "filterPressure");
+  assert.equal((elements.activeReports.innerHTML.match(/data-symbol=/g) || []).length, 8);
+  assert.match(elements.activeReports.innerHTML, /9988 · BTD[\s\S]*Shallow Discount[\s\S]*Downward Pressure/);
+  assert.doesNotMatch(elements.activeReports.innerHTML, /data-symbol="QUIET/);
+  assert.equal(harness.focusedCards.length, 0, "switching views does not scroll or focus a card");
+  elements.filterAll.listeners.click();
+  assert.equal(elements.activeReports.innerHTML, allMarkupBefore, "All restores the complete unchanged API order");
+
+  let prevented = false;
+  elements.filterAll.listeners.keydown({ key: "ArrowRight", preventDefault() { prevented = true; } });
+  assert.equal(prevented, true);
+  assert.equal(elements.filterPressure.attributes["aria-selected"], "true");
+  assert.equal(elements.filterPressure.focusOptions.preventScroll, true);
+  elements.filterPressure.listeners.keydown({ key: "Home", preventDefault() {} });
+  assert.equal(elements.filterAll.attributes["aria-selected"], "true");
+  elements.filterAll.listeners.keydown({ key: "End", preventDefault() {} });
+  assert.equal(elements.filterPressure.attributes["aria-selected"], "true");
+  elements.filterPressure.listeners.keydown({ key: "ArrowLeft", preventDefault() {} });
+  assert.equal(elements.filterAll.attributes["aria-selected"], "true");
+
+  elements.filterPressure.listeners.click();
+  harness.replaceReports([consolidatingReport, quietReport]);
+  await elements.refreshReport.listeners.click();
+  assert.equal(elements.filterPressure.attributes["aria-selected"], "true", "refresh preserves the selected view");
+  assert.equal(String(elements.allCount.textContent), "2");
+  assert.equal(String(elements.pressureCount.textContent), "0");
+  assert.match(elements.activeReports.innerHTML, /No directional pressure currently detected\./);
+  elements.filterAll.listeners.click();
+  assert.equal((elements.activeReports.innerHTML.match(/data-symbol=/g) || []).length, 2);
+
+  const deepLink = browserHarness(pressureDataset, "?symbol=DEF", "#migration-history");
+  // A user can select Pressure before the asynchronous report has arrived.
+  deepLink.elements.filterPressure.listeners.click();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(deepLink.elements.filterAll.attributes["aria-selected"], "true");
+  assert.match(deepLink.elements.activeReports.innerHTML, /data-symbol="DEF"/);
+  assert.deepEqual(deepLink.focusedCards, [{ symbol: "DEF", section: "migration-history", open: true }]);
+  deepLink.elements.filterPressure.listeners.click();
+  assert.equal(deepLink.focusedCards.length, 1, "an explicit tab switch after deep-link focus must not jump back to the card");
+  await deepLink.elements.refreshReport.listeners.click();
+  assert.equal(deepLink.elements.filterPressure.attributes["aria-selected"], "true");
+  assert.equal(deepLink.focusedCards.length, 1, "refresh does not repeat the push-target scroll");
+  console.log("MRZ Pressure tab interaction tests passed");
+}
+
+testPressureTabInteractions().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

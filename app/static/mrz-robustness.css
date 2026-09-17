@@ -69,8 +69,11 @@ button:disabled { cursor: progress; opacity: 0.65; }
 .card-filter { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 18px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
 .card-filter > span { color: var(--muted); font-size: 0.65rem; font-weight: 760; letter-spacing: 0.12em; }
 .filter-options { display: flex; gap: 7px; }
-.filter-option { min-height: 42px; min-width: 88px; border-color: var(--line); background: rgba(8, 11, 16, 0.32); color: #c9d4e2; }
+.filter-option { display: inline-flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px; min-height: 44px; min-width: 88px; border-color: var(--line); background: rgba(8, 11, 16, 0.32); color: #c9d4e2; }
 .filter-option.active { border-color: #4d8b79; background: var(--accent-soft); color: var(--accent); }
+.filter-count { min-width: 1.6em; padding: 2px 6px; border: 1px solid var(--line); border-radius: 999px; font-size: 0.74rem; font-variant-numeric: tabular-nums; }
+.filter-option.active .filter-count { border-color: #4d8b79; }
+#activeReports:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 .empty-report { margin-top: 20px; padding: 30px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface); color: var(--muted); text-align: center; }
 .mrz-report { margin-top: 18px; overflow: clip; border: 1px solid var(--line); border-radius: 17px; background: rgba(16, 21, 29, 0.94); box-shadow: 0 18px 70px rgba(0, 0, 0, 0.18); }
 .mrz-report.focused-operator-card { border-color: #4d8b79; box-shadow: 0 0 0 2px rgba(98, 230, 181, 0.12), 0 18px 70px rgba(0, 0, 0, 0.18); scroll-margin-top: 18px; }

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="EDGE 2.0 MRZ operation card" />
     <title>EDGE 2.0 · MRZ Operation Card</title>
-    <link rel="stylesheet" href="/static/mrz-robustness.css?v=migration-direction-20260916" />
+    <link rel="stylesheet" href="/static/mrz-robustness.css?v=pressure-view-20260917" />
     <link rel="stylesheet" href="/static/diagnostics-nav.css?v=views-menu-20260907" />
   </head>
   <body>
@@ -55,18 +55,18 @@
           <article><span>ACTIVE MRZS</span><strong id="activeMrzCount">0</strong></article>
           <article><span>BEHAVIOR EVIDENCE</span><strong>Strictly after authoritative activation event</strong></article>
         </section>
-        <section class="card-filter" aria-label="Operator Card symbol filter">
+        <section class="card-filter" aria-label="Operator Card views">
           <span>SHOW SYMBOLS</span>
-          <div class="filter-options" role="group" aria-label="Migration history filter">
-            <button class="filter-option" id="filterAll" type="button" aria-pressed="false">All</button>
-            <button class="filter-option active" id="filterMigrated" type="button" aria-pressed="true">Migrated only</button>
+          <div class="filter-options" role="tablist" aria-label="Operator Card view">
+            <button class="filter-option active" id="filterAll" type="button" role="tab" aria-selected="true" aria-controls="activeReports" tabindex="0">All <span class="filter-count" id="allCount">0</span></button>
+            <button class="filter-option" id="filterPressure" type="button" role="tab" aria-selected="false" aria-controls="activeReports" tabindex="-1">Pressure <span class="filter-count" id="pressureCount">0</span></button>
           </div>
         </section>
-        <div id="activeReports"></div>
+        <div id="activeReports" role="tabpanel" aria-labelledby="filterAll" tabindex="0"></div>
       </div>
     </main>
     <script src="/static/diagnostics-nav.js?v=views-menu-20260907" defer></script>
     <script src="/static/operator-time.js?v=operator-card-semantics-20260829" defer></script>
-    <script src="/static/mrz-robustness.js?v=migration-direction-20260916" defer></script>
+    <script src="/static/mrz-robustness.js?v=pressure-view-20260917" defer></script>
   </body>
 </html>
