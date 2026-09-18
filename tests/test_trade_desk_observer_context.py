@@ -152,8 +152,10 @@ class SourceObserver:
             "alert_frequency": "close",
             "f_alertSymbol": lambda: self.env["syminfo"].ticker,
             "configuredSymbol": "BINANCE:SOLUSDT", "activeMrzSlot": "A",
-            "slotALower": 102.0, "slotAUpper": 102.30, "slotAActivationTime": 1,
-            "slotBLower": 103.68, "slotBUpper": 103.98, "slotBActivationTime": 1,
+            # Bounds/slot observed in the two affected SOLUSDT alert-log entries.
+            # Alert activation values were not exposed; replay activations are synthetic.
+            "slotALower": 101.98, "slotAUpper": 102.32, "slotAActivationTime": 1,
+            "slotBLower": 103.61, "slotBUpper": 104.04, "slotBActivationTime": 1,
             "showPreviousMrz": True, "showCurrentEnvelope": False,
             "showPreviousEnvelope": False, "showEqmProximalZone": True,
             "eqmProximalZoneWidthPercent": 50, "enableStateTransitionObserver": True,
@@ -252,7 +254,7 @@ class TradeDeskContextTests(unittest.TestCase):
         self.assertEqual(panel["Lower Anchor"], "CURRENT MIDPOINT @ 102.15")
         panel, _ = observer.bar(102.5, activeMrzSlot="B")
         self.assertEqual(panel["MRZ Migration"], "HIGHER")
-        panel, _ = observer.bar(102.5, slotALower=103.68, slotAUpper=103.98)
+        panel, _ = observer.bar(102.5, slotALower=103.61, slotAUpper=104.04)
         self.assertEqual(panel["MRZ Migration"], "COINCIDENT")
 
     def test_sol_current_eqm_previous_steps_23_24_share_state(self):
@@ -287,8 +289,8 @@ class TradeDeskContextTests(unittest.TestCase):
                 self.assert_transition(observer, panel, alerts, 1, "CURRENT MRZ MIDPOINT")
 
     def test_wrong_symbol_invalid_bounds_and_before_activation_clear_state(self):
-        for change in ({"configuredSymbol": "BINANCE:BTCUSDT"}, {"slotAUpper": 102.0},
-                       {"slotBUpper": 103.68}, {"slotAActivationTime": 10**15}):
+        for change in ({"configuredSymbol": "BINANCE:BTCUSDT"}, {"slotAUpper": 101.98},
+                       {"slotBUpper": 103.61}, {"slotAActivationTime": 10**15}):
             with self.subTest(change=change):
                 observer = self.new()
                 observer.bar(102.98, 103.0, 102.99)
@@ -298,7 +300,7 @@ class TradeDeskContextTests(unittest.TestCase):
 
     def test_reset_bar_contact_does_not_emit_or_count(self):
         observer = self.new()
-        panel, alerts = observer.bar(102.19, 102.21, 102.2, slotAUpper=102.4)
+        panel, alerts = observer.bar(102.19, 102.21, 102.2, slotAUpper=102.42)
         self.assert_reset(observer, panel, alerts)
         panel, alerts = observer.bar(102.19, 102.21, 102.2)
         self.assert_reset(observer, panel, alerts)
@@ -340,11 +342,12 @@ class TradeDeskContextTests(unittest.TestCase):
         switched, _ = replay("5", False)  # A new run; actual new-timeframe OHLC can differ.
         self.assertEqual(switched, first)
 
-    def test_separate_saved_alert_context_reproduces_reported_contradiction(self):
+    def test_observed_chart_and_saved_alert_contexts_reproduce_contradiction(self):
         alert_run = self.new()
         chart_run = SourceObserver(self.source)
-        chart_run.env.update(slotALower=101.34, slotAUpper=101.64,
-                             slotBLower=100.34, slotBUpper=100.64)
+        # Read-only chart Settings inspection: Slot B active, exactly these bounds.
+        chart_run.env.update(activeMrzSlot="B", slotALower=99.63, slotAUpper=100.07,
+                             slotBLower=101.28, slotBUpper=101.70)
         chart_run.bar(100)
         for _ in range(6):
             chart_run.bar(101.48, 101.50, 101.49)
@@ -352,11 +355,14 @@ class TradeDeskContextTests(unittest.TestCase):
         panel, _ = chart_run.bar(101.6)
         self.assertEqual(panel["Lower Anchor"], "CURRENT MIDPOINT @ 101.49")
         self.assertEqual(panel["MRZ Migration"], "HIGHER")
+        self.assertEqual(chart_run.env["previousMrzMidpoint"], 99.85)
+        self.assertEqual(chart_run.env["migrationEqm"], 100.67)
         self.assertEqual(panel["Path Step #"], "6")
         self.assertEqual(panel["Previous Reached Anchor"], "CURRENT MRZ MIDPOINT")
         _, alerts = alert_run.bar(102.98, 103.0, 102.99)
         self.assertEqual(alerts[0]["current_mrz_midpoint"], 102.15)
-        # Constructed inputs demonstrate possibility, NOT the user's missing actual inputs.
+        # Bounds were observed live; bars, activation values and counts here are
+        # deterministic synthetic replay, NOT a recovery of real chart OHLC.
 
     def test_single_definitions_execution_order_and_existing_identity(self):
         for variable in ("currentMrzMidpoint", "previousMrzMidpoint", "migrationEqm"):
