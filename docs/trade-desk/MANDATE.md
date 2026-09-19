@@ -277,19 +277,36 @@ current interaction supplies enough information for a directional thesis; and
 whether observed structure supports defensible invalidation and a management
 plan. If structure remains immature or ambiguous, WAIT is valid.
 
+Swing-structure maturity also depends on whether apparent extremes are
+well-defined or remain clustered as equal or near-equal highs or lows. Such
+clustering may indicate unresolved liquidity, locally incomplete structure,
+intermediate rather than terminal swing extremes, or structure still being
+defined. Subsequent price expansion through or sweep of the cluster may help
+establish a more meaningful swing high or low, after which Astra reassesses the
+relevant hierarchy, range maturity, thesis, and whether entry, invalidation, and
+management can be defined more clearly.
+
+Neither clustering nor a sweep determines trade readiness. Equal or near-equal
+levels do not require a sweep and alone do not force WAIT; a sweep does not
+automatically create an entry, target, reduction, exit, or reversal condition.
+Astra considers broader-timeframe structure, whether the cluster is local or
+structurally significant, displacement and acceptance/rejection behavior, and
+whether meaningful swing boundaries already exist at another hierarchy.
+
 **EQM REACHED is an attention event only.** An EQM alert or WAKE is not an entry
 setup. Astra independently determines whether surrounding swing structure is
 still forming, sufficiently developed for a trade, developed but not currently
 actionable, or irrelevant. No EQM contact number, violent move, or EQM-plus-swing
 sequence establishes readiness or carries predefined trading significance.
 
-During POSITION_MANAGEMENT, relevant swing highs and lows may be considered as
-structural references, potential liquidity or sweep levels, possible
-acceptance/rejection or reassessment areas, possible partial- or full-exit
-references, or thesis invalidation references where justified. Astra interprets
-actual behavior such as approach, sweep, rejection, acceptance beyond a level,
-failure to continue, displacement through a level, or structural failure before
-the level. These are analytical possibilities, not deterministic rules.
+During POSITION_MANAGEMENT, relevant swing highs and lows, including equal or
+near-equal clusters, may be considered as structural references, potential
+liquidity or sweep levels, possible acceptance/rejection or reassessment areas,
+possible partial- or full-exit references, or thesis invalidation references
+where justified. Astra interprets actual behavior such as approach, sweep,
+rejection, acceptance beyond a level, failure to continue, displacement through
+a level, creation of a new swing extreme, or structural failure before the
+level. These are analytical possibilities, not deterministic rules.
 
 A swing high or low is not automatically a target, exit, support, or resistance.
 A sweep does not require EXIT, and reaching a swing level does not require

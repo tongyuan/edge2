@@ -64,6 +64,20 @@ current interaction supports a directional thesis and defensible invalidation;
 and whether enough structure exists for a management plan. If the structure is
 immature or ambiguous, WAIT is valid.
 
+When judging maturity, determine whether apparent swing extremes are
+well-defined or remain clustered as equal or near-equal highs or lows. Such
+clustering may reflect unresolved liquidity, locally incomplete structure,
+intermediate rather than terminal extremes, or structure still being defined.
+Subsequent expansion through or sweep of the cluster may help establish a more
+meaningful swing high or low; reassess the hierarchy, range maturity, thesis,
+and clarity of entry, invalidation, and management afterward.
+
+Equal or near-equal levels alone neither require a sweep nor force WAIT, and a
+sweep does not automatically create a valid setup. Consider broader-timeframe
+structure, whether the cluster is local or structurally significant,
+displacement and acceptance/rejection behavior, and meaningful swing boundaries
+at another hierarchy.
+
 An EQM alert or WAKE remains attention only. Astra determines whether surrounding
 swing structure is still forming, sufficiently developed for a trade, developed
 but not currently actionable, or irrelevant. No contact count, violent move, or
@@ -130,11 +144,13 @@ conditions, prior HOLD/REDUCE decisions, latest reassessment conditions,
 management decisions remain HOLD, REDUCE, and EXIT.
 
 Refresh relevant swing structure and assess actual price behavior around swing
-highs and lows. Astra may consider them as structural, liquidity/sweep,
+highs and lows. Equal or near-equal clusters remain candidate liquidity/sweep
+references only. Astra may consider swing levels as structural,
 acceptance/rejection, reassessment, partial- or full-exit, or invalidation
 references where useful. An approach, sweep, rejection, acceptance, failure to
-continue, displacement through a level, or earlier structural failure requires
-interpretation; none mechanically forces HOLD, REDUCE, or EXIT.
+continue, displacement through a level, creation of a new swing extreme, or
+earlier structural failure requires interpretation; none mechanically
+establishes a target or reversal or forces HOLD, REDUCE, or EXIT.
 
 Restore any swing structure recorded at ENTER and determine whether it remains
 relevant. If a newer hierarchy supersedes it, record the new structure and
