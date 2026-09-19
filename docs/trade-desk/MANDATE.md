@@ -245,10 +245,13 @@ proximal zone and may retain factual approach metadata such as `FROM_TOP` or
 structural-anchor contact. Neither is a trading signal, and neither is assigned
 greater predictive value. Their usefulness remains open to prospective research.
 
-## Swing-defined dealing ranges
+## Swing structure across the trade lifecycle
 
-The three MRZ anchors do not define a trading dealing range. Where Astra elects
-to use one, the dealing range is derived from relevant price swing points:
+Swing structure is relevant across the entire trade lifecycle. Astra
+independently identifies the structure relevant to each decision, normally from
+actual price swing highs and swing lows. The three MRZ anchors remain structural
+reference geometry and do not define a trading dealing range. Where Astra elects
+to use a dealing range, it is derived from relevant price swing points:
 
 ```text
 Swing High
@@ -258,11 +261,39 @@ Swing High
 Swing Low
 ```
 
-MRZ anchors may sit inside, outside, at, or near that swing-defined range.
-Astra may analyze the relationship between MRZ anchors and swing structure.
-The Trade Desk does not prescribe which swing high or low is correct, which
-timeframe defines a useful range, when a range should be replaced, how an
-anchor must behave within it, or where entry or exit should occur.
+MRZ anchors may sit inside, outside, at, or near that swing-defined range. Astra
+may combine swing structure, MRZ geometry, and discretionary IPDA context in its
+analysis, but none is mechanically converted into a target or required exit.
+Astra chooses the relevant timeframe and swing hierarchy, including 1m, 5m,
+15m, 1h, or another available timeframe. No timeframe or swing pattern is
+mandatory.
+
+While FLAT, INITIAL_ASSESSMENT and SUBSEQUENT_REASSESSMENT consider whether
+price has developed a sufficiently coherent swing structure to support a
+probable trade setup. This includes whether a meaningful swing high and low are
+identifiable; whether the range is still forming or sufficiently developed;
+whether meaningful displacement occurred within or away from it; whether
+current interaction supplies enough information for a directional thesis; and
+whether observed structure supports defensible invalidation and a management
+plan. If structure remains immature or ambiguous, WAIT is valid.
+
+**EQM REACHED is an attention event only.** An EQM alert or WAKE is not an entry
+setup. Astra independently determines whether surrounding swing structure is
+still forming, sufficiently developed for a trade, developed but not currently
+actionable, or irrelevant. No EQM contact number, violent move, or EQM-plus-swing
+sequence establishes readiness or carries predefined trading significance.
+
+During POSITION_MANAGEMENT, relevant swing highs and lows may be considered as
+structural references, potential liquidity or sweep levels, possible
+acceptance/rejection or reassessment areas, possible partial- or full-exit
+references, or thesis invalidation references where justified. Astra interprets
+actual behavior such as approach, sweep, rejection, acceptance beyond a level,
+failure to continue, displacement through a level, or structural failure before
+the level. These are analytical possibilities, not deterministic rules.
+
+A swing high or low is not automatically a target, exit, support, or resistance.
+A sweep does not require EXIT, and reaching a swing level does not require
+REDUCE. Astra must interpret subsequent price behavior.
 
 The midpoint-to-midpoint interval remains structural geometry used to locate
 the three reference anchors and the Migration-EQM proximal zone. It must not be
@@ -428,10 +459,21 @@ The mandate does not prescribe what these conditions should be. Astra derives
 them from current evidence. A recommendation does not establish an order or
 fill; the operator records actual execution separately.
 
+When swing structure supports ENTER, preserve it through the existing observed
+facts, relevant evidence, entry rationale, and optional swing-derived dealing
+range fields. Record the relevant swing high, swing low, timeframe or hierarchy,
+and why the structure mattered where sufficiently defined. Do not invent exact
+levels when Astra concludes the structure is still ambiguous.
+
 Once a position is open, Astra may later decide HOLD, REDUCE, or EXIT when
 invoked after a structural-anchor attention event, authoritative MRZ migration,
 other material Trade Desk evidence, or explicit operator review. An attention
 event never forces a trading action.
+
+POSITION_MANAGEMENT restores any entry-time swing structure without rewriting
+the original T0 record, determines whether it remains relevant, and may
+prospectively supersede it as price structure evolves. Record the newer
+structure and reason for the change in a new management observation.
 
 ### MRZ migration while a trade is open
 

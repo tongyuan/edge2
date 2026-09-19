@@ -55,6 +55,20 @@ No count or touch point has routing privilege or assigned trading meaning.
 contact occurred in the current observer structure. The operator may respond or
 ignore it. The alert neither requires a WAKE nor controls routing.
 
+While FLAT, Astra independently identifies relevant swing structure from actual
+price swing highs and swing lows, using the timeframe and hierarchy it considers
+useful. It assesses whether the structure is sufficiently coherent to support a
+probable trade setup; whether it is still forming or sufficiently developed;
+whether meaningful displacement occurred within or away from it; whether
+current interaction supports a directional thesis and defensible invalidation;
+and whether enough structure exists for a management plan. If the structure is
+immature or ambiguous, WAIT is valid.
+
+An EQM alert or WAKE remains attention only. Astra determines whether surrounding
+swing structure is still forming, sufficiently developed for a trade, developed
+but not currently actionable, or irrelevant. No contact count, violent move, or
+EQM-plus-swing sequence establishes a canonical setup.
+
 Astra returns WAIT, ENTER, or NO TRADE and prospectively records the inspected
 context and evidence, interpretation, rationale, and reassessment conditions.
 
@@ -78,6 +92,12 @@ geometry only; their visibility assigns no support, resistance, target,
 invalidation, continuation, reversal, or preferred direction. Neither
 projection requires inspection.
 
+Astra chooses the relevant swing timeframe and hierarchy, including 1m, 5m,
+15m, 1h, or another available timeframe. No timeframe or swing pattern is
+mandatory. Swing structure comes from actual price behavior; Current MRZ
+midpoint, Migration EQM, and Previous MRZ midpoint remain reference geometry,
+not a price-defined dealing range.
+
 Astra also independently chooses whether to show and inspect Displacement, FVG,
 VI, OB, or CE. It may inspect one class, several, all, or none. No proximal
 evidence type is mandatory or ranked. Proximal evidence may remain hidden.
@@ -98,6 +118,8 @@ For FLAT with a prior Astra assessment in the current episode, any deliberate
 assessment; Astra independently determines what has materially changed.
 Next Reassessment Conditions remain useful operator guidance, not permission
 gates. They need not have occurred for the operator to request attention.
+Apply the same FLAT swing-structure assessment to the current price state,
+restoring earlier prospective observations without treating them as fixed truth.
 
 ## Position Management
 
@@ -106,6 +128,17 @@ lifecycle: original ENTER, thesis, entry, initial invalidation, management
 conditions, prior HOLD/REDUCE decisions, latest reassessment conditions,
 `migration_during_trade`, and current authoritative structure. Expected
 management decisions remain HOLD, REDUCE, and EXIT.
+
+Refresh relevant swing structure and assess actual price behavior around swing
+highs and lows. Astra may consider them as structural, liquidity/sweep,
+acceptance/rejection, reassessment, partial- or full-exit, or invalidation
+references where useful. An approach, sweep, rejection, acceptance, failure to
+continue, displacement through a level, or earlier structural failure requires
+interpretation; none mechanically forces HOLD, REDUCE, or EXIT.
+
+Restore any swing structure recorded at ENTER and determine whether it remains
+relevant. If a newer hierarchy supersedes it, record the new structure and
+reason prospectively without rewriting the entry-time T0 observation.
 
 If Astra decides ENTER, the same prospective decision must provide:
 
@@ -116,6 +149,11 @@ If Astra decides ENTER, the same prospective decision must provide:
 - reassessment conditions
 - current exit intent
 - `Position State = OPEN`
+
+When swing structure supports entry, use the existing evidence and rationale
+record to preserve the relevant swing high, swing low, timeframe or hierarchy,
+and why it mattered where sufficiently defined. Do not invent exact swing levels
+when the structure is ambiguous.
 
 Subsequent Astra wakes manage the same trade lifecycle through HOLD, REDUCE, or
 EXIT decisions. MRZ migration supplies new structural information; it is not an
