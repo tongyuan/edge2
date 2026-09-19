@@ -72,6 +72,12 @@ Subsequent expansion through or sweep of the cluster may help establish a more
 meaningful swing high or low; reassess the hierarchy, range maturity, thesis,
 and clarity of entry, invalidation, and management afterward.
 
+If the initially inspected timeframe does not resolve swing-structure maturity,
+Astra should inspect another available timeframe as needed to distinguish
+established swing highs or lows from unresolved equal or near-equal levels; when
+structure is already clear, no additional timeframe or fixed inspection
+sequence is required.
+
 Equal or near-equal levels alone neither require a sweep nor force WAIT, and a
 sweep does not automatically create a valid setup. Consider broader-timeframe
 structure, whether the cluster is local or structurally significant,
