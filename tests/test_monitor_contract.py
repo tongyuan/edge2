@@ -38,7 +38,7 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("Symbol Lab", HTML)
 
     def test_monitor_assets_are_versioned_together(self) -> None:
-        version = "group-tracking-on-20260920"
+        version = "universe-pressure-20260920"
         self.assertIn(f'/static/styles.css?v={version}', HTML)
         self.assertIn(f'/static/heatmap-state.js?v={version}', HTML)
         self.assertIn(f'/static/operator-time.js?v={version}', HTML)
@@ -174,7 +174,12 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn(">LOCATION DISTRIBUTION<", HTML)
         self.assertIn(">LOCATION HEATMAP<", HTML)
         self.assertIn(">SELECTED SYMBOL DETAIL<", HTML)
-        self.assertLess(HTML.index(">LOCATION DISTRIBUTION<"), HTML.index(">LOCATION HEATMAP<"))
+        self.assertIn(">PRESSURE BREADTH<", HTML)
+        self.assertIn(">PRESSURE MAP<", HTML)
+        self.assertLess(HTML.index(">LOCATION DISTRIBUTION<"), HTML.index(">PRESSURE BREADTH<"))
+        self.assertLess(HTML.index(">PRESSURE BREADTH<"), HTML.index(">PRESSURE MAP<"))
+        self.assertLess(HTML.index(">PRESSURE MAP<"), HTML.index(">LOCATION HEATMAP<"))
+        self.assertLess(HTML.index('id="locationHeatmap"'), HTML.index('id="groupTrackingWorkspace"'))
         self.assertLess(HTML.index(">LOCATION HEATMAP<"), HTML.index(">SELECTED SYMBOL DETAIL<"))
 
     def test_location_distribution_has_four_canonical_buckets_and_two_halves(self) -> None:
@@ -190,7 +195,8 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn('id="distributionDiscountTotal"', HTML)
         self.assertIn('id="distributionPremiumTotal"', HTML)
         self.assertEqual(HTML.count(">Current<"), 4)
-        self.assertEqual(HTML.count(">Historical migration<"), 4)
+        self.assertEqual(HTML.count(">Historical migration outcomes<"), 4)
+        self.assertEqual(HTML.count('class="location-migration-history"'), 4)
         self.assertEqual(HTML.count(">No migration history<"), 4)
         for prefix in (
             "DeepDiscount",
@@ -379,7 +385,7 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn("const active = hasActiveMrz(symbolState);", heatmap_group)
         self.assertIn('indicator.className = "active-mrz-dot";', heatmap_group)
         self.assertIn('indicator.setAttribute("aria-hidden", "true");', heatmap_group)
-        self.assertIn("accessibleChipLabel(symbolState, locationLabel)", heatmap_group)
+        self.assertIn("accessibleChipLabel(symbolState, chipLocationLabel)", heatmap_group)
         self.assertNotIn("BTD", heatmap_group)
         self.assertNotIn("STR", heatmap_group)
 
@@ -587,6 +593,54 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("evaluate_concentration", PEER_PRESSURE)
         self.assertIn('/api/groups/{group_id}/peer-pressure', API)
         self.assertIn("repository.mrz_robustness_inputs()", API)
+
+    def test_global_pressure_reuses_the_group_classifier_and_existing_overview_fetch(self) -> None:
+        self.assertIn("def _symbol_pressure_state(", PEER_PRESSURE)
+        self.assertIn("def _build_pressure_report(", PEER_PRESSURE)
+        self.assertIn("def build_peer_pressure_report(", PEER_PRESSURE)
+        self.assertIn("def build_universe_pressure_report(", PEER_PRESSURE)
+        self.assertEqual(PEER_PRESSURE.count("post_activation_snapshot("), 1)
+        self.assertIn("build_universe_pressure_report(", API)
+        load_symbols = JAVASCRIPT.split("async function loadSymbols()", 1)[1].split(
+            "async function requestJson", 1
+        )[0]
+        self.assertEqual(load_symbols.count('fetch("/api/symbols")'), 1)
+        self.assertIn("universePressureBySymbol(payload.pressure)", load_symbols)
+        self.assertIn("renderUniversePressure(payload.pressure)", load_symbols)
+
+    def test_pressure_breadth_map_filter_and_drilldown_are_connected(self) -> None:
+        self.assertEqual(HTML.count('data-universe-pressure-direction="'), 3)
+        self.assertEqual(HTML.count('data-heatmap-pressure-filter="'), 4)
+        for element_id in (
+            "universePressureHeadline",
+            "universePressureParticipation",
+            "universePressureHigherCount",
+            "universePressureNeutralCount",
+            "universePressureLowerCount",
+            "pressureMap",
+            "pressureMapDrilldown",
+            "pressureMapMembers",
+        ):
+            self.assertIn(f'id="{element_id}"', HTML)
+        self.assertIn("renderUniversePressure", JAVASCRIPT)
+        self.assertIn("renderPressureMap", JAVASCRIPT)
+        self.assertIn("renderPressureMapDrilldown", JAVASCRIPT)
+        self.assertIn("member.current_location === location", JAVASCRIPT)
+        self.assertIn("setHeatmapPressureFilter", JAVASCRIPT)
+        self.assertIn("filterSymbolsByPressure(trackedSymbols, heatmapPressureFilter)", JAVASCRIPT)
+        self.assertIn("pressureMemberItem", JAVASCRIPT)
+        self.assertIn('pressure.className = `symbol-pressure ${direction}`', JAVASCRIPT)
+        self.assertNotIn("Pressure Score", HTML + JAVASCRIPT)
+        self.assertNotIn("probability", HTML.lower())
+
+    def test_pressure_map_and_historical_outcomes_are_mobile_progressive_disclosure(self) -> None:
+        self.assertIn(".pressure-map-grid {", CSS)
+        self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr));", CSS)
+        self.assertIn(".pressure-map-grid { grid-template-columns: 1fr; }", CSS)
+        self.assertIn(".pressure-map-cells {", CSS)
+        self.assertIn("min-height: 58px;", CSS)
+        self.assertIn(".location-migration-history summary", CSS)
+        self.assertIn(".location-migration-history[open] summary", CSS)
 
     def test_peer_pressure_drilldown_reconciles_categories_and_preserves_history(self) -> None:
         self.assertEqual(HTML.count('data-pressure-direction="'), 3)

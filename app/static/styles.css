@@ -195,12 +195,19 @@ h2 { margin-bottom: 0; font-size: 1.55rem; letter-spacing: -0.02em; }
   font-size: 1rem;
 }
 .location-migration-history { margin-top: 11px; }
-.location-migration-label {
-  margin: 0 0 8px;
+.location-migration-history summary {
+  min-height: 34px;
+  padding: 8px 0 0;
   color: var(--muted);
+  cursor: pointer;
   font-size: 0.68rem;
   font-weight: 650;
 }
+.location-migration-history summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.location-migration-history[open] summary { margin-bottom: 8px; }
 .location-migration-directions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -288,6 +295,77 @@ h2 { margin-bottom: 0; font-size: 1.55rem; letter-spacing: -0.02em; }
   font-weight: 680;
   white-space: nowrap;
 }
+
+.pressure-breadth-panel,
+.pressure-map-panel { margin-top: 28px; }
+.pressure-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.pressure-section-heading h2 { font-size: 1.16rem; }
+.universe-pressure-counts { max-width: 620px; }
+.pressure-map-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.pressure-map-card {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.pressure-map-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.pressure-map-card h3 { margin: 0; font-size: 0.82rem; }
+.pressure-map-card header > span { color: var(--muted); font-size: 0.74rem; }
+.pressure-map-cells {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.pressure-map-cells button {
+  display: grid;
+  min-width: 0;
+  min-height: 58px;
+  align-content: center;
+  gap: 5px;
+  padding: 8px;
+  border: 1px solid #344154;
+  border-radius: 8px;
+  background: rgba(8, 11, 16, 0.28);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.pressure-map-cells button:hover,
+.pressure-map-cells button[aria-pressed="true"] {
+  border-color: #8db8f5;
+  background: rgba(65, 102, 153, 0.22);
+}
+.pressure-map-cells button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pressure-map-cells button span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pressure-map-cells button[data-pressure-map-direction="higher"] span { color: #9bd4b0; }
+.pressure-map-cells button[data-pressure-map-direction="lower"] span { color: #e3a7ad; }
+.pressure-map-cells button strong { font-size: 1.05rem; }
+.pressure-map-card > p { margin: 10px 0 0; color: var(--muted); font-size: 0.68rem; }
+.pressure-map-drilldown { margin-top: 10px; }
 
 .migration-evidence-dialog {
   width: min(680px, calc(100% - 32px));
@@ -439,6 +517,42 @@ h2 { margin-bottom: 0; font-size: 1.55rem; letter-spacing: -0.02em; }
   justify-content: space-between;
   gap: 18px;
 }
+.heatmap-view-controls {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.pressure-filter {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(8, 11, 16, 0.28);
+}
+.pressure-filter button {
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+.pressure-filter button:hover { color: var(--text); }
+.pressure-filter button[aria-pressed="true"] {
+  border-color: #617fae;
+  background: rgba(65, 102, 153, 0.22);
+  color: var(--text);
+}
+.pressure-filter button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .group-tracking-toggle {
   position: relative;
   display: inline-flex;
@@ -504,6 +618,7 @@ h2 { margin-bottom: 0; font-size: 1.55rem; letter-spacing: -0.02em; }
   font-size: 0.76rem;
 }
 .group-tracking-workspace {
+  margin-top: 14px;
   margin-bottom: 14px;
   padding: 16px;
   border: 1px solid #3d506c;
@@ -748,9 +863,12 @@ h2 { margin-bottom: 0; font-size: 1.55rem; letter-spacing: -0.02em; }
   text-transform: uppercase;
 }
 .peer-pressure-counts button strong { color: var(--text); font-size: 1.35rem; line-height: 1; }
-.peer-pressure-counts button[data-pressure-direction="higher"] span { color: #9bd4b0; }
-.peer-pressure-counts button[data-pressure-direction="lower"] span { color: #e3a7ad; }
-.peer-pressure-counts button[data-pressure-direction="neutral"] span { color: #b8c3d3; }
+.peer-pressure-counts button[data-pressure-direction="higher"] span,
+.peer-pressure-counts button[data-universe-pressure-direction="higher"] span { color: #9bd4b0; }
+.peer-pressure-counts button[data-pressure-direction="lower"] span,
+.peer-pressure-counts button[data-universe-pressure-direction="lower"] span { color: #e3a7ad; }
+.peer-pressure-counts button[data-pressure-direction="neutral"] span,
+.peer-pressure-counts button[data-universe-pressure-direction="neutral"] span { color: #b8c3d3; }
 .peer-pressure-drilldown {
   margin-top: 10px;
   padding: 12px;
@@ -900,6 +1018,12 @@ h2 { margin-bottom: 0; font-size: 1.55rem; letter-spacing: -0.02em; }
   border-radius: 4px;
   background: transparent;
 }
+.pressure-chip-legend,
+.symbol-pressure { font-weight: 800; }
+.pressure-chip-legend,
+.symbol-pressure.higher { color: #9bd4b0; }
+.symbol-pressure.lower { color: #e3a7ad; }
+.symbol-pressure.neutral { color: #a9b4c5; }
 .heatmap-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1174,6 +1298,8 @@ dd { margin: 0; font-size: 0.95rem; font-weight: 620; }
   .symbol-row { align-items: flex-start; flex-direction: column; }
   .symbol-header-actions { justify-content: flex-start; width: 100%; }
   .heatmap-title-row { align-items: stretch; flex-direction: column; }
+  .heatmap-view-controls { align-items: stretch; justify-content: flex-start; flex-direction: column; }
+  .pressure-filter { align-self: flex-start; }
   .group-tracking-toggle { align-self: flex-start; }
   .tracked-groups-toolbar,
   .group-editor-header,
@@ -1184,6 +1310,8 @@ dd { margin: 0; font-size: 0.95rem; font-weight: 620; }
   .show-selected-control { flex: 1 1 auto; }
   .current-state-panel { grid-template-columns: 1fr; }
   .peer-pressure-drilldown ul { grid-template-columns: 1fr; }
+  .pressure-section-heading { align-items: stretch; flex-direction: column; }
+  .pressure-map-grid { grid-template-columns: 1fr; }
   .group-route-summary { grid-column: auto; }
   .location-distribution-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .location-distribution-cell { padding: 13px 12px; }

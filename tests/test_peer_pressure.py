@@ -12,7 +12,7 @@ from app.domain import (
     Route,
     StructuralLocation,
 )
-from app.peer_pressure import build_peer_pressure_report
+from app.peer_pressure import build_peer_pressure_report, build_universe_pressure_report
 
 
 BASE_TIME = datetime(2026, 9, 20, 12, 0, tzinfo=timezone.utc)
@@ -81,6 +81,14 @@ def group(*members: str) -> dict[str, object]:
                 for index, symbol in enumerate(members)
             ]
         },
+    }
+
+
+def symbol_state(symbol: str, location: str | None) -> dict[str, object]:
+    return {
+        "symbol": symbol,
+        "current_price_location": location,
+        "latest_observed_at": "2026-09-20T12:10:00Z",
     }
 
 
@@ -210,6 +218,109 @@ class PeerPressureTests(unittest.TestCase):
             member["evidence"]["latest_pressure_observed_at"],
             "2026-09-20T12:13:00Z",
         )
+
+    def test_universe_breadth_and_location_matrix_reconcile_exactly(self) -> None:
+        states = (
+            symbol_state("UP", "deep_discount"),
+            symbol_state("QUIET", "deep_discount"),
+            symbol_state("DOWN", "shallow_premium"),
+            symbol_state("NOACTIVE", "deep_premium"),
+            symbol_state("OUTSIDE", "above_ipda_range"),
+        )
+        authorities = (active("UP"), active("QUIET"), active("DOWN"))
+        evidence = (
+            observation("UP", 1, "114"),
+            observation("UP", 2, "115"),
+            observation("UP", 3, "116"),
+            observation("DOWN", 4, "107"),
+            observation("DOWN", 5, "106"),
+            observation("DOWN", 6, "105"),
+        )
+
+        report = build_universe_pressure_report(states, authorities, evidence)
+
+        self.assertEqual(report["counts"], {"higher": 1, "lower": 1, "neutral": 2})
+        self.assertEqual(report["participation"], {"count": 2, "total": 4})
+        self.assertEqual(report["excluded_unclassified_count"], 1)
+        rows = report["pressure_map"]["locations"]
+        self.assertEqual(
+            rows["deep_discount"],
+            {
+                "counts": {"higher": 1, "lower": 0, "neutral": 1},
+                "participation": {"count": 1, "total": 2},
+            },
+        )
+        self.assertEqual(
+            rows["shallow_premium"]["counts"],
+            {"higher": 0, "lower": 1, "neutral": 0},
+        )
+        self.assertEqual(report["pressure_map"]["totals"], report["counts"])
+        self.assertEqual(
+            sum(row["participation"]["total"] for row in rows.values()),
+            report["member_count"],
+        )
+
+    def test_universe_and_group_are_scopes_over_identical_symbol_pressure(self) -> None:
+        states = (
+            symbol_state("UP", "deep_discount"),
+            symbol_state("DOWN", "shallow_premium"),
+            symbol_state("NOACTIVE", "deep_premium"),
+        )
+        cohort = {
+            "id": 9,
+            "name": "Same state",
+            "members": [state["symbol"] for state in states],
+            "current_state": {
+                "members": [
+                    {
+                        "symbol": state["symbol"],
+                        "current_location": state["current_price_location"],
+                        "latest_observed_at": state["latest_observed_at"],
+                    }
+                    for state in states
+                ]
+            },
+        }
+        authorities = (active("UP"), active("DOWN"))
+        evidence = (
+            observation("UP", 1, "114"),
+            observation("UP", 2, "115"),
+            observation("UP", 3, "116"),
+            observation("DOWN", 4, "107"),
+            observation("DOWN", 5, "106"),
+            observation("DOWN", 6, "105"),
+        )
+
+        universe = build_universe_pressure_report(states, authorities, evidence)
+        peers = build_peer_pressure_report(cohort, authorities, evidence)
+        universe_by_symbol = {
+            item["symbol"]: item
+            for members in universe["categories"].values()
+            for item in members
+        }
+        peer_by_symbol = {
+            item["symbol"]: item
+            for members in peers["categories"].values()
+            for item in members
+        }
+
+        self.assertEqual(universe_by_symbol, peer_by_symbol)
+        self.assertEqual(universe["counts"], peers["counts"])
+        self.assertEqual(universe["headline"], peers["headline"])
+
+    def test_universe_with_no_participants_is_all_neutral(self) -> None:
+        report = build_universe_pressure_report(
+            (
+                symbol_state("NEW", "deep_discount"),
+                symbol_state("QUIET", "deep_premium"),
+            ),
+            (active("QUIET"),),
+            (),
+        )
+
+        self.assertEqual(report["counts"], {"higher": 0, "lower": 0, "neutral": 2})
+        self.assertEqual(report["participation"], {"count": 0, "total": 2})
+        self.assertEqual(report["headline"]["label"], "Insufficient Participation")
 
 
 if __name__ == "__main__":

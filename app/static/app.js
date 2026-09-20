@@ -7,6 +7,20 @@ const heatmapEmpty = document.querySelector("#heatmapEmpty");
 const primaryLocationGroups = document.querySelector("#primaryLocationGroups");
 const secondaryLocationGroups = document.querySelector("#secondaryLocationGroups");
 const locationDistribution = document.querySelector("#locationDistribution");
+const universePressureHeadline = document.querySelector("#universePressureHeadline");
+const universePressureParticipation = document.querySelector("#universePressureParticipation");
+const universePressureButtons = [...document.querySelectorAll("[data-universe-pressure-direction]")];
+const universePressureCounts = {
+  higher: document.querySelector("#universePressureHigherCount"),
+  lower: document.querySelector("#universePressureLowerCount"),
+  neutral: document.querySelector("#universePressureNeutralCount"),
+};
+const pressureMap = document.querySelector("#pressureMap");
+const pressureMapDrilldown = document.querySelector("#pressureMapDrilldown");
+const pressureMapDrilldownTitle = document.querySelector("#pressureMapDrilldownTitle");
+const pressureMapDrilldownSummary = document.querySelector("#pressureMapDrilldownSummary");
+const pressureMapMembers = document.querySelector("#pressureMapMembers");
+const heatmapPressureButtons = [...document.querySelectorAll("[data-heatmap-pressure-filter]")];
 const groupTrackingToggle = document.querySelector("#groupTrackingToggle");
 const groupTrackingStateLabel = document.querySelector("#groupTrackingStateLabel");
 const groupTrackingWorkspace = document.querySelector("#groupTrackingWorkspace");
@@ -54,6 +68,8 @@ const migrationEvidenceClose = document.querySelector("#migrationEvidenceClose")
 const {
   primaryLocationKeys,
   secondaryLocationKeys,
+  pressureDirection,
+  filterSymbolsByPressure,
   hasActiveMrz,
   concentrationCheckEligible,
   routeAlignedActivity,
@@ -191,6 +207,8 @@ const groupCurrentFields = {
 let overviewSymbols = [];
 let minimumClusterObservations = null;
 let locationMigrationTendency = {};
+let universePressure = null;
+let heatmapPressureFilter = "all";
 let groupTrackingState = createGroupTrackingState();
 let savedGroups = [];
 let activeSavedGroup = null;
@@ -280,12 +298,27 @@ window.addEventListener("scroll", () => {
   if (activityTooltipOwner) positionActivityTooltip(activityTooltipOwner);
 }, true);
 
-function createLocationGroup(key, symbols, minimumClusterObservations, secondary = false) {
+function pressureArrow(direction) {
+  if (direction === "higher") return "↑";
+  if (direction === "lower") return "↓";
+  return "↔";
+}
+
+function createLocationGroup(
+  key,
+  symbols,
+  minimumClusterObservations,
+  secondary = false,
+  totalCount = symbols.length,
+) {
   const group = document.createElement("section");
   group.className = secondary ? "location-group secondary" : "location-group";
 
   const heading = document.createElement("h3");
-  heading.textContent = key === "unavailable" ? "Unavailable" : locationLabels[key];
+  const locationLabel = key === "unavailable" ? "Unavailable" : locationLabels[key];
+  heading.textContent = heatmapPressureFilter === "all"
+    ? locationLabel
+    : `${locationLabel} · ${symbols.length} ${pressureDirectionLabels[heatmapPressureFilter]} / ${totalCount} total`;
   group.append(heading);
 
   const symbolList = document.createElement("div");
@@ -293,7 +326,9 @@ function createLocationGroup(key, symbols, minimumClusterObservations, secondary
   if (symbols.length === 0) {
     const empty = document.createElement("span");
     empty.className = "group-empty";
-    empty.textContent = "No symbols";
+    empty.textContent = heatmapPressureFilter === "all"
+      ? "No symbols"
+      : `No ${pressureDirectionLabels[heatmapPressureFilter]} symbols`;
     symbolList.append(empty);
   } else {
     symbols.forEach((symbolState) => {
@@ -318,8 +353,8 @@ function createLocationGroup(key, symbols, minimumClusterObservations, secondary
       }
       button.dataset.symbol = symbol;
       button.setAttribute("aria-pressed", String(groupSelected));
-      const locationLabel = key === "unavailable" ? "Unavailable" : formatLocation(key);
-      const chipLabel = accessibleChipLabel(symbolState, locationLabel);
+      const chipLocationLabel = key === "unavailable" ? "Unavailable" : formatLocation(key);
+      const chipLabel = accessibleChipLabel(symbolState, chipLocationLabel);
       button.setAttribute(
         "aria-label",
         groupSelected ? `${chipLabel}, selected for group tracking` : chipLabel,
@@ -344,6 +379,12 @@ function createLocationGroup(key, symbols, minimumClusterObservations, secondary
         check.textContent = "✓";
         button.append(check);
       }
+      const direction = pressureDirection(symbolState);
+      const pressure = document.createElement("span");
+      pressure.className = `symbol-pressure ${direction}`;
+      pressure.setAttribute("aria-hidden", "true");
+      pressure.textContent = pressureArrow(direction);
+      button.append(pressure);
       const label = document.createElement("span");
       label.textContent = symbol;
       button.append(label);
@@ -479,7 +520,7 @@ const pressureDirectionLabels = {
   neutral: "Neutral",
 };
 
-function peerPressureMemberItem(member) {
+function pressureMemberItem(member) {
   const item = document.createElement("li");
   item.className = `peer-pressure-member ${member.direction}`;
   const header = document.createElement("div");
@@ -544,7 +585,7 @@ function renderPeerPressureDrilldown(direction) {
     peerPressureMembers.replaceChildren(empty);
     return;
   }
-  peerPressureMembers.replaceChildren(...members.map(peerPressureMemberItem));
+  peerPressureMembers.replaceChildren(...members.map(pressureMemberItem));
 }
 
 function renderPeerPressure(payload) {
@@ -569,6 +610,146 @@ function renderPeerPressure(payload) {
   });
   peerPressureDrilldown.hidden = true;
   peerPressureMembers.replaceChildren();
+}
+
+function universePressureBySymbol(payload) {
+  return new Map(
+    Object.values(payload?.categories || {})
+      .flat()
+      .map((member) => [member.symbol, member]),
+  );
+}
+
+function pressureMapCell(location, direction, count, total) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.dataset.pressureMapLocation = location;
+  button.dataset.pressureMapDirection = direction;
+  button.setAttribute("aria-pressed", "false");
+  button.setAttribute(
+    "aria-label",
+    `${formatLocation(location)}, ${pressureDirectionLabels[direction]} pressure, ${count} of ${total} symbols`,
+  );
+  const label = document.createElement("span");
+  label.textContent = `${pressureArrow(direction)} ${pressureDirectionLabels[direction]}`;
+  const value = document.createElement("strong");
+  value.textContent = String(count);
+  button.append(label, value);
+  button.addEventListener("click", () => selectPressureMapCell(location, direction));
+  return button;
+}
+
+function renderPressureMap(payload) {
+  const rows = payload.pressure_map?.locations || {};
+  pressureMap.replaceChildren(...primaryLocationKeys.map((location) => {
+    const row = rows[location] || {
+      counts: { higher: 0, lower: 0, neutral: 0 },
+      participation: { count: 0, total: 0 },
+    };
+    const card = document.createElement("article");
+    card.className = "pressure-map-card";
+    const header = document.createElement("header");
+    const heading = document.createElement("h3");
+    heading.textContent = formatLocation(location);
+    const total = document.createElement("span");
+    total.textContent = String(row.participation.total);
+    header.append(heading, total);
+    const cells = document.createElement("div");
+    cells.className = "pressure-map-cells";
+    ["higher", "neutral", "lower"].forEach((direction) => {
+      cells.append(pressureMapCell(
+        location,
+        direction,
+        row.counts[direction],
+        row.participation.total,
+      ));
+    });
+    const participation = document.createElement("p");
+    participation.textContent = (
+      `Participation ${row.participation.count} / ${row.participation.total}`
+    );
+    card.append(header, cells, participation);
+    return card;
+  }));
+}
+
+function renderPressureMapDrilldown(location, direction) {
+  if (!universePressure) return;
+  const members = (universePressure.categories[direction] || []).filter(
+    (member) => member.current_location === location,
+  );
+  document.querySelectorAll("[data-pressure-map-direction]").forEach((button) => {
+    button.setAttribute("aria-pressed", String(
+      button.dataset.pressureMapLocation === location
+      && button.dataset.pressureMapDirection === direction
+    ));
+  });
+  pressureMapDrilldown.hidden = false;
+  pressureMapDrilldownTitle.textContent = (
+    `${formatLocation(location)} × ${pressureDirectionLabels[direction]} · ${members.length}`
+  );
+  pressureMapDrilldownSummary.textContent = (
+    `${members.length} exact contributor${members.length === 1 ? "" : "s"}`
+  );
+  if (members.length === 0) {
+    const empty = document.createElement("li");
+    empty.className = "migration-path-all-empty";
+    empty.textContent = "No symbols currently match this location and pressure direction.";
+    pressureMapMembers.replaceChildren(empty);
+    return;
+  }
+  pressureMapMembers.replaceChildren(...members.map(pressureMemberItem));
+}
+
+function setHeatmapPressureFilter(direction, scrollToHeatmap = false) {
+  const normalized = ["higher", "lower", "neutral"].includes(direction)
+    ? direction
+    : "all";
+  heatmapPressureFilter = normalized;
+  heatmapPressureButtons.forEach((button) => {
+    button.setAttribute(
+      "aria-pressed",
+      String(button.dataset.heatmapPressureFilter === normalized),
+    );
+  });
+  universePressureButtons.forEach((button) => {
+    button.setAttribute(
+      "aria-pressed",
+      String(button.dataset.universePressureDirection === normalized),
+    );
+  });
+  renderMonitorOverview();
+  if (scrollToHeatmap) {
+    document.querySelector(".heatmap-panel")?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }
+}
+
+function selectPressureMapCell(location, direction) {
+  setHeatmapPressureFilter(direction);
+  renderPressureMapDrilldown(location, direction);
+}
+
+function renderUniversePressure(payload) {
+  universePressure = payload;
+  universePressureHeadline.textContent = payload.headline.label;
+  universePressureParticipation.textContent = (
+    `${payload.participation.count} / ${payload.participation.total}`
+  );
+  universePressureButtons.forEach((button) => {
+    const direction = button.dataset.universePressureDirection;
+    const count = payload.counts[direction];
+    universePressureCounts[direction].textContent = String(count);
+    button.setAttribute(
+      "aria-label",
+      `${pressureDirectionLabels[direction]} pressure, ${count} of ${payload.member_count} classified symbols`,
+    );
+  });
+  renderPressureMap(payload);
+  pressureMapDrilldown.hidden = true;
+  pressureMapMembers.replaceChildren();
 }
 
 function formatPathTimestamp(value) {
@@ -684,8 +865,14 @@ function renderMigrationPath(payload) {
   migrationPathScroller.replaceChildren(timeline);
 }
 
-function renderLocationHeatmap(symbols, minimumObservations, groups) {
-  if (symbols.length === 0) {
+function renderLocationHeatmap(
+  symbols,
+  minimumObservations,
+  groups,
+  totalSymbols = symbols,
+  totalGroups = groups,
+) {
+  if (totalSymbols.length === 0) {
     locationHeatmap.hidden = true;
     heatmapEmpty.hidden = false;
     heatmapEmpty.textContent = "No symbols yet";
@@ -694,13 +881,27 @@ function renderLocationHeatmap(symbols, minimumObservations, groups) {
 
   primaryLocationGroups.replaceChildren(
     ...primaryLocationKeys.map((key) => (
-      createLocationGroup(key, groups[key], minimumObservations)
+      createLocationGroup(
+        key,
+        groups[key],
+        minimumObservations,
+        false,
+        totalGroups[key].length,
+      )
     )),
   );
-  const populatedSecondaryKeys = secondaryLocationKeys.filter((key) => groups[key].length > 0);
+  const populatedSecondaryKeys = secondaryLocationKeys.filter(
+    (key) => totalGroups[key].length > 0,
+  );
   secondaryLocationGroups.replaceChildren(
     ...populatedSecondaryKeys.map((key) => (
-      createLocationGroup(key, groups[key], minimumObservations, true)
+      createLocationGroup(
+        key,
+        groups[key],
+        minimumObservations,
+        true,
+        totalGroups[key].length,
+      )
     )),
   );
   secondaryLocationGroups.hidden = populatedSecondaryKeys.length === 0;
@@ -845,11 +1046,21 @@ function configureMigrationDirection(fieldsForLocation, locationKey, direction, 
 function renderMonitorOverview() {
   const allGroups = groupSymbolsByLocation(overviewSymbols, minimumClusterObservations);
   renderLocationDistribution(allGroups, locationMigrationTendency);
-  const visibleSymbols = visibleSymbolsForGroupTracking(overviewSymbols, groupTrackingState);
-  const visibleGroups = visibleSymbols === overviewSymbols
+  const trackedSymbols = visibleSymbolsForGroupTracking(overviewSymbols, groupTrackingState);
+  const trackedGroups = trackedSymbols === overviewSymbols
     ? allGroups
+    : groupSymbolsByLocation(trackedSymbols, minimumClusterObservations);
+  const visibleSymbols = filterSymbolsByPressure(trackedSymbols, heatmapPressureFilter);
+  const visibleGroups = visibleSymbols === trackedSymbols
+    ? trackedGroups
     : groupSymbolsByLocation(visibleSymbols, minimumClusterObservations);
-  renderLocationHeatmap(visibleSymbols, minimumClusterObservations, visibleGroups);
+  renderLocationHeatmap(
+    visibleSymbols,
+    minimumClusterObservations,
+    visibleGroups,
+    trackedSymbols,
+    trackedGroups,
+  );
   renderGroupWorkspace();
   updateSelectedChip(select.value);
 }
@@ -883,9 +1094,14 @@ async function loadSymbols() {
   if (!response.ok) throw new Error("Unable to load symbols");
   const payload = await response.json();
   const selectedSymbol = preservedSelectedSymbol(select.value, payload.symbols);
-  overviewSymbols = payload.symbols;
+  const pressureBySymbol = universePressureBySymbol(payload.pressure);
+  overviewSymbols = payload.symbols.map((symbolState) => ({
+    ...symbolState,
+    pressure_direction: pressureBySymbol.get(symbolState.symbol)?.direction || "neutral",
+  }));
   minimumClusterObservations = payload.minimum_cluster_observations;
   locationMigrationTendency = payload.location_migration_tendency || {};
+  renderUniversePressure(payload.pressure);
   groupTrackingState = reconcileGroupTrackingState(groupTrackingState, overviewSymbols);
   select.replaceChildren(new Option("Select a symbol", ""));
   overviewSymbols.forEach(({ symbol }) => select.add(new Option(symbol, symbol)));
@@ -1169,6 +1385,16 @@ peerPressureTab.addEventListener("click", () => openPeerPressure().catch(showErr
 peerPressureButtons.forEach((button) => {
   button.addEventListener("click", () => {
     renderPeerPressureDrilldown(button.dataset.pressureDirection);
+  });
+});
+universePressureButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    setHeatmapPressureFilter(button.dataset.universePressureDirection, true);
+  });
+});
+heatmapPressureButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    setHeatmapPressureFilter(button.dataset.heatmapPressureFilter);
   });
 });
 migrationHistoryDisclosure.addEventListener("toggle", () => {

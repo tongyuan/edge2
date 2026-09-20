@@ -11,7 +11,7 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/static/edge-mrz-icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/static/edge-mrz-icon-180.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=group-tracking-on-20260920" />
+    <link rel="stylesheet" href="/static/styles.css?v=universe-pressure-20260920" />
     <link rel="stylesheet" href="/static/diagnostics-nav.css?v=views-menu-20260907" />
   </head>
   <body>
@@ -54,15 +54,15 @@
               <span>Current</span>
               <p><strong id="distributionDeepDiscountCount">0</strong><span aria-hidden="true"> · </span><span id="distributionDeepDiscountPercentage">0.0%</span></p>
             </div>
-            <div class="location-migration-history">
-              <p class="location-migration-label">Historical migration</p>
+            <details class="location-migration-history">
+              <summary>Historical migration outcomes</summary>
               <div class="location-migration-directions" id="distributionDeepDiscountHistory" hidden>
                 <button type="button" id="distributionDeepDiscountHigherButton" disabled><span class="migration-direction-label"><span aria-hidden="true">↑</span> Higher</span><strong id="distributionDeepDiscountHigher">—</strong><span class="migration-direction-count" id="distributionDeepDiscountHigherCount">0</span></button>
                 <button type="button" id="distributionDeepDiscountLowerButton" disabled><span class="migration-direction-label"><span aria-hidden="true">↓</span> Lower</span><strong id="distributionDeepDiscountLower">—</strong><span class="migration-direction-count" id="distributionDeepDiscountLowerCount">0</span></button>
               </div>
               <p class="location-migration-empty" id="distributionDeepDiscountHistoryEmpty">No migration history</p>
               <p class="location-migration-sample" id="distributionDeepDiscountSamples">n = 0</p>
-            </div>
+            </details>
           </article>
           <article class="location-distribution-cell">
             <h3>Shallow Discount</h3>
@@ -70,15 +70,15 @@
               <span>Current</span>
               <p><strong id="distributionShallowDiscountCount">0</strong><span aria-hidden="true"> · </span><span id="distributionShallowDiscountPercentage">0.0%</span></p>
             </div>
-            <div class="location-migration-history">
-              <p class="location-migration-label">Historical migration</p>
+            <details class="location-migration-history">
+              <summary>Historical migration outcomes</summary>
               <div class="location-migration-directions" id="distributionShallowDiscountHistory" hidden>
                 <button type="button" id="distributionShallowDiscountHigherButton" disabled><span class="migration-direction-label"><span aria-hidden="true">↑</span> Higher</span><strong id="distributionShallowDiscountHigher">—</strong><span class="migration-direction-count" id="distributionShallowDiscountHigherCount">0</span></button>
                 <button type="button" id="distributionShallowDiscountLowerButton" disabled><span class="migration-direction-label"><span aria-hidden="true">↓</span> Lower</span><strong id="distributionShallowDiscountLower">—</strong><span class="migration-direction-count" id="distributionShallowDiscountLowerCount">0</span></button>
               </div>
               <p class="location-migration-empty" id="distributionShallowDiscountHistoryEmpty">No migration history</p>
               <p class="location-migration-sample" id="distributionShallowDiscountSamples">n = 0</p>
-            </div>
+            </details>
           </article>
           <article class="location-distribution-cell">
             <h3>Shallow Premium</h3>
@@ -86,15 +86,15 @@
               <span>Current</span>
               <p><strong id="distributionShallowPremiumCount">0</strong><span aria-hidden="true"> · </span><span id="distributionShallowPremiumPercentage">0.0%</span></p>
             </div>
-            <div class="location-migration-history">
-              <p class="location-migration-label">Historical migration</p>
+            <details class="location-migration-history">
+              <summary>Historical migration outcomes</summary>
               <div class="location-migration-directions" id="distributionShallowPremiumHistory" hidden>
                 <button type="button" id="distributionShallowPremiumHigherButton" disabled><span class="migration-direction-label"><span aria-hidden="true">↑</span> Higher</span><strong id="distributionShallowPremiumHigher">—</strong><span class="migration-direction-count" id="distributionShallowPremiumHigherCount">0</span></button>
                 <button type="button" id="distributionShallowPremiumLowerButton" disabled><span class="migration-direction-label"><span aria-hidden="true">↓</span> Lower</span><strong id="distributionShallowPremiumLower">—</strong><span class="migration-direction-count" id="distributionShallowPremiumLowerCount">0</span></button>
               </div>
               <p class="location-migration-empty" id="distributionShallowPremiumHistoryEmpty">No migration history</p>
               <p class="location-migration-sample" id="distributionShallowPremiumSamples">n = 0</p>
-            </div>
+            </details>
           </article>
           <article class="location-distribution-cell">
             <h3>Deep Premium</h3>
@@ -102,21 +102,61 @@
               <span>Current</span>
               <p><strong id="distributionDeepPremiumCount">0</strong><span aria-hidden="true"> · </span><span id="distributionDeepPremiumPercentage">0.0%</span></p>
             </div>
-            <div class="location-migration-history">
-              <p class="location-migration-label">Historical migration</p>
+            <details class="location-migration-history">
+              <summary>Historical migration outcomes</summary>
               <div class="location-migration-directions" id="distributionDeepPremiumHistory" hidden>
                 <button type="button" id="distributionDeepPremiumHigherButton" disabled><span class="migration-direction-label"><span aria-hidden="true">↑</span> Higher</span><strong id="distributionDeepPremiumHigher">—</strong><span class="migration-direction-count" id="distributionDeepPremiumHigherCount">0</span></button>
                 <button type="button" id="distributionDeepPremiumLowerButton" disabled><span class="migration-direction-label"><span aria-hidden="true">↓</span> Lower</span><strong id="distributionDeepPremiumLower">—</strong><span class="migration-direction-count" id="distributionDeepPremiumLowerCount">0</span></button>
               </div>
               <p class="location-migration-empty" id="distributionDeepPremiumHistoryEmpty">No migration history</p>
               <p class="location-migration-sample" id="distributionDeepPremiumSamples">n = 0</p>
-            </div>
+            </details>
           </article>
         </div>
         <div class="location-distribution-totals" aria-label="Discount and Premium totals">
           <p><span>Discount</span><strong id="distributionDiscountTotal">0 · 0.0%</strong></p>
           <p><span>Premium</span><strong id="distributionPremiumTotal">0 · 0.0%</strong></p>
         </div>
+      </section>
+
+      <section class="pressure-breadth-panel" aria-labelledby="pressure-breadth-title">
+        <div class="section-heading pressure-section-heading">
+          <div>
+            <p class="eyebrow" id="pressure-breadth-title">PRESSURE BREADTH</p>
+            <h2 id="universePressureHeadline">—</h2>
+            <p class="section-support">Current canonical pressure across the classified monitored universe</p>
+          </div>
+          <p class="peer-pressure-participation">Participation <strong id="universePressureParticipation">0 / 0</strong></p>
+        </div>
+        <div class="peer-pressure-counts universe-pressure-counts" role="group" aria-label="Universe pressure categories">
+          <button type="button" data-universe-pressure-direction="higher" aria-pressed="false">
+            <span><span aria-hidden="true">↑</span> Higher</span>
+            <strong id="universePressureHigherCount">0</strong>
+          </button>
+          <button type="button" data-universe-pressure-direction="neutral" aria-pressed="false">
+            <span><span aria-hidden="true">↔</span> Neutral</span>
+            <strong id="universePressureNeutralCount">0</strong>
+          </button>
+          <button type="button" data-universe-pressure-direction="lower" aria-pressed="false">
+            <span><span aria-hidden="true">↓</span> Lower</span>
+            <strong id="universePressureLowerCount">0</strong>
+          </button>
+        </div>
+      </section>
+
+      <section class="pressure-map-panel" aria-labelledby="pressure-map-title">
+        <div class="section-heading">
+          <p class="eyebrow" id="pressure-map-title">PRESSURE MAP</p>
+          <p class="section-support">Current structural location × canonical pressure direction</p>
+        </div>
+        <div class="pressure-map-grid" id="pressureMap" aria-live="polite"></div>
+        <section class="peer-pressure-drilldown pressure-map-drilldown" id="pressureMapDrilldown" aria-live="polite" hidden>
+          <header>
+            <h3 id="pressureMapDrilldownTitle">—</h3>
+            <p id="pressureMapDrilldownSummary">—</p>
+          </header>
+          <ul id="pressureMapMembers"></ul>
+        </section>
       </section>
 
       <section class="heatmap-panel" aria-labelledby="location-heatmap-title">
@@ -126,19 +166,33 @@
               <p class="eyebrow" id="location-heatmap-title">LOCATION HEATMAP</p>
               <p class="section-support">Latest TradingView observation within the current IPDA 20W range</p>
             </div>
-            <label class="group-tracking-toggle" for="groupTrackingToggle">
-              <span>Group Tracking</span>
-              <span class="toggle-state" id="groupTrackingStateLabel">On</span>
-              <input type="checkbox" id="groupTrackingToggle" aria-describedby="groupTrackingStateLabel" checked />
-              <span class="toggle-switch" aria-hidden="true"></span>
-            </label>
+            <div class="heatmap-view-controls">
+              <div class="pressure-filter" role="group" aria-label="Filter Location Heatmap by pressure">
+                <button type="button" data-heatmap-pressure-filter="all" aria-pressed="true">All</button>
+                <button type="button" data-heatmap-pressure-filter="higher" aria-pressed="false"><span aria-hidden="true">↑</span> Higher</button>
+                <button type="button" data-heatmap-pressure-filter="lower" aria-pressed="false"><span aria-hidden="true">↓</span> Lower</button>
+                <button type="button" data-heatmap-pressure-filter="neutral" aria-pressed="false"><span aria-hidden="true">↔</span> Neutral</button>
+              </div>
+              <label class="group-tracking-toggle" for="groupTrackingToggle">
+                <span>Group Tracking</span>
+                <span class="toggle-state" id="groupTrackingStateLabel">On</span>
+                <input type="checkbox" id="groupTrackingToggle" aria-describedby="groupTrackingStateLabel" checked />
+                <span class="toggle-switch" aria-hidden="true"></span>
+              </label>
+            </div>
           </div>
           <div class="heatmap-legends" aria-label="Location Heatmap legend">
             <span class="heatmap-legend"><span class="active-mrz-dot" aria-hidden="true"></span>Active MRZ</span>
             <span class="heatmap-legend"><span class="activity-legend-swatch" aria-hidden="true"></span>Chip intensity · Observation activity</span>
             <span class="heatmap-legend"><span class="evidence-ready-legend-swatch" aria-hidden="true"></span>Bright outline · Concentration-check eligible</span>
+            <span class="heatmap-legend"><span class="pressure-chip-legend" aria-hidden="true">↑</span>Current pressure</span>
           </div>
         </div>
+        <div id="locationHeatmap" hidden>
+          <div class="heatmap-grid" id="primaryLocationGroups"></div>
+          <div class="heatmap-secondary" id="secondaryLocationGroups"></div>
+        </div>
+        <p class="heatmap-empty" id="heatmapEmpty">Loading locations…</p>
         <section class="group-tracking-workspace" id="groupTrackingWorkspace" aria-labelledby="tracked-groups-title" aria-live="polite" hidden>
           <header class="tracked-groups-toolbar">
             <label for="savedGroupSelect" id="tracked-groups-title">Tracked Groups</label>
@@ -245,11 +299,6 @@
             </section>
           </section>
         </section>
-        <div id="locationHeatmap" hidden>
-          <div class="heatmap-grid" id="primaryLocationGroups"></div>
-          <div class="heatmap-secondary" id="secondaryLocationGroups"></div>
-        </div>
-        <p class="heatmap-empty" id="heatmapEmpty">Loading locations…</p>
       </section>
 
       <section class="selected-detail" aria-labelledby="selected-symbol-title">
@@ -351,10 +400,10 @@
     <div class="activity-tooltip" id="heatmapActivityTooltip" role="tooltip" hidden></div>
     <div class="notification-toast-host" id="notificationToastHost" aria-live="polite"></div>
     <script src="/static/diagnostics-nav.js?v=views-menu-20260907" defer></script>
-    <script src="/static/heatmap-state.js?v=group-tracking-on-20260920" defer></script>
-    <script src="/static/operator-time.js?v=group-tracking-on-20260920" defer></script>
-    <script src="/static/monitor-presentation.js?v=group-tracking-on-20260920" defer></script>
+    <script src="/static/heatmap-state.js?v=universe-pressure-20260920" defer></script>
+    <script src="/static/operator-time.js?v=universe-pressure-20260920" defer></script>
+    <script src="/static/monitor-presentation.js?v=universe-pressure-20260920" defer></script>
     <script src="/static/notifications.js?v=notification-destinations-20260914" defer></script>
-    <script src="/static/app.js?v=group-tracking-on-20260920" defer></script>
+    <script src="/static/app.js?v=universe-pressure-20260920" defer></script>
   </body>
 </html>

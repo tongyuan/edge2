@@ -50,8 +50,10 @@ class APIIntegrationTests(unittest.TestCase):
         health = self.client.get("/health")
         self.assertEqual(health.status_code, 200)
         self.assertEqual(health.json()["database"], "ok")
+        symbols_payload = self.client.get("/api/symbols").json()
+        pressure = symbols_payload.pop("pressure")
         self.assertEqual(
-            self.client.get("/api/symbols").json(),
+            symbols_payload,
             {
                 "minimum_cluster_observations": 4,
                 "location_migration_tendency": {
@@ -74,6 +76,10 @@ class APIIntegrationTests(unittest.TestCase):
                 "symbols": [],
             },
         )
+        self.assertEqual(pressure["counts"], {"higher": 0, "lower": 0, "neutral": 0})
+        self.assertEqual(pressure["participation"], {"count": 0, "total": 0})
+        self.assertEqual(pressure["pressure_map"]["totals"], pressure["counts"])
+        self.assertEqual(pressure["headline"]["label"], "Insufficient Participation")
 
     def test_saved_group_crud_is_persistent_read_only_and_canonical(self) -> None:
         response = self.client.post(
@@ -1007,6 +1013,56 @@ class APIIntegrationTests(unittest.TestCase):
             item["symbol"]: item for item in self.client.get("/api/symbols").json()["symbols"]
         }
         self.assertEqual(updated["DD"]["current_price_location"], "shallow_premium")
+
+    def test_universe_pressure_reconciles_and_matches_saved_group_scope(self) -> None:
+        def ingest(symbol: str, index: int, price: str) -> None:
+            packet = webhook_payload(
+                index,
+                price,
+                symbol=symbol,
+                event_id=f"pressure-{symbol}-{index}",
+            )
+            self.assertEqual(
+                self.client.post("/webhook/tradingview", json=packet).status_code,
+                201,
+            )
+
+        activation_prices = ("110.0", "110.2", "110.4", "110.6")
+        for symbol in ("UP", "DOWN", "QUIET"):
+            for index, price in enumerate(activation_prices, 1):
+                ingest(symbol, index, price)
+        for index, price in enumerate(("114", "115", "116"), 5):
+            ingest("UP", index, price)
+        for index, price in enumerate(("107", "106", "105"), 5):
+            ingest("DOWN", index, price)
+        ingest("NOACTIVE", 1, "120")
+
+        overview = self.client.get("/api/symbols").json()
+        pressure = overview["pressure"]
+        self.assertEqual(pressure["counts"], {"higher": 1, "lower": 1, "neutral": 2})
+        self.assertEqual(pressure["participation"], {"count": 2, "total": 4})
+        self.assertEqual(pressure["pressure_map"]["totals"], pressure["counts"])
+        deep_discount = pressure["pressure_map"]["locations"]["deep_discount"]
+        self.assertEqual(deep_discount["participation"], {"count": 2, "total": 4})
+        self.assertEqual(deep_discount["counts"], pressure["counts"])
+
+        created = self.client.post(
+            "/api/groups",
+            json={"name": "Pressure parity", "members": ["UP", "DOWN", "QUIET", "NOACTIVE"]},
+        ).json()
+        peers = self.client.get(f"/api/groups/{created['id']}/peer-pressure").json()
+        self.assertEqual(peers["counts"], pressure["counts"])
+        global_directions = {
+            item["symbol"]: item["direction"]
+            for members in pressure["categories"].values()
+            for item in members
+        }
+        group_directions = {
+            item["symbol"]: item["direction"]
+            for members in peers["categories"].values()
+            for item in members
+        }
+        self.assertEqual(global_directions, group_directions)
 
     def test_authentication_is_required_and_secret_is_redacted(self) -> None:
         packet = webhook_payload()

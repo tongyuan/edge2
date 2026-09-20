@@ -2,6 +2,8 @@ const assert = require("node:assert/strict");
 const {
   primaryLocationKeys,
   secondaryLocationKeys,
+  pressureDirection,
+  filterSymbolsByPressure,
   hasActiveMrz,
   activityTier,
   routeAlignedObservationCount,
@@ -46,6 +48,32 @@ assert.deepEqual(secondaryLocationKeys, [
   "above_ipda_range",
   "unavailable",
 ]);
+
+const pressureSymbols = [
+  { symbol: "UP", pressure_direction: "higher" },
+  { symbol: "DOWN", pressure_direction: "lower" },
+  { symbol: "FLAT", pressure_direction: "neutral" },
+  { symbol: "MISSING" },
+];
+assert.equal(pressureDirection(pressureSymbols[0]), "higher");
+assert.equal(pressureDirection(pressureSymbols[3]), "neutral", "missing pressure fails neutral");
+assert.equal(filterSymbolsByPressure(pressureSymbols, "all"), pressureSymbols,
+  "All preserves the existing heatmap collection");
+assert.deepEqual(
+  filterSymbolsByPressure(pressureSymbols, "higher").map(({ symbol }) => symbol),
+  ["UP"],
+  "Higher filter returns only canonical Higher symbols",
+);
+assert.deepEqual(
+  filterSymbolsByPressure(pressureSymbols, "lower").map(({ symbol }) => symbol),
+  ["DOWN"],
+  "Lower filter returns only canonical Lower symbols",
+);
+assert.deepEqual(
+  filterSymbolsByPressure(pressureSymbols, "neutral").map(({ symbol }) => symbol),
+  ["FLAT", "MISSING"],
+  "Neutral filter includes explicit and safely defaulted Neutral symbols",
+);
 
 assert.equal(hasActiveMrz({ mrz_status: "active" }), true, "authoritative active state");
 assert.equal(hasActiveMrz({ mrz_status: "unestablished" }), false, "unestablished state");
@@ -490,7 +518,7 @@ assert.equal(
     btd_window_observation_count: 9,
     str_window_observation_count: 4,
   }, "Deep Premium"),
-  "ETHUSDT, Deep Premium, 4 STR rejection observations, no qualifying concentration, MRZ unestablished",
+  "ETHUSDT, Deep Premium, 4 STR rejection observations, no qualifying concentration, MRZ unestablished, neutral pressure",
 );
 
 const deepPremiumSymbols = [

@@ -8,6 +8,12 @@ from app.mrz_robustness import post_activation_snapshot
 
 
 PRESSURE_DIRECTIONS = ("higher", "lower", "neutral")
+PRIMARY_PRESSURE_LOCATIONS = (
+    "deep_discount",
+    "shallow_discount",
+    "shallow_premium",
+    "deep_premium",
+)
 
 LOCATION_LABELS = {
     "deep_discount": "Deep Discount",
@@ -61,135 +67,148 @@ def _headline(higher: int, lower: int) -> dict[str, str]:
     }
 
 
-def build_peer_pressure_report(
-    group: Mapping[str, Any],
+def _symbol_pressure_state(
+    symbol: str,
+    member_state: Mapping[str, Any],
+    active_by_symbol: Mapping[str, ActiveMRZ],
+    observations_by_symbol: Mapping[str, Sequence[Observation]],
+) -> dict[str, Any]:
+    """Classify one symbol through the canonical current-pressure path."""
+    current_location = member_state.get("current_location")
+    latest_observed_at = member_state.get("latest_observed_at")
+    active = active_by_symbol.get(symbol)
+
+    if active is None:
+        direction = "neutral"
+        evidence = {
+            "status": "NO_ACTIVE_MRZ",
+            "label": "Neutral",
+            "reason": (
+                "No active authoritative MRZ is available, so directional "
+                "pressure is not established."
+            ),
+            "observed_at": None,
+            "current_pressure_since": None,
+            "latest_pressure_observed_at": None,
+            "recent_sequence": [],
+            "recent_higher_observation_count": 0,
+            "recent_lower_observation_count": 0,
+            "post_activation_observation_count": 0,
+            "higher_observation_count": 0,
+            "lower_observation_count": 0,
+        }
+        active_payload = {
+            "status": "unestablished",
+            "route_owner": None,
+            "location": None,
+            "location_label": "Unavailable",
+            "activated_at": None,
+        }
+    else:
+        snapshot = post_activation_snapshot(
+            active,
+            observations_by_symbol.get(symbol, ()),
+        )
+        current_pressure = snapshot.current_pressure
+        direction = {
+            "UP": "higher",
+            "DOWN": "lower",
+        }.get(current_pressure.state.direction, "neutral")
+        current_pressure_since = _iso(current_pressure.current_pressure_since)
+        latest_pressure_observed_at = _iso(
+            current_pressure.latest_pressure_observed_at
+        )
+        evidence = {
+            "status": current_pressure.state.status,
+            "label": current_pressure.state.label,
+            "reason": current_pressure.state.reason,
+            "observed_at": current_pressure_since,
+            "current_pressure_since": current_pressure_since,
+            "latest_pressure_observed_at": latest_pressure_observed_at,
+            "recent_sequence": [
+                {
+                    "direction": item.direction,
+                    "observed_at": _iso(item.observation.observed_at),
+                }
+                for item in current_pressure.recent_evidence
+            ],
+            "recent_higher_observation_count": (
+                current_pressure.recent_higher_count
+            ),
+            "recent_lower_observation_count": (
+                current_pressure.recent_lower_count
+            ),
+            "post_activation_observation_count": snapshot.total_observation_count,
+            "higher_observation_count": snapshot.above_envelope_count,
+            "lower_observation_count": snapshot.below_envelope_count,
+        }
+        active_payload = {
+            "status": "active",
+            "route_owner": active.route_owner.value,
+            "location": active.structural_location.value,
+            "location_label": _location_label(active.structural_location.value),
+            "activated_at": _iso(active.activated_at),
+        }
+
+    return {
+        "symbol": symbol,
+        "direction": direction,
+        "direction_label": direction.title(),
+        "current_location": current_location,
+        "current_location_label": _location_label(current_location),
+        "latest_observed_at": latest_observed_at,
+        "active_mrz": active_payload,
+        "evidence": evidence,
+    }
+
+
+def _build_pressure_report(
+    *,
+    report_id: int | None,
+    name: str,
+    members: Sequence[str],
+    member_states: Mapping[str, Mapping[str, Any]],
     active_mrzs: Sequence[ActiveMRZ],
     observations: Sequence[Observation],
 ) -> dict[str, Any]:
-    """Derive transparent cohort pressure from the shared canonical classifier."""
+    """Derive transparent pressure for any scope from one symbol classifier."""
     active_by_symbol = {active.symbol: active for active in active_mrzs}
     observations_by_symbol: dict[str, list[Observation]] = {}
     for observation in observations:
         observations_by_symbol.setdefault(observation.symbol, []).append(observation)
-
-    current_members = {
-        str(item["symbol"]): item
-        for item in group.get("current_state", {}).get("members", ())
-    }
     categories: dict[str, list[dict[str, Any]]] = {
         direction: [] for direction in PRESSURE_DIRECTIONS
     }
     evidence_times: list[str] = []
 
-    for symbol in group["members"]:
-        member_state = current_members.get(symbol, {})
-        current_location = member_state.get("current_location")
-        latest_observed_at = member_state.get("latest_observed_at")
-        active = active_by_symbol.get(symbol)
-
-        if active is None:
-            direction = "neutral"
-            evidence = {
-                "status": "NO_ACTIVE_MRZ",
-                "label": "Neutral",
-                "reason": (
-                    "No active authoritative MRZ is available, so directional "
-                    "pressure is not established."
-                ),
-                "observed_at": None,
-                "current_pressure_since": None,
-                "latest_pressure_observed_at": None,
-                "recent_sequence": [],
-                "recent_higher_observation_count": 0,
-                "recent_lower_observation_count": 0,
-                "post_activation_observation_count": 0,
-                "higher_observation_count": 0,
-                "lower_observation_count": 0,
-            }
-            active_payload = {
-                "status": "unestablished",
-                "route_owner": None,
-                "location": None,
-                "location_label": "Unavailable",
-                "activated_at": None,
-            }
-        else:
-            snapshot = post_activation_snapshot(
-                active,
-                observations_by_symbol.get(symbol, ()),
-            )
-            current_pressure = snapshot.current_pressure
-            direction = {
-                "UP": "higher",
-                "DOWN": "lower",
-            }.get(current_pressure.state.direction, "neutral")
-            current_pressure_since = _iso(current_pressure.current_pressure_since)
-            latest_pressure_observed_at = _iso(
-                current_pressure.latest_pressure_observed_at
-            )
-            evidence = {
-                "status": current_pressure.state.status,
-                "label": current_pressure.state.label,
-                "reason": current_pressure.state.reason,
-                "observed_at": current_pressure_since,
-                "current_pressure_since": current_pressure_since,
-                "latest_pressure_observed_at": latest_pressure_observed_at,
-                "recent_sequence": [
-                    {
-                        "direction": item.direction,
-                        "observed_at": _iso(item.observation.observed_at),
-                    }
-                    for item in current_pressure.recent_evidence
-                ],
-                "recent_higher_observation_count": (
-                    current_pressure.recent_higher_count
-                ),
-                "recent_lower_observation_count": (
-                    current_pressure.recent_lower_count
-                ),
-                "post_activation_observation_count": snapshot.total_observation_count,
-                "higher_observation_count": snapshot.above_envelope_count,
-                "lower_observation_count": snapshot.below_envelope_count,
-            }
-            active_payload = {
-                "status": "active",
-                "route_owner": active.route_owner.value,
-                "location": active.structural_location.value,
-                "location_label": _location_label(active.structural_location.value),
-                "activated_at": _iso(active.activated_at),
-            }
-
-        if evidence["latest_pressure_observed_at"]:
-            evidence_times.append(str(evidence["latest_pressure_observed_at"]))
-        elif latest_observed_at:
-            evidence_times.append(str(latest_observed_at))
-
-        categories[direction].append(
-            {
-                "symbol": symbol,
-                "direction": direction,
-                "direction_label": direction.title(),
-                "current_location": current_location,
-                "current_location_label": _location_label(current_location),
-                "latest_observed_at": latest_observed_at,
-                "active_mrz": active_payload,
-                "evidence": evidence,
-            }
+    for symbol in members:
+        state = _symbol_pressure_state(
+            symbol,
+            member_states.get(symbol, {}),
+            active_by_symbol,
+            observations_by_symbol,
         )
+        evidence_time = (
+            state["evidence"]["latest_pressure_observed_at"]
+            or state["latest_observed_at"]
+        )
+        if evidence_time:
+            evidence_times.append(str(evidence_time))
+        categories[state["direction"]].append(state)
 
     counts = {
         direction: len(categories[direction])
         for direction in PRESSURE_DIRECTIONS
     }
-    total = len(group["members"])
+    total = len(members)
     participation = counts["higher"] + counts["lower"]
     if sum(counts.values()) != total:
-        raise ValueError("peer pressure categories must reconcile to group membership")
+        raise ValueError("pressure categories must reconcile to scope membership")
 
     return {
-        "id": group["id"],
-        "name": group["name"],
-        "members": list(group["members"]),
+        "id": report_id,
+        "name": name,
+        "members": list(members),
         "member_count": total,
         "as_of": max(evidence_times) if evidence_times else None,
         "headline": _headline(counts["higher"], counts["lower"]),
@@ -209,4 +228,93 @@ def build_peer_pressure_report(
                 "zero directional participation is Insufficient Participation."
             ),
         },
+    }
+
+
+def build_peer_pressure_report(
+    group: Mapping[str, Any],
+    active_mrzs: Sequence[ActiveMRZ],
+    observations: Sequence[Observation],
+) -> dict[str, Any]:
+    """Derive saved-cohort pressure through the shared scope builder."""
+    current_members = {
+        str(item["symbol"]): item
+        for item in group.get("current_state", {}).get("members", ())
+    }
+    return _build_pressure_report(
+        report_id=int(group["id"]),
+        name=str(group["name"]),
+        members=tuple(str(symbol) for symbol in group["members"]),
+        member_states=current_members,
+        active_mrzs=active_mrzs,
+        observations=observations,
+    )
+
+
+def build_universe_pressure_report(
+    symbol_states: Sequence[Mapping[str, Any]],
+    active_mrzs: Sequence[ActiveMRZ],
+    observations: Sequence[Observation],
+) -> dict[str, Any]:
+    """Build breadth and location matrix for the classified monitor universe."""
+    member_states = {
+        str(item["symbol"]): {
+            "symbol": str(item["symbol"]),
+            "current_location": item.get("current_price_location"),
+            "latest_observed_at": item.get("latest_observed_at"),
+        }
+        for item in symbol_states
+    }
+    classified_members = tuple(
+        symbol
+        for symbol, state in member_states.items()
+        if state["current_location"] in PRIMARY_PRESSURE_LOCATIONS
+    )
+    report = _build_pressure_report(
+        report_id=None,
+        name="Monitored universe",
+        members=classified_members,
+        member_states=member_states,
+        active_mrzs=active_mrzs,
+        observations=observations,
+    )
+
+    rows: dict[str, dict[str, Any]] = {}
+    for location in PRIMARY_PRESSURE_LOCATIONS:
+        counts = {
+            direction: sum(
+                item["current_location"] == location
+                for item in report["categories"][direction]
+            )
+            for direction in PRESSURE_DIRECTIONS
+        }
+        total = sum(counts.values())
+        rows[location] = {
+            "counts": counts,
+            "participation": {
+                "count": counts["higher"] + counts["lower"],
+                "total": total,
+            },
+        }
+
+    matrix_totals = {
+        direction: sum(row["counts"][direction] for row in rows.values())
+        for direction in PRESSURE_DIRECTIONS
+    }
+    if matrix_totals != report["counts"]:
+        raise ValueError("pressure map must reconcile to pressure breadth")
+    matrix_population = sum(
+        row["participation"]["total"] for row in rows.values()
+    )
+    if matrix_population != report["member_count"]:
+        raise ValueError("pressure map must reconcile to classified population")
+
+    return {
+        **report,
+        "scope": "monitored_universe",
+        "pressure_map": {
+            "locations": rows,
+            "totals": matrix_totals,
+        },
+        "excluded_unclassified_count": len(symbol_states) - len(classified_members),
     }

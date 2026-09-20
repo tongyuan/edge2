@@ -25,7 +25,7 @@ from app.notifications import (
     PushSubscriptionDelete,
     PushSubscriptionPayload,
 )
-from app.peer_pressure import build_peer_pressure_report
+from app.peer_pressure import build_peer_pressure_report, build_universe_pressure_report
 from app.repository import (
     EdgeRepository,
     PromotionConflict,
@@ -312,10 +312,19 @@ def create_app(
 
     @application.get("/api/symbols")
     def symbols() -> dict[str, Any]:
+        symbol_states = repository.symbols()
+        active_mrzs, observations, _migration_provenance = (
+            repository.mrz_robustness_inputs()
+        )
         return {
             "minimum_cluster_observations": MIN_CLUSTER_OBSERVATIONS,
             "location_migration_tendency": repository.location_migration_tendency(),
-            "symbols": repository.symbols(),
+            "pressure": build_universe_pressure_report(
+                symbol_states,
+                active_mrzs,
+                observations,
+            ),
+            "symbols": symbol_states,
         }
 
     @application.get("/api/groups")

@@ -16,6 +16,19 @@
   const premiumLocationKeys = new Set(["shallow_premium", "deep_premium"]);
   const discountLocationKeys = new Set(["shallow_discount", "deep_discount"]);
   const activityMaximum = 20;
+  const pressureDirections = new Set(["higher", "lower", "neutral"]);
+
+  function pressureDirection(symbolState) {
+    const direction = String(symbolState?.pressure_direction || "").toLowerCase();
+    return pressureDirections.has(direction) ? direction : "neutral";
+  }
+
+  function filterSymbolsByPressure(symbols, filter) {
+    const normalized = String(filter || "all").toLowerCase();
+    if (normalized === "all") return symbols;
+    if (!pressureDirections.has(normalized)) return symbols;
+    return symbols.filter((symbolState) => pressureDirection(symbolState) === normalized);
+  }
 
   function hasActiveMrz(symbolState) {
     return symbolState.mrz_status === "active";
@@ -101,16 +114,18 @@
 
   function accessibleChipLabel(symbolState, locationLabel) {
     const symbol = symbolState.symbol;
+    const pressure = pressureDirection(symbolState);
+    const pressureContext = `, ${pressure} pressure`;
     if (hasActiveMrz(symbolState)) {
       const owner = symbolState.route_owner ? `, route owner ${symbolState.route_owner}` : "";
-      return `${symbol}, ${locationLabel}, MRZ active${owner}`;
+      return `${symbol}, ${locationLabel}, MRZ active${owner}${pressureContext}`;
     }
     const activity = routeAlignedActivity(symbolState);
     if (!activity) {
-      return `${symbol}, ${locationLabel}, no qualifying concentration, MRZ unestablished`;
+      return `${symbol}, ${locationLabel}, no qualifying concentration, MRZ unestablished${pressureContext}`;
     }
     const observationNoun = activity.count === 1 ? "observation" : "observations";
-    return `${symbol}, ${locationLabel}, ${activity.count} ${activity.route} ${activity.observationType} ${observationNoun}, no qualifying concentration, MRZ unestablished`;
+    return `${symbol}, ${locationLabel}, ${activity.count} ${activity.route} ${activity.observationType} ${observationNoun}, no qualifying concentration, MRZ unestablished${pressureContext}`;
   }
 
   function compareSymbolsByActivity(left, right) {
@@ -443,6 +458,8 @@
   const heatmapState = {
     primaryLocationKeys,
     secondaryLocationKeys,
+    pressureDirection,
+    filterSymbolsByPressure,
     hasActiveMrz,
     activityTier,
     routeAlignedObservationCount,
