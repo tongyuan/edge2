@@ -78,6 +78,15 @@ established swing highs or lows from unresolved equal or near-equal levels; when
 structure is already clear, no additional timeframe or fixed inspection
 sequence is required.
 
+If current visible history does not resolve swing-structure maturity, Astra
+should expand chart context leftward as needed, including price action before
+the current MRZ episode, to identify relevant earlier swing highs or lows,
+equal or near-equal levels, and expansion or sweep that may explain the current
+hierarchy. MRZ activation and EQM REACHED are reference points, not hard
+historical boundaries. Astra chooses the useful lookback and prior evidence; no
+earlier inspection is required when current structure is clear, and older levels
+are not automatic targets.
+
 Equal or near-equal levels alone neither require a sweep nor force WAIT, and a
 sweep does not automatically create a valid setup. Consider broader-timeframe
 structure, whether the cluster is local or structurally significant,
