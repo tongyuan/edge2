@@ -271,7 +271,7 @@
 
   function createGroupTrackingState() {
     return {
-      enabled: false,
+      enabled: true,
       mode: "browse",
       activeGroupId: null,
       showSelectedOnly: false,
@@ -280,7 +280,7 @@
   }
 
   function setGroupTrackingEnabled(state, enabled) {
-    if (!enabled) return createGroupTrackingState();
+    if (!enabled) return { ...createGroupTrackingState(), enabled: false };
     return { ...state, enabled: true };
   }
 

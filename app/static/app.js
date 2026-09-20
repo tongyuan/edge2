@@ -1211,6 +1211,10 @@ function requestedSymbolFromQuery(search = globalThis.location?.search || "") {
 async function initializeMonitor() {
   loadHealth();
   await Promise.all([loadSymbols(), loadSavedGroupDefinitions()]);
+  if (groupTrackingState.enabled) {
+    if (savedGroups.length > 0) await openSavedGroupById(savedGroups[0].id);
+    else startNewGroup();
+  }
   const requestedSymbol = requestedSymbolFromQuery();
   if (requestedSymbol && Array.from(select.options).some(({ value }) => value === requestedSymbol)) {
     await selectSymbol(requestedSymbol);

@@ -302,10 +302,11 @@ const groupSymbols = [
 let trackingState = createGroupTrackingState();
 assert.deepEqual(
   { enabled: trackingState.enabled, showSelectedOnly: trackingState.showSelectedOnly },
-  { enabled: false, showSelectedOnly: false },
-  "group tracking defaults off",
+  { enabled: true, showSelectedOnly: false },
+  "group tracking defaults on",
 );
 assert.equal(trackingState.selectedSymbols.size, 0);
+trackingState = setGroupTrackingEnabled(trackingState, false);
 trackingState = toggleGroupSymbol(trackingState, "ALPHA");
 assert.equal(trackingState.selectedSymbols.size, 0, "chip membership cannot change while off");
 trackingState = setGroupTrackingEnabled(trackingState, true);
