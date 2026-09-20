@@ -15,6 +15,7 @@ REPOSITORY = (ROOT / "app/repository.py").read_text(encoding="utf-8")
 CONCENTRATION = (ROOT / "app/concentration.py").read_text(encoding="utf-8")
 STATE_ENGINE = (ROOT / "app/state_engine.py").read_text(encoding="utf-8")
 API = (ROOT / "app/api.py").read_text(encoding="utf-8")
+PEER_PRESSURE = (ROOT / "app/peer_pressure.py").read_text(encoding="utf-8")
 LATEST_INDEX = (ROOT / "migrations/002_latest_symbol_overview.sql").read_text(encoding="utf-8")
 EVIDENCE_MIGRATION = (ROOT / "migrations/003_active_mrz_supporting_evidence.sql").read_text(
     encoding="utf-8"
@@ -37,7 +38,7 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("Symbol Lab", HTML)
 
     def test_monitor_assets_are_versioned_together(self) -> None:
-        version = "distribution-hierarchy-20260914"
+        version = "peer-pressure-20260920"
         self.assertIn(f'/static/styles.css?v={version}', HTML)
         self.assertIn(f'/static/heatmap-state.js?v={version}', HTML)
         self.assertIn(f'/static/operator-time.js?v={version}', HTML)
@@ -473,22 +474,24 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn("showSelectedOnly: false", initial_state)
         self.assertIn("selectedSymbols: new Set()", initial_state)
 
-    def test_saved_group_view_contains_the_two_requested_views_and_metrics(self) -> None:
+    def test_saved_group_view_contains_current_state_and_peer_pressure(self) -> None:
         self.assertIn('id="savedGroupHeading"', HTML)
         self.assertIn('id="selectedGroupSymbols"', HTML)
         self.assertIn('id="currentStateTab"', HTML)
         self.assertIn('aria-selected="true" aria-controls="currentStatePanel"', HTML)
-        self.assertIn('id="migrationPathTab"', HTML)
-        self.assertIn('id="migrationPathPanel"', HTML)
+        self.assertIn('id="peerPressureTab"', HTML)
+        self.assertIn('id="peerPressurePanel"', HTML)
+        self.assertNotIn('id="migrationPathTab"', HTML)
         for field_id in (
             "groupDeepDiscountCount",
             "groupShallowDiscountCount",
             "groupShallowPremiumCount",
             "groupDeepPremiumCount",
             "groupActiveMrzCount",
-            "groupHigherCount",
-            "groupLowerCount",
-            "groupNoMigrationCount",
+            "peerPressureHigherCount",
+            "peerPressureLowerCount",
+            "peerPressureNeutralCount",
+            "peerPressureParticipation",
         ):
             with self.subTest(field_id=field_id):
                 self.assertIn(f'id="{field_id}"', HTML)
@@ -498,6 +501,8 @@ class MonitorContractTests(unittest.TestCase):
             "average formation",
             "median formation",
             "pressure score",
+            "momentum score",
+            "probability of migration",
             "performance statistics",
         ):
             self.assertNotIn(prohibited, combined.lower())
@@ -546,7 +551,7 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("active_mrz", SAVED_GROUP_MIGRATION)
         self.assertNotIn("observations", SAVED_GROUP_MIGRATION)
 
-    def test_group_tracking_reads_canonical_current_and_migration_state(self) -> None:
+    def test_group_tracking_reuses_canonical_post_activation_pressure_state(self) -> None:
         report = REPOSITORY.split("    def saved_group_report", 1)[1].split(
             "    def saved_group_migration_path", 1
         )[0]
@@ -563,8 +568,31 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("events.created_at", path)
         self.assertIn('"location": location', path)
         self.assertNotIn("classify_ipda_location", path)
-        self.assertNotIn("migration_pressure", report + path)
-        self.assertNotIn("successor", report + path)
+        self.assertIn("post_activation_snapshot", PEER_PRESSURE)
+        self.assertIn('"UP": "higher"', PEER_PRESSURE)
+        self.assertIn('"DOWN": "lower"', PEER_PRESSURE)
+        self.assertIn('"neutral"', PEER_PRESSURE)
+        self.assertIn("No active authoritative MRZ", PEER_PRESSURE)
+        self.assertNotIn("classify_structural_location", PEER_PRESSURE)
+        self.assertNotIn("evaluate_concentration", PEER_PRESSURE)
+        self.assertIn('/api/groups/{group_id}/peer-pressure', API)
+        self.assertIn("repository.mrz_robustness_inputs()", API)
+
+    def test_peer_pressure_drilldown_reconciles_categories_and_preserves_history(self) -> None:
+        self.assertEqual(HTML.count('data-pressure-direction="'), 3)
+        self.assertIn('id="peerPressureDrilldown"', HTML)
+        self.assertIn('id="peerPressureMembers"', HTML)
+        self.assertIn('id="migrationHistoryDisclosure"', HTML)
+        self.assertIn("Migration History", HTML)
+        self.assertIn('id="migrationPathScroller"', HTML)
+        self.assertIn("renderPeerPressureDrilldown", JAVASCRIPT)
+        self.assertIn("activePeerPressure.categories[direction]", JAVASCRIPT)
+        self.assertIn("member.symbol", JAVASCRIPT)
+        self.assertIn("member.current_location_label", JAVASCRIPT)
+        self.assertIn("member.evidence.reason", JAVASCRIPT)
+        self.assertIn("loadMigrationHistory", JAVASCRIPT)
+        self.assertIn('/migration-path`', JAVASCRIPT)
+        self.assertIn("renderMigrationPath(payload)", JAVASCRIPT)
 
     def test_migration_path_tooltip_derives_eqm_from_adjacent_authorities_only(self) -> None:
         tooltip = JAVASCRIPT.split("function migrationStateTooltip", 1)[1].split(
@@ -604,6 +632,9 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn("min-height: 44px;", CSS.split(".group-tracking-toggle", 1)[1])
         self.assertIn("flex-wrap: wrap;", CSS.split(".selected-group-symbols", 1)[1])
         self.assertIn("max-width: 100%;", CSS.split(".selected-group-symbols li", 1)[1])
+        self.assertIn("grid-template-columns: repeat(3, minmax(0, 1fr));", CSS)
+        self.assertIn("min-height: 76px;", CSS.split(".peer-pressure-counts button", 1)[1])
+        self.assertIn(".peer-pressure-drilldown ul { grid-template-columns: 1fr; }", CSS)
         self.assertIn(".migration-path-scroller", CSS)
         self.assertIn("overflow-x: auto;", CSS.split(".migration-path-scroller", 1)[1])
         self.assertIn("max-width: 100%;", CSS.split(".migration-path-scroller", 1)[1])

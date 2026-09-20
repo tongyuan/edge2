@@ -1723,6 +1723,7 @@ class EdgeRepository:
                         latest.observation_price,
                         latest.ipda_20w_high,
                         latest.ipda_20w_low,
+                        latest.observed_at,
                         (active.symbol IS NOT NULL) AS has_active_mrz,
                         active.route_owner,
                         migration.old_core_mrz_lower,
@@ -1730,7 +1731,11 @@ class EdgeRepository:
                         migration.new_core_mrz_midpoint
                     FROM members
                     LEFT JOIN LATERAL (
-                        SELECT observation_price, ipda_20w_high, ipda_20w_low
+                        SELECT
+                            observation_price,
+                            ipda_20w_high,
+                            ipda_20w_low,
+                            observed_at
                         FROM observations
                         WHERE symbol = members.symbol
                         ORDER BY observed_at DESC, received_at DESC, id DESC
@@ -1757,11 +1762,13 @@ class EdgeRepository:
                 active_count = 0
                 routes = {"BTD": 0, "STR": 0, "unestablished": 0}
                 breadth = {"higher": 0, "lower": 0, "no_migration": 0}
+                members: list[dict[str, Any]] = []
                 for row in cursor.fetchall():
+                    current_location = None
                     if row["observation_price"] is not None:
-                        location = current_price_location_value(row)
-                        if location in locations:
-                            locations[location] += 1
+                        current_location = current_price_location_value(row)
+                        if current_location in locations:
+                            locations[current_location] += 1
                     if row["has_active_mrz"]:
                         active_count += 1
                         route = str(row["route_owner"])
@@ -1771,6 +1778,19 @@ class EdgeRepository:
                         routes["unestablished"] += 1
                     direction = migration_direction(row)
                     breadth[direction or "no_migration"] += 1
+                    members.append(
+                        {
+                            "symbol": str(row["symbol"]),
+                            "current_location": current_location,
+                            "latest_observed_at": iso(row["observed_at"]),
+                            "has_active_mrz": bool(row["has_active_mrz"]),
+                            "route_owner": (
+                                str(row["route_owner"])
+                                if row["route_owner"] is not None
+                                else None
+                            ),
+                        }
+                    )
 
                 return {
                     **group,
@@ -1782,6 +1802,7 @@ class EdgeRepository:
                         },
                         "migration_breadth": breadth,
                         "route": routes,
+                        "members": members,
                     },
                 }
         finally:

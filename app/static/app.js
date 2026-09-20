@@ -28,9 +28,23 @@ const savedGroupMembers = document.querySelector("#savedGroupMembers");
 const editSavedGroup = document.querySelector("#editSavedGroup");
 const deleteSavedGroup = document.querySelector("#deleteSavedGroup");
 const currentStateTab = document.querySelector("#currentStateTab");
-const migrationPathTab = document.querySelector("#migrationPathTab");
+const peerPressureTab = document.querySelector("#peerPressureTab");
 const currentStatePanel = document.querySelector("#currentStatePanel");
-const migrationPathPanel = document.querySelector("#migrationPathPanel");
+const peerPressurePanel = document.querySelector("#peerPressurePanel");
+const peerPressureHeadline = document.querySelector("#peerPressureHeadline");
+const peerPressureSummary = document.querySelector("#peerPressureSummary");
+const peerPressureParticipation = document.querySelector("#peerPressureParticipation");
+const peerPressureDrilldown = document.querySelector("#peerPressureDrilldown");
+const peerPressureDrilldownTitle = document.querySelector("#peerPressureDrilldownTitle");
+const peerPressureDrilldownSummary = document.querySelector("#peerPressureDrilldownSummary");
+const peerPressureMembers = document.querySelector("#peerPressureMembers");
+const peerPressureButtons = [...document.querySelectorAll("[data-pressure-direction]")];
+const peerPressureCounts = {
+  higher: document.querySelector("#peerPressureHigherCount"),
+  lower: document.querySelector("#peerPressureLowerCount"),
+  neutral: document.querySelector("#peerPressureNeutralCount"),
+};
+const migrationHistoryDisclosure = document.querySelector("#migrationHistoryDisclosure");
 const migrationPathScroller = document.querySelector("#migrationPathScroller");
 const migrationEvidenceDialog = document.querySelector("#migrationEvidenceDialog");
 const migrationEvidenceTitle = document.querySelector("#migrationEvidenceTitle");
@@ -166,9 +180,6 @@ const groupCurrentFields = {
   btd: document.querySelector("#groupBtdCount"),
   str: document.querySelector("#groupStrCount"),
   active: document.querySelector("#groupActiveMrzCount"),
-  higher: document.querySelector("#groupHigherCount"),
-  lower: document.querySelector("#groupLowerCount"),
-  noMigration: document.querySelector("#groupNoMigrationCount"),
   locations: {
     deep_discount: document.querySelector("#groupDeepDiscountCount"),
     shallow_discount: document.querySelector("#groupShallowDiscountCount"),
@@ -183,6 +194,8 @@ let locationMigrationTendency = {};
 let groupTrackingState = createGroupTrackingState();
 let savedGroups = [];
 let activeSavedGroup = null;
+let activePeerPressure = null;
+let migrationHistoryGroupId = null;
 let migrationEvidenceReturnFocus = null;
 
 const formatPrice = (value) => value == null ? "—" : new Intl.NumberFormat("en-US", {
@@ -422,11 +435,11 @@ function renderGroupEditor() {
 }
 
 function showGroupTab(tabName) {
-  const showCurrent = tabName !== "migration";
+  const showCurrent = tabName !== "pressure";
   currentStateTab.setAttribute("aria-selected", String(showCurrent));
-  migrationPathTab.setAttribute("aria-selected", String(!showCurrent));
+  peerPressureTab.setAttribute("aria-selected", String(!showCurrent));
   currentStatePanel.hidden = !showCurrent;
-  migrationPathPanel.hidden = showCurrent;
+  peerPressurePanel.hidden = showCurrent;
 }
 
 function renderSavedGroupView() {
@@ -446,9 +459,6 @@ function renderSavedGroupView() {
     groupCurrentFields.locations[key].textContent = String(state.location[key] ?? 0);
   });
   groupCurrentFields.active.textContent = `${state.active_mrz.count} / ${state.active_mrz.total}`;
-  groupCurrentFields.higher.textContent = String(state.migration_breadth.higher);
-  groupCurrentFields.lower.textContent = String(state.migration_breadth.lower);
-  groupCurrentFields.noMigration.textContent = String(state.migration_breadth.no_migration);
   groupCurrentFields.btd.textContent = String(state.route.BTD);
   groupCurrentFields.str.textContent = String(state.route.STR);
 }
@@ -461,6 +471,96 @@ function renderGroupWorkspace() {
   if (!groupTrackingState.enabled) return;
   renderGroupEditor();
   renderSavedGroupView();
+}
+
+const pressureDirectionLabels = {
+  higher: "Higher",
+  lower: "Lower",
+  neutral: "Neutral",
+};
+
+function peerPressureMemberItem(member) {
+  const item = document.createElement("li");
+  item.className = `peer-pressure-member ${member.direction}`;
+  const header = document.createElement("div");
+  header.className = "peer-pressure-member-header";
+  const symbol = document.createElement("button");
+  symbol.type = "button";
+  symbol.textContent = member.symbol;
+  symbol.setAttribute("aria-label", `Open ${member.symbol} in MRZ Monitor`);
+  symbol.addEventListener("click", () => selectGroupMember(member.symbol).catch(showError));
+  const status = document.createElement("span");
+  status.className = "peer-pressure-member-status";
+  status.textContent = member.active_mrz.status === "active"
+    ? `${member.direction_label} · Active MRZ`
+    : `${member.direction_label} · No active MRZ`;
+  header.append(symbol, status);
+
+  const location = document.createElement("p");
+  location.className = "peer-pressure-member-location";
+  location.textContent = member.active_mrz.status === "active"
+    ? `Current ${member.current_location_label} · MRZ ${member.active_mrz.location_label}`
+    : `Current ${member.current_location_label} · MRZ unestablished`;
+
+  const evidence = document.createElement("p");
+  evidence.className = "peer-pressure-member-evidence";
+  const evidenceCounts = (
+    `${member.evidence.higher_observation_count} above · `
+    + `${member.evidence.lower_observation_count} below migration envelope`
+  );
+  const evidenceTime = member.evidence.observed_at
+    ? ` · ${formatPathTimestamp(member.evidence.observed_at)}`
+    : "";
+  evidence.textContent = member.active_mrz.status === "active"
+    ? `${evidenceCounts}${evidenceTime} · ${member.evidence.reason}`
+    : member.evidence.reason;
+  item.append(header, location, evidence);
+  return item;
+}
+
+function renderPeerPressureDrilldown(direction) {
+  if (!activePeerPressure) return;
+  const members = activePeerPressure.categories[direction] || [];
+  peerPressureButtons.forEach((button) => {
+    button.setAttribute("aria-pressed", String(button.dataset.pressureDirection === direction));
+  });
+  peerPressureDrilldown.hidden = false;
+  peerPressureDrilldownTitle.textContent = `${pressureDirectionLabels[direction]} · ${members.length}`;
+  peerPressureDrilldownSummary.textContent = (
+    `${members.length} of ${activePeerPressure.member_count} cohort members`
+  );
+  if (members.length === 0) {
+    const empty = document.createElement("li");
+    empty.className = "migration-path-all-empty";
+    empty.textContent = `No members are currently classified ${pressureDirectionLabels[direction]}.`;
+    peerPressureMembers.replaceChildren(empty);
+    return;
+  }
+  peerPressureMembers.replaceChildren(...members.map(peerPressureMemberItem));
+}
+
+function renderPeerPressure(payload) {
+  activePeerPressure = payload;
+  peerPressureHeadline.textContent = payload.headline.label;
+  peerPressureSummary.textContent = (
+    `${payload.counts.higher} Higher · ${payload.counts.lower} Lower · `
+    + `${payload.counts.neutral} Neutral`
+  );
+  peerPressureParticipation.textContent = (
+    `${payload.participation.count} / ${payload.participation.total}`
+  );
+  peerPressureButtons.forEach((button) => {
+    const direction = button.dataset.pressureDirection;
+    const count = payload.counts[direction];
+    peerPressureCounts[direction].textContent = String(count);
+    button.setAttribute("aria-pressed", "false");
+    button.setAttribute(
+      "aria-label",
+      `${pressureDirectionLabels[direction]} Peer Pressure, ${count} of ${payload.member_count} members`,
+    );
+  });
+  peerPressureDrilldown.hidden = true;
+  peerPressureMembers.replaceChildren();
 }
 
 function formatPathTimestamp(value) {
@@ -810,6 +910,10 @@ async function loadSavedGroupDefinitions() {
 async function openSavedGroupById(groupId) {
   const report = await requestJson(`/api/groups/${encodeURIComponent(groupId)}`);
   activeSavedGroup = report;
+  activePeerPressure = null;
+  migrationHistoryGroupId = null;
+  migrationHistoryDisclosure.open = false;
+  migrationPathScroller.replaceChildren();
   groupTrackingState = openSavedGroup(groupTrackingState, report.id);
   showGroupTab("current");
   renderMonitorOverview();
@@ -899,16 +1003,30 @@ async function removeActiveSavedGroup() {
   }
 }
 
-async function openMigrationPath() {
+async function openPeerPressure() {
   if (!activeSavedGroup) return;
-  showGroupTab("migration");
+  showGroupTab("pressure");
   const groupId = activeSavedGroup.id;
+  peerPressureHeadline.textContent = "Loading Peer Pressure…";
+  peerPressureSummary.textContent = "Reading canonical post-activation evidence.";
+  peerPressureDrilldown.hidden = true;
+  const payload = await requestJson(`/api/groups/${encodeURIComponent(groupId)}/peer-pressure`);
+  if (activeSavedGroup?.id === groupId) renderPeerPressure(payload);
+}
+
+async function loadMigrationHistory() {
+  if (!activeSavedGroup || !migrationHistoryDisclosure.open) return;
+  const groupId = activeSavedGroup.id;
+  if (migrationHistoryGroupId === groupId) return;
   const loading = document.createElement("p");
   loading.className = "migration-path-all-empty";
-  loading.textContent = "Loading authoritative history…";
+  loading.textContent = "Loading authoritative migration history…";
   migrationPathScroller.replaceChildren(loading);
   const payload = await requestJson(`/api/groups/${encodeURIComponent(groupId)}/migration-path`);
-  if (activeSavedGroup?.id === groupId) renderMigrationPath(payload);
+  if (activeSavedGroup?.id === groupId && migrationHistoryDisclosure.open) {
+    migrationHistoryGroupId = groupId;
+    renderMigrationPath(payload);
+  }
 }
 
 async function selectGroupMember(symbol) {
@@ -1039,7 +1157,15 @@ groupEditor.addEventListener("submit", saveGroup);
 groupName.addEventListener("input", updateSaveGroupAvailability);
 cancelGroupEdit.addEventListener("click", () => cancelGroupEditor().catch(showError));
 currentStateTab.addEventListener("click", () => showGroupTab("current"));
-migrationPathTab.addEventListener("click", () => openMigrationPath().catch(showError));
+peerPressureTab.addEventListener("click", () => openPeerPressure().catch(showError));
+peerPressureButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    renderPeerPressureDrilldown(button.dataset.pressureDirection);
+  });
+});
+migrationHistoryDisclosure.addEventListener("toggle", () => {
+  if (migrationHistoryDisclosure.open) loadMigrationHistory().catch(showError);
+});
 showSelectedOnly.addEventListener("change", () => {
   groupTrackingState = setShowSelectedOnly(
     groupTrackingState,

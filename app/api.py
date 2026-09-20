@@ -25,6 +25,7 @@ from app.notifications import (
     PushSubscriptionDelete,
     PushSubscriptionPayload,
 )
+from app.peer_pressure import build_peer_pressure_report
 from app.repository import (
     EdgeRepository,
     PromotionConflict,
@@ -378,6 +379,19 @@ def create_app(
             raise HTTPException(status_code=404, detail="group_not_found")
         return JSONResponse(
             path,
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
+    @application.get("/api/groups/{group_id}/peer-pressure")
+    def saved_group_peer_pressure(group_id: int) -> JSONResponse:
+        group = repository.saved_group_report(group_id)
+        if group is None:
+            raise HTTPException(status_code=404, detail="group_not_found")
+        active_mrzs, observations, _migration_provenance = (
+            repository.mrz_robustness_inputs()
+        )
+        return JSONResponse(
+            build_peer_pressure_report(group, active_mrzs, observations),
             headers={"Cache-Control": "no-store, max-age=0"},
         )
 

@@ -129,6 +129,20 @@ class GroupTrackingIntegrationTests(unittest.TestCase):
             "deep_premium": 2,
         })
         self.assertEqual(report["current_state"]["active_mrz"], {"count": 5, "total": 7})
+        self.assertEqual(
+            [member["symbol"] for member in report["current_state"]["members"]],
+            MAG7,
+        )
+        members = {
+            member["symbol"]: member
+            for member in report["current_state"]["members"]
+        }
+        self.assertEqual(members["AAPL"]["current_location"], "deep_discount")
+        self.assertTrue(members["AAPL"]["has_active_mrz"])
+        self.assertEqual(members["AAPL"]["route_owner"], "BTD")
+        self.assertIsNotNone(members["AAPL"]["latest_observed_at"])
+        self.assertFalse(members["META"]["has_active_mrz"])
+        self.assertIsNone(members["META"]["route_owner"])
         self.assertEqual(report["current_state"]["migration_breadth"], {
             "higher": 2,
             "lower": 1,

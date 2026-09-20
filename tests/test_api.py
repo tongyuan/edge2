@@ -94,6 +94,18 @@ class APIIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(group["current_state"]["active_mrz"], {"count": 0, "total": 7})
         self.assertEqual(
+            [member["symbol"] for member in group["current_state"]["members"]],
+            group["members"],
+        )
+        self.assertTrue(
+            all(
+                member["current_location"] is None
+                and member["latest_observed_at"] is None
+                and member["has_active_mrz"] is False
+                for member in group["current_state"]["members"]
+            )
+        )
+        self.assertEqual(
             group["current_state"]["migration_breadth"],
             {"higher": 0, "lower": 0, "no_migration": 7},
         )
@@ -108,6 +120,26 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(path.status_code, 200)
         self.assertEqual(len(path.json()["paths"]), 7)
         self.assertTrue(all(not item["states"] for item in path.json()["paths"]))
+        pressure = self.client.get(f"/api/groups/{group['id']}/peer-pressure")
+        self.assertEqual(pressure.status_code, 200)
+        self.assertEqual(pressure.headers["cache-control"], "no-store, max-age=0")
+        pressure_payload = pressure.json()
+        self.assertEqual(
+            pressure_payload["counts"],
+            {"higher": 0, "lower": 0, "neutral": 7},
+        )
+        self.assertEqual(
+            pressure_payload["participation"],
+            {"count": 0, "total": 7},
+        )
+        self.assertEqual(
+            pressure_payload["headline"]["status"],
+            "INSUFFICIENT_PARTICIPATION",
+        )
+        self.assertEqual(
+            sum(len(members) for members in pressure_payload["categories"].values()),
+            7,
+        )
 
         renamed = self.client.put(
             f"/api/groups/{group['id']}",
@@ -147,6 +179,7 @@ class APIIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(self.client.get("/api/groups/999").status_code, 404)
         self.assertEqual(self.client.get("/api/groups/999/migration-path").status_code, 404)
+        self.assertEqual(self.client.get("/api/groups/999/peer-pressure").status_code, 404)
         self.assertEqual(self.client.delete("/api/groups/999").status_code, 404)
 
     def test_monitor_shell_uses_current_terminology_and_is_not_cached(self) -> None:
