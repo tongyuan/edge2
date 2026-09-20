@@ -96,9 +96,11 @@ class PeerPressureTests(unittest.TestCase):
             (
                 observation("UP", 1, "114", Route.STR),
                 observation("UP", 2, "115", Route.STR),
-                observation("DOWN", 3, "107"),
-                observation("DOWN", 4, "106"),
-                observation("QUIET", 5, "111", Route.STR),
+                observation("UP", 3, "116", Route.STR),
+                observation("DOWN", 4, "107"),
+                observation("DOWN", 5, "106"),
+                observation("DOWN", 6, "105"),
+                observation("QUIET", 7, "111", Route.STR),
             ),
         )
 
@@ -139,13 +141,16 @@ class PeerPressureTests(unittest.TestCase):
         higher = (
             observation("A", 1, "114"),
             observation("A", 2, "115"),
+            observation("A", 3, "116"),
         )
-        neutral = (*higher, observation("A", 3, "107"))
+        neutral = (
+            *higher,
+            observation("A", 4, "107"),
+            observation("A", 5, "106"),
+        )
         lower = (
             *neutral,
-            observation("A", 4, "106"),
-            observation("A", 5, "105"),
-            observation("A", 6, "104"),
+            observation("A", 6, "105"),
         )
 
         self.assertEqual(build_peer_pressure_report(cohort, authority, higher)["counts"]["higher"], 1)
@@ -160,8 +165,10 @@ class PeerPressureTests(unittest.TestCase):
         evidence = (
             observation("A", 1, "114"),
             observation("A", 2, "115"),
-            observation("B", 3, "114"),
-            observation("B", 4, "116"),
+            observation("A", 3, "116"),
+            observation("B", 4, "114"),
+            observation("B", 5, "115"),
+            observation("B", 6, "116"),
         )
         unanimous = build_peer_pressure_report(group("A", "B"), authorities, evidence)
         removed = build_peer_pressure_report(group("B"), authorities, evidence)
@@ -172,6 +179,37 @@ class PeerPressureTests(unittest.TestCase):
         self.assertEqual(removed["counts"], {"higher": 1, "lower": 0, "neutral": 0})
         self.assertEqual(added["counts"], {"higher": 2, "lower": 0, "neutral": 1})
         self.assertEqual(added["participation"], {"count": 2, "total": 3})
+
+    def test_eth_regression_uses_current_regime_not_cumulative_majority(self) -> None:
+        sequence = "UDDDDDDDDUUUU"
+        prices = {"U": "114", "D": "107"}
+        evidence = tuple(
+            observation("ETHUSDT", index, prices[direction])
+            for index, direction in enumerate(sequence, 1)
+        )
+
+        report = build_peer_pressure_report(
+            group("ETHUSDT"),
+            (active("ETHUSDT"),),
+            tuple(reversed(evidence)),
+        )
+        member = report["categories"]["higher"][0]
+
+        self.assertEqual(report["counts"], {"higher": 1, "lower": 0, "neutral": 0})
+        self.assertEqual(member["evidence"]["higher_observation_count"], 5)
+        self.assertEqual(member["evidence"]["lower_observation_count"], 8)
+        self.assertEqual(
+            [item["direction"] for item in member["evidence"]["recent_sequence"]],
+            ["UP", "UP", "UP", "UP"],
+        )
+        self.assertEqual(
+            member["evidence"]["current_pressure_since"],
+            "2026-09-20T12:12:00Z",
+        )
+        self.assertEqual(
+            member["evidence"]["latest_pressure_observed_at"],
+            "2026-09-20T12:13:00Z",
+        )
 
 
 if __name__ == "__main__":

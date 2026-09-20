@@ -48,6 +48,17 @@ def report_for(
     return active, report["active_mrzs"][0]
 
 
+def pressure_rows(sequence: str, *, symbol: str = "SPXUSDT"):
+    prices = {"U": "120", "D": "100"}
+    return tuple(
+        replace(
+            observation(index, prices[direction], observed_offset=index),
+            symbol=symbol,
+        )
+        for index, direction in enumerate(sequence, 5)
+    )
+
+
 class MRZRobustnessTests(unittest.TestCase):
     def test_small_count_differences_remain_two_sided(self) -> None:
         for above, below in ((5, 6), (10, 11), (2, 1)):
@@ -111,6 +122,9 @@ class MRZRobustnessTests(unittest.TestCase):
             "2026-08-20T16:00:00Z",
         )
         self.assertEqual(report["formation_evidence"]["duration_seconds"], "10800")
+        self.assertEqual(report["current_pressure"]["direction"], "NEUTRAL")
+        self.assertEqual(report["current_pressure"]["status"], "NO_EVIDENCE")
+        self.assertEqual(report["current_pressure"]["recent_sequence"], [])
         self.assertNotEqual(
             report["formation_evidence"]["started_at"],
             "2026-08-20T12:00:00Z",
@@ -876,6 +890,103 @@ class MRZRobustnessTests(unittest.TestCase):
         self.assertEqual(
             balanced_report["migration_pressure"]["direction"],
             "NEUTRAL",
+        )
+
+    def test_eth_regression_keeps_cumulative_down_but_current_regime_is_up(self) -> None:
+        sequence = "UDDDDDDDDUUUU"
+        _active, report = report_for(
+            pressure_rows(sequence, symbol="ETHUSDT"),
+            symbol="ETHUSDT",
+        )
+
+        self.assertEqual(
+            report["current_pressure"]["recent_sequence"],
+            [
+                {
+                    "direction": "UP",
+                    "direction_label": "Higher",
+                    "observed_at": f"2026-08-20T12:00:{second:02d}Z",
+                    "observation_price": "120",
+                }
+                for second in (14, 15, 16, 17)
+            ],
+        )
+        self.assertEqual(report["current_pressure"]["direction"], "UP")
+        self.assertEqual(
+            report["current_pressure"]["current_pressure_since"],
+            "2026-08-20T12:00:16Z",
+        )
+        self.assertEqual(
+            report["current_pressure"]["latest_pressure_observed_at"],
+            "2026-08-20T12:00:17Z",
+        )
+        self.assertEqual(report["cumulative_pressure"]["direction"], "DOWN")
+        self.assertEqual(
+            report["cumulative_pressure"]["above_upper_envelope_observation_count"],
+            5,
+        )
+        self.assertEqual(
+            report["cumulative_pressure"]["below_lower_envelope_observation_count"],
+            8,
+        )
+        self.assertEqual(report["boundary_pressure"]["outside_envelope_observation_count"], 13)
+        self.assertEqual(report["migration_pressure"]["direction"], "DOWN")
+
+    def test_cumulative_up_can_coexist_with_current_down(self) -> None:
+        _active, report = report_for(pressure_rows("UUUUUUUUDDDD"))
+
+        self.assertEqual(report["cumulative_pressure"]["direction"], "UP")
+        self.assertEqual(report["current_pressure"]["direction"], "DOWN")
+        self.assertEqual(
+            report["current_pressure"]["current_pressure_since"],
+            "2026-08-20T12:00:15Z",
+        )
+
+    def test_current_pressure_persistent_and_alternating_sequences(self) -> None:
+        cases = (
+            ("UUUUUU", "UP", "2026-08-20T12:00:07Z"),
+            ("DDDDDD", "DOWN", "2026-08-20T12:00:07Z"),
+            ("UDUDUD", "NEUTRAL", None),
+        )
+        for sequence, direction, since in cases:
+            with self.subTest(sequence=sequence):
+                _active, report = report_for(pressure_rows(sequence))
+                self.assertEqual(report["current_pressure"]["direction"], direction)
+                self.assertEqual(
+                    report["current_pressure"]["current_pressure_since"],
+                    since,
+                )
+
+    def test_current_pressure_is_conservative_and_hysteretic(self) -> None:
+        _active, insufficient = report_for(pressure_rows("UU"))
+        self.assertEqual(
+            insufficient["current_pressure"]["status"],
+            "INSUFFICIENT_EVIDENCE",
+        )
+        self.assertEqual(insufficient["current_pressure"]["direction"], "NEUTRAL")
+        self.assertIsNone(
+            insufficient["current_pressure"]["current_pressure_since"]
+        )
+
+        _active, one_opposing = report_for(pressure_rows("UUUUD"))
+        self.assertEqual(one_opposing["current_pressure"]["direction"], "UP")
+        self.assertEqual(
+            one_opposing["current_pressure"]["current_pressure_since"],
+            "2026-08-20T12:00:07Z",
+        )
+
+        _active, mixed = report_for(pressure_rows("UUUUDD"))
+        self.assertEqual(mixed["current_pressure"]["direction"], "NEUTRAL")
+        self.assertEqual(
+            mixed["current_pressure"]["current_pressure_since"],
+            "2026-08-20T12:00:10Z",
+        )
+
+        _active, reversed_report = report_for(pressure_rows("UUUUDDD"))
+        self.assertEqual(reversed_report["current_pressure"]["direction"], "DOWN")
+        self.assertEqual(
+            reversed_report["current_pressure"]["current_pressure_since"],
+            "2026-08-20T12:00:11Z",
         )
 
 

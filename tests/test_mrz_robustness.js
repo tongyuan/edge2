@@ -127,8 +127,8 @@ const operationCardHtml = fs.readFileSync(
   require.resolve("../app/static/mrz-robustness.html"),
   "utf8",
 );
-assert.match(operationCardHtml, /mrz-robustness\.css\?v=pressure-view-20260917/);
-assert.match(operationCardHtml, /mrz-robustness\.js\?v=pressure-view-20260917/);
+assert.match(operationCardHtml, /mrz-robustness\.css\?v=current-pressure-20260920/);
+assert.match(operationCardHtml, /mrz-robustness\.js\?v=current-pressure-20260920/);
 assert.doesNotMatch(operationCardSource, /bb_mrz_(?:discount|premium)/);
 assert.doesNotMatch(operationCardSource, /trade recommendation/i);
 assert.doesNotMatch(operationCardSource, /Candidate forming|Awaiting confirmation/i);
@@ -329,9 +329,9 @@ for (const summaryValue of [
   "Activated",
   "CURRENT PRESSURE",
   "Upward Pressure",
-  "4 observations",
-  "Above upper envelope",
-  "Below lower envelope",
+  "RECENT PRESSURE",
+  "CUMULATIVE SINCE ACTIVATION",
+  "↑ 3 · ↓ 0 · 3 outside",
 ]) {
   const summaryValueIndex = btcMarkup.indexOf(summaryValue);
   assert.ok(summaryValueIndex >= 0, `${summaryValue} renders in the compact summary`);
@@ -390,8 +390,8 @@ assert.equal(
   Number(btcReport.formation_evidence.duration_seconds),
 );
 assert.match(btcMarkup, /Upward Pressure/);
-assert.match(btcCompactSummary, /Above upper envelope<\/dt><dd>3/);
-assert.match(btcCompactSummary, /Below lower envelope<\/dt><dd>0/);
+assert.match(btcCompactSummary, /CUMULATIVE SINCE ACTIVATION/);
+assert.match(btcCompactSummary, /↑ 3 · ↓ 0 · 3 outside/);
 assert.match(btcMarkup, /Observation Position/);
 assert.match(btcMarkup, /Above MRZ<\/dt><dd>3/);
 assert.match(btcMarkup, /Inside MRZ<\/dt><dd>1/);
@@ -408,6 +408,50 @@ assert.match(btcMarkup, /Higher external<\/dt><dd>3/);
 assert.match(btcMarkup, /Lower external<\/dt><dd>0/);
 assert.match(btcMarkup, /Minimum evidence<\/dt><dd>4 observations/);
 assert.match(btcMarkup, /Insufficient observations/);
+
+const ethCurrentRegimeReport = {
+  ...btcReport,
+  symbol: "ETHUSDT",
+  current_pressure: {
+    status: "UNDER_PRESSURE",
+    label: "Upward Pressure",
+    reason: "Four recent observations are above the envelope.",
+    direction: "UP",
+    direction_label: "Upward",
+    current_pressure_since: "2026-09-19T16:52:00Z",
+    latest_pressure_observed_at: "2026-09-20T00:46:00Z",
+    recent_sequence: ["UP", "UP", "UP", "UP"].map((direction) => ({ direction })),
+  },
+  cumulative_pressure: {
+    status: "UNDER_PRESSURE",
+    label: "Downward Pressure",
+    reason: "Cumulative lower activity dominates.",
+    direction: "DOWN",
+    direction_label: "Downward",
+    observations_beyond_envelope: 13,
+    above_upper_envelope_observation_count: 5,
+    below_lower_envelope_observation_count: 8,
+  },
+};
+const ethCurrentRegimeMarkup = robustnessCardMarkup(
+  ethCurrentRegimeReport,
+  (value) => ({
+    "2026-09-19T16:52:00Z": "19 Sep 2026 · 12:52 UTC−4",
+    "2026-09-20T00:46:00Z": "19 Sep 2026 · 20:46 UTC−4",
+  }[value] || value),
+);
+const ethCurrentRegimeSummary = ethCurrentRegimeMarkup.split("</header>", 1)[0];
+assert.match(ethCurrentRegimeSummary, /↑ Upward Pressure/);
+assert.match(ethCurrentRegimeSummary, /Since 19 Sep 2026 · 12:52 UTC−4/);
+assert.match(ethCurrentRegimeSummary, /↑ ↑ ↑ ↑/);
+assert.match(ethCurrentRegimeSummary, /Latest pressure 19 Sep 2026 · 20:46 UTC−4/);
+assert.match(ethCurrentRegimeSummary, /↑ 5 · ↓ 8 · 13 outside/);
+assert.doesNotMatch(ethCurrentRegimeSummary, /↓ Downward Pressure/);
+assert.deepEqual(
+  filterReports([ethCurrentRegimeReport], "pressure").map((report) => report.symbol),
+  ["ETHUSDT"],
+  "the Pressure view consumes the canonical current regime, not cumulative history",
+);
 assert.match(btcMarkup, /no side-and-route pool has enough evidence/i);
 assert.doesNotMatch(btcMarkup, /Midpoint Stability/);
 assert.doesNotMatch(btcMarkup, /Distance From MRZ Midpoint/);
@@ -496,7 +540,7 @@ const ethBalancedSummary = ethBalancedMarkup.slice(
 );
 assert.match(ethBalancedSummary, /CURRENT PRESSURE/);
 assert.match(ethBalancedSummary, /Two-sided \/ Consolidating/);
-assert.match(ethBalancedSummary, /22 observations/);
+assert.match(ethBalancedSummary, /↑ 5 · ↓ 6 · 11 outside/);
 assert.doesNotMatch(ethBalancedSummary, /No qualifying successor/);
 assert.match(ethBalancedMarkup, /Two-sided \/ Consolidating · 22 observations/);
 assert.match(ethBalancedMarkup, /Above MRZ<\/dt><dd>10/);
@@ -535,8 +579,7 @@ const downwardPressureSummary = downwardPressureMarkup.slice(
   downwardPressureMarkup.indexOf("</header>") + 9,
 );
 assert.match(downwardPressureSummary, /CURRENT PRESSURE[\s\S]*Downward Pressure/);
-assert.match(downwardPressureSummary, /Above upper envelope<\/dt><dd>0/);
-assert.match(downwardPressureSummary, /Below lower envelope<\/dt><dd>4/);
+assert.match(downwardPressureSummary, /↑ 0 · ↓ 4 · 3 outside/);
 
 assert.match(operationCardCss, /\.operator-disclosure\[open\] > summary/);
 assert.match(operationCardCss, /\.operator-disclosure > summary:focus-visible/);
@@ -548,7 +591,7 @@ assert.match(
 );
 assert.match(
   operationCardCss,
-  /\.current-pressure-counts\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/,
+  /\.current-pressure-evidence\s*\{[^}]*grid-template-columns:\s*minmax\(150px, 0\.6fr\) minmax\(0, 1fr\)/,
 );
 assert.match(
   operationCardCss,
@@ -556,7 +599,7 @@ assert.match(
 );
 assert.match(
   operationCardCss,
-  /@media \(max-width: 460px\)[\s\S]*\.current-pressure-counts\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\)/,
+  /@media \(max-width: 460px\)[\s\S]*\.current-pressure-evidence\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\)/,
 );
 assert.match(
   operationCardCss,
@@ -954,6 +997,22 @@ const downwardNoMigrationReport = {
     direction: "DOWN",
     direction_label: "Downward",
   },
+  current_pressure: {
+    ...wldReport.migration_pressure,
+    status: "UNDER_PRESSURE",
+    label: "Downward Pressure",
+    direction: "DOWN",
+    direction_label: "Downward",
+    current_pressure_since: "2026-09-19T12:52:00Z",
+    latest_pressure_observed_at: "2026-09-19T20:46:00Z",
+    recent_sequence: ["DOWN", "DOWN", "DOWN", "DOWN"].map((direction) => ({ direction })),
+  },
+  cumulative_pressure: {
+    ...wldReport.migration_pressure,
+    observations_beyond_envelope: 4,
+    above_upper_envelope_observation_count: 0,
+    below_lower_envelope_observation_count: 4,
+  },
   boundary_pressure: {
     ...wldReport.boundary_pressure,
     above_upper_envelope_observation_count: 0,
@@ -997,9 +1056,8 @@ assert.ok(pressureReportsMarkup.includes(noMigrationPressureMarkup), "Pressure r
 const noMigrationPressureSummary = noMigrationPressureMarkup.split("</header>", 1)[0];
 assert.match(noMigrationPressureSummary, /Shallow Discount/);
 assert.match(noMigrationPressureSummary, /CURRENT PRESSURE[\s\S]*Downward Pressure/);
-assert.match(noMigrationPressureSummary, /5 observations/);
-assert.match(noMigrationPressureSummary, /Above upper envelope<\/dt><dd>0/);
-assert.match(noMigrationPressureSummary, /Below lower envelope<\/dt><dd>4/);
+assert.match(noMigrationPressureSummary, /CUMULATIVE SINCE ACTIVATION/);
+assert.match(noMigrationPressureSummary, /↑ 0 · ↓ 4 · 4 outside/);
 assert.match(noMigrationPressureSummary, /No previous MRZ/);
 assert.doesNotMatch(noMigrationPressureSummary, /authority-migration-direction|MIGRATION EQM/);
 assert.deepEqual(pressureDataset, pressureDatasetBefore, "filtering and rendering never mutate authoritative data");
@@ -1094,7 +1152,7 @@ const zeroEvidenceReport = {
   },
 };
 const zeroMarkup = robustnessCardMarkup(zeroEvidenceReport);
-assert.match(zeroMarkup, /Not yet assessable/);
+assert.match(zeroMarkup, /Regime not established/);
 assert.match(zeroMarkup, /0 observations/);
 assert.match(zeroMarkup, /No evidence/);
 assert.match(zeroMarkup, /MRZ Displacement<\/h3>\s*<strong class="metric-primary">—<\/strong>/);

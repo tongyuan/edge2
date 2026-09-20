@@ -14,7 +14,7 @@ from app.concentration import (
     latest_route_window,
 )
 from app.domain import ActiveMRZ, Observation, Route
-from app.state_engine import build_successor_mrz
+from app.state_engine import build_successor_mrz, successor_external_side
 from app.structure import classify_structural_location
 
 
@@ -32,6 +32,8 @@ MIN_MEANINGFUL_OUTSIDE_ENVELOPE_OBSERVATIONS = 2
 MIN_DIRECTIONAL_ENVELOPE_LEAD = 2
 DIRECTIONAL_ENVELOPE_SHARE_NUMERATOR = 3
 DIRECTIONAL_ENVELOPE_SHARE_DENOMINATOR = 5
+CURRENT_PRESSURE_RECENT_WINDOW = 4
+CURRENT_PRESSURE_CONFIRMATION_COUNT = 3
 
 
 def iso(value: datetime | None) -> str | None:
@@ -124,9 +126,32 @@ class PostActivationState:
 
 
 @dataclass(frozen=True, slots=True)
+class DirectionalPressureObservation:
+    observation: Observation
+    direction: str
+
+
+@dataclass(frozen=True, slots=True)
+class CurrentPressureRegime:
+    state: PostActivationState
+    recent_evidence: tuple[DirectionalPressureObservation, ...]
+    current_pressure_since: datetime | None
+    latest_pressure_observed_at: datetime | None
+
+    @property
+    def recent_higher_count(self) -> int:
+        return sum(item.direction == "UP" for item in self.recent_evidence)
+
+    @property
+    def recent_lower_count(self) -> int:
+        return sum(item.direction == "DOWN" for item in self.recent_evidence)
+
+
+@dataclass(frozen=True, slots=True)
 class PostActivationSnapshot:
     observations: tuple[Observation, ...]
     state: PostActivationState
+    current_pressure: CurrentPressureRegime
     inside_mrz_count: int
     above_mrz_count: int
     below_mrz_count: int
@@ -209,6 +234,105 @@ def classify_post_activation_state(
     )
 
 
+def classify_current_pressure_directions(
+    directions: Sequence[str],
+) -> PostActivationState:
+    """Classify a bounded, chronological pressure regime from canonical sides."""
+    recent = tuple(directions[-CURRENT_PRESSURE_RECENT_WINDOW:])
+    evidence_count = len(recent)
+    higher_count = recent.count("UP")
+    lower_count = recent.count("DOWN")
+    if evidence_count == 0:
+        return PostActivationState(
+            status="NO_EVIDENCE",
+            label="No current pressure evidence",
+            reason=(
+                "No post-activation observation is beyond the active MRZ "
+                "migration envelope."
+            ),
+            direction="NEUTRAL",
+            direction_label="Neutral",
+        )
+    if evidence_count < CURRENT_PRESSURE_CONFIRMATION_COUNT:
+        return PostActivationState(
+            status="INSUFFICIENT_EVIDENCE",
+            label="Insufficient recent pressure evidence",
+            reason=(
+                f"{evidence_count} recent qualifying pressure observation"
+                f"{' is' if evidence_count == 1 else 's are'} available; "
+                f"{CURRENT_PRESSURE_CONFIRMATION_COUNT} are required to establish "
+                "the current pressure regime."
+            ),
+            direction="NEUTRAL",
+            direction_label="Neutral",
+        )
+    if higher_count >= CURRENT_PRESSURE_CONFIRMATION_COUNT:
+        return PostActivationState(
+            status="UNDER_PRESSURE",
+            label="Upward Pressure",
+            reason=(
+                f"{higher_count} of the latest {evidence_count} qualifying pressure "
+                "observations are above the active MRZ migration envelope."
+            ),
+            direction="UP",
+            direction_label="Upward",
+        )
+    if lower_count >= CURRENT_PRESSURE_CONFIRMATION_COUNT:
+        return PostActivationState(
+            status="UNDER_PRESSURE",
+            label="Downward Pressure",
+            reason=(
+                f"{lower_count} of the latest {evidence_count} qualifying pressure "
+                "observations are below the active MRZ migration envelope."
+            ),
+            direction="DOWN",
+            direction_label="Downward",
+        )
+    return PostActivationState(
+        status="STABLE",
+        label="Neutral / Mixed",
+        reason=(
+            f"The latest {evidence_count} qualifying pressure observations do not "
+            f"contain {CURRENT_PRESSURE_CONFIRMATION_COUNT} observations on either "
+            "side of the active MRZ migration envelope."
+        ),
+        direction="NEUTRAL",
+        direction_label="Neutral",
+    )
+
+
+def derive_current_pressure_regime(
+    active: ActiveMRZ,
+    post_activation: Sequence[Observation],
+) -> CurrentPressureRegime:
+    """Derive one recency-aware regime without mutating MRZ authority."""
+    directional = tuple(
+        DirectionalPressureObservation(observation, direction)
+        for observation in sorted(post_activation, key=lambda item: item.order_key)
+        if (direction := successor_external_side(active, observation)) is not None
+    )
+    state = classify_current_pressure_directions(
+        tuple(item.direction for item in directional)
+    )
+    previous_direction = "NEUTRAL"
+    current_pressure_since = None
+    for index, item in enumerate(directional, 1):
+        next_state = classify_current_pressure_directions(
+            tuple(evidence.direction for evidence in directional[:index])
+        )
+        if next_state.direction != previous_direction:
+            current_pressure_since = item.observation.observed_at
+            previous_direction = next_state.direction
+    return CurrentPressureRegime(
+        state=state,
+        recent_evidence=directional[-CURRENT_PRESSURE_RECENT_WINDOW:],
+        current_pressure_since=current_pressure_since,
+        latest_pressure_observed_at=(
+            directional[-1].observation.observed_at if directional else None
+        ),
+    )
+
+
 def select_post_activation_observations(
     active: ActiveMRZ,
     observations: Sequence[Observation],
@@ -234,6 +358,7 @@ def post_activation_snapshot(
 ) -> PostActivationSnapshot:
     """Build the shared post-activation evidence consumed by UI and notifications."""
     post_activation = select_post_activation_observations(active, observations)
+    current_pressure = derive_current_pressure_regime(active, post_activation)
     inside_mrz_count = sum(
         active.core_mrz_lower
         <= observation.observation_price
@@ -277,6 +402,7 @@ def post_activation_snapshot(
             above_envelope_count,
             below_envelope_count,
         ),
+        current_pressure=current_pressure,
         inside_mrz_count=inside_mrz_count,
         above_mrz_count=above_mrz_count,
         below_mrz_count=below_mrz_count,
@@ -458,6 +584,8 @@ class MRZRobustnessService:
         )
         outside_envelope = (*below_lower_envelope, *above_upper_envelope)
         post_activation_state = snapshot.state
+        current_pressure = snapshot.current_pressure
+        current_pressure_state = current_pressure.state
         pressure_status = post_activation_state.status
         pressure_label = post_activation_state.label
         pressure_reason = post_activation_state.reason
@@ -783,6 +911,81 @@ class MRZRobustnessService:
                 "opposite_route_observation_count": total - len(route_aligned),
                 "total_observation_count": total,
             },
+            "current_pressure": {
+                "status": current_pressure_state.status,
+                "label": current_pressure_state.label,
+                "reason": current_pressure_state.reason,
+                "direction": current_pressure_state.direction,
+                "direction_label": current_pressure_state.direction_label,
+                "recent_window_size": CURRENT_PRESSURE_RECENT_WINDOW,
+                "confirmation_count": CURRENT_PRESSURE_CONFIRMATION_COUNT,
+                "recent_pressure_observation_count": len(
+                    current_pressure.recent_evidence
+                ),
+                "recent_higher_observation_count": (
+                    current_pressure.recent_higher_count
+                ),
+                "recent_lower_observation_count": (
+                    current_pressure.recent_lower_count
+                ),
+                "current_pressure_since": iso(
+                    current_pressure.current_pressure_since
+                ),
+                "latest_pressure_observed_at": iso(
+                    current_pressure.latest_pressure_observed_at
+                ),
+                "recent_sequence": [
+                    {
+                        "direction": item.direction,
+                        "direction_label": (
+                            "Higher" if item.direction == "UP" else "Lower"
+                        ),
+                        "observed_at": iso(item.observation.observed_at),
+                        "observation_price": decimal_text(
+                            item.observation.observation_price
+                        ),
+                    }
+                    for item in current_pressure.recent_evidence
+                ],
+                "relevant_boundary_label": (
+                    "Upper migration boundary"
+                    if current_pressure_state.direction == "UP"
+                    else "Lower migration boundary"
+                    if current_pressure_state.direction == "DOWN"
+                    else None
+                ),
+                "relevant_boundary": (
+                    decimal_text(active.upper_migration_boundary)
+                    if current_pressure_state.direction == "UP"
+                    else decimal_text(active.lower_migration_boundary)
+                    if current_pressure_state.direction == "DOWN"
+                    else None
+                ),
+                "current_mrz_remains_authoritative": True,
+                "definition": (
+                    "Canonical current regime from the latest four chronological "
+                    "outside-envelope observations, requiring three observations "
+                    "on one side."
+                ),
+            },
+            "cumulative_pressure": {
+                "status": pressure_status,
+                "label": pressure_label,
+                "reason": pressure_reason,
+                "direction": pressure_direction,
+                "direction_label": pressure_direction_label,
+                "observations_beyond_envelope": len(outside_envelope),
+                "above_upper_envelope_observation_count": len(
+                    above_upper_envelope
+                ),
+                "below_lower_envelope_observation_count": len(
+                    below_lower_envelope
+                ),
+                "definition": (
+                    "Historical pressure evidence accumulated since the current "
+                    "MRZ activation."
+                ),
+            },
             "migration_pressure": {
                 "status": pressure_status,
                 "label": pressure_label,
@@ -859,8 +1062,10 @@ class MRZRobustnessService:
                 ),
                 "robustness_status": robustness_status,
                 "robustness_label": robustness_label,
-                "pressure_direction": pressure_direction,
-                "pressure_direction_label": pressure_direction_label,
+                "pressure_direction": current_pressure_state.direction,
+                "pressure_direction_label": current_pressure_state.direction_label,
+                "cumulative_pressure_direction": pressure_direction,
+                "cumulative_pressure_direction_label": pressure_direction_label,
                 "structural_role": structural_role_status,
                 "structural_role_label": structural_role_label,
                 "successor_status": successor_summary_status,

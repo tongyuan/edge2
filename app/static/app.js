@@ -504,16 +504,24 @@ function peerPressureMemberItem(member) {
 
   const evidence = document.createElement("p");
   evidence.className = "peer-pressure-member-evidence";
-  const evidenceCounts = (
-    `${member.evidence.higher_observation_count} above · `
-    + `${member.evidence.lower_observation_count} below migration envelope`
-  );
-  const evidenceTime = member.evidence.observed_at
-    ? ` · ${formatPathTimestamp(member.evidence.observed_at)}`
-    : "";
-  evidence.textContent = member.active_mrz.status === "active"
-    ? `${evidenceCounts}${evidenceTime} · ${member.evidence.reason}`
-    : member.evidence.reason;
+  if (member.active_mrz.status === "active") {
+    const sequence = (member.evidence.recent_sequence || [])
+      .map((entry) => (entry.direction === "UP" ? "↑" : "↓"))
+      .join(" ") || "—";
+    const since = member.evidence.current_pressure_since
+      ? `Since ${formatPathTimestamp(member.evidence.current_pressure_since)}`
+      : "Regime not established";
+    const latest = member.evidence.latest_pressure_observed_at
+      ? `Latest pressure ${formatPathTimestamp(member.evidence.latest_pressure_observed_at)}`
+      : "No qualifying pressure observations";
+    evidence.textContent = (
+      `Recent ${sequence} · ${since} · ${latest} · `
+      + `Cumulative since activation ↑ ${member.evidence.higher_observation_count} · `
+      + `↓ ${member.evidence.lower_observation_count}`
+    );
+  } else {
+    evidence.textContent = member.evidence.reason;
+  }
   item.append(header, location, evidence);
   return item;
 }

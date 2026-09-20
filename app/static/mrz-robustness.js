@@ -56,9 +56,12 @@ function hasValidMigrationProvenance(report) {
 
 function filterReports(reports, filterMode = "all") {
   if (filterMode === "pressure") {
-    return reports.filter((report) => report.structural_authority?.status === "AUTHORITATIVE"
-      && report.migration_pressure?.status === "UNDER_PRESSURE"
-      && ["UP", "DOWN"].includes(report.migration_pressure.direction));
+    return reports.filter((report) => {
+      const pressure = report.current_pressure || report.migration_pressure;
+      return report.structural_authority?.status === "AUTHORITATIVE"
+        && pressure?.status === "UNDER_PRESSURE"
+        && ["UP", "DOWN"].includes(pressure.direction);
+    });
   }
   if (filterMode !== "migrated") return [...reports];
   return reports.filter((report) => hasValidMigrationProvenance(report));
@@ -238,7 +241,8 @@ function robustnessCardMarkup(
   const position = report.observation_position;
   const boundary = report.boundary_pressure;
   const displacement = report.mrz_displacement;
-  const pressure = report.migration_pressure;
+  const pressure = report.current_pressure || report.migration_pressure;
+  const cumulativePressure = report.cumulative_pressure || report.migration_pressure;
   const successor = report.successor_watch;
   const age = report.mrz_age;
   const qualifyingObservationName = report.route_owner === "BTD" ? "reclaim" : "rejection";
@@ -253,9 +257,18 @@ function robustnessCardMarkup(
   const activeDuration = durationText(age.active_duration_seconds);
   const postActivationObservationText = `${behavior.post_activation_observation_count} observation${behavior.post_activation_observation_count === 1 ? "" : "s"}`;
   const pressureDirection = directionText(pressure.direction, pressure.direction_label);
-  const stateSummary = pressure.label === "Under Pressure" && pressure.direction !== "NEUTRAL"
-    ? `${pressure.label} · ${pressureDirection}`
+  const stateSummary = pressure.direction !== "NEUTRAL"
+    ? `${pressure.direction === "UP" ? "↑" : "↓"} ${pressure.label}`
     : pressure.label || pressureDirection;
+  const recentPressureSequence = (pressure.recent_sequence || [])
+    .map((entry) => (entry.direction === "UP" ? "↑" : "↓"))
+    .join(" ") || "—";
+  const currentPressureSince = pressure.current_pressure_since
+    ? `Since ${timestampFormatter(pressure.current_pressure_since)}`
+    : "Regime not established";
+  const latestPressureObservation = pressure.latest_pressure_observed_at
+    ? `Latest pressure ${timestampFormatter(pressure.latest_pressure_observed_at)}`
+    : "No qualifying pressure observations";
   const migrationSummary = report.migration?.has_migrated
     ? `Migrated ${String(report.migration.direction || "").toLowerCase()}`
     : "No recorded migration";
@@ -290,7 +303,7 @@ function robustnessCardMarkup(
     ? `<strong class="authority-migration-direction">${migrationDirection === "UP" ? "↑ MIGRATED UP" : "↓ MIGRATED DOWN"}</strong>`
     : "";
 
-  const postActivationContent = `<p class="detail-explanation">${escapeHtml(behavior.reason)}</p>
+  const postActivationContent = `<p class="detail-explanation">${escapeHtml(cumulativePressure.reason)}</p>
   <div class="evidence-grid">
     <article class="metric-card">
       <h3>Observation Position</h3>
@@ -382,20 +395,30 @@ function robustnessCardMarkup(
             <span class="section-label">CURRENT PRESSURE</span>
             <strong>${escapeHtml(stateSummary)}</strong>
           </div>
-          <span class="pressure-observation-count">${postActivationObservationText}</span>
+          <span class="pressure-observation-count">${escapeHtml(currentPressureSince)}</span>
         </div>
-        <dl class="current-pressure-counts">
-          <div><dt>Above upper envelope</dt><dd>${boundary.above_upper_envelope_observation_count}</dd></div>
-          <div><dt>Below lower envelope</dt><dd>${boundary.below_lower_envelope_observation_count}</dd></div>
-        </dl>
+        <div class="current-pressure-evidence">
+          <div>
+            <span>RECENT PRESSURE</span>
+            <strong aria-label="Recent pressure sequence">${escapeHtml(recentPressureSequence)}</strong>
+          </div>
+          <div>
+            <span>LATEST PRESSURE OBSERVATION</span>
+            <strong>${escapeHtml(latestPressureObservation)}</strong>
+          </div>
+        </div>
+        <p class="cumulative-pressure-summary">
+          <span>CUMULATIVE SINCE ACTIVATION</span>
+          <strong>↑ ${cumulativePressure.above_upper_envelope_observation_count} · ↓ ${cumulativePressure.below_lower_envelope_observation_count} · ${cumulativePressure.observations_beyond_envelope} outside</strong>
+        </p>
       </section>
     </header>
 
     <div class="operator-disclosures">
       ${disclosureMarkup(
     "post-activation",
-    "Post-activation observations",
-    `${behavior.label} · ${postActivationObservationText}`,
+    "Cumulative since activation",
+    `${cumulativePressure.label} · ${postActivationObservationText}`,
     postActivationContent,
   )}
       ${disclosureMarkup(

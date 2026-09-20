@@ -97,6 +97,11 @@ def build_peer_pressure_report(
                     "pressure is not established."
                 ),
                 "observed_at": None,
+                "current_pressure_since": None,
+                "latest_pressure_observed_at": None,
+                "recent_sequence": [],
+                "recent_higher_observation_count": 0,
+                "recent_lower_observation_count": 0,
                 "post_activation_observation_count": 0,
                 "higher_observation_count": 0,
                 "lower_observation_count": 0,
@@ -113,20 +118,35 @@ def build_peer_pressure_report(
                 active,
                 observations_by_symbol.get(symbol, ()),
             )
+            current_pressure = snapshot.current_pressure
             direction = {
                 "UP": "higher",
                 "DOWN": "lower",
-            }.get(snapshot.state.direction, "neutral")
-            pressure_observed_at = (
-                _iso(snapshot.observations[-1].observed_at)
-                if snapshot.observations
-                else None
+            }.get(current_pressure.state.direction, "neutral")
+            current_pressure_since = _iso(current_pressure.current_pressure_since)
+            latest_pressure_observed_at = _iso(
+                current_pressure.latest_pressure_observed_at
             )
             evidence = {
-                "status": snapshot.state.status,
-                "label": snapshot.state.label,
-                "reason": snapshot.state.reason,
-                "observed_at": pressure_observed_at,
+                "status": current_pressure.state.status,
+                "label": current_pressure.state.label,
+                "reason": current_pressure.state.reason,
+                "observed_at": current_pressure_since,
+                "current_pressure_since": current_pressure_since,
+                "latest_pressure_observed_at": latest_pressure_observed_at,
+                "recent_sequence": [
+                    {
+                        "direction": item.direction,
+                        "observed_at": _iso(item.observation.observed_at),
+                    }
+                    for item in current_pressure.recent_evidence
+                ],
+                "recent_higher_observation_count": (
+                    current_pressure.recent_higher_count
+                ),
+                "recent_lower_observation_count": (
+                    current_pressure.recent_lower_count
+                ),
                 "post_activation_observation_count": snapshot.total_observation_count,
                 "higher_observation_count": snapshot.above_envelope_count,
                 "lower_observation_count": snapshot.below_envelope_count,
@@ -139,8 +159,8 @@ def build_peer_pressure_report(
                 "activated_at": _iso(active.activated_at),
             }
 
-        if evidence["observed_at"]:
-            evidence_times.append(str(evidence["observed_at"]))
+        if evidence["latest_pressure_observed_at"]:
+            evidence_times.append(str(evidence["latest_pressure_observed_at"]))
         elif latest_observed_at:
             evidence_times.append(str(latest_observed_at))
 
@@ -180,10 +200,10 @@ def build_peer_pressure_report(
         },
         "categories": categories,
         "method": {
-            "source": "canonical post-activation observations versus the frozen active MRZ migration envelope",
-            "higher": "Existing shared pressure classifier returns UP.",
-            "lower": "Existing shared pressure classifier returns DOWN.",
-            "neutral": "No active MRZ, no usable evidence, or no material directional dominance.",
+            "source": "canonical chronological outside-envelope observations for the current active MRZ episode",
+            "higher": "At least three of the latest four qualifying pressure observations are Higher.",
+            "lower": "At least three of the latest four qualifying pressure observations are Lower.",
+            "neutral": "No active MRZ, fewer than three qualifying observations, or no side holds three of the latest four.",
             "headline": (
                 "Strict Higher/Lower count leader; a tie is Mixed / Balanced; "
                 "zero directional participation is Insufficient Participation."

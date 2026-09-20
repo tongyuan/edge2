@@ -38,7 +38,7 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("Symbol Lab", HTML)
 
     def test_monitor_assets_are_versioned_together(self) -> None:
-        version = "peer-pressure-20260920"
+        version = "current-pressure-20260920"
         self.assertIn(f'/static/styles.css?v={version}', HTML)
         self.assertIn(f'/static/heatmap-state.js?v={version}', HTML)
         self.assertIn(f'/static/operator-time.js?v={version}', HTML)
@@ -569,6 +569,7 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn('"location": location', path)
         self.assertNotIn("classify_ipda_location", path)
         self.assertIn("post_activation_snapshot", PEER_PRESSURE)
+        self.assertIn("snapshot.current_pressure", PEER_PRESSURE)
         self.assertIn('"UP": "higher"', PEER_PRESSURE)
         self.assertIn('"DOWN": "lower"', PEER_PRESSURE)
         self.assertIn('"neutral"', PEER_PRESSURE)
@@ -589,7 +590,9 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn("activePeerPressure.categories[direction]", JAVASCRIPT)
         self.assertIn("member.symbol", JAVASCRIPT)
         self.assertIn("member.current_location_label", JAVASCRIPT)
-        self.assertIn("member.evidence.reason", JAVASCRIPT)
+        self.assertIn("member.evidence.recent_sequence", JAVASCRIPT)
+        self.assertIn("member.evidence.current_pressure_since", JAVASCRIPT)
+        self.assertIn("Cumulative since activation", JAVASCRIPT)
         self.assertIn("loadMigrationHistory", JAVASCRIPT)
         self.assertIn('/migration-path`', JAVASCRIPT)
         self.assertIn("renderMigrationPath(payload)", JAVASCRIPT)
