@@ -34,6 +34,10 @@ const {
   visibleSymbolsForGroupTracking,
   timelinePosition,
   timelineTicks,
+  structuralTrajectoryLevels,
+  trajectoryYPosition,
+  migrationTrajectory,
+  migrationDirectionCounts,
   authoritativeMrzEqmPair,
 } = require("../app/static/heatmap-state.js");
 
@@ -417,6 +421,83 @@ assert.deepEqual(
     "2026-08-20T15:00:00.000Z",
   ],
   "timeline ticks span canonical chronology",
+);
+
+assert.deepEqual(
+  structuralTrajectoryLevels.map(({ location, code, label, y }) => ({ location, code, label, y })),
+  [
+    { location: "deep_premium_core_mrz", code: "DP", label: "Deep Premium", y: 14 },
+    { location: "shallow_premium_core_mrz", code: "SP", label: "Shallow Premium", y: 38 },
+    { location: "shallow_discount_core_mrz", code: "SD", label: "Shallow Discount", y: 62 },
+    { location: "deep_discount_core_mrz", code: "DD", label: "Deep Discount", y: 86 },
+  ],
+  "trajectory uses the canonical top-to-bottom structural order",
+);
+assert.equal(trajectoryYPosition("deep_premium_core_mrz"), 14);
+assert.equal(trajectoryYPosition("deep_discount_core_mrz"), 86);
+assert.equal(trajectoryYPosition("not-a-canonical-location"), null,
+  "the visualization never invents a structural bucket");
+
+const trajectoryStates = [
+  {
+    event_key: "activation",
+    event_type: "MRZ_ACTIVATED",
+    occurred_at: "2026-08-20T12:00:00Z",
+    location: "deep_discount_core_mrz",
+    direction: "higher",
+    activation_source: "OPERATOR_PROMOTED",
+  },
+  {
+    event_key: "same-location-lower",
+    event_type: "MRZ_MIGRATED",
+    occurred_at: "2026-08-20T12:30:00Z",
+    location: "deep_discount_core_mrz",
+    direction: "lower",
+  },
+  {
+    event_key: "structural-up",
+    event_type: "MRZ_MIGRATED",
+    occurred_at: "2026-08-20T13:00:00Z",
+    location: "shallow_discount_core_mrz",
+    direction: "higher",
+  },
+];
+const trajectory = migrationTrajectory(
+  trajectoryStates,
+  "2026-08-20T12:00:00Z",
+  "2026-08-20T13:00:00Z",
+);
+assert.equal(trajectory.length, 3, "same-location migrations remain separate trajectory nodes");
+assert.deepEqual(trajectory.map(({ x }) => x), [2, 50, 98],
+  "authoritative occurred_at timestamps drive the shared horizontal scale");
+assert.deepEqual(trajectory.map(({ y }) => y), [86, 86, 62],
+  "persisted structural locations drive vertical movement");
+assert.equal(trajectory[0].initial, true);
+assert.equal(trajectory[0].direction, null,
+  "initial activation never fabricates a migration direction");
+assert.equal(trajectory[0].state.activation_source, "OPERATOR_PROMOTED",
+  "promoted authority remains an ordinary authoritative trajectory state");
+assert.equal(trajectory[1].direction, "lower",
+  "same-location authoritative Lower direction remains visible");
+assert.equal(trajectory[2].direction, "higher",
+  "authoritative Higher direction survives a structural-location change");
+assert.equal(trajectory[2].latest, true, "the final authoritative state is current");
+assert.deepEqual(migrationDirectionCounts(trajectoryStates), { higher: 1, lower: 1 },
+  "migration counts exclude initial activation");
+assert.equal(
+  migrationTrajectory([{
+    event_type: "MRZ_ACTIVATED",
+    occurred_at: "2026-08-20T12:30:00Z",
+    location: "deep_premium_core_mrz",
+    direction: "lower",
+  }], "2026-08-20T12:00:00Z", "2026-08-20T13:00:00Z")[0].direction,
+  null,
+  "a location value never fabricates or preserves direction on an activation",
+);
+assert.equal(
+  migrationTrajectory([trajectoryStates[1]], "2026-08-20T12:00:00Z", "2026-08-20T14:00:00Z")[0].x,
+  25,
+  "different symbols use the same group time extent rather than independent normalization",
 );
 
 const authoritativeStates = [

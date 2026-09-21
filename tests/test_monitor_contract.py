@@ -40,7 +40,7 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("Symbol Lab", HTML)
 
     def test_monitor_assets_are_versioned_together(self) -> None:
-        version = "notification-inbox-20260921"
+        version = "migration-trajectory-20260921"
         self.assertIn(f'/static/styles.css?v={version}', HTML)
         self.assertIn(f'/static/heatmap-state.js?v={version}', HTML)
         self.assertIn(f'/static/operator-time.js?v={version}', HTML)
@@ -717,16 +717,49 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn("formatPrice(eqmPair.previousMidpoint)", tooltip)
         self.assertIn("formatPrice(eqmPair.eqm)", tooltip)
 
-    def test_migration_path_eqm_adds_no_visual_timeline_elements(self) -> None:
+    def test_migration_path_renders_a_structural_trajectory_without_extra_domain_data(self) -> None:
         renderer = JAVASCRIPT.split("function renderMigrationPath", 1)[1].split(
             "function renderLocationHeatmap", 1
         )[0]
-        self.assertIn('line.className = "migration-path-line"', renderer)
-        self.assertIn('node.className = `migration-path-state', renderer)
+        self.assertIn('timeline.className = "migration-trajectory-chart"', renderer)
+        self.assertIn('connector.classList.add("migration-trajectory-connector")', renderer)
+        self.assertIn('document.createElementNS(svgNamespace, "polyline")', renderer)
+        self.assertIn('const node = document.createElement("button")', renderer)
+        self.assertIn('"migration-trajectory-state"', renderer)
+        self.assertIn("migrationTrajectory(", renderer)
+        self.assertIn("structuralTrajectoryLevels.forEach", renderer)
+        self.assertIn("migrationDirectionCounts(path.states)", renderer)
+        self.assertIn("point.latest ? \"current\"", renderer)
+        self.assertIn("point.initial ? \"initial\"", renderer)
+        self.assertIn("node.addEventListener(\"mouseenter\"", renderer)
+        self.assertIn("node.addEventListener(\"click\"", renderer)
         self.assertIn("node.title = migrationStateTooltip", renderer)
         self.assertIn('node.setAttribute("aria-label", node.title)', renderer)
         self.assertNotIn("migration-path-eqm", HTML + JAVASCRIPT + CSS)
         self.assertNotIn("eqm-marker", HTML + JAVASCRIPT + CSS)
+
+        helper = HEATMAP_STATE.split("const structuralTrajectoryLevels", 1)[1].split(
+            "function authoritativeMrzEqmPair", 1
+        )[0]
+        expected_order = (
+            "deep_premium_core_mrz",
+            "shallow_premium_core_mrz",
+            "shallow_discount_core_mrz",
+            "deep_discount_core_mrz",
+        )
+        positions = [helper.index(location) for location in expected_order]
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn('state?.event_type === "MRZ_MIGRATED"', helper)
+        self.assertIn('["higher", "lower"].includes(state?.direction)', helper)
+
+        query = REPOSITORY.split("    def saved_group_migration_path", 1)[1].split(
+            "    def symbols(self)", 1
+        )[0]
+        self.assertIn("events.event_type IN ('MRZ_ACTIVATED', 'MRZ_MIGRATED')", query)
+        self.assertIn("events.structural_location", query)
+        self.assertIn("events.occurred_at ASC", query)
+        self.assertIn("events.sequence ASC", query)
+        self.assertNotIn("near_miss", query.lower())
 
     def test_group_tracking_mobile_layout_wraps_without_horizontal_overflow(self) -> None:
         self.assertIn("min-height: 44px;", CSS.split(".group-tracking-toggle", 1)[1])
@@ -739,7 +772,8 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn("overflow-x: auto;", CSS.split(".migration-path-scroller", 1)[1])
         self.assertIn("max-width: 100%;", CSS.split(".migration-path-scroller", 1)[1])
         self.assertIn(".current-state-panel { grid-template-columns: 1fr; }", CSS)
-        self.assertIn("position: sticky;", CSS.split(".migration-path-row-label", 1)[1])
+        self.assertIn("position: sticky;", CSS.split(".migration-trajectory-row-label", 1)[1])
+        self.assertIn("position: sticky;", CSS.split(".migration-trajectory-levels", 1)[1])
 
     def test_initial_overview_is_one_bounded_query_without_detail_requests(self) -> None:
         load_symbols = JAVASCRIPT.split("async function loadSymbols()", 1)[1].split(

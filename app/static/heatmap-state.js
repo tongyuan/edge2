@@ -436,6 +436,69 @@
     ));
   }
 
+  const structuralTrajectoryLevels = Object.freeze([
+    Object.freeze({
+      location: "deep_premium_core_mrz",
+      code: "DP",
+      label: "Deep Premium",
+      y: 14,
+    }),
+    Object.freeze({
+      location: "shallow_premium_core_mrz",
+      code: "SP",
+      label: "Shallow Premium",
+      y: 38,
+    }),
+    Object.freeze({
+      location: "shallow_discount_core_mrz",
+      code: "SD",
+      label: "Shallow Discount",
+      y: 62,
+    }),
+    Object.freeze({
+      location: "deep_discount_core_mrz",
+      code: "DD",
+      label: "Deep Discount",
+      y: 86,
+    }),
+  ]);
+
+  function trajectoryYPosition(location) {
+    return structuralTrajectoryLevels.find((level) => level.location === location)?.y ?? null;
+  }
+
+  function migrationTrajectory(states, startedAt, endedAt) {
+    if (!Array.isArray(states)) return [];
+    return states.map((state, index) => {
+      const direction = state?.event_type === "MRZ_MIGRATED"
+        && ["higher", "lower"].includes(state?.direction)
+        ? state.direction
+        : null;
+      return {
+        state,
+        x: Math.min(98, Math.max(2, timelinePosition(
+          state?.occurred_at,
+          startedAt,
+          endedAt,
+        ))),
+        y: trajectoryYPosition(state?.location),
+        direction,
+        initial: state?.event_type === "MRZ_ACTIVATED",
+        latest: index === states.length - 1,
+      };
+    });
+  }
+
+  function migrationDirectionCounts(states) {
+    return migrationTrajectory(states, null, null).reduce(
+      (counts, point) => {
+        if (point.direction) counts[point.direction] += 1;
+        return counts;
+      },
+      { higher: 0, lower: 0 },
+    );
+  }
+
   function authoritativeMrzEqmPair(states, index) {
     if (!Array.isArray(states) || !Number.isInteger(index) || index <= 0 || index >= states.length) {
       return null;
@@ -490,6 +553,10 @@
     visibleSymbolsForGroupTracking,
     timelinePosition,
     timelineTicks,
+    structuralTrajectoryLevels,
+    trajectoryYPosition,
+    migrationTrajectory,
+    migrationDirectionCounts,
     authoritativeMrzEqmPair,
   };
 
