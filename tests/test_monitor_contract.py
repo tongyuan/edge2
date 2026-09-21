@@ -38,7 +38,7 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("Symbol Lab", HTML)
 
     def test_monitor_assets_are_versioned_together(self) -> None:
-        version = "universe-pressure-20260920"
+        version = "group-tracking-off-20260921"
         self.assertIn(f'/static/styles.css?v={version}', HTML)
         self.assertIn(f'/static/heatmap-state.js?v={version}', HTML)
         self.assertIn(f'/static/operator-time.js?v={version}', HTML)
@@ -459,14 +459,18 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn("await loadSymbol(symbol);", JAVASCRIPT)
         self.assertNotIn("window.location", JAVASCRIPT)
 
-    def test_group_tracking_defaults_on_and_uses_semantic_controls(self) -> None:
+    def test_group_tracking_defaults_off_and_uses_semantic_controls(self) -> None:
         toggle = HTML.split('id="groupTrackingToggle"', 1)[0].rsplit("<input", 1)[1]
         self.assertIn('type="checkbox"', toggle)
         self.assertIn(
+            'id="groupTrackingToggle" aria-describedby="groupTrackingStateLabel"',
+            HTML,
+        )
+        self.assertNotIn(
             'id="groupTrackingToggle" aria-describedby="groupTrackingStateLabel" checked',
             HTML,
         )
-        self.assertIn('id="groupTrackingStateLabel">On<', HTML)
+        self.assertIn('id="groupTrackingStateLabel">Off<', HTML)
         self.assertIn('id="groupTrackingWorkspace"', HTML)
         self.assertIn('aria-labelledby="tracked-groups-title" aria-live="polite" hidden', HTML)
         self.assertIn('id="savedGroupSelect" disabled', HTML)
@@ -477,7 +481,7 @@ class MonitorContractTests(unittest.TestCase):
         initial_state = HEATMAP_STATE.split("function createGroupTrackingState", 1)[1].split(
             "function setGroupTrackingEnabled", 1
         )[0]
-        self.assertIn("enabled: true", initial_state)
+        self.assertIn("enabled: false", initial_state)
         self.assertIn('mode: "browse"', initial_state)
         self.assertIn("activeGroupId: null", initial_state)
         self.assertIn("showSelectedOnly: false", initial_state)

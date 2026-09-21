@@ -330,8 +330,8 @@ const groupSymbols = [
 let trackingState = createGroupTrackingState();
 assert.deepEqual(
   { enabled: trackingState.enabled, showSelectedOnly: trackingState.showSelectedOnly },
-  { enabled: true, showSelectedOnly: false },
-  "group tracking defaults on",
+  { enabled: false, showSelectedOnly: false },
+  "group tracking defaults off",
 );
 assert.equal(trackingState.selectedSymbols.size, 0);
 trackingState = setGroupTrackingEnabled(trackingState, false);

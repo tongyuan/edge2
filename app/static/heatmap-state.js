@@ -286,7 +286,7 @@
 
   function createGroupTrackingState() {
     return {
-      enabled: true,
+      enabled: false,
       mode: "browse",
       activeGroupId: null,
       showSelectedOnly: false,
