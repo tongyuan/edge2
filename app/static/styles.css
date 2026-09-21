@@ -1067,32 +1067,19 @@ h2 { margin-bottom: 0; font-size: 1.55rem; letter-spacing: -0.02em; }
   background: rgba(8, 11, 16, 0.28);
   overscroll-behavior-x: contain;
 }
-.migration-trajectory-chart { min-width: 760px; padding: 13px; }
+.migration-trajectory-chart { min-width: 720px; padding: 13px; }
 .migration-trajectory-axis,
 .migration-trajectory-row {
   display: grid;
-  grid-template-columns: 104px 34px minmax(580px, 1fr);
+  grid-template-columns: 104px minmax(590px, 1fr);
 }
 .migration-trajectory-axis { min-height: 34px; border-bottom: 1px solid var(--line); }
-.migration-trajectory-structure-heading {
-  position: sticky;
-  left: 104px;
-  z-index: 4;
-  align-self: center;
-  background: #121b28;
-  color: var(--muted);
-  font-size: 0.54rem;
-  font-weight: 750;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  writing-mode: vertical-rl;
-}
 .migration-trajectory-ticks { position: relative; color: var(--muted); font-size: 0.66rem; }
 .migration-trajectory-tick { position: absolute; transform: translateX(-50%); white-space: nowrap; }
 .migration-trajectory-tick:first-child { transform: none; }
 .migration-trajectory-tick:last-child { transform: translateX(-100%); }
 .migration-trajectory-row {
-  min-height: 116px;
+  min-height: 92px;
   border-bottom: 1px solid rgba(71, 82, 99, 0.48);
 }
 .migration-trajectory-row:last-child { border-bottom: 0; }
@@ -1120,30 +1107,14 @@ h2 { margin-bottom: 0; font-size: 1.55rem; letter-spacing: -0.02em; }
   font-weight: 650;
   white-space: nowrap;
 }
-.migration-trajectory-levels {
-  position: sticky;
-  left: 104px;
-  z-index: 4;
-  height: 116px;
-  background: #121b28;
-}
-.migration-trajectory-levels span {
+.migration-trajectory-track { position: relative; height: 92px; }
+.migration-trajectory-baseline {
   position: absolute;
-  left: 0;
-  width: 100%;
-  transform: translateY(-50%);
-  color: #7f8da2;
-  font-size: 0.56rem;
-  font-weight: 800;
-  text-align: center;
-}
-.migration-trajectory-track { position: relative; height: 116px; }
-.migration-trajectory-guide {
-  position: absolute;
+  top: 50%;
   left: 0;
   width: 100%;
   height: 1px;
-  background: rgba(82, 101, 127, 0.34);
+  background: rgba(82, 101, 127, 0.42);
 }
 .migration-trajectory-connector {
   position: absolute;
@@ -1185,7 +1156,12 @@ h2 { margin-bottom: 0; font-size: 1.55rem; letter-spacing: -0.02em; }
   content: "";
 }
 .migration-trajectory-state:hover,
-.migration-trajectory-state:focus-visible { z-index: 3; outline: 2px solid #b9d4f6; outline-offset: 2px; }
+.migration-trajectory-state:focus-visible,
+.migration-trajectory-state.inspected {
+  z-index: 3;
+  outline: 2px solid #b9d4f6;
+  outline-offset: 2px;
+}
 .migration-trajectory-state.initial { background: #142132; }
 .migration-trajectory-state.current {
   z-index: 2;
@@ -1207,15 +1183,48 @@ h2 { margin-bottom: 0; font-size: 1.55rem; letter-spacing: -0.02em; }
 .migration-trajectory-state.lower .migration-trajectory-direction { color: #e3a7ad; }
 .migration-trajectory-detail {
   grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(170px, 0.65fr) minmax(0, 1.35fr);
+  gap: 12px;
   margin: 0;
-  padding: 9px 10px;
+  padding: 11px 12px;
   border-top: 1px solid rgba(82, 101, 127, 0.34);
   background: rgba(29, 43, 61, 0.45);
   color: #cbd4e1;
-  font-size: 0.66rem;
-  line-height: 1.45;
+  font-size: 0.68rem;
 }
 .migration-trajectory-detail[hidden] { display: none; }
+.migration-trajectory-detail-header {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+.migration-trajectory-detail-header strong { color: var(--text); font-size: 0.76rem; }
+.migration-trajectory-detail-header span { color: var(--muted); line-height: 1.35; }
+.migration-trajectory-detail-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 15px;
+  margin: 0;
+}
+.migration-trajectory-detail-fields div {
+  display: grid;
+  grid-template-columns: minmax(88px, 0.7fr) minmax(0, 1.3fr);
+  gap: 7px;
+  align-items: baseline;
+}
+.migration-trajectory-detail-fields dt {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.61rem;
+}
+.migration-trajectory-detail-fields dd {
+  min-width: 0;
+  color: #e7edf5;
+  font-size: 0.68rem;
+  overflow-wrap: anywhere;
+}
 .migration-path-empty {
   position: absolute;
   top: 50%;
@@ -1550,6 +1559,8 @@ dd { margin: 0; font-size: 0.95rem; font-weight: 620; }
   .show-selected-control { flex: 1 1 auto; }
   .current-state-panel { grid-template-columns: 1fr; }
   .peer-pressure-drilldown ul { grid-template-columns: 1fr; }
+  .migration-trajectory-detail,
+  .migration-trajectory-detail-fields { grid-template-columns: 1fr; }
   .pressure-section-heading { align-items: stretch; flex-direction: column; }
   .pressure-map-grid { grid-template-columns: 1fr; }
   .group-route-summary { grid-column: auto; }

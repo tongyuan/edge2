@@ -34,8 +34,8 @@ const {
   visibleSymbolsForGroupTracking,
   timelinePosition,
   timelineTicks,
-  structuralTrajectoryLevels,
-  trajectoryYPosition,
+  midpointDisplacementPercent,
+  migrationTrajectoryDomain,
   migrationTrajectory,
   migrationDirectionCounts,
   authoritativeMrzEqmPair,
@@ -423,55 +423,73 @@ assert.deepEqual(
   "timeline ticks span canonical chronology",
 );
 
-assert.deepEqual(
-  structuralTrajectoryLevels.map(({ location, code, label, y }) => ({ location, code, label, y })),
-  [
-    { location: "deep_premium_core_mrz", code: "DP", label: "Deep Premium", y: 14 },
-    { location: "shallow_premium_core_mrz", code: "SP", label: "Shallow Premium", y: 38 },
-    { location: "shallow_discount_core_mrz", code: "SD", label: "Shallow Discount", y: 62 },
-    { location: "deep_discount_core_mrz", code: "DD", label: "Deep Discount", y: 86 },
-  ],
-  "trajectory uses the canonical top-to-bottom structural order",
-);
-assert.equal(trajectoryYPosition("deep_premium_core_mrz"), 14);
-assert.equal(trajectoryYPosition("deep_discount_core_mrz"), 86);
-assert.equal(trajectoryYPosition("not-a-canonical-location"), null,
-  "the visualization never invents a structural bucket");
-
-const trajectoryStates = [
+const xagTrajectoryStates = [
   {
     event_key: "activation",
     event_type: "MRZ_ACTIVATED",
     occurred_at: "2026-08-20T12:00:00Z",
-    location: "deep_discount_core_mrz",
+    location: "shallow_discount_core_mrz",
+    location_code: "SD",
+    midpoint: 68.90525,
     direction: "higher",
     activation_source: "OPERATOR_PROMOTED",
   },
   {
-    event_key: "same-location-lower",
+    event_key: "lower-1",
     event_type: "MRZ_MIGRATED",
-    occurred_at: "2026-08-20T12:30:00Z",
-    location: "deep_discount_core_mrz",
+    occurred_at: "2026-08-20T12:15:00Z",
+    location: "shallow_discount_core_mrz",
+    location_code: "SD",
+    midpoint: 68.08325,
     direction: "lower",
   },
   {
-    event_key: "structural-up",
+    event_key: "higher-1",
+    event_type: "MRZ_MIGRATED",
+    occurred_at: "2026-08-20T12:30:00Z",
+    location: "shallow_discount_core_mrz",
+    location_code: "SD",
+    midpoint: 69.114,
+    direction: "higher",
+  },
+  {
+    event_key: "lower-2",
+    event_type: "MRZ_MIGRATED",
+    occurred_at: "2026-08-20T12:45:00Z",
+    location: "shallow_discount_core_mrz",
+    location_code: "SD",
+    midpoint: 66.64075,
+    direction: "lower",
+  },
+  {
+    event_key: "lower-3",
     event_type: "MRZ_MIGRATED",
     occurred_at: "2026-08-20T13:00:00Z",
     location: "shallow_discount_core_mrz",
-    direction: "higher",
+    location_code: "SD",
+    midpoint: 63.82275,
+    direction: "lower",
   },
 ];
+const xagDomain = migrationTrajectoryDomain([{ states: xagTrajectoryStates }]);
 const trajectory = migrationTrajectory(
-  trajectoryStates,
+  xagTrajectoryStates,
   "2026-08-20T12:00:00Z",
   "2026-08-20T13:00:00Z",
+  xagDomain,
 );
-assert.equal(trajectory.length, 3, "same-location migrations remain separate trajectory nodes");
-assert.deepEqual(trajectory.map(({ x }) => x), [2, 50, 98],
+assert.equal(trajectory.length, 5, "same-location migrations remain separate trajectory nodes");
+assert.deepEqual(trajectory.map(({ x }) => x), [2, 25, 50, 75, 98],
   "authoritative occurred_at timestamps drive the shared horizontal scale");
-assert.deepEqual(trajectory.map(({ y }) => y), [86, 86, 62],
-  "persisted structural locations drive vertical movement");
+assert.equal(trajectory[0].y, 50, "first activation establishes the zero baseline");
+assert.ok(trajectory[1].y > trajectory[0].y,
+  "same-location Lower migration moves downward");
+assert.ok(trajectory[2].y < trajectory[1].y,
+  "same-location Higher migration moves upward");
+assert.ok(trajectory[3].y > trajectory[2].y && trajectory[4].y > trajectory[3].y,
+  "consecutive Lower migrations staircase downward");
+assert.deepEqual(trajectory.map(({ state }) => state.location_code), ["SD", "SD", "SD", "SD", "SD"],
+  "structural location remains node metadata");
 assert.equal(trajectory[0].initial, true);
 assert.equal(trajectory[0].direction, null,
   "initial activation never fabricates a migration direction");
@@ -480,25 +498,121 @@ assert.equal(trajectory[0].state.activation_source, "OPERATOR_PROMOTED",
 assert.equal(trajectory[1].direction, "lower",
   "same-location authoritative Lower direction remains visible");
 assert.equal(trajectory[2].direction, "higher",
-  "authoritative Higher direction survives a structural-location change");
-assert.equal(trajectory[2].latest, true, "the final authoritative state is current");
-assert.deepEqual(migrationDirectionCounts(trajectoryStates), { higher: 1, lower: 1 },
+  "same-location authoritative Higher direction remains visible");
+assert.equal(trajectory[4].latest, true, "the final authoritative state is current");
+assert.deepEqual(migrationDirectionCounts(xagTrajectoryStates), { higher: 1, lower: 3 },
   "migration counts exclude initial activation");
+assert.equal(
+  migrationDirectionCounts(xagTrajectoryStates).higher
+    + migrationDirectionCounts(xagTrajectoryStates).lower,
+  trajectory.length - 1,
+  "authoritative migration counts reconcile with all non-activation nodes",
+);
+assert.ok(Math.abs(midpointDisplacementPercent(69.114, 68.90525) - 0.30295224) < 1e-6,
+  "normalization preserves canonical midpoint percentage displacement from activation");
+assert.ok(Math.abs(xagDomain - 7.37607076) < 1e-6,
+  "the group domain preserves the largest relative midpoint displacement");
+
+const smallMovementStates = [
+  { event_type: "MRZ_ACTIVATED", occurred_at: "2026-08-20T12:00:00Z", midpoint: 100, location: "deep_discount_core_mrz" },
+  { event_type: "MRZ_MIGRATED", occurred_at: "2026-08-20T13:00:00Z", midpoint: 100.1, location: "deep_premium_core_mrz", direction: "higher" },
+];
+const minimumDomain = migrationTrajectoryDomain([{ states: smallMovementStates }]);
+const smallTrajectory = migrationTrajectory(
+  smallMovementStates,
+  "2026-08-20T12:00:00Z",
+  "2026-08-20T13:00:00Z",
+  minimumDomain,
+);
+assert.equal(minimumDomain, 1, "a one-percent floor prevents tiny moves from filling the row");
+assert.ok(smallTrajectory[1].y > 46 && smallTrajectory[1].y < 47,
+  "small midpoint change retains proportionate visual magnitude");
+assert.equal(smallTrajectory[0].y, 50);
+assert.equal(
+  migrationTrajectoryDomain([
+    { states: smallMovementStates },
+    { states: xagTrajectoryStates },
+  ]),
+  xagDomain,
+  "all symbols share one group-wide percentage domain",
+);
+const premiumToDiscountGeometry = migrationTrajectory([
+  { ...smallMovementStates[0], location: "deep_premium_core_mrz" },
+  { ...smallMovementStates[1], location: "deep_discount_core_mrz" },
+], "2026-08-20T12:00:00Z", "2026-08-20T13:00:00Z", 1);
+const discountToPremiumGeometry = migrationTrajectory([
+  { ...smallMovementStates[0], location: "deep_discount_core_mrz" },
+  { ...smallMovementStates[1], location: "shallow_premium_core_mrz" },
+], "2026-08-20T12:00:00Z", "2026-08-20T13:00:00Z", 1);
+assert.equal(
+  premiumToDiscountGeometry[1].y,
+  discountToPremiumGeometry[1].y,
+  "DP/SP/SD/DD metadata never determines vertical geometry",
+);
+
+const upwardStates = [100, 101, 103].map((midpoint, index) => ({
+  event_type: index === 0 ? "MRZ_ACTIVATED" : "MRZ_MIGRATED",
+  occurred_at: `2026-08-20T1${index}:00:00Z`,
+  midpoint,
+  direction: index === 0 ? null : "higher",
+}));
+const upward = migrationTrajectory(
+  upwardStates,
+  upwardStates[0].occurred_at,
+  upwardStates.at(-1).occurred_at,
+  migrationTrajectoryDomain([{ states: upwardStates }]),
+);
+assert.ok(upward[1].y < upward[0].y && upward[2].y < upward[1].y,
+  "consecutive Higher migrations staircase upward");
+
+const zigzagStates = [100, 102, 99, 101, 98].map((midpoint, index) => ({
+  event_type: index === 0 ? "MRZ_ACTIVATED" : "MRZ_MIGRATED",
+  occurred_at: `2026-08-20T1${index}:00:00Z`,
+  midpoint,
+  direction: index === 0 ? null : (midpoint > [100, 102, 99, 101, 98][index - 1] ? "higher" : "lower"),
+}));
+const zigzag = migrationTrajectory(
+  zigzagStates,
+  zigzagStates[0].occurred_at,
+  zigzagStates.at(-1).occurred_at,
+  migrationTrajectoryDomain([{ states: zigzagStates }]),
+);
+assert.ok(
+  zigzag[1].y < zigzag[0].y
+  && zigzag[2].y > zigzag[1].y
+  && zigzag[3].y < zigzag[2].y
+  && zigzag[4].y > zigzag[3].y,
+  "alternating authoritative migrations create zigzag geometry",
+);
 assert.equal(
   migrationTrajectory([{
     event_type: "MRZ_ACTIVATED",
     occurred_at: "2026-08-20T12:30:00Z",
     location: "deep_premium_core_mrz",
+    midpoint: 100,
     direction: "lower",
-  }], "2026-08-20T12:00:00Z", "2026-08-20T13:00:00Z")[0].direction,
+  }], "2026-08-20T12:00:00Z", "2026-08-20T13:00:00Z", 1)[0].direction,
   null,
   "a location value never fabricates or preserves direction on an activation",
 );
 assert.equal(
-  migrationTrajectory([trajectoryStates[1]], "2026-08-20T12:00:00Z", "2026-08-20T14:00:00Z")[0].x,
+  migrationTrajectory([xagTrajectoryStates[1]], "2026-08-20T12:00:00Z", "2026-08-20T13:00:00Z", xagDomain)[0].x,
   25,
   "different symbols use the same group time extent rather than independent normalization",
 );
+const singleActivation = migrationTrajectory(
+  [xagTrajectoryStates[0]],
+  xagTrajectoryStates[0].occurred_at,
+  xagTrajectoryStates[0].occurred_at,
+  1,
+);
+assert.equal(singleActivation.length, 1, "single activation renders one state");
+assert.equal(singleActivation[0].y, 50, "single activation remains on its baseline");
+assert.equal(singleActivation[0].direction, null);
+assert.equal(singleActivation[0].latest, true, "single activation is also the current state");
+assert.deepEqual(migrationDirectionCounts([xagTrajectoryStates[0]]), { higher: 0, lower: 0 });
+assert.deepEqual(migrationTrajectory([], null, null, 1), [], "empty history renders no fabricated states");
+assert.equal(migrationTrajectoryDomain([]), 1, "empty group retains the neutral minimum domain");
 
 const authoritativeStates = [
   { midpoint: "0.40585", direction: null },

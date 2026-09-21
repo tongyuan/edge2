@@ -40,7 +40,7 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("Symbol Lab", HTML)
 
     def test_monitor_assets_are_versioned_together(self) -> None:
-        version = "migration-trajectory-20260921"
+        version = "migration-price-trajectory-20260921"
         self.assertIn(f'/static/styles.css?v={version}', HTML)
         self.assertIn(f'/static/heatmap-state.js?v={version}', HTML)
         self.assertIn(f'/static/operator-time.js?v={version}', HTML)
@@ -694,9 +694,9 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn('/migration-path`', JAVASCRIPT)
         self.assertIn("renderMigrationPath(payload)", JAVASCRIPT)
 
-    def test_migration_path_tooltip_derives_eqm_from_adjacent_authorities_only(self) -> None:
-        tooltip = JAVASCRIPT.split("function migrationStateTooltip", 1)[1].split(
-            "function renderMigrationPath", 1
+    def test_migration_path_detail_derives_eqm_from_adjacent_authorities_only(self) -> None:
+        detail = JAVASCRIPT.split("function migrationStateDetailPresentation", 1)[1].split(
+            "function migrationStateAccessibleLabel", 1
         )[0]
         renderer = JAVASCRIPT.split("function renderMigrationPath", 1)[1].split(
             "function renderLocationHeatmap", 1
@@ -709,15 +709,13 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn("(currentMidpoint + previousMidpoint) / 2", helper)
         self.assertNotIn("direction", helper)
         self.assertIn("authoritativeMrzEqmPair(path.states, index)", renderer)
-        self.assertIn("Current midpoint:", tooltip)
-        self.assertIn("Previous MRZ midpoint:", tooltip)
-        self.assertIn("MRZ EQM:", tooltip)
-        self.assertIn("if (eqmPair)", tooltip)
-        self.assertNotIn("N/A", tooltip)
-        self.assertIn("formatPrice(eqmPair.previousMidpoint)", tooltip)
-        self.assertIn("formatPrice(eqmPair.eqm)", tooltip)
+        self.assertIn('["Current midpoint", formatPrice(eqmPair.currentMidpoint)]', detail)
+        self.assertIn('["Previous midpoint", formatPrice(eqmPair.previousMidpoint)]', detail)
+        self.assertIn('["MRZ EQM", formatPrice(eqmPair.eqm)]', detail)
+        self.assertIn("if (eqmPair)", detail)
+        self.assertNotIn("N/A", detail)
 
-    def test_migration_path_renders_a_structural_trajectory_without_extra_domain_data(self) -> None:
+    def test_migration_path_renders_normalized_midpoint_geometry_without_extra_domain_data(self) -> None:
         renderer = JAVASCRIPT.split("function renderMigrationPath", 1)[1].split(
             "function renderLocationHeatmap", 1
         )[0]
@@ -726,29 +724,36 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn('document.createElementNS(svgNamespace, "polyline")', renderer)
         self.assertIn('const node = document.createElement("button")', renderer)
         self.assertIn('"migration-trajectory-state"', renderer)
+        self.assertIn("migrationTrajectoryDomain(payload.paths)", renderer)
         self.assertIn("migrationTrajectory(", renderer)
-        self.assertIn("structuralTrajectoryLevels.forEach", renderer)
+        self.assertIn('baseline.className = "migration-trajectory-baseline"', renderer)
         self.assertIn("migrationDirectionCounts(path.states)", renderer)
         self.assertIn("point.latest ? \"current\"", renderer)
         self.assertIn("point.initial ? \"initial\"", renderer)
+        self.assertIn("node.textContent = state.location_code", renderer)
         self.assertIn("node.addEventListener(\"mouseenter\"", renderer)
+        self.assertIn("node.addEventListener(\"focus\"", renderer)
         self.assertIn("node.addEventListener(\"click\"", renderer)
-        self.assertIn("node.title = migrationStateTooltip", renderer)
-        self.assertIn('node.setAttribute("aria-label", node.title)', renderer)
+        self.assertIn("renderMigrationStateDetail(", renderer)
+        self.assertNotIn("node.title", renderer)
+        self.assertNotIn("migrationStateTooltip", JAVASCRIPT)
+        self.assertIn('const facts = document.createElement("dl")', JAVASCRIPT)
+        self.assertIn('const term = document.createElement("dt")', JAVASCRIPT)
+        self.assertIn('const description = document.createElement("dd")', JAVASCRIPT)
         self.assertNotIn("migration-path-eqm", HTML + JAVASCRIPT + CSS)
         self.assertNotIn("eqm-marker", HTML + JAVASCRIPT + CSS)
+        self.assertNotIn("migration-trajectory-levels", HTML + JAVASCRIPT + CSS)
+        self.assertNotIn("migration-trajectory-guide", HTML + JAVASCRIPT + CSS)
 
-        helper = HEATMAP_STATE.split("const structuralTrajectoryLevels", 1)[1].split(
+        helper = HEATMAP_STATE.split("const MINIMUM_TRAJECTORY_DOMAIN_PERCENT", 1)[1].split(
             "function authoritativeMrzEqmPair", 1
         )[0]
-        expected_order = (
-            "deep_premium_core_mrz",
-            "shallow_premium_core_mrz",
-            "shallow_discount_core_mrz",
-            "deep_discount_core_mrz",
-        )
-        positions = [helper.index(location) for location in expected_order]
-        self.assertEqual(positions, sorted(positions))
+        self.assertIn("state?.midpoint", helper)
+        self.assertIn("referenceMidpoint", helper)
+        self.assertIn("Math.abs(reference)", helper)
+        self.assertIn("Math.max(floor, largestDisplacement)", helper)
+        self.assertIn("50 - (", helper)
+        self.assertNotIn("state?.location", helper)
         self.assertIn('state?.event_type === "MRZ_MIGRATED"', helper)
         self.assertIn('["higher", "lower"].includes(state?.direction)', helper)
 
@@ -757,6 +762,7 @@ class MonitorContractTests(unittest.TestCase):
         )[0]
         self.assertIn("events.event_type IN ('MRZ_ACTIVATED', 'MRZ_MIGRATED')", query)
         self.assertIn("events.structural_location", query)
+        self.assertIn("events.new_core_mrz_midpoint", query)
         self.assertIn("events.occurred_at ASC", query)
         self.assertIn("events.sequence ASC", query)
         self.assertNotIn("near_miss", query.lower())
@@ -773,7 +779,11 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn("max-width: 100%;", CSS.split(".migration-path-scroller", 1)[1])
         self.assertIn(".current-state-panel { grid-template-columns: 1fr; }", CSS)
         self.assertIn("position: sticky;", CSS.split(".migration-trajectory-row-label", 1)[1])
-        self.assertIn("position: sticky;", CSS.split(".migration-trajectory-levels", 1)[1])
+        responsive = CSS.split("@media (max-width: 680px)", 1)[1]
+        self.assertIn(
+            ".migration-trajectory-detail-fields { grid-template-columns: 1fr; }",
+            responsive,
+        )
 
     def test_initial_overview_is_one_bounded_query_without_detail_requests(self) -> None:
         load_symbols = JAVASCRIPT.split("async function loadSymbols()", 1)[1].split(

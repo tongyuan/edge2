@@ -95,7 +95,7 @@ const {
   visibleSymbolsForGroupTracking,
   timelinePosition,
   timelineTicks,
-  structuralTrajectoryLevels,
+  migrationTrajectoryDomain,
   migrationTrajectory,
   migrationDirectionCounts,
   authoritativeMrzEqmPair,
@@ -770,29 +770,76 @@ function formatPathRange(state) {
   return `${formatPrice(state.lower)} – ${formatPrice(state.upper)}`;
 }
 
-function migrationStateTooltip(symbol, state, previousState, eqmPair) {
+function migrationStateDetailPresentation(symbol, state, previousState, eqmPair) {
   const isMigration = state.event_type === "MRZ_MIGRATED";
   const fields = [
-    `${symbol} · ${state.location_label}`,
-    formatPathTimestamp(state.occurred_at),
-    `Event: ${isMigration ? "Authoritative migration" : "Initial activation"}`,
-    `Route: ${state.route_owner}`,
-    `Current MRZ: ${formatPathRange(state)}`,
-    `Current midpoint: ${formatPrice(state.midpoint)}`,
+    ["Event", isMigration ? "Authoritative migration" : "Initial activation"],
+    ["Route", state.route_owner],
   ];
   if (isMigration && state.direction) {
-    fields.push(`Migration: ${state.direction === "higher" ? "Higher" : "Lower"}`);
+    fields.push(["Migration", state.direction === "higher" ? "Higher ↑" : "Lower ↓"]);
   }
   if (previousState) {
-    fields.push(`Previous MRZ: ${formatPathRange(previousState)}`);
+    fields.push(["Previous MRZ", formatPathRange(previousState)]);
   }
+  fields.push(["Current MRZ", formatPathRange(state)]);
   if (eqmPair) {
     fields.push(
-      `Previous MRZ midpoint: ${formatPrice(eqmPair.previousMidpoint)}`,
-      `MRZ EQM: ${formatPrice(eqmPair.eqm)}`,
+      ["Previous midpoint", formatPrice(eqmPair.previousMidpoint)],
+      ["Current midpoint", formatPrice(eqmPair.currentMidpoint)],
+      ["MRZ EQM", formatPrice(eqmPair.eqm)],
     );
+  } else {
+    fields.push(["Current midpoint", formatPrice(state.midpoint)]);
   }
-  return fields.join(" · ");
+  return {
+    heading: `${symbol} · ${state.location_label}`,
+    timestamp: formatPathTimestamp(state.occurred_at),
+    fields,
+  };
+}
+
+function migrationStateAccessibleLabel(symbol, state, previousState, eqmPair) {
+  const presentation = migrationStateDetailPresentation(
+    symbol,
+    state,
+    previousState,
+    eqmPair,
+  );
+  return [
+    presentation.heading,
+    presentation.timestamp,
+    ...presentation.fields.map(([label, value]) => `${label}: ${value}`),
+  ].join(" · ");
+}
+
+function renderMigrationStateDetail(container, symbol, state, previousState, eqmPair) {
+  const presentation = migrationStateDetailPresentation(
+    symbol,
+    state,
+    previousState,
+    eqmPair,
+  );
+  const header = document.createElement("div");
+  header.className = "migration-trajectory-detail-header";
+  const heading = document.createElement("strong");
+  heading.textContent = presentation.heading;
+  const timestamp = document.createElement("span");
+  timestamp.textContent = presentation.timestamp;
+  header.append(heading, timestamp);
+  const facts = document.createElement("dl");
+  facts.className = "migration-trajectory-detail-fields";
+  presentation.fields.forEach(([label, value]) => {
+    const field = document.createElement("div");
+    const term = document.createElement("dt");
+    term.textContent = label;
+    const description = document.createElement("dd");
+    description.textContent = value;
+    field.append(term, description);
+    facts.append(field);
+  });
+  container.replaceChildren(header, facts);
+  container.hidden = false;
 }
 
 function renderMigrationPath(payload) {
@@ -810,10 +857,6 @@ function renderMigrationPath(payload) {
   const axis = document.createElement("div");
   axis.className = "migration-trajectory-axis";
   axis.append(document.createElement("span"));
-  const structureHeading = document.createElement("span");
-  structureHeading.className = "migration-trajectory-structure-heading";
-  structureHeading.textContent = "Structure";
-  axis.append(structureHeading);
   const ticks = document.createElement("div");
   ticks.className = "migration-trajectory-ticks";
   timelineTicks(payload.timeline.started_at, payload.timeline.ended_at).forEach((value) => {
@@ -821,13 +864,14 @@ function renderMigrationPath(payload) {
     tick.className = "migration-trajectory-tick";
     tick.style.left = `${timelinePosition(value, payload.timeline.started_at, payload.timeline.ended_at)}%`;
     tick.textContent = formatPathTick(value);
-    tick.title = formatPathTimestamp(value);
+    tick.setAttribute("aria-label", formatPathTimestamp(value));
     ticks.append(tick);
   });
   axis.append(ticks);
   timeline.append(axis);
+  const trajectoryDomain = migrationTrajectoryDomain(payload.paths);
 
-  payload.paths.forEach((path) => {
+  payload.paths.forEach((path, pathIndex) => {
     const row = document.createElement("div");
     row.className = "migration-trajectory-row";
     const label = document.createElement("div");
@@ -845,15 +889,6 @@ function renderMigrationPath(payload) {
       );
       label.append(summary);
     }
-    const levels = document.createElement("div");
-    levels.className = "migration-trajectory-levels";
-    structuralTrajectoryLevels.forEach((level) => {
-      const levelLabel = document.createElement("span");
-      levelLabel.style.top = `${level.y}%`;
-      levelLabel.textContent = level.code;
-      levelLabel.title = level.label;
-      levels.append(levelLabel);
-    });
     const track = document.createElement("div");
     track.className = "migration-trajectory-track";
     if (path.states.length === 0) {
@@ -862,16 +897,15 @@ function renderMigrationPath(payload) {
       empty.textContent = "No authoritative MRZ history";
       track.append(empty);
     } else {
-      structuralTrajectoryLevels.forEach((level) => {
-        const guide = document.createElement("span");
-        guide.className = "migration-trajectory-guide";
-        guide.style.top = `${level.y}%`;
-        track.append(guide);
-      });
+      const baseline = document.createElement("span");
+      baseline.className = "migration-trajectory-baseline";
+      baseline.setAttribute("aria-hidden", "true");
+      track.append(baseline);
       const points = migrationTrajectory(
         path.states,
         payload.timeline.started_at,
         payload.timeline.ended_at,
+        trajectoryDomain,
       );
       const plottablePoints = points.filter(({ y }) => y !== null);
       if (plottablePoints.length > 1) {
@@ -889,21 +923,27 @@ function renderMigrationPath(payload) {
         connector.append(line);
         track.append(connector);
       }
-      const detail = document.createElement("p");
+      const detail = document.createElement("section");
       detail.className = "migration-trajectory-detail";
+      detail.id = `migrationTrajectoryDetail${pathIndex}`;
       detail.hidden = true;
       detail.setAttribute("aria-live", "polite");
-      let pinnedIndex = null;
+      const nodes = [];
       const showDetail = (index) => {
         const state = path.states[index];
         const eqmPair = authoritativeMrzEqmPair(path.states, index);
-        detail.textContent = migrationStateTooltip(
+        nodes.forEach(({ element, stateIndex }) => {
+          const inspected = stateIndex === index;
+          element.classList.toggle("inspected", inspected);
+          element.setAttribute("aria-pressed", String(inspected));
+        });
+        renderMigrationStateDetail(
+          detail,
           path.symbol,
           state,
           path.states[index - 1] || null,
           eqmPair,
         );
-        detail.hidden = false;
       };
       points.forEach((point, index) => {
         if (point.y === null) return;
@@ -920,13 +960,14 @@ function renderMigrationPath(payload) {
         node.style.left = `${point.x}%`;
         node.style.top = `${point.y}%`;
         node.textContent = state.location_code;
-        node.title = migrationStateTooltip(
+        node.setAttribute("aria-label", migrationStateAccessibleLabel(
           path.symbol,
           state,
           path.states[index - 1] || null,
           eqmPair,
-        );
-        node.setAttribute("aria-label", node.title);
+        ));
+        node.setAttribute("aria-controls", detail.id);
+        node.setAttribute("aria-pressed", "false");
         node.dataset.eventKey = state.event_key;
         if (point.direction) {
           const direction = document.createElement("span");
@@ -936,23 +977,14 @@ function renderMigrationPath(payload) {
           node.append(direction);
         }
         node.addEventListener("mouseenter", () => showDetail(index));
-        node.addEventListener("mouseleave", () => {
-          if (pinnedIndex === null) detail.hidden = true;
-        });
         node.addEventListener("focus", () => showDetail(index));
-        node.addEventListener("blur", () => {
-          if (pinnedIndex === null) detail.hidden = true;
-        });
-        node.addEventListener("click", () => {
-          pinnedIndex = pinnedIndex === index ? null : index;
-          if (pinnedIndex === null) detail.hidden = true;
-          else showDetail(index);
-        });
+        node.addEventListener("click", () => showDetail(index));
+        nodes.push({ element: node, stateIndex: index });
         track.append(node);
       });
       row.append(detail);
     }
-    row.prepend(label, levels, track);
+    row.prepend(label, track);
     timeline.append(row);
   });
   migrationPathScroller.replaceChildren(timeline);

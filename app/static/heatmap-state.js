@@ -436,44 +436,55 @@
     ));
   }
 
-  const structuralTrajectoryLevels = Object.freeze([
-    Object.freeze({
-      location: "deep_premium_core_mrz",
-      code: "DP",
-      label: "Deep Premium",
-      y: 14,
-    }),
-    Object.freeze({
-      location: "shallow_premium_core_mrz",
-      code: "SP",
-      label: "Shallow Premium",
-      y: 38,
-    }),
-    Object.freeze({
-      location: "shallow_discount_core_mrz",
-      code: "SD",
-      label: "Shallow Discount",
-      y: 62,
-    }),
-    Object.freeze({
-      location: "deep_discount_core_mrz",
-      code: "DD",
-      label: "Deep Discount",
-      y: 86,
-    }),
-  ]);
+  const MINIMUM_TRAJECTORY_DOMAIN_PERCENT = 1;
+  const TRAJECTORY_VERTICAL_RANGE_PERCENT = 32;
 
-  function trajectoryYPosition(location) {
-    return structuralTrajectoryLevels.find((level) => level.location === location)?.y ?? null;
+  function midpointDisplacementPercent(midpoint, referenceMidpoint) {
+    const current = Number(midpoint);
+    const reference = Number(referenceMidpoint);
+    if (!Number.isFinite(current) || !Number.isFinite(reference) || reference === 0) return null;
+    return ((current - reference) / Math.abs(reference)) * 100;
   }
 
-  function migrationTrajectory(states, startedAt, endedAt) {
+  function migrationTrajectoryDomain(paths, minimumPercent = MINIMUM_TRAJECTORY_DOMAIN_PERCENT) {
+    const minimum = Number(minimumPercent);
+    const floor = Number.isFinite(minimum) && minimum > 0
+      ? minimum
+      : MINIMUM_TRAJECTORY_DOMAIN_PERCENT;
+    const largestDisplacement = Array.isArray(paths)
+      ? paths.reduce((largest, path) => {
+        const states = Array.isArray(path?.states) ? path.states : [];
+        const referenceMidpoint = states[0]?.midpoint;
+        return states.reduce((pathLargest, state) => {
+          const displacement = midpointDisplacementPercent(state?.midpoint, referenceMidpoint);
+          return displacement === null
+            ? pathLargest
+            : Math.max(pathLargest, Math.abs(displacement));
+        }, largest);
+      }, 0)
+      : 0;
+    return Math.max(floor, largestDisplacement);
+  }
+
+  function migrationTrajectory(states, startedAt, endedAt, domainPercent) {
     if (!Array.isArray(states)) return [];
+    const referenceMidpoint = states[0]?.midpoint;
+    const domain = Number(domainPercent);
     return states.map((state, index) => {
       const direction = state?.event_type === "MRZ_MIGRATED"
         && ["higher", "lower"].includes(state?.direction)
         ? state.direction
         : null;
+      const displacementPercent = midpointDisplacementPercent(
+        state?.midpoint,
+        referenceMidpoint,
+      );
+      const y = displacementPercent === null || !Number.isFinite(domain) || domain <= 0
+        ? null
+        : 50 - (
+          Math.max(-domain, Math.min(domain, displacementPercent))
+          / domain
+        ) * TRAJECTORY_VERTICAL_RANGE_PERCENT;
       return {
         state,
         x: Math.min(98, Math.max(2, timelinePosition(
@@ -481,7 +492,8 @@
           startedAt,
           endedAt,
         ))),
-        y: trajectoryYPosition(state?.location),
+        y,
+        displacementPercent,
         direction,
         initial: state?.event_type === "MRZ_ACTIVATED",
         latest: index === states.length - 1,
@@ -490,7 +502,12 @@
   }
 
   function migrationDirectionCounts(states) {
-    return migrationTrajectory(states, null, null).reduce(
+    return migrationTrajectory(
+      states,
+      null,
+      null,
+      MINIMUM_TRAJECTORY_DOMAIN_PERCENT,
+    ).reduce(
       (counts, point) => {
         if (point.direction) counts[point.direction] += 1;
         return counts;
@@ -553,8 +570,8 @@
     visibleSymbolsForGroupTracking,
     timelinePosition,
     timelineTicks,
-    structuralTrajectoryLevels,
-    trajectoryYPosition,
+    midpointDisplacementPercent,
+    migrationTrajectoryDomain,
     migrationTrajectory,
     migrationDirectionCounts,
     authoritativeMrzEqmPair,
