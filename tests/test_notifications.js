@@ -5,6 +5,7 @@ const vm = require("node:vm");
 
 const {
   enableWebPush,
+  formatNotificationTimestamp,
   safeNotificationPath,
   supportsWebPush,
 } = require("../app/static/notifications.js");
@@ -139,6 +140,7 @@ async function testServiceWorkerPushAndClick() {
   const shown = [];
   const navigated = [];
   const opened = [];
+  const readRequests = [];
   let focusCount = 0;
   const existingClient = {
     url: "https://edge.example.test/diagnostics/activation-feasibility?symbol=OTHER",
@@ -148,6 +150,10 @@ async function testServiceWorkerPushAndClick() {
   let currentClients = [existingClient];
   const self = {
     location: { origin: "https://edge.example.test" },
+    async fetch(url, options) {
+      readRequests.push({ url, options });
+      return { ok: true };
+    },
     addEventListener(type, listener) { listeners[type] = listener; },
     skipWaiting() {},
     registration: {
@@ -191,6 +197,7 @@ async function testServiceWorkerPushAndClick() {
 
   const activation = await push({
     event_id: "BTCUSDT:1:MRZ_ACTIVATED:event-4",
+    source_event_key: "BTCUSDT:1:MRZ_ACTIVATED:event-4",
     event_type: "MRZ_ACTIVATED",
     title: "BTCUSDT MRZ Activated",
     body: "BTD · 77,309.19–77,436.91",
@@ -206,6 +213,7 @@ async function testServiceWorkerPushAndClick() {
 
   const migration = await push({
     event_id: "BTCUSDT:2:MRZ_MIGRATED:event-8",
+    source_event_key: "BTCUSDT:2:MRZ_MIGRATED:event-8",
     event_type: "MRZ_MIGRATED",
     title: "BTCUSDT MRZ Migrated",
     body: "BTD · 77,309.19–77,436.91 → 78,919.34–79,030",
@@ -222,6 +230,7 @@ async function testServiceWorkerPushAndClick() {
   const nearMissDestination = `/diagnostics/activation-feasibility?symbol=RGTI&candidate=${candidateIdentity}#current-production-near-misses`;
   const nearMiss = await push({
     event_id: `near-miss:RGTI:STR:${candidateIdentity}`,
+    source_event_key: `near-miss:RGTI:STR:${candidateIdentity}`,
     event_type: "MRZ_NEAR_MISS",
     title: "RGTI MRZ Near Miss",
     body: "STR · 1.02% required · 1.00% production threshold",
@@ -234,6 +243,7 @@ async function testServiceWorkerPushAndClick() {
 
   const pressure = await push({
     event_id: "POST_ACTIVATION_PRESSURE_CHANGED:ZECUSDT:event-4:event-6:DOWN",
+    source_event_key: "POST_ACTIVATION_PRESSURE_CHANGED:ZECUSDT:event-4:event-6:DOWN",
     event_type: "POST_ACTIVATION_PRESSURE_CHANGED",
     title: "ZECUSDT · Downward Pressure",
     body: "Post-activation activity materially favors below-envelope observations",
@@ -261,6 +271,19 @@ async function testServiceWorkerPushAndClick() {
     `https://edge.example.test${nearMissDestination}`,
   ]);
   assert.equal(focusCount, 4, "the existing EDGE client is focused after navigation");
+  assert.deepEqual(
+    readRequests.slice(0, 4).map((request) => ({
+      url: request.url,
+      method: request.options.method,
+      source_event_key: JSON.parse(request.options.body).source_event_key,
+    })),
+    [activation, migration, pressure, nearMiss].map((notification) => ({
+      url: "/api/notifications/inbox/read-by-source",
+      method: "POST",
+      source_event_key: notification.options.data.source_event_key,
+    })),
+    "each push click marks only its canonical logical notification read",
+  );
 
   currentClients = [];
   await click(pressure);
@@ -279,6 +302,7 @@ async function testServiceWorkerPushAndClick() {
   assert.equal(legacy.options.data.destination, "/");
   await click(legacy);
   assert.equal(opened[1], "https://edge.example.test/");
+  assert.equal(readRequests.length, 5, "legacy push without canonical identity stays unread");
 
   const external = await push({
     event_id: "invalid-external",
@@ -289,6 +313,7 @@ async function testServiceWorkerPushAndClick() {
   assert.equal(external.options.data.destination, "/");
   await click(external);
   assert.equal(opened[2], "https://edge.example.test/");
+  assert.equal(readRequests.length, 5, "unsafe push without canonical identity stays unread");
   assert.equal(context.safeNotificationPath("https://attacker.example/phish"), "/");
 }
 
@@ -348,6 +373,19 @@ async function main() {
   assert.equal(
     safeNotificationPath("https://attacker.example/phish", "https://edge.example.test"),
     "/",
+  );
+  assert.equal(
+    formatNotificationTimestamp(
+      "2026-09-21T12:24:00Z",
+      (value) => value === "2026-09-21T12:24:00Z"
+        ? "21 Sep 2026 · 08:24 UTC−4"
+        : null,
+    ),
+    "21 Sep 2026 · 08:24 UTC−4",
+  );
+  assert.equal(
+    formatNotificationTimestamp(null, () => null),
+    "Time unavailable",
   );
   await testGrantedPermissionPath();
   await testDeniedPermissionPath();

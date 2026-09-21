@@ -10,6 +10,8 @@ JAVASCRIPT = (ROOT / "app/static/app.js").read_text(encoding="utf-8")
 HEATMAP_STATE = (ROOT / "app/static/heatmap-state.js").read_text(encoding="utf-8")
 OPERATOR_TIME = (ROOT / "app/static/operator-time.js").read_text(encoding="utf-8")
 MONITOR_PRESENTATION = (ROOT / "app/static/monitor-presentation.js").read_text(encoding="utf-8")
+NOTIFICATIONS = (ROOT / "app/static/notifications.js").read_text(encoding="utf-8")
+SERVICE_WORKER = (ROOT / "app/static/service-worker.js").read_text(encoding="utf-8")
 CSS = (ROOT / "app/static/styles.css").read_text(encoding="utf-8")
 REPOSITORY = (ROOT / "app/repository.py").read_text(encoding="utf-8")
 CONCENTRATION = (ROOT / "app/concentration.py").read_text(encoding="utf-8")
@@ -38,12 +40,13 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("Symbol Lab", HTML)
 
     def test_monitor_assets_are_versioned_together(self) -> None:
-        version = "group-tracking-off-20260921"
+        version = "notification-inbox-20260921"
         self.assertIn(f'/static/styles.css?v={version}', HTML)
         self.assertIn(f'/static/heatmap-state.js?v={version}', HTML)
         self.assertIn(f'/static/operator-time.js?v={version}', HTML)
         self.assertIn(f'/static/monitor-presentation.js?v={version}', HTML)
         self.assertIn(f'/static/app.js?v={version}', HTML)
+        self.assertIn(f'/static/notifications.js?v={version}', HTML)
         self.assertLess(HTML.index("heatmap-state.js"), HTML.index("app.js"))
         self.assertLess(HTML.index("monitor-presentation.js"), HTML.index("app.js"))
         self.assertIn(
@@ -52,6 +55,33 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn(
             "/static/diagnostics-nav.js?v=views-menu-20260907", HTML
         )
+
+    def test_notification_inbox_is_durable_accessible_and_mobile_safe(self) -> None:
+        self.assertIn('id="notificationInboxButton"', HTML)
+        self.assertIn('id="notificationUnreadBadge" hidden', HTML)
+        self.assertIn('id="notificationInboxDialog"', HTML)
+        self.assertIn('id="notificationInboxList" aria-live="polite"', HTML)
+        self.assertIn('id="notificationClearRead" disabled', HTML)
+        self.assertIn('/api/notifications/inbox?limit=50', NOTIFICATIONS)
+        self.assertIn('/api/notifications/inbox/${notificationId}/read', NOTIFICATIONS)
+        self.assertIn('/api/notifications/inbox/${notificationId}/dismiss', NOTIFICATIONS)
+        self.assertIn('/api/notifications/inbox/clear-read', NOTIFICATIONS)
+        self.assertIn('item.is_read ? "" : " unread"', NOTIFICATIONS)
+        self.assertIn('item.is_read ? "Read" : "Unread"', NOTIFICATIONS)
+        self.assertIn('this.clearReadButton.disabled = readCount === 0;', NOTIFICATIONS)
+        self.assertIn('formatOperatorTimestampUtcMinus4', NOTIFICATIONS)
+        self.assertIn('min-height: 44px;', CSS)
+        responsive = CSS.split("@media (max-width: 680px)", 1)[1]
+        self.assertIn(".notification-inbox-dialog", responsive)
+        self.assertIn("width: calc(100% - 12px);", responsive)
+        self.assertIn(".notification-inbox-item-time { white-space: normal; }", responsive)
+
+    def test_system_push_click_marks_only_canonical_inbox_identity_read(self) -> None:
+        self.assertIn('payload.source_event_key', SERVICE_WORKER)
+        self.assertIn('/api/notifications/inbox/read-by-source', SERVICE_WORKER)
+        self.assertIn('JSON.stringify({ source_event_key: sourceEventKey })', SERVICE_WORKER)
+        self.assertIn('self.clients.matchAll', SERVICE_WORKER)
+        self.assertIn('self.clients.openWindow(targetUrl)', SERVICE_WORKER)
 
     def test_monitor_consolidates_diagnostic_links_in_shared_dropdown(self) -> None:
         self.assertIn('href="/diagnostics/activation-feasibility"', HTML)

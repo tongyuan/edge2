@@ -11,7 +11,7 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/static/edge-mrz-icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/static/edge-mrz-icon-180.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=group-tracking-off-20260921" />
+    <link rel="stylesheet" href="/static/styles.css?v=notification-inbox-20260921" />
     <link rel="stylesheet" href="/static/diagnostics-nav.css?v=views-menu-20260907" />
   </head>
   <body>
@@ -34,6 +34,13 @@
               </div>
             </div>
           </nav>
+          <div class="notification-inbox-control">
+            <button type="button" id="notificationInboxButton" aria-haspopup="dialog" aria-controls="notificationInboxDialog">
+              <span aria-hidden="true">🔔</span>
+              <span>Inbox</span>
+              <span class="notification-unread-badge" id="notificationUnreadBadge" hidden>0</span>
+            </button>
+          </div>
           <div class="notification-control">
             <button type="button" id="notificationButton" disabled>Checking notifications…</button>
             <span id="notificationStatus" role="status">Checking browser support…</span>
@@ -398,12 +405,29 @@
       </div>
     </dialog>
     <div class="activity-tooltip" id="heatmapActivityTooltip" role="tooltip" hidden></div>
+    <dialog class="notification-inbox-dialog" id="notificationInboxDialog" aria-labelledby="notificationInboxTitle">
+      <section>
+        <header>
+          <div>
+            <p class="eyebrow">OPERATOR ACTIVITY</p>
+            <h2 id="notificationInboxTitle">Notification Inbox</h2>
+            <p id="notificationInboxSummary">No unread notifications</p>
+          </div>
+          <button type="button" id="notificationInboxClose" aria-label="Close Notification Inbox">Close</button>
+        </header>
+        <p class="notification-inbox-empty" id="notificationInboxEmpty">No active notifications.</p>
+        <ul class="notification-inbox-list" id="notificationInboxList" aria-live="polite"></ul>
+        <footer>
+          <button type="button" id="notificationClearRead" disabled>Clear all read</button>
+        </footer>
+      </section>
+    </dialog>
     <div class="notification-toast-host" id="notificationToastHost" aria-live="polite"></div>
     <script src="/static/diagnostics-nav.js?v=views-menu-20260907" defer></script>
-    <script src="/static/heatmap-state.js?v=group-tracking-off-20260921" defer></script>
-    <script src="/static/operator-time.js?v=group-tracking-off-20260921" defer></script>
-    <script src="/static/monitor-presentation.js?v=group-tracking-off-20260921" defer></script>
-    <script src="/static/notifications.js?v=notification-destinations-20260914" defer></script>
-    <script src="/static/app.js?v=group-tracking-off-20260921" defer></script>
+    <script src="/static/heatmap-state.js?v=notification-inbox-20260921" defer></script>
+    <script src="/static/operator-time.js?v=notification-inbox-20260921" defer></script>
+    <script src="/static/monitor-presentation.js?v=notification-inbox-20260921" defer></script>
+    <script src="/static/notifications.js?v=notification-inbox-20260921" defer></script>
+    <script src="/static/app.js?v=notification-inbox-20260921" defer></script>
   </body>
 </html>

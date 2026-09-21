@@ -279,6 +279,12 @@ class NotificationIntegrationTests(unittest.TestCase):
             if event["event_type"] == PRESSURE_EVENT_TYPE
         ]
 
+    def inbox(self) -> dict:
+        response = self.client.get("/api/notifications/inbox?limit=100")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn("no-store", response.headers["cache-control"])
+        return response.json()
+
     def test_ranging_to_upward_uses_shared_state_and_needs_no_successor(self) -> None:
         self.client.post("/api/notifications/subscriptions", json=SUBSCRIPTION)
         self.activate()
@@ -566,6 +572,21 @@ class NotificationIntegrationTests(unittest.TestCase):
         self.activate()
         self.assertEqual(self.scalar("SELECT COUNT(*) FROM web_push_notifications"), 1)
 
+        inbox = self.inbox()
+        self.assertEqual(inbox["unread_count"], 1)
+        self.assertEqual(inbox["read_count"], 0)
+        self.assertEqual(len(inbox["items"]), 1)
+        item = inbox["items"][0]
+        self.assertFalse(item["is_read"])
+        self.assertIsNone(item["read_at"])
+        self.assertIsNone(item["dismissed_at"])
+        self.assertEqual(item["event_name"], "MRZ Activated")
+        self.assertEqual(item["title"], "SPXUSDT MRZ Activated")
+        self.assertEqual(
+            item["destination"],
+            "/diagnostics/mrz-robustness?symbol=SPXUSDT#active-mrz",
+        )
+
         duplicate = self.client.post(
             "/webhook/tradingview",
             json=webhook_payload(4, "110.6"),
@@ -582,6 +603,119 @@ class NotificationIntegrationTests(unittest.TestCase):
             self.scalar("SELECT source_event_key FROM web_push_notifications"),
             "SPXUSDT:1:MRZ_ACTIVATED:api-event-4",
         )
+        self.assertEqual(len(self.inbox()["items"]), 1)
+
+    def test_inbox_read_dismiss_and_push_identity_are_exact_soft_state(self) -> None:
+        self.activate()
+        item = self.inbox()["items"][0]
+
+        read = self.client.post(f"/api/notifications/inbox/{item['id']}/read")
+        self.assertEqual(read.status_code, 200, read.text)
+        updated = self.inbox()
+        self.assertEqual(updated["unread_count"], 0)
+        self.assertEqual(updated["read_count"], 1)
+        self.assertTrue(updated["items"][0]["is_read"])
+        self.assertIsNotNone(updated["items"][0]["read_at"])
+
+        # The source-event endpoint is idempotent and can only target the exact
+        # canonical notification carried by a system push.
+        read_by_source = self.client.post(
+            "/api/notifications/inbox/read-by-source",
+            json={"source_event_key": item["source_event_key"]},
+        )
+        self.assertEqual(read_by_source.status_code, 200, read_by_source.text)
+        missing = self.client.post(
+            "/api/notifications/inbox/read-by-source",
+            json={"source_event_key": "not-a-real-logical-notification"},
+        )
+        self.assertEqual(missing.status_code, 404)
+
+        dismissed = self.client.post(
+            f"/api/notifications/inbox/{item['id']}/dismiss"
+        )
+        self.assertEqual(dismissed.status_code, 200, dismissed.text)
+        self.assertEqual(self.inbox()["items"], [])
+        self.assertEqual(
+            self.scalar("SELECT COUNT(*) FROM web_push_notifications"),
+            1,
+        )
+        self.assertIsNotNone(
+            self.scalar("SELECT dismissed_at FROM web_push_notifications")
+        )
+
+    def test_clear_all_read_preserves_unread_and_orders_newest_first(self) -> None:
+        self.activate()
+        self.post_spx(5, "120")
+        self.post_spx(6, "150")
+
+        inbox = self.inbox()
+        self.assertEqual(inbox["unread_count"], 2)
+        self.assertEqual(
+            [item["event_type"] for item in inbox["items"]],
+            [PRESSURE_EVENT_TYPE, "MRZ_ACTIVATED"],
+        )
+        activation = next(
+            item for item in inbox["items"] if item["event_type"] == "MRZ_ACTIVATED"
+        )
+        self.assertEqual(
+            self.client.post(
+                f"/api/notifications/inbox/{activation['id']}/read"
+            ).status_code,
+            200,
+        )
+
+        cleared = self.client.post("/api/notifications/inbox/clear-read")
+        self.assertEqual(cleared.status_code, 200, cleared.text)
+        self.assertEqual(cleared.json()["dismissed_count"], 1)
+        remaining = self.inbox()
+        self.assertEqual(remaining["unread_count"], 1)
+        self.assertEqual(remaining["read_count"], 0)
+        self.assertEqual(len(remaining["items"]), 1)
+        self.assertEqual(remaining["items"][0]["event_type"], PRESSURE_EVENT_TYPE)
+        self.assertEqual(remaining["items"][0]["event_name"], "Upward Pressure")
+        self.assertEqual(
+            self.scalar("SELECT COUNT(*) FROM web_push_notifications"),
+            2,
+        )
+
+    def test_inbox_supports_every_current_push_type_with_canonical_payload(self) -> None:
+        self.activate()
+        self.post_spx(5, "120")
+        self.post_spx(6, "150")
+        for index, price in enumerate(("941.52", "941.52", "941.52", "949.89"), 1):
+            self.assertEqual(
+                self.post_mu_near_miss_observation(index, price).status_code,
+                201,
+            )
+        self.activate_btc()
+        self.post_btc_cluster(5, ("78919.34", "78950", "79000", "79030"))
+
+        inbox = self.inbox()
+        events = self.client.get("/api/notifications/events?after=0").json()["events"]
+        by_key = {event["source_event_key"]: event for event in events}
+        expected_names = {
+            "MRZ_ACTIVATED": "MRZ Activated",
+            "MRZ_MIGRATED": "MRZ Migrated",
+            "MRZ_NEAR_MISS": "Near Miss",
+            PRESSURE_EVENT_TYPE: "Upward Pressure",
+        }
+        self.assertTrue(set(expected_names).issubset({
+            item["event_type"] for item in inbox["items"]
+        }))
+        ordering = [
+            (item["occurred_at"], item["id"])
+            for item in inbox["items"]
+        ]
+        self.assertEqual(ordering, sorted(ordering, reverse=True))
+        for item in inbox["items"]:
+            if item["event_type"] not in expected_names:
+                continue
+            with self.subTest(source_event_key=item["source_event_key"]):
+                self.assertEqual(item["event_name"], expected_names[item["event_type"]])
+                source = by_key[item["source_event_key"]]
+                self.assertEqual(item["title"], source["title"])
+                self.assertEqual(item["body"], source["body"])
+                self.assertEqual(item["destination"], source["destination"])
 
     def test_active_subscription_receives_one_delivery_attempt(self) -> None:
         subscribed = self.client.post(

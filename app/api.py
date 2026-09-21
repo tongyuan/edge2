@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Mapping
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -22,6 +22,7 @@ from app.mrz_robustness import MRZRobustnessService
 from app.notifications import (
     NotificationRepository,
     NotificationService,
+    NotificationSourceEventRead,
     PushSubscriptionDelete,
     PushSubscriptionPayload,
 )
@@ -455,6 +456,44 @@ def create_app(
             },
             headers={"Cache-Control": "no-store, max-age=0"},
         )
+
+    @application.get("/api/notifications/inbox")
+    def notification_inbox(
+        limit: int = Query(default=50, ge=1, le=100),
+    ) -> JSONResponse:
+        return JSONResponse(
+            notification_repository.inbox(limit),
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
+    @application.post("/api/notifications/inbox/{notification_id}/read")
+    def mark_notification_read(notification_id: int) -> JSONResponse:
+        if not notification_repository.mark_read(notification_id):
+            raise HTTPException(status_code=404, detail="notification_not_found")
+        return JSONResponse({"ok": True, "notification_id": notification_id})
+
+    @application.post("/api/notifications/inbox/read-by-source")
+    def mark_notification_read_by_source(
+        payload: NotificationSourceEventRead,
+    ) -> JSONResponse:
+        if not notification_repository.mark_read_by_source_event_key(
+            payload.source_event_key
+        ):
+            raise HTTPException(status_code=404, detail="notification_not_found")
+        return JSONResponse({"ok": True})
+
+    @application.post("/api/notifications/inbox/{notification_id}/dismiss")
+    def dismiss_notification(notification_id: int) -> JSONResponse:
+        if not notification_repository.dismiss(notification_id):
+            raise HTTPException(status_code=404, detail="notification_not_found")
+        return JSONResponse({"ok": True, "notification_id": notification_id})
+
+    @application.post("/api/notifications/inbox/clear-read")
+    def clear_read_notifications() -> JSONResponse:
+        return JSONResponse({
+            "ok": True,
+            "dismissed_count": notification_repository.clear_read(),
+        })
 
     @application.get("/api/diagnostics/activation-feasibility")
     def activation_feasibility() -> JSONResponse:

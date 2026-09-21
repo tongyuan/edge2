@@ -28,6 +28,19 @@ function safeNotificationPath(candidate) {
   }
 }
 
+async function markInboxNotificationRead(sourceEventKey) {
+  if (typeof sourceEventKey !== "string" || sourceEventKey.length === 0) return;
+  try {
+    await self.fetch("/api/notifications/inbox/read-by-source", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source_event_key: sourceEventKey }),
+    });
+  } catch {
+    // Navigation remains authoritative; an uncertain match stays unread.
+  }
+}
+
 self.addEventListener("install", () => self.skipWaiting());
 
 self.addEventListener("activate", (event) => {
@@ -42,6 +55,9 @@ self.addEventListener("push", (event) => {
     payload = {};
   }
   const eventId = typeof payload.event_id === "string" ? payload.event_id : "unknown";
+  const sourceEventKey = typeof payload.source_event_key === "string"
+    ? payload.source_event_key
+    : null;
   const eventType = [
     "MRZ_ACTIVATED",
     "MRZ_MIGRATED",
@@ -59,6 +75,7 @@ self.addEventListener("push", (event) => {
     renotify: false,
     data: {
       event_id: eventId,
+      source_event_key: sourceEventKey,
       event_type: eventType,
       symbol: typeof payload.symbol === "string" ? payload.symbol : null,
       destination,
@@ -72,6 +89,9 @@ self.addEventListener("notificationclick", (event) => {
   const path = safeNotificationPath(event.notification.data?.destination);
   const targetUrl = new URL(path, EDGE_ORIGIN).href;
   event.waitUntil((async () => {
+    const readPromise = markInboxNotificationRead(
+      event.notification.data?.source_event_key,
+    );
     const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     const existing = windows.find((client) => {
       try {
@@ -84,12 +104,13 @@ self.addEventListener("notificationclick", (event) => {
       try {
         if (typeof existing.navigate === "function") {
           const navigated = await existing.navigate(targetUrl);
-          return (navigated || existing).focus();
+          await Promise.allSettled([readPromise, (navigated || existing).focus()]);
+          return;
         }
       } catch {
         // Fall through to a direct destination launch.
       }
     }
-    return self.clients.openWindow(targetUrl);
+    await Promise.allSettled([readPromise, self.clients.openWindow(targetUrl)]);
   })());
 });

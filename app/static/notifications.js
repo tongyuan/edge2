@@ -55,6 +55,15 @@
     }
   }
 
+  function formatNotificationTimestamp(value, formatter = null) {
+    const resolvedFormatter = formatter || (
+      typeof formatOperatorTimestampUtcMinus4 === "function"
+        ? formatOperatorTimestampUtcMinus4
+        : null
+    );
+    return resolvedFormatter?.(value) || "Time unavailable";
+  }
+
   async function persistSubscription(subscription, fetchImpl) {
     const response = await fetchImpl("/api/notifications/subscriptions", {
       method: "POST",
@@ -122,6 +131,14 @@
       this.button = document.querySelector("#notificationButton");
       this.status = document.querySelector("#notificationStatus");
       this.toastHost = document.querySelector("#notificationToastHost");
+      this.inboxButton = document.querySelector("#notificationInboxButton");
+      this.unreadBadge = document.querySelector("#notificationUnreadBadge");
+      this.inboxDialog = document.querySelector("#notificationInboxDialog");
+      this.inboxClose = document.querySelector("#notificationInboxClose");
+      this.inboxSummary = document.querySelector("#notificationInboxSummary");
+      this.inboxEmpty = document.querySelector("#notificationInboxEmpty");
+      this.inboxList = document.querySelector("#notificationInboxList");
+      this.clearReadButton = document.querySelector("#notificationClearRead");
       this.config = null;
       this.subscription = null;
       this.cursor = 0;
@@ -172,6 +189,18 @@
 
     async initialize() {
       this.button.addEventListener("click", () => this.toggle());
+      this.inboxButton.addEventListener("click", () => {
+        this.openInbox().catch(() => this.showInboxError());
+      });
+      this.inboxClose.addEventListener("click", () => this.inboxDialog.close());
+      this.clearReadButton.addEventListener("click", () => {
+        this.clearRead().catch(() => this.showInboxError());
+      });
+      try {
+        await this.refreshInbox();
+      } catch {
+        this.showInboxError();
+      }
       try {
         await this.loadConfig();
       } catch (error) {
@@ -274,6 +303,7 @@
           Number(payload.latest_notification_id) || 0,
           ...payload.events.map((event) => Number(event.id) || 0),
         );
+        if (payload.events.length > 0) await this.refreshInbox();
       } catch {
         // The system notification path is independent; a failed toast poll is quiet.
       }
@@ -295,12 +325,124 @@
       this.toastHost.append(toast);
       globalObject.setTimeout(() => toast.remove(), 12000);
     }
+
+    async openInbox() {
+      await this.refreshInbox().catch(() => {
+        this.showInboxError();
+      });
+      if (!this.inboxDialog.open) this.inboxDialog.showModal();
+    }
+
+    async refreshInbox() {
+      const response = await fetch("/api/notifications/inbox?limit=50", {
+        cache: "no-store",
+      });
+      if (!response.ok) throw new Error("Notification Inbox is unavailable.");
+      this.renderInbox(await response.json());
+    }
+
+    renderInbox(payload) {
+      const items = Array.isArray(payload.items) ? payload.items : [];
+      const unreadCount = Number(payload.unread_count) || 0;
+      const readCount = Number(payload.read_count) || 0;
+      this.unreadBadge.textContent = unreadCount > 99 ? "99+" : String(unreadCount);
+      this.unreadBadge.hidden = unreadCount === 0;
+      this.inboxButton.setAttribute(
+        "aria-label",
+        unreadCount === 1
+          ? "Notification Inbox, 1 unread notification"
+          : `Notification Inbox, ${unreadCount} unread notifications`,
+      );
+      this.inboxSummary.textContent = unreadCount === 1
+        ? "1 unread notification"
+        : `${unreadCount} unread notifications`;
+      this.inboxEmpty.hidden = items.length > 0;
+      this.clearReadButton.disabled = readCount === 0;
+      this.inboxList.replaceChildren(...items.map((item) => this.inboxItem(item)));
+    }
+
+    inboxItem(item) {
+      const row = document.createElement("li");
+      row.className = `notification-inbox-item${item.is_read ? "" : " unread"}`;
+      const heading = document.createElement("div");
+      heading.className = "notification-inbox-item-heading";
+      const identity = document.createElement("div");
+      identity.className = "notification-inbox-item-identity";
+      const symbol = document.createElement("strong");
+      symbol.textContent = item.symbol || "EDGE";
+      const readState = document.createElement("span");
+      readState.className = "notification-inbox-item-state";
+      readState.textContent = item.is_read ? "Read" : "Unread";
+      const timestamp = document.createElement("time");
+      timestamp.className = "notification-inbox-item-time";
+      timestamp.dateTime = item.occurred_at || "";
+      timestamp.textContent = formatNotificationTimestamp(item.occurred_at);
+      identity.append(symbol, readState);
+      heading.append(identity, timestamp);
+      const eventName = document.createElement("p");
+      eventName.className = "notification-inbox-item-name";
+      eventName.textContent = item.event_name || "EDGE Notification";
+      const body = document.createElement("p");
+      body.className = "notification-inbox-item-body";
+      body.textContent = item.body || "An EDGE event occurred.";
+      const actions = document.createElement("div");
+      actions.className = "notification-inbox-item-actions";
+      const open = document.createElement("a");
+      const destination = safeNotificationPath(item.destination);
+      open.href = destination;
+      open.textContent = "Open context";
+      open.addEventListener("click", (event) => {
+        event.preventDefault();
+        this.openItem(item.id, destination);
+      });
+      const dismiss = document.createElement("button");
+      dismiss.type = "button";
+      dismiss.textContent = "Dismiss";
+      dismiss.addEventListener("click", () => {
+        this.dismissItem(item.id).catch(() => this.showInboxError());
+      });
+      actions.append(open, dismiss);
+      row.append(heading, eventName, body, actions);
+      return row;
+    }
+
+    async openItem(notificationId, destination) {
+      try {
+        await this.mutateInbox(`/api/notifications/inbox/${notificationId}/read`);
+      } catch {
+        // An uncertain write remains unread, but the canonical deep link still opens.
+      } finally {
+        this.inboxDialog.close();
+        globalObject.location.assign(destination);
+      }
+    }
+
+    async dismissItem(notificationId) {
+      await this.mutateInbox(`/api/notifications/inbox/${notificationId}/dismiss`);
+      await this.refreshInbox();
+    }
+
+    async clearRead() {
+      await this.mutateInbox("/api/notifications/inbox/clear-read");
+      await this.refreshInbox();
+    }
+
+    async mutateInbox(url) {
+      const response = await fetch(url, { method: "POST" });
+      if (!response.ok) throw new Error("Notification state could not be updated.");
+      return response.json();
+    }
+
+    showInboxError() {
+      this.inboxSummary.textContent = "Inbox temporarily unavailable";
+    }
   }
 
   const exported = {
     NotificationController,
     disableWebPush,
     enableWebPush,
+    formatNotificationTimestamp,
     safeNotificationPath,
     subscriptionPayload,
     supportsWebPush,

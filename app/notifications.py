@@ -102,6 +102,12 @@ class PushSubscriptionDelete(BaseModel):
         return PushSubscriptionPayload.validate_endpoint(value)
 
 
+class NotificationSourceEventRead(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    source_event_key: str = Field(min_length=1, max_length=512)
+
+
 class NotificationRepository:
     def __init__(self, database_url: str) -> None:
         self.database_url = database_url
@@ -576,6 +582,113 @@ class NotificationRepository:
         finally:
             connection.close()
 
+    def inbox(self, limit: int = 50) -> dict[str, Any]:
+        connection = connect(self.database_url)
+        try:
+            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    """
+                    SELECT *
+                    FROM web_push_notifications
+                    WHERE deliverable = TRUE
+                      AND dismissed_at IS NULL
+                      AND event_type IN (
+                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
+                          'POST_ACTIVATION_PRESSURE_CHANGED'
+                      )
+                    ORDER BY occurred_at DESC, id DESC
+                    LIMIT %s
+                    """,
+                    (limit,),
+                )
+                items = [notification_inbox_item(row) for row in cursor.fetchall()]
+                cursor.execute(
+                    """
+                    SELECT
+                        COUNT(*) FILTER (WHERE read_at IS NULL) AS unread_count,
+                        COUNT(*) FILTER (WHERE read_at IS NOT NULL) AS read_count
+                    FROM web_push_notifications
+                    WHERE deliverable = TRUE
+                      AND dismissed_at IS NULL
+                      AND event_type IN (
+                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
+                          'POST_ACTIVATION_PRESSURE_CHANGED'
+                      )
+                    """
+                )
+                counts = cursor.fetchone()
+                return {
+                    "items": items,
+                    "unread_count": int(counts["unread_count"]),
+                    "read_count": int(counts["read_count"]),
+                    "limit": limit,
+                }
+        finally:
+            connection.close()
+
+    def mark_read(self, notification_id: int) -> bool:
+        return self._mark_read("id = %s", notification_id)
+
+    def mark_read_by_source_event_key(self, source_event_key: str) -> bool:
+        return self._mark_read("source_event_key = %s", source_event_key)
+
+    def _mark_read(self, identity_clause: str, identity: object) -> bool:
+        with transaction(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    UPDATE web_push_notifications
+                    SET read_at = COALESCE(read_at, clock_timestamp())
+                    WHERE {identity_clause}
+                      AND deliverable = TRUE
+                      AND event_type IN (
+                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
+                          'POST_ACTIVATION_PRESSURE_CHANGED'
+                      )
+                    RETURNING id
+                    """,
+                    (identity,),
+                )
+                return cursor.fetchone() is not None
+
+    def dismiss(self, notification_id: int) -> bool:
+        with transaction(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE web_push_notifications
+                    SET dismissed_at = COALESCE(dismissed_at, clock_timestamp())
+                    WHERE id = %s
+                      AND deliverable = TRUE
+                      AND event_type IN (
+                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
+                          'POST_ACTIVATION_PRESSURE_CHANGED'
+                      )
+                    RETURNING id
+                    """,
+                    (notification_id,),
+                )
+                return cursor.fetchone() is not None
+
+    def clear_read(self) -> int:
+        with transaction(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE web_push_notifications
+                    SET dismissed_at = clock_timestamp()
+                    WHERE deliverable = TRUE
+                      AND read_at IS NOT NULL
+                      AND dismissed_at IS NULL
+                      AND event_type IN (
+                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
+                          'POST_ACTIVATION_PRESSURE_CHANGED'
+                      )
+                    RETURNING id
+                    """
+                )
+                return len(cursor.fetchall())
+
     def pending_deliveries(
         self,
         notification_ids: Sequence[int] | None = None,
@@ -929,6 +1042,19 @@ def is_retryable_push_failure(http_status: int | None) -> bool:
     )
 
 
+def notification_inbox_item(row: Mapping[str, Any]) -> dict[str, Any]:
+    payload = notification_payload(row)
+    read_at = row.get("read_at")
+    dismissed_at = row.get("dismissed_at")
+    return {
+        "id": int(row["id"]),
+        **payload,
+        "is_read": read_at is not None,
+        "read_at": iso(read_at) if read_at is not None else None,
+        "dismissed_at": iso(dismissed_at) if dismissed_at is not None else None,
+    }
+
+
 def notification_payload(row: Mapping[str, Any]) -> dict[str, Any]:
     symbol = str(row["symbol"])
     route_owner = str(row["route_owner"])
@@ -960,6 +1086,7 @@ def notification_payload(row: Mapping[str, Any]) -> dict[str, Any]:
         side_mrz_count = int(row[f"{side}_mrz_count"])
         side_envelope_count = int(row[f"{side}_envelope_count"])
         title = f"{symbol} · {row['pressure_state_label']}"
+        event_name = str(row["pressure_state_label"])
         body = (
             f"Post-activation activity materially favors {side}-envelope observations · "
             f"{int(row['post_activation_observation_count'])} total · "
@@ -968,6 +1095,7 @@ def notification_payload(row: Mapping[str, Any]) -> dict[str, Any]:
         )
     elif event_type == "MRZ_NEAR_MISS":
         title = f"{symbol} MRZ Near Miss"
+        event_name = "Near Miss"
         body = (
             f"{route_owner} · {display_decimal(row['core_mrz_lower'])}–"
             f"{display_decimal(row['core_mrz_upper'])} · Required "
@@ -981,6 +1109,7 @@ def notification_payload(row: Mapping[str, Any]) -> dict[str, Any]:
             else route_owner
         )
         title = f"{symbol} MRZ Migrated"
+        event_name = "MRZ Migrated"
         body = (
             f"{route_label} · {display_decimal(previous_lower_value)}–"
             f"{display_decimal(previous_upper_value)} → "
@@ -989,6 +1118,7 @@ def notification_payload(row: Mapping[str, Any]) -> dict[str, Any]:
         )
     else:
         title = f"{symbol} MRZ Activated"
+        event_name = "MRZ Activated"
         body = (
             f"{route_owner} · {display_decimal(row['core_mrz_lower'])}–"
             f"{display_decimal(row['core_mrz_upper'])}"
@@ -1002,6 +1132,7 @@ def notification_payload(row: Mapping[str, Any]) -> dict[str, Any]:
         "source_trigger_event_id": str(row["source_trigger_event_id"]),
         "event_sequence": row.get("source_event_sequence"),
         "title": title,
+        "event_name": event_name,
         "body": body,
         "symbol": symbol,
         "route_owner": route_owner,
