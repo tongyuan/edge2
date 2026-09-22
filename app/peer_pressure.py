@@ -11,6 +11,7 @@ PRESSURE_DIRECTIONS = ("higher", "lower", "neutral")
 PRIMARY_PRESSURE_LOCATIONS = (
     "deep_discount",
     "shallow_discount",
+    "at_eqm",
     "shallow_premium",
     "deep_premium",
 )
@@ -18,6 +19,7 @@ PRIMARY_PRESSURE_LOCATIONS = (
 LOCATION_LABELS = {
     "deep_discount": "Deep Discount",
     "shallow_discount": "Shallow Discount",
+    "at_eqm": "At EQM",
     "shallow_premium": "Shallow Premium",
     "deep_premium": "Deep Premium",
     "below_ipda_range": "Below IPDA Range",

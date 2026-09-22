@@ -1,6 +1,7 @@
 const assert = require("node:assert/strict");
 const {
   primaryLocationKeys,
+  boundaryLocationKeys,
   secondaryLocationKeys,
   pressureDirection,
   filterSymbolsByPressure,
@@ -137,12 +138,20 @@ const unavailable = {
   mrz_status: "active",
   current_price_location: null,
 };
-const groups = groupSymbolsByLocation([inactive, unavailable, secondary, active], 4);
+const atEqm = {
+  symbol: "CLSK",
+  mrz_status: "unestablished",
+  current_price_location: "at_eqm",
+  pressure_direction: "higher",
+};
+const groups = groupSymbolsByLocation([inactive, unavailable, secondary, active, atEqm], 4);
 
 assert.deepEqual(groups.deep_discount, [active, inactive], "equal-count bucket tie is alphabetical");
 assert.deepEqual(groups.deep_premium, [], "MRZ location must not determine bucket");
 assert.deepEqual(groups.above_ipda_range, [secondary], "secondary bucket");
+assert.deepEqual(groups.at_eqm, [atEqm], "exact EQM has its own boundary bucket");
 assert.deepEqual(groups.unavailable, [unavailable], "unavailable bucket");
+assert.equal(pressureDirection(groups.at_eqm[0]), "higher", "EQM does not override pressure");
 
 const distributionSymbols = [
   { symbol: "DD", mrz_status: "unestablished", current_price_location: "deep_discount" },
@@ -156,30 +165,37 @@ const distributionSymbols = [
   { symbol: "DP-C", mrz_status: "unestablished", current_price_location: "deep_premium" },
   { symbol: "DP-D", mrz_status: "unestablished", current_price_location: "deep_premium" },
   { symbol: "ABOVE", mrz_status: "active", current_price_location: "above_ipda_range" },
-  { symbol: "EQM", mrz_status: "unestablished", current_price_location: null },
+  { symbol: "EQM", mrz_status: "unestablished", current_price_location: "at_eqm" },
+  { symbol: "UNKNOWN", mrz_status: "unestablished", current_price_location: null },
 ];
 const distributionGroups = groupSymbolsByLocation(distributionSymbols, 4);
 const distributionMembership = Object.fromEntries(Object.entries(distributionGroups).map(
   ([key, symbolsInGroup]) => [key, symbolsInGroup.map(({ symbol }) => symbol)],
 ));
 const distribution = locationDistributionFromGroups(distributionGroups);
-assert.deepEqual(distribution.buckets, {
-  deep_discount: { count: 1, percentage: 10 },
-  shallow_discount: { count: 2, percentage: 20 },
-  shallow_premium: { count: 3, percentage: 30 },
-  deep_premium: { count: 4, percentage: 40 },
-}, "distribution counts and percentages reuse the four classified heatmap groups");
+assert.deepEqual(
+  Object.fromEntries(Object.entries(distribution.buckets).map(([key, bucket]) => [key, bucket.count])),
+  { deep_discount: 1, shallow_discount: 2, shallow_premium: 3, deep_premium: 4, at_eqm: 1 },
+  "distribution counts include the exact-EQM boundary group",
+);
+assert.equal(formatLocationPercentage(distribution.buckets.at_eqm.percentage), "9.1%");
 assert.equal(
   distribution.classifiedTotal,
-  primaryLocationKeys.reduce((total, key) => total + distributionGroups[key].length, 0),
-  "classified total is exactly the primary heatmap population",
+  [...primaryLocationKeys, ...boundaryLocationKeys]
+    .reduce((total, key) => total + distributionGroups[key].length, 0),
+  "classified total is exactly the known in-range heatmap population",
 );
-assert.deepEqual(distribution.discountTotal, { count: 3, percentage: 30 });
-assert.deepEqual(distribution.premiumTotal, { count: 7, percentage: 70 });
+assert.equal(distribution.discountTotal.count, 3);
+assert.equal(formatLocationPercentage(distribution.discountTotal.percentage), "27.3%");
+assert.equal(distribution.premiumTotal.count, 7);
+assert.equal(formatLocationPercentage(distribution.premiumTotal.percentage), "63.6%");
 assert.equal(distributionGroups.deep_premium.some(({ symbol }) => symbol === "DP-A"), true,
   "active MRZ status does not affect distribution membership");
 assert.equal(distributionGroups.above_ipda_range.length, 1, "out-of-range heatmap behavior remains intact");
 assert.equal(distributionGroups.unavailable.length, 1, "unavailable heatmap behavior remains intact");
+assert.equal(distribution.monitoredTotal, 13, "classified, out-of-range, and unknown totals reconcile");
+assert.equal(distribution.outsideRangeCount, 1);
+assert.equal(distribution.unavailableCount, 1);
 assert.deepEqual(
   Object.fromEntries(Object.entries(distributionGroups).map(
     ([key, symbolsInGroup]) => [key, symbolsInGroup.map(({ symbol }) => symbol)],
@@ -364,9 +380,10 @@ assert.deepEqual(groupSummary.routeMix, { BTD: 2, STR: 1 },
 assert.deepEqual(groupSummary.locationMix, {
   deep_discount: 1,
   shallow_discount: 1,
+  at_eqm: 0,
   shallow_premium: 1,
   deep_premium: 1,
-}, "location mix uses the existing canonical heatmap classifications");
+}, "location mix preserves the four structural buckets and explicit EQM boundary");
 assert.equal(groupSummary.activeMrzCount, 3, "active count reuses authoritative active status");
 assert.equal(groupSummary.migratedCount, 2,
   "migrated count requires active status and canonical current provenance");

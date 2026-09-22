@@ -125,6 +125,7 @@ class GroupTrackingIntegrationTests(unittest.TestCase):
         self.assertEqual(report["current_state"]["location"], {
             "deep_discount": 2,
             "shallow_discount": 2,
+            "at_eqm": 0,
             "shallow_premium": 1,
             "deep_premium": 2,
         })

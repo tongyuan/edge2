@@ -7,6 +7,7 @@ const heatmapEmpty = document.querySelector("#heatmapEmpty");
 const primaryLocationGroups = document.querySelector("#primaryLocationGroups");
 const secondaryLocationGroups = document.querySelector("#secondaryLocationGroups");
 const locationDistribution = document.querySelector("#locationDistribution");
+const distributionAtEqmCount = document.querySelector("#distributionAtEqmCount");
 const universePressureHeadline = document.querySelector("#universePressureHeadline");
 const universePressureParticipation = document.querySelector("#universePressureParticipation");
 const universePressureButtons = [...document.querySelectorAll("[data-universe-pressure-direction]")];
@@ -67,6 +68,7 @@ const migrationEvidenceList = document.querySelector("#migrationEvidenceList");
 const migrationEvidenceClose = document.querySelector("#migrationEvidenceClose");
 const {
   primaryLocationKeys,
+  boundaryLocationKeys,
   secondaryLocationKeys,
   pressureDirection,
   filterSymbolsByPressure,
@@ -192,7 +194,9 @@ const distributionFields = {
 };
 const distributionTotals = {
   discount: document.querySelector("#distributionDiscountTotal"),
+  atEqm: document.querySelector("#distributionAtEqmTotal"),
   premium: document.querySelector("#distributionPremiumTotal"),
+  unavailable: document.querySelector("#distributionUnavailableTotal"),
 };
 const groupCurrentFields = {
   count: document.querySelector("#selectedGroupCount"),
@@ -202,6 +206,7 @@ const groupCurrentFields = {
   locations: {
     deep_discount: document.querySelector("#groupDeepDiscountCount"),
     shallow_discount: document.querySelector("#groupShallowDiscountCount"),
+    at_eqm: document.querySelector("#groupAtEqmCount"),
     shallow_premium: document.querySelector("#groupShallowPremiumCount"),
     deep_premium: document.querySelector("#groupDeepPremiumCount"),
   },
@@ -230,6 +235,7 @@ const locationLabels = {
   deep_premium_core_mrz: "Deep Premium",
   deep_discount: "Deep Discount",
   shallow_discount: "Shallow Discount",
+  at_eqm: "At EQM",
   shallow_premium: "Shallow Premium",
   deep_premium: "Deep Premium",
   below_ipda_range: "Below IPDA Range",
@@ -415,15 +421,21 @@ function renderLocationDistribution(groups, migrationTendency) {
     configureMigrationDirection(fieldsForLocation, key, "LOWER", migration);
     fieldsForLocation.samples.textContent = migration.sampleLabel;
   });
+  const atEqm = distribution.buckets.at_eqm;
+  distributionAtEqmCount.textContent = String(atEqm.count);
+  distributionTotals.atEqm.textContent = (
+    `${atEqm.count} · ${formatLocationPercentage(atEqm.percentage)}`
+  );
   distributionTotals.discount.textContent = (
     `${distribution.discountTotal.count} · ${formatLocationPercentage(distribution.discountTotal.percentage)}`
   );
   distributionTotals.premium.textContent = (
     `${distribution.premiumTotal.count} · ${formatLocationPercentage(distribution.premiumTotal.percentage)}`
   );
+  distributionTotals.unavailable.textContent = String(distribution.unavailableCount);
   locationDistribution.setAttribute(
     "aria-label",
-    `Current location distribution and historical MRZ migration tendency for ${distribution.classifiedTotal} classified symbols`,
+    `Current location distribution and historical MRZ migration tendency for ${distribution.classifiedTotal} classified symbols; ${distribution.unavailableCount} unavailable of ${distribution.monitoredTotal} monitored`,
   );
 }
 
@@ -499,7 +511,7 @@ function renderSavedGroupView() {
     ...groupMemberListItems(activeSavedGroup.members, true),
   );
   const state = activeSavedGroup.current_state;
-  primaryLocationKeys.forEach((key) => {
+  [...primaryLocationKeys, ...boundaryLocationKeys].forEach((key) => {
     groupCurrentFields.locations[key].textContent = String(state.location[key] ?? 0);
   });
   groupCurrentFields.active.textContent = `${state.active_mrz.count} / ${state.active_mrz.total}`;
@@ -644,7 +656,7 @@ function pressureMapCell(location, direction, count, total) {
 
 function renderPressureMap(payload) {
   const rows = payload.pressure_map?.locations || {};
-  pressureMap.replaceChildren(...primaryLocationKeys.map((location) => {
+  pressureMap.replaceChildren(...[...primaryLocationKeys, ...boundaryLocationKeys].map((location) => {
     const row = rows[location] || {
       counts: { higher: 0, lower: 0, neutral: 0 },
       participation: { count: 0, total: 0 },
@@ -1015,7 +1027,7 @@ function renderLocationHeatmap(
       )
     )),
   );
-  const populatedSecondaryKeys = secondaryLocationKeys.filter(
+  const populatedSecondaryKeys = [...boundaryLocationKeys, ...secondaryLocationKeys].filter(
     (key) => totalGroups[key].length > 0,
   );
   secondaryLocationGroups.replaceChildren(

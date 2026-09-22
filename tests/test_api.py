@@ -969,11 +969,12 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(after["ipda_20w_high_at_activation"], 300.0)
         self.assertEqual(after["ipda_20w_low_at_activation"], 100.0)
 
-    def test_current_price_at_exact_eqm_is_explicitly_unclassified(self) -> None:
+    def test_current_price_at_exact_eqm_is_explicit_boundary_state(self) -> None:
         response = self.client.post("/webhook/tradingview", json=webhook_payload(price="150"))
         self.assertEqual(response.status_code, 201)
         detail = self.client.get("/api/symbols/SPXUSDT").json()
-        self.assertIsNone(detail["current_price_location"])
+        self.assertEqual(detail["current_price_location"], "at_eqm")
+        self.assertEqual(detail["current_location_context"], "At IPDA EQM")
 
     def test_symbols_overview_classifies_every_current_location_without_an_active_mrz(self) -> None:
         cases = (
@@ -983,7 +984,7 @@ class APIIntegrationTests(unittest.TestCase):
             ("DP", "180", "deep_premium"),
             ("BELOW", "90", "below_ipda_range"),
             ("ABOVE", "210", "above_ipda_range"),
-            ("EQM", "150", None),
+            ("EQM", "150", "at_eqm"),
         )
         for index, (symbol, price, _) in enumerate(cases, 1):
             packet = webhook_payload(

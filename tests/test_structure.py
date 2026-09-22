@@ -79,6 +79,7 @@ class StructuralClassificationTests(unittest.TestCase):
             ("124.999", PriceLocation.DEEP_DISCOUNT),
             ("125", PriceLocation.SHALLOW_DISCOUNT),
             ("149.999", PriceLocation.SHALLOW_DISCOUNT),
+            ("150", PriceLocation.AT_EQM),
             ("150.001", PriceLocation.SHALLOW_PREMIUM),
             ("175", PriceLocation.SHALLOW_PREMIUM),
             ("175.001", PriceLocation.DEEP_PREMIUM),
@@ -92,8 +93,27 @@ class StructuralClassificationTests(unittest.TestCase):
                     expected,
                 )
 
-    def test_current_price_at_exact_eqm_has_no_location_bucket(self) -> None:
-        self.assertIsNone(classify_ipda_location(Decimal("150"), self.high, self.low))
+    def test_current_price_at_exact_eqm_has_explicit_boundary_location(self) -> None:
+        self.assertEqual(
+            classify_ipda_location(Decimal("150"), self.high, self.low),
+            PriceLocation.AT_EQM,
+        )
+
+    def test_canonical_equality_does_not_round_near_eqm_prices(self) -> None:
+        self.assertEqual(
+            classify_ipda_location(Decimal("149.999999999999"), self.high, self.low),
+            PriceLocation.SHALLOW_DISCOUNT,
+        )
+        self.assertEqual(
+            classify_ipda_location(Decimal("150.000000000001"), self.high, self.low),
+            PriceLocation.SHALLOW_PREMIUM,
+        )
+
+    def test_clsk_exact_eqm_regression(self) -> None:
+        self.assertEqual(
+            classify_ipda_location(Decimal("14.97"), Decimal("19.17"), Decimal("10.77")),
+            PriceLocation.AT_EQM,
+        )
 
     def test_directional_context_across_discount_and_premium_depths(self) -> None:
         cases = (

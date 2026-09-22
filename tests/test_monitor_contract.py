@@ -40,7 +40,7 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("Symbol Lab", HTML)
 
     def test_monitor_assets_are_versioned_together(self) -> None:
-        version = "migration-price-trajectory-20260921"
+        version = "exact-eqm-20260922"
         self.assertIn(f'/static/styles.css?v={version}', HTML)
         self.assertIn(f'/static/heatmap-state.js?v={version}', HTML)
         self.assertIn(f'/static/operator-time.js?v={version}', HTML)
@@ -212,11 +212,12 @@ class MonitorContractTests(unittest.TestCase):
         self.assertLess(HTML.index('id="locationHeatmap"'), HTML.index('id="groupTrackingWorkspace"'))
         self.assertLess(HTML.index(">LOCATION HEATMAP<"), HTML.index(">SELECTED SYMBOL DETAIL<"))
 
-    def test_location_distribution_has_four_canonical_buckets_and_two_halves(self) -> None:
+    def test_location_distribution_has_four_canonical_buckets_and_eqm_boundary(self) -> None:
         self.assertEqual(HTML.count('class="location-distribution-cell"'), 4)
         for label in (
             "Deep Discount",
             "Shallow Discount",
+            "At EQM",
             "Shallow Premium",
             "Deep Premium",
         ):
@@ -224,10 +225,13 @@ class MonitorContractTests(unittest.TestCase):
                 self.assertIn(f"<h3>{label}</h3>", HTML)
         self.assertIn('id="distributionDiscountTotal"', HTML)
         self.assertIn('id="distributionPremiumTotal"', HTML)
-        self.assertEqual(HTML.count(">Current<"), 4)
+        self.assertEqual(HTML.count(">Current<"), 5)
         self.assertEqual(HTML.count(">Historical migration outcomes<"), 4)
         self.assertEqual(HTML.count('class="location-migration-history"'), 4)
         self.assertEqual(HTML.count(">No migration history<"), 4)
+        self.assertIn('id="distributionAtEqmCount">', HTML)
+        self.assertIn('id="distributionAtEqmTotal">', HTML)
+        self.assertIn('id="distributionUnavailableTotal">', HTML)
         for prefix in (
             "DeepDiscount",
             "ShallowDiscount",
@@ -268,6 +272,9 @@ class MonitorContractTests(unittest.TestCase):
             "function locationDistributionFromGroups(groups)", 1
         )[1].split("function formatLocationPercentage", 1)[0]
         self.assertIn("primaryLocationKeys", distribution_builder)
+        self.assertIn("boundaryLocationKeys", distribution_builder)
+        self.assertIn("unavailableCount", distribution_builder)
+        self.assertIn("monitoredTotal", distribution_builder)
         self.assertNotIn("current_price_location", distribution_builder)
         self.assertNotIn("hasActiveMrz", distribution_builder)
         self.assertNotIn("fetch(", distribution_builder)
@@ -317,7 +324,7 @@ class MonitorContractTests(unittest.TestCase):
 
     def test_distribution_is_compact_and_mobile_safe(self) -> None:
         self.assertIn(
-            ".location-distribution-grid {\n  display: grid;\n  grid-template-columns: repeat(4, minmax(0, 1fr));",
+            ".location-distribution-grid {\n  display: grid;\n  grid-template-columns: repeat(5, minmax(0, 1fr));",
             CSS,
         )
         self.assertIn(
@@ -362,18 +369,24 @@ class MonitorContractTests(unittest.TestCase):
         self.assertEqual(HTML.count('id="migrationEvidenceDialog"'), 1)
         self.assertIn("outline: 2px solid var(--accent);", CSS)
 
-    def test_heatmap_has_exactly_four_primary_and_three_fallback_keys(self) -> None:
+    def test_heatmap_has_four_primary_one_boundary_and_three_fallback_keys(self) -> None:
         primary = HEATMAP_STATE.split("const primaryLocationKeys = [", 1)[1].split("];", 1)[0]
+        boundary = HEATMAP_STATE.split("const boundaryLocationKeys = [", 1)[1].split("];", 1)[0]
         secondary = HEATMAP_STATE.split("const secondaryLocationKeys = [", 1)[1].split("];", 1)[0]
         self.assertEqual(
             [line.strip(' ,\"') for line in primary.splitlines() if '"' in line],
             ["deep_discount", "shallow_discount", "shallow_premium", "deep_premium"],
         )
         self.assertEqual(
+            [value.strip(' ,\"') for value in boundary.split(",") if '"' in value],
+            ["at_eqm"],
+        )
+        self.assertEqual(
             [line.strip(' ,\"') for line in secondary.splitlines() if '"' in line],
             ["below_ipda_range", "above_ipda_range", "unavailable"],
         )
         self.assertIn('key === "unavailable" ? "Unavailable"', JAVASCRIPT)
+        self.assertIn('at_eqm: "At EQM"', JAVASCRIPT)
 
     def test_heatmap_groups_each_symbol_once_and_uses_deterministic_ranking_hierarchy(self) -> None:
         self.assertIn('const key = allLocationKeys.has(currentLocation) ? currentLocation : "unavailable";', HEATMAP_STATE)

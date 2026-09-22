@@ -6,13 +6,19 @@
     "deep_premium",
   ];
 
+  const boundaryLocationKeys = ["at_eqm"];
+
   const secondaryLocationKeys = [
     "below_ipda_range",
     "above_ipda_range",
     "unavailable",
   ];
 
-  const allLocationKeys = new Set([...primaryLocationKeys, ...secondaryLocationKeys]);
+  const allLocationKeys = new Set([
+    ...primaryLocationKeys,
+    ...boundaryLocationKeys,
+    ...secondaryLocationKeys,
+  ]);
   const premiumLocationKeys = new Set(["shallow_premium", "deep_premium"]);
   const discountLocationKeys = new Set(["shallow_discount", "deep_discount"]);
   const activityMaximum = 20;
@@ -180,26 +186,35 @@
   }
 
   function locationDistributionFromGroups(groups) {
-    const bucketCounts = Object.fromEntries(primaryLocationKeys.map((key) => [
+    const classifiedLocationKeys = [...primaryLocationKeys, ...boundaryLocationKeys];
+    const bucketCounts = Object.fromEntries(classifiedLocationKeys.map((key) => [
       key,
       Array.isArray(groups[key]) ? groups[key].length : 0,
     ]));
-    const classifiedTotal = primaryLocationKeys.reduce(
+    const classifiedTotal = classifiedLocationKeys.reduce(
       (total, key) => total + bucketCounts[key],
       0,
     );
     const percentage = (count) => (
       classifiedTotal === 0 ? 0 : (count / classifiedTotal) * 100
     );
-    const buckets = Object.fromEntries(primaryLocationKeys.map((key) => [key, {
+    const buckets = Object.fromEntries(classifiedLocationKeys.map((key) => [key, {
       count: bucketCounts[key],
       percentage: percentage(bucketCounts[key]),
     }]));
     const discountCount = bucketCounts.deep_discount + bucketCounts.shallow_discount;
     const premiumCount = bucketCounts.shallow_premium + bucketCounts.deep_premium;
+    const outsideRangeCount = ["below_ipda_range", "above_ipda_range"].reduce(
+      (total, key) => total + (Array.isArray(groups[key]) ? groups[key].length : 0),
+      0,
+    );
+    const unavailableCount = Array.isArray(groups.unavailable) ? groups.unavailable.length : 0;
     return {
       buckets,
       classifiedTotal,
+      monitoredTotal: classifiedTotal + outsideRangeCount + unavailableCount,
+      outsideRangeCount,
+      unavailableCount,
       discountTotal: {
         count: discountCount,
         percentage: percentage(discountCount),
@@ -385,7 +400,9 @@
   function groupTrackingSummary(symbols, state) {
     const selectedStates = selectedGroupStates(symbols, state.selectedSymbols);
     const routeMix = { BTD: 0, STR: 0 };
-    const locationMix = Object.fromEntries(primaryLocationKeys.map((key) => [key, 0]));
+    const locationMix = Object.fromEntries(
+      [...primaryLocationKeys, ...boundaryLocationKeys].map((key) => [key, 0]),
+    );
     let activeMrzCount = 0;
     let migratedCount = 0;
     selectedStates.forEach((symbolState) => {
@@ -537,6 +554,7 @@
 
   const heatmapState = {
     primaryLocationKeys,
+    boundaryLocationKeys,
     secondaryLocationKeys,
     pressureDirection,
     filterSymbolsByPressure,

@@ -53,6 +53,7 @@ LOCATION_MIGRATION_KEYS = {
 GROUP_LOCATION_KEYS = (
     "deep_discount",
     "shallow_discount",
+    "at_eqm",
     "shallow_premium",
     "deep_premium",
 )

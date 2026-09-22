@@ -225,6 +225,7 @@ class PeerPressureTests(unittest.TestCase):
             symbol_state("QUIET", "deep_discount"),
             symbol_state("DOWN", "shallow_premium"),
             symbol_state("NOACTIVE", "deep_premium"),
+            symbol_state("EQM", "at_eqm"),
             symbol_state("OUTSIDE", "above_ipda_range"),
         )
         authorities = (active("UP"), active("QUIET"), active("DOWN"))
@@ -239,8 +240,8 @@ class PeerPressureTests(unittest.TestCase):
 
         report = build_universe_pressure_report(states, authorities, evidence)
 
-        self.assertEqual(report["counts"], {"higher": 1, "lower": 1, "neutral": 2})
-        self.assertEqual(report["participation"], {"count": 2, "total": 4})
+        self.assertEqual(report["counts"], {"higher": 1, "lower": 1, "neutral": 3})
+        self.assertEqual(report["participation"], {"count": 2, "total": 5})
         self.assertEqual(report["excluded_unclassified_count"], 1)
         rows = report["pressure_map"]["locations"]
         self.assertEqual(
@@ -253,6 +254,11 @@ class PeerPressureTests(unittest.TestCase):
         self.assertEqual(
             rows["shallow_premium"]["counts"],
             {"higher": 0, "lower": 1, "neutral": 0},
+        )
+        self.assertEqual(
+            rows["at_eqm"]["counts"],
+            {"higher": 0, "lower": 0, "neutral": 1},
+            "pressure remains independently derived for an exact-EQM member",
         )
         self.assertEqual(report["pressure_map"]["totals"], report["counts"])
         self.assertEqual(

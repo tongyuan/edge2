@@ -285,7 +285,7 @@ h2 { margin-bottom: 0; font-size: 1.55rem; letter-spacing: -0.02em; }
 .location-distribution-panel { margin-top: 42px; }
 .location-distribution-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
   max-width: 100%;
 }
@@ -402,9 +402,19 @@ h2 { margin-bottom: 0; font-size: 1.55rem; letter-spacing: -0.02em; }
   color: var(--muted);
   font-size: 0.68rem;
 }
+.location-distribution-boundary {
+  border-color: rgba(95, 228, 188, 0.35);
+  background: rgba(95, 228, 188, 0.035);
+}
+.location-boundary-note {
+  margin: 11px 0 0;
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1.35;
+}
 .location-distribution-totals {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
   margin-top: 10px;
   padding: 11px 16px;
@@ -1367,7 +1377,7 @@ h2 { margin-bottom: 0; font-size: 1.55rem; letter-spacing: -0.02em; }
 .group-empty { color: #657186; font-size: 0.78rem; }
 .heatmap-secondary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
   margin-top: 10px;
 }

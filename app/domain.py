@@ -27,6 +27,7 @@ class StructuralLocation(StrEnum):
 class PriceLocation(StrEnum):
     DEEP_DISCOUNT = "deep_discount"
     SHALLOW_DISCOUNT = "shallow_discount"
+    AT_EQM = "at_eqm"
     SHALLOW_PREMIUM = "shallow_premium"
     DEEP_PREMIUM = "deep_premium"
     BELOW_IPDA_RANGE = "below_ipda_range"

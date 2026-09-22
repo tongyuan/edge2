@@ -11,7 +11,7 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/static/edge-mrz-icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/static/edge-mrz-icon-180.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=migration-price-trajectory-20260921" />
+    <link rel="stylesheet" href="/static/styles.css?v=exact-eqm-20260922" />
     <link rel="stylesheet" href="/static/diagnostics-nav.css?v=views-menu-20260907" />
   </head>
   <body>
@@ -87,6 +87,14 @@
               <p class="location-migration-sample" id="distributionShallowDiscountSamples">n = 0</p>
             </details>
           </article>
+          <article class="location-distribution-cell location-distribution-boundary">
+            <h3>At EQM</h3>
+            <div class="location-distribution-current">
+              <span>Current</span>
+              <p><strong id="distributionAtEqmCount">0</strong></p>
+            </div>
+            <p class="location-boundary-note">Exact canonical IPDA 20W midpoint</p>
+          </article>
           <article class="location-distribution-cell">
             <h3>Shallow Premium</h3>
             <div class="location-distribution-current">
@@ -120,9 +128,11 @@
             </details>
           </article>
         </div>
-        <div class="location-distribution-totals" aria-label="Discount and Premium totals">
+        <div class="location-distribution-totals" aria-label="Discount, At EQM, Premium, and unavailable totals">
           <p><span>Discount</span><strong id="distributionDiscountTotal">0 · 0.0%</strong></p>
+          <p><span>At EQM</span><strong id="distributionAtEqmTotal">0 · 0.0%</strong></p>
           <p><span>Premium</span><strong id="distributionPremiumTotal">0 · 0.0%</strong></p>
+          <p><span>Unavailable</span><strong id="distributionUnavailableTotal">0</strong></p>
         </div>
       </section>
 
@@ -257,6 +267,7 @@
                 <dl>
                   <div><dt>Deep Discount</dt><dd id="groupDeepDiscountCount">0</dd></div>
                   <div><dt>Shallow Discount</dt><dd id="groupShallowDiscountCount">0</dd></div>
+                  <div><dt>At EQM</dt><dd id="groupAtEqmCount">0</dd></div>
                   <div><dt>Shallow Premium</dt><dd id="groupShallowPremiumCount">0</dd></div>
                   <div><dt>Deep Premium</dt><dd id="groupDeepPremiumCount">0</dd></div>
                 </dl>
@@ -424,10 +435,10 @@
     </dialog>
     <div class="notification-toast-host" id="notificationToastHost" aria-live="polite"></div>
     <script src="/static/diagnostics-nav.js?v=views-menu-20260907" defer></script>
-    <script src="/static/heatmap-state.js?v=migration-price-trajectory-20260921" defer></script>
-    <script src="/static/operator-time.js?v=migration-price-trajectory-20260921" defer></script>
-    <script src="/static/monitor-presentation.js?v=migration-price-trajectory-20260921" defer></script>
-    <script src="/static/notifications.js?v=migration-price-trajectory-20260921" defer></script>
-    <script src="/static/app.js?v=migration-price-trajectory-20260921" defer></script>
+    <script src="/static/heatmap-state.js?v=exact-eqm-20260922" defer></script>
+    <script src="/static/operator-time.js?v=exact-eqm-20260922" defer></script>
+    <script src="/static/monitor-presentation.js?v=exact-eqm-20260922" defer></script>
+    <script src="/static/notifications.js?v=exact-eqm-20260922" defer></script>
+    <script src="/static/app.js?v=exact-eqm-20260922" defer></script>
   </body>
 </html>

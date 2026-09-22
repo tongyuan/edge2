@@ -52,7 +52,7 @@ def classify_ipda_location(
     if value < geometry["eqm"]:
         return PriceLocation.SHALLOW_DISCOUNT
     if value == geometry["eqm"]:
-        return None
+        return PriceLocation.AT_EQM
     if value <= geometry["premium_midpoint"]:
         return PriceLocation.SHALLOW_PREMIUM
     if value <= ipda_high:
