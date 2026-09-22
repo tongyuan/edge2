@@ -88,6 +88,18 @@ def successor_eligible(active: ActiveMRZ, observation: Observation) -> bool:
     return successor_external_side(active, observation) is not None
 
 
+def observations_after_authority_boundary(
+    observations: Sequence[Observation],
+    boundary: Observation,
+) -> tuple[Observation, ...]:
+    """Return canonical observations strictly after an authority boundary."""
+    return tuple(
+        item
+        for item in sorted(observations, key=lambda candidate: candidate.order_key)
+        if item.order_key > boundary.order_key
+    )
+
+
 def successor_observation_pool(
     active: ActiveMRZ,
     route_window: Sequence[Observation],
@@ -162,6 +174,7 @@ def replay_symbol(
         Route.STR: deque(maxlen=ROUTE_OBSERVATION_WINDOW),
     }
     active: ActiveMRZ | None = None
+    authority_boundary: Observation | None = None
     transitions: list[MRZTransition] = []
 
     for incoming in ordered:
@@ -174,6 +187,7 @@ def replay_symbol(
                 and incoming.event_id == promoted_activation.activation_event_id
             ):
                 active = promoted_activation
+                authority_boundary = incoming
                 transitions.append(
                     MRZTransition(
                         sequence=len(transitions) + 1,
@@ -206,6 +220,7 @@ def replay_symbol(
             if candidate is None:
                 continue
             active = candidate
+            authority_boundary = incoming
             transitions.append(
                 MRZTransition(
                     sequence=len(transitions) + 1,
@@ -231,9 +246,15 @@ def replay_symbol(
 
         if not successor_eligible(active, incoming):
             continue
+        if authority_boundary is None:
+            raise RuntimeError("active MRZ must have an authority boundary")
+        episode_route_window = observations_after_authority_boundary(
+            tuple(route_window),
+            authority_boundary,
+        )
         eligible_pool = successor_observation_pool(
             active,
-            tuple(route_window),
+            episode_route_window,
             incoming,
         )
         evaluation = evaluate_concentration(
@@ -251,6 +272,7 @@ def replay_symbol(
             continue
         previous = active
         active = successor
+        authority_boundary = incoming
         migration_side = successor_external_side(previous, incoming)
         transitions.append(
             MRZTransition(

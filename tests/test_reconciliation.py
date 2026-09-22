@@ -8,6 +8,7 @@ from psycopg2.extras import Json
 
 from app.db import connect, transaction
 from app.mrz_robustness import MRZRobustnessService
+from app.notifications import NotificationRepository
 from app.reconciliation import (
     RESULT_NO_CHANGE,
     RESULT_RECONCILIATION_REQUIRED,
@@ -248,14 +249,14 @@ class DerivedStateReconciliationTests(unittest.TestCase):
         )
         self.assertEqual(
             [item["core_mrz_lower"] for item in proposed["reconstructed_mrz_path"]],
-            ["68.8155", "67.912", "68.995"],
+            ["68.8155", "67.912"],
         )
         self.assertEqual(
             [item["core_mrz_upper"] for item in proposed["reconstructed_mrz_path"]],
-            ["68.995", "68.2545", "69.233"],
+            ["68.995", "68.2545"],
         )
-        self.assertEqual(proposed["missing_historical_migrations"], 2)
-        self.assertEqual(proposed["replay_migration_event_count"], 2)
+        self.assertEqual(proposed["missing_historical_migrations"], 1)
+        self.assertEqual(proposed["replay_migration_event_count"], 1)
 
         applied = self.reconciler.apply(
             ["XAGUSD"],
@@ -267,26 +268,56 @@ class DerivedStateReconciliationTests(unittest.TestCase):
         self.assertEqual(self.observation_snapshot("XAGUSD"), observations_before)
         monitor = self.repository.symbol_detail("XAGUSD")
         self.assertEqual(monitor["route_owner"], "BTD")
-        self.assertEqual(monitor["core_mrz_lower"], 68.995)
-        self.assertEqual(monitor["core_mrz_upper"], 69.233)
+        self.assertEqual(monitor["core_mrz_lower"], 67.912)
+        self.assertEqual(monitor["core_mrz_upper"], 68.2545)
         events = self.repository.audit_events("XAGUSD")
         self.assertEqual(
             [event["event_type"] for event in events],
-            ["MRZ_ACTIVATED", "MRZ_MIGRATED", "MRZ_MIGRATED"],
+            ["MRZ_ACTIVATED", "MRZ_MIGRATED"],
         )
         self.assertEqual(
             [Decimal(event["new_core_mrz_lower"]) for event in events],
-            [Decimal("68.8155"), Decimal("67.912"), Decimal("68.995")],
+            [Decimal("68.8155"), Decimal("67.912")],
         )
-        self.assertEqual(len({event["event_key"] for event in events}), 3)
+        self.assertEqual(len({event["event_key"] for event in events}), 2)
 
         card = MRZRobustnessService(
             self.repository.mrz_robustness_inputs,
             clock=lambda: BASE_TIME + timedelta(days=30),
         ).generate_report()["active_mrzs"][0]
         self.assertEqual(card["route_owner"], "BTD")
-        self.assertEqual(card["active_mrz"]["lower"], "68.995")
-        self.assertEqual(card["active_mrz"]["upper"], "69.233")
+        self.assertEqual(card["active_mrz"]["lower"], "67.912")
+        self.assertEqual(card["active_mrz"]["upper"], "68.2545")
+
+        with transaction(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT event_type, deliverable
+                    FROM web_push_notifications
+                    WHERE symbol = 'XAGUSD'
+                    ORDER BY source_event_sequence
+                    """
+                )
+                baselines = cursor.fetchall()
+        self.assertEqual(
+            baselines,
+            [("MRZ_ACTIVATED", False), ("MRZ_MIGRATED", False)],
+        )
+        NotificationRepository(self.database_url).reconcile_notifiable_events()
+        with transaction(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM web_push_notifications
+                    WHERE symbol = 'XAGUSD'
+                      AND event_type IN ('MRZ_ACTIVATED', 'MRZ_MIGRATED')
+                      AND deliverable = TRUE
+                    """
+                )
+                deliverable_authority_count = cursor.fetchone()[0]
+        self.assertEqual(deliverable_authority_count, 0)
 
         after = self.reconciler.dry_run(["XAGUSD"])
         self.assertEqual(after["result"], RESULT_NO_CHANGE)
@@ -301,6 +332,40 @@ class DerivedStateReconciliationTests(unittest.TestCase):
         )
         self.assertEqual(reapplied["result"], "NO CHANGES")
         self.assertEqual(reapplied["applied_symbol_count"], 0)
+
+    def test_rebuild_baselines_route_change_history_without_notifications(self) -> None:
+        for index, price in enumerate(("110", "110.2", "110.4", "110.6"), 1):
+            self.ingest(payload(index, price, symbol="ROUTEHISTORY"))
+        for index, price in enumerate(("180", "180.2", "180.4", "180.6"), 5):
+            self.insert_observation_only(
+                payload(index, price, symbol="ROUTEHISTORY", route="STR")
+            )
+        dry_run = self.reconciler.dry_run(["ROUTEHISTORY"])
+
+        self.reconciler.apply(
+            ["ROUTEHISTORY"],
+            expected_plan_digest=dry_run["plan_digest"],
+        )
+
+        with transaction(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT event_type, deliverable
+                    FROM web_push_notifications
+                    WHERE symbol = 'ROUTEHISTORY'
+                    ORDER BY source_event_sequence, event_type
+                    """
+                )
+                notifications = cursor.fetchall()
+        self.assertEqual(
+            notifications,
+            [
+                ("MRZ_ACTIVATED", False),
+                ("MRZ_MIGRATED", False),
+                ("ROUTE_CHANGED", False),
+            ],
+        )
 
     def test_apply_is_atomic_when_derived_persistence_fails(self) -> None:
         self.seed_stale_successor(

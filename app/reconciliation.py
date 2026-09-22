@@ -102,6 +102,10 @@ class DerivedStateReconciler:
                     )
                     try:
                         self.repository._replace_derived_state(cursor, replay)
+                        self._suppress_rebuilt_authority_notifications(
+                            cursor,
+                            snapshot.symbol,
+                        )
                     except Exception as exc:
                         raise ReconciliationError(
                             f"Failed to persist derived state for {snapshot.symbol}: {exc}"
@@ -129,6 +133,75 @@ class DerivedStateReconciler:
             "result": "APPLIED" if applied_symbols else "NO CHANGES",
             "symbols": verified_reports,
         }
+
+    @staticmethod
+    def _suppress_rebuilt_authority_notifications(
+        cursor: RealDictCursor,
+        symbol: str,
+    ) -> None:
+        """Keep a historical rebuild from creating fresh authority alerts."""
+        cursor.execute(
+            """
+            UPDATE web_push_notifications n
+            SET deliverable = FALSE,
+                dismissed_at = COALESCE(n.dismissed_at, clock_timestamp())
+            WHERE n.symbol = %s
+              AND n.event_type IN (
+                  'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'ROUTE_CHANGED'
+              )
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM mrz_events e
+                  WHERE e.symbol = %s
+                    AND e.event_key = n.source_event_key
+              )
+            """,
+            (symbol, symbol),
+        )
+        cursor.execute(
+            """
+            INSERT INTO web_push_notifications (
+                source_event_key,
+                source_trigger_event_id,
+                source_event_sequence,
+                event_type,
+                symbol,
+                route_owner,
+                previous_route_owner,
+                structural_location,
+                previous_core_mrz_lower,
+                previous_core_mrz_upper,
+                core_mrz_lower,
+                core_mrz_upper,
+                activated_at,
+                occurred_at,
+                deliverable
+            )
+            SELECT
+                e.event_key,
+                e.trigger_event_id,
+                e.sequence,
+                e.event_type,
+                e.symbol,
+                e.route_owner,
+                e.previous_route_owner,
+                e.structural_location,
+                e.old_core_mrz_lower,
+                e.old_core_mrz_upper,
+                e.new_core_mrz_lower,
+                e.new_core_mrz_upper,
+                e.occurred_at,
+                e.occurred_at,
+                FALSE
+            FROM mrz_events e
+            WHERE e.symbol = %s
+              AND e.event_type IN (
+                  'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'ROUTE_CHANGED'
+              )
+            ON CONFLICT (source_event_key) DO NOTHING
+            """,
+            (symbol,),
+        )
 
     def _report_payload(
         self,
