@@ -288,13 +288,6 @@ class DerivedStateReconciliationTests(unittest.TestCase):
         self.assertEqual(card["route_owner"], "BTD")
         self.assertEqual(card["active_mrz"]["lower"], "67.912")
         self.assertEqual(card["active_mrz"]["upper"], "68.2545")
-        notification_repository = NotificationRepository(self.database_url)
-        self.assertIsNone(
-            notification_repository.reconcile_pressure_state(
-                card,
-                "XAGUSD-event-17",
-            )
-        )
 
         with transaction(self.database_url) as connection:
             with connection.cursor() as cursor:
@@ -311,7 +304,7 @@ class DerivedStateReconciliationTests(unittest.TestCase):
             baselines,
             [("MRZ_ACTIVATED", False), ("MRZ_MIGRATED", False)],
         )
-        notification_repository.reconcile_notifiable_events()
+        NotificationRepository(self.database_url).reconcile_notifiable_events()
         with transaction(self.database_url) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
@@ -324,17 +317,7 @@ class DerivedStateReconciliationTests(unittest.TestCase):
                     """
                 )
                 deliverable_authority_count = cursor.fetchone()[0]
-                cursor.execute(
-                    """
-                    SELECT COUNT(*)
-                    FROM web_push_notifications
-                    WHERE symbol = 'XAGUSD'
-                      AND event_type = 'POST_ACTIVATION_PRESSURE_CHANGED'
-                    """
-                )
-                pressure_notification_count = cursor.fetchone()[0]
         self.assertEqual(deliverable_authority_count, 0)
-        self.assertEqual(pressure_notification_count, 0)
 
         after = self.reconciler.dry_run(["XAGUSD"])
         self.assertEqual(after["result"], RESULT_NO_CHANGE)

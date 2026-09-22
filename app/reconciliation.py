@@ -11,7 +11,6 @@ from psycopg2.extras import RealDictCursor
 
 from app.db import connect, transaction
 from app.domain import ActiveMRZ, MRZEventType, MRZTransition, Observation, ReplayResult
-from app.mrz_robustness import MRZRobustnessService
 from app.repository import (
     EdgeRepository,
     active_from_row,
@@ -106,11 +105,6 @@ class DerivedStateReconciler:
                         self._suppress_rebuilt_authority_notifications(
                             cursor,
                             snapshot.symbol,
-                        )
-                        self._baseline_rebuilt_pressure_state(
-                            cursor,
-                            snapshot,
-                            replay,
                         )
                     except Exception as exc:
                         raise ReconciliationError(
@@ -207,119 +201,6 @@ class DerivedStateReconciler:
             ON CONFLICT (source_event_key) DO NOTHING
             """,
             (symbol,),
-        )
-        cursor.execute(
-            """
-            UPDATE web_push_notifications n
-            SET deliverable = FALSE,
-                dismissed_at = COALESCE(n.dismissed_at, clock_timestamp())
-            WHERE n.symbol = %s
-              AND n.event_type = 'POST_ACTIVATION_PRESSURE_CHANGED'
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM mrz_events e
-                  WHERE e.symbol = %s
-                    AND e.event_type IN ('MRZ_ACTIVATED', 'MRZ_MIGRATED')
-                    AND e.trigger_event_id = n.lifecycle_activation_event_id
-              )
-            """,
-            (symbol, symbol),
-        )
-
-    def _baseline_rebuilt_pressure_state(
-        self,
-        cursor: RealDictCursor,
-        snapshot: PersistedDerivedState,
-        replay: ReplayResult,
-    ) -> None:
-        active = replay.active_mrz
-        if active is None:
-            return
-        latest = max(
-            snapshot.observations,
-            key=lambda item: (item.received_at, item.id),
-        )
-        robustness = MRZRobustnessService(
-            lambda: ((), (), {}),
-            clock=self.clock,
-        )
-        report = robustness.active_mrz_report(
-            active,
-            snapshot.observations,
-            self.clock(),
-            {
-                "has_migrated": any(
-                    transition.event_type is MRZEventType.MIGRATED
-                    for transition in replay.transitions
-                )
-            },
-        )
-        pressure = report["migration_pressure"]
-        position = report["observation_position"]
-        boundary = report["boundary_pressure"]
-        displacement = report["mrz_displacement"]
-        successor = report["successor_watch"]
-        cursor.execute(
-            """
-            INSERT INTO post_activation_pressure_states (
-                symbol, activation_event_id, current_state,
-                state_status, state_label,
-                post_activation_observation_count,
-                above_mrz_count, inside_mrz_count, below_mrz_count,
-                above_envelope_count, below_envelope_count,
-                displacement, successor_status, successor_label,
-                transition_count, last_evaluated_trigger_event_id,
-                last_evaluated_observation_id,
-                last_evaluated_received_at, last_evaluated_at
-            ) VALUES (
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, 0, %s, %s, %s, clock_timestamp()
-            )
-            ON CONFLICT (symbol, activation_event_id) DO UPDATE SET
-                current_state = EXCLUDED.current_state,
-                state_status = EXCLUDED.state_status,
-                state_label = EXCLUDED.state_label,
-                post_activation_observation_count =
-                    EXCLUDED.post_activation_observation_count,
-                above_mrz_count = EXCLUDED.above_mrz_count,
-                inside_mrz_count = EXCLUDED.inside_mrz_count,
-                below_mrz_count = EXCLUDED.below_mrz_count,
-                above_envelope_count = EXCLUDED.above_envelope_count,
-                below_envelope_count = EXCLUDED.below_envelope_count,
-                displacement = EXCLUDED.displacement,
-                successor_status = EXCLUDED.successor_status,
-                successor_label = EXCLUDED.successor_label,
-                transition_count = 0,
-                last_evaluated_trigger_event_id =
-                    EXCLUDED.last_evaluated_trigger_event_id,
-                last_evaluated_observation_id =
-                    EXCLUDED.last_evaluated_observation_id,
-                last_evaluated_received_at =
-                    EXCLUDED.last_evaluated_received_at,
-                last_evaluated_at = EXCLUDED.last_evaluated_at,
-                updated_at = clock_timestamp()
-            """,
-            (
-                active.symbol,
-                active.activation_event_id,
-                str(pressure["direction"]),
-                str(pressure["status"]),
-                str(pressure["label"]),
-                int(position["total_observation_count"]),
-                int(position["above_active_mrz_observation_count"]),
-                int(position["inside_active_mrz_observation_count"]),
-                int(position["below_active_mrz_observation_count"]),
-                int(boundary["above_upper_envelope_observation_count"]),
-                int(boundary["below_lower_envelope_observation_count"]),
-                displacement[
-                    "median_signed_displacement_percentage_of_activation_ipda"
-                ],
-                str(successor["status"]),
-                str(successor["label"]),
-                latest.event_id,
-                latest.id,
-                latest.received_at,
-            ),
         )
 
     def _report_payload(
