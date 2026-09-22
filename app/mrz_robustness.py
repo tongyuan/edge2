@@ -14,11 +14,7 @@ from app.concentration import (
     latest_route_window,
 )
 from app.domain import ActiveMRZ, Observation, Route
-from app.state_engine import (
-    build_successor_mrz,
-    observations_after_authority_boundary,
-    successor_external_side,
-)
+from app.state_engine import build_successor_mrz, successor_external_side
 from app.structure import classify_structural_location
 
 
@@ -352,7 +348,7 @@ def select_post_activation_observations(
         None,
     )
     if activation is not None:
-        return observations_after_authority_boundary(ordered, activation)
+        return tuple(item for item in ordered if item.order_key > activation.order_key)
     return tuple(item for item in ordered if item.observed_at > active.activated_at)
 
 

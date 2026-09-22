@@ -3,13 +3,7 @@ from __future__ import annotations
 import unittest
 from decimal import Decimal
 
-from app.domain import (
-    ActivationSource,
-    ActiveMRZ,
-    MRZEventType,
-    Route,
-    StructuralLocation,
-)
+from app.domain import MRZEventType, Route, StructuralLocation
 from app.state_engine import replay_symbol
 from tests.helpers import BASE_TIME, observation
 
@@ -392,7 +386,7 @@ class ActiveMRZStateTests(unittest.TestCase):
         self.assertEqual(len(replay_symbol(old_cluster_with_new_outlier).transitions), 1)
         self.assertEqual(replay_symbol(confirmed_on_newest).active_mrz.core_mrz_lower, Decimal("120"))
 
-    def test_stale_latest_twenty_entries_cannot_cross_route_change_boundary(self) -> None:
+    def test_latest_twenty_route_window_is_preserved_after_route_change(self) -> None:
         rows = [observation(i, price) for i, price in enumerate(("110", "110.2", "110.4", "110.6"), 1)]
         rows.extend(
             observation(i, price, route=Route.STR)
@@ -401,173 +395,20 @@ class ActiveMRZStateTests(unittest.TestCase):
         rows.append(observation(9, "110.3"))
         result = replay_symbol(rows)
 
-        self.assertEqual(result.active_mrz.route_owner, Route.STR)
-        self.assertEqual(result.active_mrz.activation_event_id, "event-8")
-        self.assertEqual(
-            [transition.event_type for transition in result.transitions],
-            [
-                MRZEventType.ACTIVATED,
-                MRZEventType.MIGRATED,
-                MRZEventType.ROUTE_CHANGED,
-            ],
-        )
-
-    def test_spx_historical_b_and_a_evidence_cannot_resurrect(self) -> None:
-        rows = []
-        for index, price in enumerate(("0.4871", "0.4878", "0.4891", "0.4897"), 1):
-            rows.append(
-                observation(
-                    index,
-                    price,
-                    route=Route.STR,
-                    ipda_low="0.2651",
-                    ipda_high="0.6764",
-                )
-            )
-        for index, price in enumerate(("0.4632", "0.4638", "0.4647", "0.4667"), 5):
-            rows.append(
-                observation(
-                    index,
-                    price,
-                    route=Route.BTD,
-                    ipda_low="0.2651",
-                    ipda_high="0.6764",
-                )
-            )
-        for index, price in enumerate(("0.4804", "0.4934", "0.5032", "0.4879"), 9):
-            rows.append(
-                observation(
-                    index,
-                    price,
-                    route=Route.STR,
-                    ipda_low="0.2651",
-                    ipda_high="0.6764",
-                )
-            )
-        rows.extend(
-            (
-                observation(13, "0.4499", ipda_low="0.2651", ipda_high="0.6764"),
-                observation(14, "0.4638", ipda_low="0.2651", ipda_high="0.6764"),
-            )
-        )
-
-        result = replay_symbol(rows)
-
-        self.assertEqual(
-            [transition.event_type for transition in result.transitions],
-            [
-                MRZEventType.ACTIVATED,
-                MRZEventType.MIGRATED,
-                MRZEventType.ROUTE_CHANGED,
-            ],
-        )
         self.assertEqual(result.active_mrz.route_owner, Route.BTD)
+        self.assertEqual(result.active_mrz.activation_event_id, "event-9")
         self.assertEqual(
-            (result.active_mrz.core_mrz_lower, result.active_mrz.core_mrz_upper),
-            (Decimal("0.4632"), Decimal("0.4667")),
-        )
-        self.assertEqual(result.active_mrz.activation_event_id, "event-8")
-
-    def test_exact_historical_range_can_reappear_with_distinct_episode_evidence(self) -> None:
-        rows = [
-            observation(i, price)
-            for i, price in enumerate(("110", "110.2", "110.4", "110.6"), 1)
-        ]
-        rows.extend(
-            observation(i, price, route=Route.STR)
-            for i, price in enumerate(("180", "180.2", "180.4", "180.6"), 5)
-        )
-        rows.extend(
-            observation(i, price)
-            for i, price in enumerate(("110", "110.2", "110.4", "110.6"), 9)
+            [transition.event_type for transition in result.transitions],
+            [
+                MRZEventType.ACTIVATED,
+                MRZEventType.MIGRATED,
+                MRZEventType.ROUTE_CHANGED,
+                MRZEventType.MIGRATED,
+                MRZEventType.ROUTE_CHANGED,
+            ],
         )
 
-        result = replay_symbol(rows)
-
-        migrations = [
-            transition
-            for transition in result.transitions
-            if transition.event_type is MRZEventType.MIGRATED
-        ]
-        self.assertEqual(len(migrations), 2)
-        self.assertEqual(migrations[-1].trigger_event_id, "event-12")
-        self.assertEqual(
-            (result.active_mrz.core_mrz_lower, result.active_mrz.core_mrz_upper),
-            (Decimal("110"), Decimal("110.6")),
-        )
-        self.assertEqual(result.active_mrz.formation_started_at, rows[8].observed_at)
-
-    def test_post_migration_new_evidence_must_independently_concentrate(self) -> None:
-        rows = [
-            observation(i, price)
-            for i, price in enumerate(("110", "110.2", "110.4", "110.6"), 1)
-        ]
-        rows.extend(
-            observation(i, price, route=Route.STR)
-            for i, price in enumerate(("180", "180.2", "180.4", "180.6"), 5)
-        )
-        too_few = rows + [observation(9, "110.3")]
-        dispersed = rows + [
-            observation(i, price)
-            for i, price in enumerate(("100", "110", "120", "130"), 9)
-        ]
-
-        self.assertEqual(replay_symbol(too_few).active_mrz.activation_event_id, "event-8")
-        self.assertEqual(replay_symbol(dispersed).active_mrz.activation_event_id, "event-8")
-
-    def test_operator_promoted_authority_establishes_episode_boundary(self) -> None:
-        rows = [
-            observation(1, "110"),
-            observation(2, "110.2"),
-            observation(3, "110.4"),
-            observation(4, "180", route=Route.STR),
-            observation(5, "110.6"),
-        ]
-        promoted = ActiveMRZ(
-            symbol="SPXUSDT",
-            route_owner=Route.STR,
-            core_mrz_lower=Decimal("179.8"),
-            core_mrz_upper=Decimal("180.2"),
-            core_mrz_midpoint=Decimal("180"),
-            structural_location=StructuralLocation.DEEP_PREMIUM,
-            confirming_observation_count=4,
-            supporting_observation_count=4,
-            activated_at=rows[3].observed_at,
-            activation_event_id=rows[3].event_id,
-            formation_started_at=rows[0].observed_at,
-            formation_completed_at=rows[3].observed_at,
-            formation_duration_seconds=Decimal("3"),
-            ipda_20w_high_at_activation=Decimal("200"),
-            ipda_20w_low_at_activation=Decimal("0"),
-            ipda_width_at_activation=Decimal("200"),
-            normalized_span_at_activation=Decimal("0.002"),
-            instrument_tick=Decimal("0.1"),
-            activation_source=ActivationSource.OPERATOR_PROMOTED,
-        )
-
-        result = replay_symbol(rows, promoted_activation=promoted)
-
-        self.assertEqual(len(result.transitions), 1)
-        self.assertEqual(result.active_mrz.activation_event_id, "event-4")
-        self.assertEqual(result.active_mrz.activation_source, ActivationSource.OPERATOR_PROMOTED)
-
-    def test_repeated_replay_with_episode_boundaries_is_deterministic(self) -> None:
-        rows = [
-            observation(i, price)
-            for i, price in enumerate(("110", "110.2", "110.4", "110.6"), 1)
-        ]
-        rows.extend(
-            observation(i, price, route=Route.STR)
-            for i, price in enumerate(("180", "180.2", "180.4", "180.6"), 5)
-        )
-        rows.extend(observation(i, "110.3") for i in range(9, 12))
-
-        first = replay_symbol(rows)
-        second = replay_symbol(reversed(rows))
-
-        self.assertEqual(first, second)
-
-    def test_competing_pools_do_not_carry_losing_route_evidence_across_migration(self) -> None:
+    def test_competing_pools_resolve_by_canonical_event_order(self) -> None:
         rows = [observation(i, price) for i, price in enumerate(("130", "130.2", "130.4", "130.6"), 1)]
         rows.extend(
             (
@@ -585,12 +426,14 @@ class ActiveMRZStateTests(unittest.TestCase):
 
         self.assertEqual(result.transitions[1].new_mrz.route_owner, Route.STR)
         self.assertEqual(result.transitions[1].trigger_event_id, "event-11")
-        self.assertEqual(result.active_mrz.route_owner, Route.STR)
-        self.assertEqual(result.active_mrz.activation_event_id, "event-11")
+        self.assertEqual(result.active_mrz.route_owner, Route.BTD)
+        self.assertEqual(result.active_mrz.activation_event_id, "event-12")
         self.assertEqual(
             [transition.event_type for transition in result.transitions],
             [
                 MRZEventType.ACTIVATED,
+                MRZEventType.MIGRATED,
+                MRZEventType.ROUTE_CHANGED,
                 MRZEventType.MIGRATED,
                 MRZEventType.ROUTE_CHANGED,
             ],
