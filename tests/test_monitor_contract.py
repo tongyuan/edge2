@@ -40,7 +40,7 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn("Symbol Lab", HTML)
 
     def test_monitor_assets_are_versioned_together(self) -> None:
-        version = "exact-eqm-20260922"
+        version = "peer-migration-momentum-exact-eqm-20260922"
         self.assertIn(f'/static/styles.css?v={version}', HTML)
         self.assertIn(f'/static/heatmap-state.js?v={version}', HTML)
         self.assertIn(f'/static/operator-time.js?v={version}', HTML)
@@ -689,12 +689,13 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn(".location-migration-history summary", CSS)
         self.assertIn(".location-migration-history[open] summary", CSS)
 
-    def test_peer_pressure_drilldown_reconciles_categories_and_preserves_history(self) -> None:
+    def test_peer_pressure_drilldown_reconciles_categories_and_preserves_migration_evidence(self) -> None:
         self.assertEqual(HTML.count('data-pressure-direction="'), 3)
         self.assertIn('id="peerPressureDrilldown"', HTML)
         self.assertIn('id="peerPressureMembers"', HTML)
         self.assertIn('id="migrationHistoryDisclosure"', HTML)
-        self.assertIn("Migration History", HTML)
+        self.assertIn("Migration Evidence", HTML)
+        self.assertIn("MRZ Midpoint Path", HTML)
         self.assertIn('id="migrationPathScroller"', HTML)
         self.assertIn("renderPeerPressureDrilldown", JAVASCRIPT)
         self.assertIn("activePeerPressure.categories[direction]", JAVASCRIPT)
@@ -706,6 +707,74 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn("loadMigrationHistory", JAVASCRIPT)
         self.assertIn('/migration-path`', JAVASCRIPT)
         self.assertIn("renderMigrationPath(payload)", JAVASCRIPT)
+
+    def test_peer_pressure_layers_momentum_before_collapsed_evidence(self) -> None:
+        self.assertLess(HTML.index("PEER PRESSURE"), HTML.index("MIGRATION MOMENTUM"))
+        self.assertLess(HTML.index("MIGRATION MOMENTUM"), HTML.index("Migration Evidence"))
+        self.assertNotIn('id="migrationHistoryDisclosure" open', HTML)
+        for element_id in (
+            "groupMigrationState",
+            "recentMigrationDirection",
+            "migrationParticipation",
+            "pressureMigrationAlignment",
+            "migrationMomentumMagnitude",
+            "migrationMomentumHistogram",
+            "migrationMomentumDetail",
+            "symbolMigrationStates",
+        ):
+            self.assertIn(f'id="{element_id}"', HTML)
+        self.assertIn("buildMigrationMomentumReport(pathPayload, peerPressure)", JAVASCRIPT)
+        self.assertIn("renderMigrationMomentum(pathPayload, pressurePayload)", JAVASCRIPT)
+        self.assertIn("Promise.all([", JAVASCRIPT)
+        self.assertIn('/migration-path`)', JAVASCRIPT)
+        self.assertIn('/peer-pressure`)', JAVASCRIPT)
+        self.assertIn("migrationParticipation.textContent", JAVASCRIPT)
+        self.assertIn("pressureMigrationAlignment.textContent", JAVASCRIPT)
+        self.assertIn("Each bar is one MRZ midpoint move", HTML)
+
+    def test_migration_momentum_is_derived_without_backend_authority_changes(self) -> None:
+        helper = HEATMAP_STATE.split("const MOMENTUM_WINDOW", 1)[1].split(
+            "const MINIMUM_TRAJECTORY_DOMAIN_PERCENT", 1
+        )[0]
+        self.assertIn("current?.event_type !== \"MRZ_MIGRATED\"", helper)
+        self.assertIn("currentMidpoint - previousMidpoint", helper)
+        self.assertIn("rawMidpointDelta / previousWidth", helper)
+        self.assertIn("previousWidth <= 0", helper)
+        self.assertIn("events.slice(-MOMENTUM_WINDOW)", helper)
+        self.assertIn("MINIMUM_GROUP_MIGRATION_PARTICIPANTS", helper)
+        self.assertIn("pressureMigrationAlignment", helper)
+        self.assertIn("latest 3 migrations per symbol", HTML.lower())
+        self.assertNotIn("buildMigrationMomentumReport", API)
+        self.assertNotIn("normalized_migration_move", REPOSITORY)
+        self.assertNotIn("forecast", HTML.lower())
+        self.assertNotIn("probability", HTML.lower())
+
+    def test_migration_histogram_has_real_event_links_and_structured_detail(self) -> None:
+        renderer = JAVASCRIPT.split("function renderMigrationHistogram", 1)[1].split(
+            "function renderSymbolMigrationStates", 1
+        )[0]
+        self.assertIn("report.events.forEach", renderer)
+        self.assertIn("event.eventKey", renderer)
+        self.assertIn("migrationBarMagnitudePercent", renderer)
+        self.assertIn("--migration-bar-height", renderer)
+        self.assertIn('button.addEventListener("mouseenter"', renderer)
+        self.assertIn('button.addEventListener("focus"', renderer)
+        self.assertIn('button.addEventListener("click"', renderer)
+        self.assertIn("revealMigrationEvidence(event.eventKey)", renderer)
+        detail = JAVASCRIPT.split("function migrationMomentumDetailPresentation", 1)[1].split(
+            "function renderMigrationMomentumDetail", 1
+        )[0]
+        for label in (
+            "Normalized move",
+            "Midpoint Δ",
+            "Previous midpoint",
+            "Current midpoint",
+            "Previous MRZ",
+            "Current MRZ",
+            "Route",
+            "Location",
+        ):
+            self.assertIn(label, detail)
 
     def test_migration_path_detail_derives_eqm_from_adjacent_authorities_only(self) -> None:
         detail = JAVASCRIPT.split("function migrationStateDetailPresentation", 1)[1].split(
@@ -787,6 +856,15 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn("grid-template-columns: repeat(3, minmax(0, 1fr));", CSS)
         self.assertIn("min-height: 76px;", CSS.split(".peer-pressure-counts button", 1)[1])
         self.assertIn(".peer-pressure-drilldown ul { grid-template-columns: 1fr; }", CSS)
+        self.assertIn(".migration-momentum-summary {", CSS)
+        self.assertIn("grid-template-columns: repeat(4, minmax(0, 1fr));", CSS)
+        self.assertIn(
+            ".migration-momentum-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }",
+            CSS,
+        )
+        self.assertIn(".migration-momentum-histogram", CSS)
+        self.assertIn("overflow-x: auto;", CSS.split(".migration-momentum-histogram", 1)[1])
+        self.assertIn(".symbol-migration-states { grid-template-columns: 1fr; }", CSS)
         self.assertIn(".migration-path-scroller", CSS)
         self.assertIn("overflow-x: auto;", CSS.split(".migration-path-scroller", 1)[1])
         self.assertIn("max-width: 100%;", CSS.split(".migration-path-scroller", 1)[1])

@@ -35,6 +35,15 @@ const {
   visibleSymbolsForGroupTracking,
   timelinePosition,
   timelineTicks,
+  migrationMomentumConstants,
+  normalizedMigrationMove,
+  authoritativeMigrationEvents,
+  classifySymbolMigration,
+  aggregateGroupMigration,
+  pressureMigrationAlignment,
+  migrationBarDomain,
+  migrationBarMagnitudePercent,
+  buildMigrationMomentumReport,
   midpointDisplacementPercent,
   migrationTrajectoryDomain,
   migrationTrajectory,
@@ -907,5 +916,156 @@ assert.deepEqual(
 );
 assert.equal(preservedSelectedSymbol("ETHUSDT", sortedPremium), "ETHUSDT");
 assert.equal(preservedSelectedSymbol("MISSING", sortedPremium), "");
+
+function migrationPathFromMoves(symbol, moves) {
+  const width = 10;
+  const states = [{
+    event_key: `${symbol}-activation`,
+    event_type: "MRZ_ACTIVATED",
+    occurred_at: "2026-09-01T00:00:00Z",
+    route_owner: "BTD",
+    lower: 95,
+    upper: 105,
+    midpoint: 100,
+    direction: null,
+    location: "shallow_discount_core_mrz",
+    location_code: "SD",
+    location_label: "Shallow Discount",
+  }];
+  moves.forEach((move, index) => {
+    const previous = states.at(-1);
+    const midpoint = previous.midpoint + move * width;
+    states.push({
+      event_key: `${symbol}-migration-${index + 1}`,
+      event_type: "MRZ_MIGRATED",
+      occurred_at: `2026-09-0${index + 2}T00:00:00Z`,
+      route_owner: "BTD",
+      lower: midpoint - width / 2,
+      upper: midpoint + width / 2,
+      midpoint,
+      direction: move > 0 ? "higher" : "lower",
+      location: "shallow_discount_core_mrz",
+      location_code: "SD",
+      location_label: "Shallow Discount",
+    });
+  });
+  return { symbol, states };
+}
+
+assert.deepEqual(
+  normalizedMigrationMove(
+    { lower: 95, upper: 105, midpoint: 100 },
+    { midpoint: 114 },
+  ),
+  { rawMidpointDelta: 14, previousWidth: 10, normalizedMove: 1.4 },
+  "positive midpoint movement is a positive previous-width-normalized move",
+);
+assert.equal(
+  normalizedMigrationMove(
+    { lower: 95, upper: 105, midpoint: 100 },
+    { midpoint: 92 },
+  ).normalizedMove,
+  -0.8,
+  "negative midpoint movement is a negative previous-width-normalized move",
+);
+assert.equal(
+  normalizedMigrationMove(
+    { lower: 100, upper: 100, midpoint: 100 },
+    { midpoint: 101 },
+  ),
+  null,
+  "zero-width previous MRZ is unavailable rather than silently zero",
+);
+const barDomain = migrationBarDomain([{ normalizedMove: 1.4 }, { normalizedMove: -0.8 }]);
+assert.equal(barDomain, 1.4);
+assert.ok(
+  Math.abs(
+    migrationBarMagnitudePercent(1.4, barDomain)
+      / migrationBarMagnitudePercent(-0.8, barDomain)
+      - 1.75,
+  ) < 1e-10,
+  "+1.4 renders exactly 1.75 times the absolute bar height of -0.8",
+);
+
+assert.equal(
+  classifySymbolMigration(migrationPathFromMoves("UP", [0.4, 0.6, 0.8])).state,
+  "upward_persistence",
+);
+assert.equal(
+  classifySymbolMigration(migrationPathFromMoves("DOWN", [-0.4, -0.6, -0.8])).state,
+  "downward_persistence",
+);
+assert.equal(
+  classifySymbolMigration(migrationPathFromMoves("MIXED", [0.5, -0.6, 0.7, -0.8])).state,
+  "mixed_oscillating",
+);
+assert.equal(
+  classifySymbolMigration(migrationPathFromMoves("TRANSITION", [0.8, 0.6, -0.4])).state,
+  "directional_transition",
+);
+assert.equal(
+  classifySymbolMigration(migrationPathFromMoves("UP-WEAK", [1.4, 0.8, 0.4])).state,
+  "upward_weakening",
+);
+assert.equal(
+  classifySymbolMigration(migrationPathFromMoves("DOWN-WEAK", [-1.4, -0.8, -0.4])).state,
+  "downward_weakening",
+);
+assert.equal(
+  classifySymbolMigration(migrationPathFromMoves("SHORT", [0.5, 0.6])).state,
+  "insufficient_history",
+);
+
+const upwardGroupSymbols = [
+  classifySymbolMigration(migrationPathFromMoves("UP1", [0.4, 0.5, 0.6])),
+  classifySymbolMigration(migrationPathFromMoves("UP2", [0.7, 0.8, 0.9])),
+  classifySymbolMigration(migrationPathFromMoves("UP3", [0.3, 0.4, 0.5])),
+  classifySymbolMigration(migrationPathFromMoves("DOWN1", [-0.3, -0.4, -0.5])),
+];
+const upwardGroup = aggregateGroupMigration(upwardGroupSymbols, 5);
+assert.equal(upwardGroup.state, "group_upward_persistence");
+assert.deepEqual(upwardGroup.participation, { count: 4, total: 5 });
+const upwardPressure = {
+  headline: { direction: "UP" },
+  participation: { count: 4, total: 5 },
+};
+assert.equal(pressureMigrationAlignment(upwardPressure, upwardGroup), "aligned_up");
+const downwardGroup = aggregateGroupMigration([
+  classifySymbolMigration(migrationPathFromMoves("D1", [-0.4, -0.5, -0.6])),
+  classifySymbolMigration(migrationPathFromMoves("D2", [-0.7, -0.8, -0.9])),
+], 2);
+assert.equal(pressureMigrationAlignment(upwardPressure, downwardGroup), "diverging");
+assert.equal(aggregateGroupMigration([
+  classifySymbolMigration(migrationPathFromMoves("M1", [0.4, 0.5, 0.6])),
+  classifySymbolMigration(migrationPathFromMoves("M2", [-0.4, -0.5, -0.6])),
+], 2).state, "group_mixed");
+assert.equal(aggregateGroupMigration([
+  classifySymbolMigration(migrationPathFromMoves("ONLY", [0.4, 0.5, 0.6])),
+], 4).state, "insufficient_group_history");
+
+const noMigrationPath = migrationPathFromMoves("NONE", []);
+assert.equal(authoritativeMigrationEvents(noMigrationPath).length, 0,
+  "dates without MRZ_MIGRATED events never fabricate histogram bars");
+const oneMigrationPath = migrationPathFromMoves("ONE", [0.7]);
+const oneMigrationEvents = authoritativeMigrationEvents(oneMigrationPath);
+assert.equal(oneMigrationEvents.length, 1, "one authoritative migration creates exactly one event bar");
+assert.equal(oneMigrationEvents[0].eventKey, "ONE-migration-1",
+  "every histogram event maps to the persisted authoritative event key");
+const report = buildMigrationMomentumReport({
+  paths: [
+    migrationPathFromMoves("UP1", [0.4, 0.5, 0.6]),
+    migrationPathFromMoves("UP2", [0.7, 0.8, 0.9]),
+    migrationPathFromMoves("SHORT", [0.4]),
+  ],
+}, upwardPressure);
+assert.equal(report.group.state, "group_upward_persistence");
+assert.equal(report.alignment, "aligned_up");
+assert.deepEqual(report.recentDirection, { higher: 7, lower: 0 });
+assert.equal(report.events.length, 7,
+  "the group event stream contains only real latest-window migrations per symbol");
+assert.equal(report.group.participation.count, 2,
+  "migration participation is separate from Peer Pressure participation");
+assert.equal(migrationMomentumConstants.MOMENTUM_WINDOW, 3);
+assert.equal(migrationMomentumConstants.NEUTRAL_NORMALIZED_MOVE_THRESHOLD, 0.1);
 
 console.log("heatmap state tests passed");

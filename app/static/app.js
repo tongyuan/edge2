@@ -61,6 +61,14 @@ const peerPressureCounts = {
 };
 const migrationHistoryDisclosure = document.querySelector("#migrationHistoryDisclosure");
 const migrationPathScroller = document.querySelector("#migrationPathScroller");
+const groupMigrationState = document.querySelector("#groupMigrationState");
+const recentMigrationDirection = document.querySelector("#recentMigrationDirection");
+const migrationParticipation = document.querySelector("#migrationParticipation");
+const pressureMigrationAlignment = document.querySelector("#pressureMigrationAlignment");
+const migrationMomentumMagnitude = document.querySelector("#migrationMomentumMagnitude");
+const migrationMomentumHistogram = document.querySelector("#migrationMomentumHistogram");
+const migrationMomentumDetail = document.querySelector("#migrationMomentumDetail");
+const symbolMigrationStates = document.querySelector("#symbolMigrationStates");
 const migrationEvidenceDialog = document.querySelector("#migrationEvidenceDialog");
 const migrationEvidenceTitle = document.querySelector("#migrationEvidenceTitle");
 const migrationEvidenceSummary = document.querySelector("#migrationEvidenceSummary");
@@ -97,6 +105,8 @@ const {
   visibleSymbolsForGroupTracking,
   timelinePosition,
   timelineTicks,
+  migrationBarMagnitudePercent,
+  buildMigrationMomentumReport,
   migrationTrajectoryDomain,
   migrationTrajectory,
   migrationDirectionCounts,
@@ -222,6 +232,7 @@ let savedGroups = [];
 let activeSavedGroup = null;
 let activePeerPressure = null;
 let migrationHistoryGroupId = null;
+let activeMigrationPath = null;
 let migrationEvidenceReturnFocus = null;
 
 const formatPrice = (value) => value == null ? "—" : new Intl.NumberFormat("en-US", {
@@ -625,6 +636,206 @@ function renderPeerPressure(payload) {
   });
   peerPressureDrilldown.hidden = true;
   peerPressureMembers.replaceChildren();
+}
+
+function migrationDirectionFromMove(value) {
+  return Number(value) > 0 ? "higher" : "lower";
+}
+
+function migrationArrow(direction) {
+  if (direction === "higher") return "↑";
+  if (direction === "lower") return "↓";
+  return "↔";
+}
+
+function formatSignedMigrationValue(value, maximumFractionDigits = 2) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "Unavailable";
+  const formatted = new Intl.NumberFormat("en-US", {
+    maximumFractionDigits,
+    minimumFractionDigits: Math.min(2, maximumFractionDigits),
+    signDisplay: "always",
+  }).format(numeric);
+  return formatted.replace("-0.00", "+0.00");
+}
+
+function resetMigrationMomentum(message = "Load Peer Pressure to inspect authoritative migration.") {
+  groupMigrationState.textContent = "—";
+  recentMigrationDirection.textContent = "—";
+  migrationParticipation.textContent = "0 / 0 symbols";
+  pressureMigrationAlignment.textContent = "—";
+  migrationMomentumMagnitude.textContent = "—";
+  migrationMomentumDetail.hidden = true;
+  migrationMomentumDetail.replaceChildren();
+  symbolMigrationStates.replaceChildren();
+  const empty = document.createElement("p");
+  empty.className = "migration-momentum-empty";
+  empty.textContent = message;
+  migrationMomentumHistogram.replaceChildren(empty);
+}
+
+function migrationMomentumDetailPresentation(event) {
+  const direction = migrationDirectionFromMove(event.normalizedMove);
+  return {
+    heading: `${event.symbol} · ${direction === "higher" ? "Upward" : "Downward"} authoritative migration`,
+    timestamp: formatPathTimestamp(event.occurredAt),
+    fields: [
+      ["Normalized move", `${formatSignedMigrationValue(event.normalizedMove)} previous-MRZ widths`],
+      ["Midpoint Δ", formatSignedMigrationValue(event.rawMidpointDelta, 8)],
+      ["Previous midpoint", formatPrice(event.previous.midpoint)],
+      ["Current midpoint", formatPrice(event.current.midpoint)],
+      ["Previous MRZ", formatPathRange(event.previous)],
+      ["Current MRZ", formatPathRange(event.current)],
+      ["Route", event.routeOwner],
+      ["Location", event.locationLabel],
+    ],
+  };
+}
+
+function renderMigrationMomentumDetail(event) {
+  const presentation = migrationMomentumDetailPresentation(event);
+  const header = document.createElement("header");
+  const heading = document.createElement("strong");
+  heading.textContent = presentation.heading;
+  const timestamp = document.createElement("span");
+  timestamp.textContent = presentation.timestamp;
+  header.append(heading, timestamp);
+  const fields = document.createElement("dl");
+  presentation.fields.forEach(([label, value]) => {
+    const field = document.createElement("div");
+    const term = document.createElement("dt");
+    term.textContent = label;
+    const description = document.createElement("dd");
+    description.textContent = value;
+    field.append(term, description);
+    fields.append(field);
+  });
+  migrationMomentumDetail.replaceChildren(header, fields);
+  migrationMomentumDetail.hidden = false;
+}
+
+function revealMigrationEvidence(eventKey) {
+  migrationHistoryDisclosure.open = true;
+  if (activeMigrationPath) renderMigrationPath(activeMigrationPath);
+  globalThis.requestAnimationFrame(() => {
+    const node = [...migrationPathScroller.querySelectorAll("[data-event-key]")]
+      .find((candidate) => candidate.dataset.eventKey === eventKey);
+    if (!node) return;
+    node.focus({ preventScroll: true });
+    node.click();
+    node.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+  });
+}
+
+function renderMigrationHistogram(report) {
+  if (report.events.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "migration-momentum-empty";
+    empty.textContent = "No valid authoritative migration events are available for this group.";
+    migrationMomentumHistogram.replaceChildren(empty);
+    migrationMomentumDetail.hidden = true;
+    return;
+  }
+
+  const bars = document.createElement("div");
+  bars.className = "migration-momentum-bars";
+  const eventButtons = [];
+  const showEvent = (event, button) => {
+    eventButtons.forEach((candidate) => {
+      const selected = candidate === button;
+      candidate.classList.toggle("inspected", selected);
+      candidate.setAttribute("aria-pressed", String(selected));
+    });
+    renderMigrationMomentumDetail(event);
+  };
+  report.events.forEach((event) => {
+    const direction = migrationDirectionFromMove(event.normalizedMove);
+    const magnitude = migrationBarMagnitudePercent(event.normalizedMove, report.barDomain);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `migration-momentum-event ${direction}`;
+    button.dataset.eventKey = event.eventKey;
+    button.style.setProperty("--migration-bar-height", `${(magnitude || 0) * 0.39}%`);
+    button.setAttribute("aria-pressed", "false");
+    button.setAttribute(
+      "aria-label",
+      `${event.symbol}, ${direction === "higher" ? "upward" : "downward"} authoritative migration, `
+      + `${formatSignedMigrationValue(event.normalizedMove)} previous-MRZ widths, `
+      + `${formatPathTimestamp(event.occurredAt)}`,
+    );
+    const bar = document.createElement("span");
+    bar.className = "migration-momentum-bar";
+    bar.setAttribute("aria-hidden", "true");
+    const symbol = document.createElement("span");
+    symbol.className = "migration-momentum-event-symbol";
+    symbol.textContent = event.symbol.replace(/USDT$/, "");
+    symbol.setAttribute("aria-hidden", "true");
+    button.append(bar, symbol);
+    button.addEventListener("mouseenter", () => showEvent(event, button));
+    button.addEventListener("focus", () => showEvent(event, button));
+    button.addEventListener("click", () => {
+      showEvent(event, button);
+      revealMigrationEvidence(event.eventKey);
+    });
+    eventButtons.push(button);
+    bars.append(button);
+  });
+  migrationMomentumHistogram.replaceChildren(bars);
+}
+
+function renderSymbolMigrationStates(report) {
+  const items = report.symbols.map((symbolState) => {
+    const item = document.createElement("li");
+    item.className = `symbol-migration-state ${symbolState.direction}`;
+    const button = document.createElement("button");
+    button.type = "button";
+    const symbol = document.createElement("strong");
+    symbol.textContent = symbolState.symbol;
+    const sequence = document.createElement("span");
+    sequence.className = "symbol-migration-sequence";
+    sequence.textContent = symbolState.recentEvents.length > 0
+      ? symbolState.recentEvents.map(({ normalizedMove, available }) => (
+        available ? migrationArrow(migrationDirectionFromMove(normalizedMove)) : "—"
+      )).join(" ")
+      : "—";
+    const label = document.createElement("span");
+    label.className = "symbol-migration-state-label";
+    label.textContent = symbolState.label;
+    button.append(symbol, sequence, label);
+    const latestEvent = [...symbolState.recentEvents].reverse().find(({ available }) => available);
+    button.disabled = !latestEvent;
+    button.setAttribute(
+      "aria-label",
+      latestEvent
+        ? `${symbolState.symbol}, ${symbolState.label}. Open latest migration evidence.`
+        : `${symbolState.symbol}, ${symbolState.label}. No migration evidence available.`,
+    );
+    if (latestEvent) {
+      button.addEventListener("click", () => revealMigrationEvidence(latestEvent.eventKey));
+    }
+    item.append(button);
+    return item;
+  });
+  symbolMigrationStates.replaceChildren(...items);
+}
+
+function renderMigrationMomentum(pathPayload, peerPressure) {
+  const report = buildMigrationMomentumReport(pathPayload, peerPressure);
+  groupMigrationState.textContent = report.group.label;
+  groupMigrationState.dataset.migrationDirection = report.group.direction;
+  recentMigrationDirection.textContent = (
+    `↑ ${report.recentDirection.higher} · ↓ ${report.recentDirection.lower}`
+  );
+  migrationParticipation.textContent = (
+    `${report.group.participation.count} / ${report.group.participation.total} symbols`
+  );
+  pressureMigrationAlignment.textContent = report.alignmentLabel;
+  pressureMigrationAlignment.dataset.alignment = report.alignment;
+  migrationMomentumMagnitude.textContent = report.magnitude === null
+    ? "—"
+    : `${report.magnitude.toFixed(2)} MRZ widths`;
+  renderMigrationHistogram(report);
+  renderSymbolMigrationStates(report);
 }
 
 function universePressureBySymbol(payload) {
@@ -1273,8 +1484,10 @@ async function openSavedGroupById(groupId) {
   activeSavedGroup = report;
   activePeerPressure = null;
   migrationHistoryGroupId = null;
+  activeMigrationPath = null;
   migrationHistoryDisclosure.open = false;
   migrationPathScroller.replaceChildren();
+  resetMigrationMomentum();
   groupTrackingState = openSavedGroup(groupTrackingState, report.id);
   showGroupTab("current");
   renderMonitorOverview();
@@ -1337,6 +1550,12 @@ async function saveGroup(event) {
       },
     );
     activeSavedGroup = report;
+    activePeerPressure = null;
+    activeMigrationPath = null;
+    migrationHistoryGroupId = null;
+    migrationHistoryDisclosure.open = false;
+    migrationPathScroller.replaceChildren();
+    resetMigrationMomentum();
     await loadSavedGroupDefinitions();
     groupTrackingState = openSavedGroup(groupTrackingState, report.id);
     showGroupTab("current");
@@ -1371,14 +1590,26 @@ async function openPeerPressure() {
   peerPressureHeadline.textContent = "Loading Peer Pressure…";
   peerPressureSummary.textContent = "Reading canonical post-activation evidence.";
   peerPressureDrilldown.hidden = true;
-  const payload = await requestJson(`/api/groups/${encodeURIComponent(groupId)}/peer-pressure`);
-  if (activeSavedGroup?.id === groupId) renderPeerPressure(payload);
+  resetMigrationMomentum("Loading authoritative migration momentum…");
+  const [pressurePayload, pathPayload] = await Promise.all([
+    requestJson(`/api/groups/${encodeURIComponent(groupId)}/peer-pressure`),
+    requestJson(`/api/groups/${encodeURIComponent(groupId)}/migration-path`),
+  ]);
+  if (activeSavedGroup?.id !== groupId) return;
+  activeMigrationPath = pathPayload;
+  migrationHistoryGroupId = groupId;
+  renderPeerPressure(pressurePayload);
+  renderMigrationMomentum(pathPayload, pressurePayload);
+  if (migrationHistoryDisclosure.open) renderMigrationPath(pathPayload);
 }
 
 async function loadMigrationHistory() {
   if (!activeSavedGroup || !migrationHistoryDisclosure.open) return;
   const groupId = activeSavedGroup.id;
-  if (migrationHistoryGroupId === groupId) return;
+  if (migrationHistoryGroupId === groupId && activeMigrationPath) {
+    renderMigrationPath(activeMigrationPath);
+    return;
+  }
   const loading = document.createElement("p");
   loading.className = "migration-path-all-empty";
   loading.textContent = "Loading authoritative migration history…";
@@ -1386,6 +1617,7 @@ async function loadMigrationHistory() {
   const payload = await requestJson(`/api/groups/${encodeURIComponent(groupId)}/migration-path`);
   if (activeSavedGroup?.id === groupId && migrationHistoryDisclosure.open) {
     migrationHistoryGroupId = groupId;
+    activeMigrationPath = payload;
     renderMigrationPath(payload);
   }
 }

@@ -453,6 +453,290 @@
     ));
   }
 
+  const MOMENTUM_WINDOW = 3;
+  const MINIMUM_SYMBOL_MIGRATIONS = 3;
+  const MINIMUM_GROUP_MIGRATION_PARTICIPANTS = 2;
+  const NEUTRAL_NORMALIZED_MOVE_THRESHOLD = 0.1;
+  const WEAKENING_RATIO_THRESHOLD = 0.65;
+  const TRANSITION_SIGNIFICANCE_THRESHOLD = 0.5;
+
+  const migrationMomentumConstants = Object.freeze({
+    MOMENTUM_WINDOW,
+    MINIMUM_SYMBOL_MIGRATIONS,
+    MINIMUM_GROUP_MIGRATION_PARTICIPANTS,
+    NEUTRAL_NORMALIZED_MOVE_THRESHOLD,
+    WEAKENING_RATIO_THRESHOLD,
+    TRANSITION_SIGNIFICANCE_THRESHOLD,
+  });
+
+  const migrationStateLabels = Object.freeze({
+    upward_persistence: "UPWARD PERSISTENCE",
+    downward_persistence: "DOWNWARD PERSISTENCE",
+    mixed_oscillating: "MIXED / OSCILLATING",
+    upward_weakening: "UPWARD MOMENTUM WEAKENING",
+    downward_weakening: "DOWNWARD MOMENTUM WEAKENING",
+    directional_transition: "DIRECTIONAL TRANSITION",
+    insufficient_history: "INSUFFICIENT HISTORY",
+  });
+
+  const groupMigrationStateLabels = Object.freeze({
+    group_upward_persistence: "GROUP UPWARD PERSISTENCE",
+    group_downward_persistence: "GROUP DOWNWARD PERSISTENCE",
+    group_mixed: "GROUP MIXED",
+    group_upward_weakening: "GROUP UPWARD WEAKENING",
+    group_downward_weakening: "GROUP DOWNWARD WEAKENING",
+    group_transitioning: "GROUP TRANSITIONING",
+    insufficient_group_history: "INSUFFICIENT GROUP HISTORY",
+  });
+
+  const alignmentLabels = Object.freeze({
+    aligned_up: "ALIGNED UP",
+    aligned_down: "ALIGNED DOWN",
+    diverging: "DIVERGING",
+    mixed: "MIXED",
+    insufficient_data: "INSUFFICIENT DATA",
+  });
+
+  function normalizedMigrationMove(previousState, currentState) {
+    const previousLower = Number(previousState?.lower);
+    const previousUpper = Number(previousState?.upper);
+    const previousMidpoint = Number(previousState?.midpoint);
+    const currentMidpoint = Number(currentState?.midpoint);
+    const previousWidth = previousUpper - previousLower;
+    if (
+      !Number.isFinite(previousLower)
+      || !Number.isFinite(previousUpper)
+      || !Number.isFinite(previousMidpoint)
+      || !Number.isFinite(currentMidpoint)
+      || !Number.isFinite(previousWidth)
+      || previousWidth <= 0
+    ) return null;
+    const rawMidpointDelta = currentMidpoint - previousMidpoint;
+    const normalizedMove = rawMidpointDelta / previousWidth;
+    if (!Number.isFinite(rawMidpointDelta) || !Number.isFinite(normalizedMove)) return null;
+    return { rawMidpointDelta, previousWidth, normalizedMove };
+  }
+
+  function authoritativeMigrationEvents(path) {
+    const states = Array.isArray(path?.states) ? path.states : [];
+    const symbol = String(path?.symbol || "");
+    const events = [];
+    for (let index = 1; index < states.length; index += 1) {
+      const previous = states[index - 1];
+      const current = states[index];
+      if (current?.event_type !== "MRZ_MIGRATED") continue;
+      const normalized = normalizedMigrationMove(previous, current);
+      events.push({
+        symbol,
+        eventKey: current.event_key,
+        occurredAt: current.occurred_at,
+        routeOwner: current.route_owner,
+        direction: current.direction,
+        location: current.location,
+        locationCode: current.location_code,
+        locationLabel: current.location_label,
+        previous,
+        current,
+        available: normalized !== null,
+        rawMidpointDelta: normalized?.rawMidpointDelta ?? null,
+        previousWidth: normalized?.previousWidth ?? null,
+        normalizedMove: normalized?.normalizedMove ?? null,
+      });
+    }
+    return events;
+  }
+
+  function migrationMoveSign(value) {
+    const move = Number(value);
+    if (!Number.isFinite(move)) return 0;
+    if (move > NEUTRAL_NORMALIZED_MOVE_THRESHOLD) return 1;
+    if (move < -NEUTRAL_NORMALIZED_MOVE_THRESHOLD) return -1;
+    return 0;
+  }
+
+  function classifySymbolMigration(path) {
+    const events = authoritativeMigrationEvents(path);
+    const recentEvents = events.slice(-MOMENTUM_WINDOW);
+    if (
+      recentEvents.length < MINIMUM_SYMBOL_MIGRATIONS
+      || recentEvents.some((event) => !event.available)
+    ) {
+      return {
+        symbol: String(path?.symbol || ""),
+        state: "insufficient_history",
+        label: migrationStateLabels.insufficient_history,
+        direction: "neutral",
+        events,
+        recentEvents,
+        recentAverage: null,
+      };
+    }
+
+    const moves = recentEvents.map(({ normalizedMove }) => normalizedMove);
+    const signs = moves.map(migrationMoveSign);
+    const recentAverage = moves.reduce((total, value) => total + value, 0) / moves.length;
+    const magnitudes = moves.map(Math.abs);
+    const priorDirection = signs[0] !== 0 && signs[0] === signs[1] ? signs[0] : 0;
+    const latestDirection = signs.at(-1);
+    const priorMagnitude = (magnitudes[0] + magnitudes[1]) / 2;
+    const significantTransition = (
+      priorDirection !== 0
+      && latestDirection === -priorDirection
+      && magnitudes.at(-1) >= Math.max(
+        NEUTRAL_NORMALIZED_MOVE_THRESHOLD,
+        priorMagnitude * TRANSITION_SIGNIFICANCE_THRESHOLD,
+      )
+    );
+
+    let state = "mixed_oscillating";
+    if (significantTransition) {
+      state = "directional_transition";
+    } else if (signs.every((sign) => sign === 1)) {
+      const weakening = (
+        magnitudes[1] < magnitudes[0]
+        && magnitudes[2] < magnitudes[1]
+        && magnitudes[2] <= magnitudes[0] * WEAKENING_RATIO_THRESHOLD
+      );
+      state = weakening ? "upward_weakening" : "upward_persistence";
+    } else if (signs.every((sign) => sign === -1)) {
+      const weakening = (
+        magnitudes[1] < magnitudes[0]
+        && magnitudes[2] < magnitudes[1]
+        && magnitudes[2] <= magnitudes[0] * WEAKENING_RATIO_THRESHOLD
+      );
+      state = weakening ? "downward_weakening" : "downward_persistence";
+    }
+
+    const direction = state.startsWith("upward")
+      ? "higher"
+      : state.startsWith("downward")
+        ? "lower"
+        : "neutral";
+    return {
+      symbol: String(path?.symbol || ""),
+      state,
+      label: migrationStateLabels[state],
+      direction,
+      events,
+      recentEvents,
+      recentAverage,
+    };
+  }
+
+  function aggregateGroupMigration(symbols, totalSymbols = symbols.length) {
+    const participating = symbols.filter(({ state }) => state !== "insufficient_history");
+    const participation = { count: participating.length, total: totalSymbols };
+    if (participating.length < MINIMUM_GROUP_MIGRATION_PARTICIPANTS) {
+      return {
+        state: "insufficient_group_history",
+        label: groupMigrationStateLabels.insufficient_group_history,
+        direction: "neutral",
+        participation,
+      };
+    }
+
+    const majority = Math.floor(participating.length / 2) + 1;
+    const count = (states) => participating.filter(({ state }) => states.includes(state)).length;
+    const upwardPersistence = count(["upward_persistence"]);
+    const upwardWeakening = count(["upward_weakening"]);
+    const downwardPersistence = count(["downward_persistence"]);
+    const downwardWeakening = count(["downward_weakening"]);
+    const transitioning = count(["directional_transition"]);
+    const upward = upwardPersistence + upwardWeakening;
+    const downward = downwardPersistence + downwardWeakening;
+
+    let state = "group_mixed";
+    if (transitioning >= majority) {
+      state = "group_transitioning";
+    } else if (upward >= majority) {
+      state = upwardWeakening > upwardPersistence
+        ? "group_upward_weakening"
+        : "group_upward_persistence";
+    } else if (downward >= majority) {
+      state = downwardWeakening > downwardPersistence
+        ? "group_downward_weakening"
+        : "group_downward_persistence";
+    }
+    return {
+      state,
+      label: groupMigrationStateLabels[state],
+      direction: state.startsWith("group_upward")
+        ? "higher"
+        : state.startsWith("group_downward")
+          ? "lower"
+          : "neutral",
+      participation,
+    };
+  }
+
+  function pressureMigrationAlignment(peerPressure, groupMigration) {
+    const pressureParticipation = Number(peerPressure?.participation?.count || 0);
+    const pressureDirection = peerPressure?.headline?.direction;
+    if (
+      pressureParticipation <= 0
+      || groupMigration?.state === "insufficient_group_history"
+    ) return "insufficient_data";
+    if (pressureDirection === "NEUTRAL" || groupMigration?.direction === "neutral") return "mixed";
+    if (pressureDirection === "UP" && groupMigration.direction === "higher") return "aligned_up";
+    if (pressureDirection === "DOWN" && groupMigration.direction === "lower") return "aligned_down";
+    return "diverging";
+  }
+
+  function migrationBarDomain(events) {
+    return Math.max(
+      0,
+      ...events.map(({ normalizedMove }) => Math.abs(Number(normalizedMove)))
+        .filter(Number.isFinite),
+    );
+  }
+
+  function migrationBarMagnitudePercent(normalizedMove, domain) {
+    const move = Number(normalizedMove);
+    const maximum = Number(domain);
+    if (!Number.isFinite(move) || !Number.isFinite(maximum) || maximum <= 0) return null;
+    return (Math.abs(move) / maximum) * 100;
+  }
+
+  function buildMigrationMomentumReport(pathPayload, peerPressure) {
+    const paths = Array.isArray(pathPayload?.paths) ? pathPayload.paths : [];
+    const symbols = paths.map(classifySymbolMigration);
+    const group = aggregateGroupMigration(symbols, paths.length);
+    const events = symbols.flatMap(({ recentEvents }) => (
+      recentEvents.filter(({ available }) => available)
+    )).sort((left, right) => (
+      Date.parse(left.occurredAt) - Date.parse(right.occurredAt)
+      || left.symbol.localeCompare(right.symbol)
+      || String(left.eventKey).localeCompare(String(right.eventKey))
+    ));
+    const recentDirection = events.reduce((counts, { normalizedMove }) => {
+      const sign = migrationMoveSign(normalizedMove);
+      if (sign > 0) counts.higher += 1;
+      if (sign < 0) counts.lower += 1;
+      return counts;
+    }, { higher: 0, lower: 0 });
+    const participatingAverages = symbols
+      .filter(({ state, recentAverage }) => (
+        state !== "insufficient_history" && Number.isFinite(recentAverage)
+      ))
+      .map(({ recentAverage }) => recentAverage);
+    const groupRecentAverage = participatingAverages.length > 0
+      ? participatingAverages.reduce((total, value) => total + value, 0)
+        / participatingAverages.length
+      : null;
+    const alignment = pressureMigrationAlignment(peerPressure, group);
+    return {
+      group,
+      symbols,
+      events,
+      recentDirection,
+      groupRecentAverage,
+      magnitude: groupRecentAverage === null ? null : Math.abs(groupRecentAverage),
+      alignment,
+      alignmentLabel: alignmentLabels[alignment],
+      barDomain: migrationBarDomain(events),
+    };
+  }
+
   const MINIMUM_TRAJECTORY_DOMAIN_PERCENT = 1;
   const TRAJECTORY_VERTICAL_RANGE_PERCENT = 32;
 
@@ -588,6 +872,18 @@
     visibleSymbolsForGroupTracking,
     timelinePosition,
     timelineTicks,
+    migrationMomentumConstants,
+    migrationStateLabels,
+    groupMigrationStateLabels,
+    alignmentLabels,
+    normalizedMigrationMove,
+    authoritativeMigrationEvents,
+    classifySymbolMigration,
+    aggregateGroupMigration,
+    pressureMigrationAlignment,
+    migrationBarDomain,
+    migrationBarMagnitudePercent,
+    buildMigrationMomentumReport,
     midpointDisplacementPercent,
     migrationTrajectoryDomain,
     migrationTrajectory,
