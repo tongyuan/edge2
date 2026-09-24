@@ -1,7 +1,7 @@
 //@version=6
 // TD_1.0 + External BSL/SSL Liquidity Context integration
 // BSL/SSL is independent of MRZ proximal-evidence filtering and remains visual context only.
-indicator("TD_1.0", overlay = true, max_boxes_count = 500, max_labels_count = 200, max_lines_count = 500, max_bars_back = 3000)
+indicator("TD_1.0", overlay = true, max_boxes_count = 500, max_labels_count = 500, max_lines_count = 500, max_bars_back = 3000)
 
 string GROUP_CONFIGURATION = "MRZ CONFIGURATION"
 string GROUP_SLOT_A = "MRZ SLOT A"
@@ -48,6 +48,8 @@ bool showBuysideLiquidity = input.bool(true, "Show BSL", group = GROUP_EXTERNAL_
 bool showSellsideLiquidity = input.bool(true, "Show SSL", group = GROUP_EXTERNAL_LIQUIDITY)
 int externalLiquidityVisibleLevels = input.int(3, "Visible Levels / Side", minval = 1, maxval = 50, group = GROUP_EXTERNAL_LIQUIDITY)
 bool showLiquidityBreachZones = input.bool(true, "Show Breach Zones", group = GROUP_EXTERNAL_LIQUIDITY)
+bool enableExternalLiquidityInteractionCompleteAlerts = input.bool(true, "Enable BSL / SSL Interaction Complete Alerts", group = GROUP_EXTERNAL_LIQUIDITY)
+bool showExternalLiquidityInteractionCompleteLabels = input.bool(true, "Show Interaction Complete Labels", group = GROUP_EXTERNAL_LIQUIDITY)
 float buysideBreachAtrMargin = input.float(2.3, "BSL Breach ATR Margin", minval = 1.5, maxval = 10.0, step = 0.1, group = GROUP_EXTERNAL_LIQUIDITY)
 float sellsideBreachAtrMargin = input.float(2.3, "SSL Breach ATR Margin", minval = 1.5, maxval = 10.0, step = 0.1, group = GROUP_EXTERNAL_LIQUIDITY)
 color buysideLiquidityColor = input.color(color.new(#4caf50, 0), "BSL Color", group = GROUP_EXTERNAL_LIQUIDITY)
@@ -224,6 +226,36 @@ externalLiquidityLabelSize = switch externalLiquidityLabelSizeInput
 // transparent box, left alignment, and BSL-below / SSL-above placement.
 float externalLiquidityLabelPad = math.max(syminfo.mintick * 2.0, externalLiquidityAtr * 0.03)
 
+f_externalLiquidityObjectId(string _side, int _sourceBar, int _detectionBar, float _level) =>
+    _side + "|" + str.tostring(_sourceBar) + "|" + str.tostring(_detectionBar) + "|" + str.tostring(_level, format.mintick)
+
+f_externalLiquidityInteractionCompletePayload(string _eventType, string _side, string _objectId, int _sourceBar, int _detectionBar, float _level, float _zoneTop, float _zoneBottom, int _startBar, int _startTime, int _endBar, int _endTime, float _boxTop, float _boxBottom) =>
+    string payload = '{"alert":"' + f_alertSymbol() + " · " + _side + ' INTERACTION COMPLETE"'
+    payload += ',"schema_version":"1.0"'
+    payload += ',"event_type":"' + _eventType + '"'
+    payload += ',"symbol":"' + syminfo.tickerid + '"'
+    payload += ',"liquidity_side":"' + _side + '"'
+    payload += ',"object_id":"' + _objectId + '"'
+    payload += ',"source_bar":' + str.tostring(_sourceBar)
+    payload += ',"detection_bar":' + str.tostring(_detectionBar)
+    payload += ',"liquidity_level":' + str.tostring(_level, format.mintick)
+    payload += ',"detection_zone_top":' + str.tostring(_zoneTop, format.mintick)
+    payload += ',"detection_zone_bottom":' + str.tostring(_zoneBottom, format.mintick)
+    payload += ',"interaction_start_bar":' + str.tostring(_startBar)
+    payload += ',"interaction_start_time":' + str.tostring(_startTime)
+    payload += ',"interaction_end_bar":' + str.tostring(_endBar)
+    payload += ',"interaction_end_time":' + str.tostring(_endTime)
+    payload += ',"interaction_duration_bars":' + str.tostring(_endBar - _startBar)
+    payload += ',"interaction_box_top":' + str.tostring(_boxTop, format.mintick)
+    payload += ',"interaction_box_bottom":' + str.tostring(_boxBottom, format.mintick)
+    payload += ',"timeframe":"' + timeframe.period + '"'
+    payload += ',"observed_at":' + str.tostring(_endTime)
+    payload += ',"price":' + str.tostring(close, format.mintick) + '}'
+    payload
+
+f_externalLiquidityInteractionCompleteTooltip(string _eventType, string _objectId, int _sourceBar, int _detectionBar, float _level, int _startBar, int _endBar, float _boxTop, float _boxBottom) =>
+    _eventType + "\nObject: " + _objectId + "\nSource bar: " + str.tostring(_sourceBar) + "\nDetection bar: " + str.tostring(_detectionBar) + "\nLiquidity level: " + str.tostring(_level, format.mintick) + "\nStart bar: " + str.tostring(_startBar) + "\nEnd bar: " + str.tostring(_endBar) + "\nDuration bars: " + str.tostring(_endBar - _startBar) + "\nBox top: " + str.tostring(_boxTop, format.mintick) + "\nBox bottom: " + str.tostring(_boxBottom, format.mintick)
+
 var int[] extLiqPivotDirections = array.new_int(EXT_LIQ_MAX_PIVOTS, 0)
 var int[] extLiqPivotBars = array.new_int(EXT_LIQ_MAX_PIVOTS, 0)
 var float[] extLiqPivotPrices = array.new_float(EXT_LIQ_MAX_PIVOTS, na)
@@ -235,10 +267,15 @@ var float[] extBslZoneTops = array.new_float()
 var float[] extBslZoneBottoms = array.new_float()
 var bool[] extBslBreached = array.new_bool()
 var bool[] extBslBreachActive = array.new_bool()
+var int[] extBslInteractionStartBars = array.new_int()
+var int[] extBslInteractionStartTimes = array.new_int()
+var float[] extBslInteractionBoxTops = array.new_float()
+var float[] extBslInteractionBoxBottoms = array.new_float()
 var line[] extBslSolidLines = array.new_line()
 var line[] extBslLines = array.new_line() // dotted extension line
 var box[] extBslTextBoxes = array.new_box()
 var box[] extBslBreachBoxes = array.new_box()
+var label[] extBslInteractionCompleteLabels = array.new_label()
 
 var int[] extSslLeftBars = array.new_int()
 var int[] extSslDetectedBars = array.new_int()
@@ -247,10 +284,15 @@ var float[] extSslZoneTops = array.new_float()
 var float[] extSslZoneBottoms = array.new_float()
 var bool[] extSslBreached = array.new_bool()
 var bool[] extSslBreachActive = array.new_bool()
+var int[] extSslInteractionStartBars = array.new_int()
+var int[] extSslInteractionStartTimes = array.new_int()
+var float[] extSslInteractionBoxTops = array.new_float()
+var float[] extSslInteractionBoxBottoms = array.new_float()
 var line[] extSslSolidLines = array.new_line()
 var line[] extSslLines = array.new_line() // dotted extension line
 var box[] extSslTextBoxes = array.new_box()
 var box[] extSslBreachBoxes = array.new_box()
+var label[] extSslInteractionCompleteLabels = array.new_label()
 
 float extLiqPivotHigh = ta.pivothigh(externalLiquidityDetectionLength, 1)
 float extLiqPivotLow = ta.pivotlow(externalLiquidityDetectionLength, 1)
@@ -312,10 +354,15 @@ if not na(extLiqPivotHigh)
                 array.unshift(extBslZoneBottoms, zoneBottom)
                 array.unshift(extBslBreached, false)
                 array.unshift(extBslBreachActive, false)
+                array.unshift(extBslInteractionStartBars, na)
+                array.unshift(extBslInteractionStartTimes, na)
+                array.unshift(extBslInteractionBoxTops, na)
+                array.unshift(extBslInteractionBoxBottoms, na)
                 array.unshift(extBslSolidLines, na)
                 array.unshift(extBslLines, na)
                 array.unshift(extBslTextBoxes, na)
                 array.unshift(extBslBreachBoxes, na)
+                array.unshift(extBslInteractionCompleteLabels, na)
 
                 while array.size(extBslLevels) > externalLiquidityVisibleLevels
                     line oldSolidLine = array.pop(extBslSolidLines)
@@ -330,6 +377,9 @@ if not na(extLiqPivotHigh)
                     box oldBox = array.pop(extBslBreachBoxes)
                     if not na(oldBox)
                         box.delete(oldBox)
+                    label oldInteractionCompleteLabel = array.pop(extBslInteractionCompleteLabels)
+                    if not na(oldInteractionCompleteLabel)
+                        label.delete(oldInteractionCompleteLabel)
                     array.pop(extBslLeftBars)
                     array.pop(extBslDetectedBars)
                     array.pop(extBslLevels)
@@ -337,6 +387,10 @@ if not na(extLiqPivotHigh)
                     array.pop(extBslZoneBottoms)
                     array.pop(extBslBreached)
                     array.pop(extBslBreachActive)
+                    array.pop(extBslInteractionStartBars)
+                    array.pop(extBslInteractionStartTimes)
+                    array.pop(extBslInteractionBoxTops)
+                    array.pop(extBslInteractionBoxBottoms)
 
 if not na(extLiqPivotLow)
     int extDir = array.get(extLiqPivotDirections, 0)
@@ -394,10 +448,15 @@ if not na(extLiqPivotLow)
                 array.unshift(extSslZoneBottoms, zoneBottom)
                 array.unshift(extSslBreached, false)
                 array.unshift(extSslBreachActive, false)
+                array.unshift(extSslInteractionStartBars, na)
+                array.unshift(extSslInteractionStartTimes, na)
+                array.unshift(extSslInteractionBoxTops, na)
+                array.unshift(extSslInteractionBoxBottoms, na)
                 array.unshift(extSslSolidLines, na)
                 array.unshift(extSslLines, na)
                 array.unshift(extSslTextBoxes, na)
                 array.unshift(extSslBreachBoxes, na)
+                array.unshift(extSslInteractionCompleteLabels, na)
 
                 while array.size(extSslLevels) > externalLiquidityVisibleLevels
                     line oldSolidLine = array.pop(extSslSolidLines)
@@ -412,6 +471,9 @@ if not na(extLiqPivotLow)
                     box oldBox = array.pop(extSslBreachBoxes)
                     if not na(oldBox)
                         box.delete(oldBox)
+                    label oldInteractionCompleteLabel = array.pop(extSslInteractionCompleteLabels)
+                    if not na(oldInteractionCompleteLabel)
+                        label.delete(oldInteractionCompleteLabel)
                     array.pop(extSslLeftBars)
                     array.pop(extSslDetectedBars)
                     array.pop(extSslLevels)
@@ -419,6 +481,10 @@ if not na(extLiqPivotLow)
                     array.pop(extSslZoneBottoms)
                     array.pop(extSslBreached)
                     array.pop(extSslBreachActive)
+                    array.pop(extSslInteractionStartBars)
+                    array.pop(extSslInteractionStartTimes)
+                    array.pop(extSslInteractionBoxTops)
+                    array.pop(extSslInteractionBoxBottoms)
 
 int extBslCount = array.size(extBslLevels)
 if extBslCount > 0
@@ -427,9 +493,11 @@ if extBslCount > 0
         int detectionBar = array.get(extBslDetectedBars, i)
         float level = array.get(extBslLevels, i)
         float zoneTop = array.get(extBslZoneTops, i)
+        float zoneBottom = array.get(extBslZoneBottoms, i)
         bool breached = array.get(extBslBreached, i)
         bool breachActive = array.get(extBslBreachActive, i)
         bool breachedOnCurrentBar = false
+        bool interactionCompletedOnCurrentBar = false
 
         if not breached and barstate.isconfirmed and high > zoneTop
             breached := true
@@ -437,11 +505,20 @@ if extBslCount > 0
             breachedOnCurrentBar := true
             array.set(extBslBreached, i, true)
             array.set(extBslBreachActive, i, true)
+            array.set(extBslInteractionStartBars, i, bar_index)
+            array.set(extBslInteractionStartTimes, i, time)
+            array.set(extBslInteractionBoxTops, i, math.min(level + buysideBreachAtrMargin * externalLiquidityAtr, high))
+            array.set(extBslInteractionBoxBottoms, i, level)
 
-        else if breached and breachActive
+        else if breached and breachActive and barstate.isconfirmed
             bool remainsInBreachGeometry = low > level - buysideBreachAtrMargin * externalLiquidityAtr and high < level + buysideBreachAtrMargin * externalLiquidityAtr
-            if not remainsInBreachGeometry
+            if remainsInBreachGeometry
+                float retainedBreachTop = array.get(extBslInteractionBoxTops, i)
+                float currentBreachTop = math.min(level + buysideBreachAtrMargin * externalLiquidityAtr, high)
+                array.set(extBslInteractionBoxTops, i, na(retainedBreachTop) ? currentBreachTop : math.max(retainedBreachTop, currentBreachTop))
+            else
                 breachActive := false
+                interactionCompletedOnCurrentBar := true
                 array.set(extBslBreachActive, i, false)
 
         bool visible = showExternalLiquidity and showBuysideLiquidity and i < externalLiquidityVisibleLevels
@@ -520,16 +597,37 @@ if extBslCount > 0
                 box.delete(breachBox)
                 array.set(extBslBreachBoxes, i, na)
 
+        label interactionCompleteLabel = array.get(extBslInteractionCompleteLabels, i)
+        if interactionCompletedOnCurrentBar
+            int interactionStartBar = array.get(extBslInteractionStartBars, i)
+            int interactionStartTime = array.get(extBslInteractionStartTimes, i)
+            box finalizedBreachBox = array.get(extBslBreachBoxes, i)
+            float interactionBoxTop = not na(finalizedBreachBox) ? box.get_top(finalizedBreachBox) : array.get(extBslInteractionBoxTops, i)
+            float interactionBoxBottom = not na(finalizedBreachBox) ? box.get_bottom(finalizedBreachBox) : array.get(extBslInteractionBoxBottoms, i)
+            string objectId = f_externalLiquidityObjectId("BSL", sourceBar, detectionBar, level)
+            if enableExternalLiquidityInteractionCompleteAlerts
+                string interactionCompletePayload = f_externalLiquidityInteractionCompletePayload("BSL_INTERACTION_COMPLETE", "BSL", objectId, sourceBar, detectionBar, level, zoneTop, zoneBottom, interactionStartBar, interactionStartTime, bar_index, time, interactionBoxTop, interactionBoxBottom)
+                alert(interactionCompletePayload, alert.freq_all)
+            if showExternalLiquidityInteractionCompleteLabels and na(interactionCompleteLabel)
+                string interactionCompleteTooltip = f_externalLiquidityInteractionCompleteTooltip("BSL_INTERACTION_COMPLETE", objectId, sourceBar, detectionBar, level, interactionStartBar, bar_index, interactionBoxTop, interactionBoxBottom)
+                interactionCompleteLabel := label.new(bar_index, high, "BSL IC", xloc = xloc.bar_index, style = label.style_label_down, color = color.new(buysideLiquidityColor, 15), textcolor = color.white, size = size.tiny, tooltip = interactionCompleteTooltip)
+                array.set(extBslInteractionCompleteLabels, i, interactionCompleteLabel)
+        else if not showExternalLiquidityInteractionCompleteLabels and not na(interactionCompleteLabel)
+            label.delete(interactionCompleteLabel)
+            array.set(extBslInteractionCompleteLabels, i, na)
+
 int extSslCount = array.size(extSslLevels)
 if extSslCount > 0
     for i = 0 to extSslCount - 1
         int sourceBar = array.get(extSslLeftBars, i)
         int detectionBar = array.get(extSslDetectedBars, i)
         float level = array.get(extSslLevels, i)
+        float zoneTop = array.get(extSslZoneTops, i)
         float zoneBottom = array.get(extSslZoneBottoms, i)
         bool breached = array.get(extSslBreached, i)
         bool breachActive = array.get(extSslBreachActive, i)
         bool breachedOnCurrentBar = false
+        bool interactionCompletedOnCurrentBar = false
 
         if not breached and barstate.isconfirmed and low < zoneBottom
             breached := true
@@ -537,11 +635,20 @@ if extSslCount > 0
             breachedOnCurrentBar := true
             array.set(extSslBreached, i, true)
             array.set(extSslBreachActive, i, true)
+            array.set(extSslInteractionStartBars, i, bar_index)
+            array.set(extSslInteractionStartTimes, i, time)
+            array.set(extSslInteractionBoxTops, i, level)
+            array.set(extSslInteractionBoxBottoms, i, math.max(level - sellsideBreachAtrMargin * externalLiquidityAtr, low))
 
-        else if breached and breachActive
+        else if breached and breachActive and barstate.isconfirmed
             bool remainsInBreachGeometry = low > level - sellsideBreachAtrMargin * externalLiquidityAtr and high < level + sellsideBreachAtrMargin * externalLiquidityAtr
-            if not remainsInBreachGeometry
+            if remainsInBreachGeometry
+                float retainedBreachBottom = array.get(extSslInteractionBoxBottoms, i)
+                float currentBreachBottom = math.max(level - sellsideBreachAtrMargin * externalLiquidityAtr, low)
+                array.set(extSslInteractionBoxBottoms, i, na(retainedBreachBottom) ? currentBreachBottom : math.min(retainedBreachBottom, currentBreachBottom))
+            else
                 breachActive := false
+                interactionCompletedOnCurrentBar := true
                 array.set(extSslBreachActive, i, false)
 
         bool visible = showExternalLiquidity and showSellsideLiquidity and i < externalLiquidityVisibleLevels
@@ -619,6 +726,25 @@ if extSslCount > 0
             if not na(breachBox)
                 box.delete(breachBox)
                 array.set(extSslBreachBoxes, i, na)
+
+        label interactionCompleteLabel = array.get(extSslInteractionCompleteLabels, i)
+        if interactionCompletedOnCurrentBar
+            int interactionStartBar = array.get(extSslInteractionStartBars, i)
+            int interactionStartTime = array.get(extSslInteractionStartTimes, i)
+            box finalizedBreachBox = array.get(extSslBreachBoxes, i)
+            float interactionBoxTop = not na(finalizedBreachBox) ? box.get_top(finalizedBreachBox) : array.get(extSslInteractionBoxTops, i)
+            float interactionBoxBottom = not na(finalizedBreachBox) ? box.get_bottom(finalizedBreachBox) : array.get(extSslInteractionBoxBottoms, i)
+            string objectId = f_externalLiquidityObjectId("SSL", sourceBar, detectionBar, level)
+            if enableExternalLiquidityInteractionCompleteAlerts
+                string interactionCompletePayload = f_externalLiquidityInteractionCompletePayload("SSL_INTERACTION_COMPLETE", "SSL", objectId, sourceBar, detectionBar, level, zoneTop, zoneBottom, interactionStartBar, interactionStartTime, bar_index, time, interactionBoxTop, interactionBoxBottom)
+                alert(interactionCompletePayload, alert.freq_all)
+            if showExternalLiquidityInteractionCompleteLabels and na(interactionCompleteLabel)
+                string interactionCompleteTooltip = f_externalLiquidityInteractionCompleteTooltip("SSL_INTERACTION_COMPLETE", objectId, sourceBar, detectionBar, level, interactionStartBar, bar_index, interactionBoxTop, interactionBoxBottom)
+                interactionCompleteLabel := label.new(bar_index, low, "SSL IC", xloc = xloc.bar_index, style = label.style_label_up, color = color.new(sellsideLiquidityColor, 15), textcolor = color.white, size = size.tiny, tooltip = interactionCompleteTooltip)
+                array.set(extSslInteractionCompleteLabels, i, interactionCompleteLabel)
+        else if not showExternalLiquidityInteractionCompleteLabels and not na(interactionCompleteLabel)
+            label.delete(interactionCompleteLabel)
+            array.set(extSslInteractionCompleteLabels, i, na)
 
 float nearestActiveBslAbove = na
 float nearestActiveSslBelow = na

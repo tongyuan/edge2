@@ -89,6 +89,8 @@ class SourceFaithfulLiquidityReplay:
                     obj.box_right = bar_index + 1
                     self.events.append((obj.object_id, bar_index))
             elif obj.interaction_active:
+                if not confirmed:
+                    continue
                 remains_inside = (
                     low > obj.level - margin * atr
                     and high < obj.level + margin * atr
@@ -142,12 +144,11 @@ class TradeDeskExternalLiquidityContractTests(unittest.TestCase):
         self.assertIn("extBslZoneTops", update_blocks[0])
         self.assertIn("extSslZoneBottoms", update_blocks[1])
 
-    def test_breach_presentation_layer_is_absent_but_normal_labels_remain(self) -> None:
+    def test_old_breach_alerts_are_absent_but_completion_alerts_and_normal_labels_remain(self) -> None:
         external_liquidity = self.text.split(
             "// EXTERNAL LIQUIDITY CONTEXT", 1
         )[1].split("// Minimal direction-neutral", 1)[0]
         for removed in (
-            "enableExternalLiquidityBreachAlerts",
             "showExternalLiquidityBreachLabels",
             "f_externalLiquidityBreachPayload",
             "BSL_BREACHED",
@@ -156,7 +157,9 @@ class TradeDeskExternalLiquidityContractTests(unittest.TestCase):
             '"SSL BR"',
         ):
             self.assertNotIn(removed, self.text)
-        self.assertNotIn("alert(", external_liquidity)
+        self.assertEqual(external_liquidity.count("alert(interactionCompletePayload, alert.freq_all)"), 2)
+        self.assertIn("BSL_INTERACTION_COMPLETE", external_liquidity)
+        self.assertIn("SSL_INTERACTION_COMPLETE", external_liquidity)
         self.assertIn('text = "BSL"', external_liquidity)
         self.assertIn('text = "SSL"', external_liquidity)
 
