@@ -1471,6 +1471,9 @@ f_pdContextOwnerText(int _owner) =>
 f_pdContextLabel(string _base, int _tier) =>
     _base + " · " + f_pdContextSuffix(_tier)
 
+f_pdLabelCenter(int _left, int _right) =>
+    _left + int(math.floor((_right - _left) / 2.0))
+
 f_pdContextTooltip(string _type, int _tier, int _owner, float _rangeLow, float _rangeHigh) =>
     _type + "\nTier: " + f_pdContextTierText(_tier) + "\nOwner: " + f_pdContextOwnerText(_owner) + "\nRange: " + str.tostring(_rangeLow, format.mintick) + " - " + str.tostring(_rangeHigh, format.mintick)
 
@@ -1665,12 +1668,15 @@ if proximalFvgCount > 0
 
         label fvgLabel = array.get(proximalFvgLabels, fvgIndex)
         if showProximalFvg and showFvgLabels and fvgPresentationVisible
+            int fvgDisplayedRightBar = fvgMitigated and not na(fvgMitigationBar) ? fvgMitigationBar : bar_index
+            int fvgLabelCenterBar = f_pdLabelCenter(fvgCreationBar, fvgDisplayedRightBar)
             string fvgLabelText = f_pdContextLabel("FVG", fvgContextTier)
             string fvgTooltip = f_pdContextTooltip("FVG", fvgContextTier, fvgContextOwner, fvgBottom, fvgTop)
             if na(fvgLabel)
-                fvgLabel := label.new(fvgCreationBar, fvgCe, fvgLabelText, xloc = xloc.bar_index, style = label.style_none, textcolor = fvgMitigated ? color.new(mitigatedFvgColor, 0) : color.new(fvgColor, 0), size = size.tiny, tooltip = fvgTooltip)
+                fvgLabel := label.new(fvgLabelCenterBar, fvgCe, fvgLabelText, xloc = xloc.bar_index, style = label.style_none, textcolor = fvgMitigated ? color.new(mitigatedFvgColor, 0) : color.new(fvgColor, 0), size = size.tiny, tooltip = fvgTooltip)
                 array.set(proximalFvgLabels, fvgIndex, fvgLabel)
             else
+                label.set_x(fvgLabel, fvgLabelCenterBar)
                 label.set_text(fvgLabel, fvgLabelText)
                 label.set_tooltip(fvgLabel, fvgTooltip)
                 label.set_textcolor(fvgLabel, fvgMitigated ? color.new(mitigatedFvgColor, 0) : color.new(fvgColor, 0))
@@ -1775,12 +1781,15 @@ if proximalViCount > 0
 
         label viLabel = array.get(proximalViLabels, viIndex)
         if showProximalVi and showViLabels and viPresentationVisible
+            int viDisplayedRightBar = viMitigated and not na(viMitigationBar) ? viMitigationBar : bar_index
+            int viLabelCenterBar = f_pdLabelCenter(viCreationBar, viDisplayedRightBar)
             string viLabelText = f_pdContextLabel("VI", viContextTier)
             string viTooltip = f_pdContextTooltip("VI", viContextTier, viContextOwner, retainedViBottom, retainedViTop)
             if na(viLabel)
-                viLabel := label.new(viCreationBar, viCe, viLabelText, xloc = xloc.bar_index, style = label.style_none, textcolor = viMitigated ? color.new(mitigatedViColor, 0) : color.new(viColor, 0), size = size.tiny, tooltip = viTooltip)
+                viLabel := label.new(viLabelCenterBar, viCe, viLabelText, xloc = xloc.bar_index, style = label.style_none, textcolor = viMitigated ? color.new(mitigatedViColor, 0) : color.new(viColor, 0), size = size.tiny, tooltip = viTooltip)
                 array.set(proximalViLabels, viIndex, viLabel)
             else
+                label.set_x(viLabel, viLabelCenterBar)
                 label.set_text(viLabel, viLabelText)
                 label.set_tooltip(viLabel, viTooltip)
                 label.set_textcolor(viLabel, viMitigated ? color.new(mitigatedViColor, 0) : color.new(viColor, 0))
@@ -1924,13 +1933,15 @@ if activeObCount > 0
 
         if showActiveOb and showObLabels and activeObPresentationVisible
             float activeObCe = (activeObTop + activeObBottom) / 2.0
+            int activeObLabelCenterTime = f_pdLabelCenter(activeObLeftTime, time)
             string activeObBaseLabel = activeObDirection == 1 ? "OB+" : "OB-"
             string activeObLabelText = f_pdContextLabel(activeObBaseLabel, activeObContextTier)
             string activeObTooltip = f_pdContextTooltip(activeObBaseLabel, activeObContextTier, activeObContextOwner, activeObBottom, activeObTop)
             if na(activeObLabel)
-                activeObLabel := label.new(activeObLeftTime, activeObCe, activeObLabelText, xloc = xloc.bar_time, style = label.style_none, textcolor = color.new(activeObDisplayColor, obInvalidated ? 55 : 0), size = size.tiny, tooltip = activeObTooltip)
+                activeObLabel := label.new(activeObLabelCenterTime, activeObCe, activeObLabelText, xloc = xloc.bar_time, style = label.style_none, textcolor = color.new(activeObDisplayColor, obInvalidated ? 55 : 0), size = size.tiny, tooltip = activeObTooltip)
                 array.set(activeObLabels, obIndex, activeObLabel)
             else
+                label.set_x(activeObLabel, activeObLabelCenterTime)
                 label.set_text(activeObLabel, activeObLabelText)
                 label.set_tooltip(activeObLabel, activeObTooltip)
                 label.set_textcolor(activeObLabel, color.new(activeObDisplayColor, obInvalidated ? 55 : 0))
