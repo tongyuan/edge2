@@ -64,6 +64,7 @@ color ipdaEquilibriumColor = input.color(color.new(#000000, 0), "EQM", group = G
 color ipdaPremiumColor = input.color(color.new(#000000, 0), "Premium / High", group = GROUP_IPDA_20W, inline = "ipda_colors")
 color ipdaHalfZoneColor = input.color(color.new(color.gray, 0), "0.25 / 0.75", group = GROUP_IPDA_20W)
 
+bool showMitigatedPdArrays = input.bool(true, "Show Mitigated PD Arrays", group = GROUP_EQM_PD_ARRAYS)
 bool showProximalDisplacement = input.bool(false, "Show Proximal Displacement", group = GROUP_EQM_PD_ARRAYS)
 string displacementType = input.string("Open to Close", "Displacement Type", options = ["Open to Close", "High to Low"], group = GROUP_EQM_PD_ARRAYS)
 int displacementStdDevLookback = input.int(100, "StdDev Lookback", minval = 1, group = GROUP_EQM_PD_ARRAYS)
@@ -1407,7 +1408,8 @@ if proximalDisplacementCount > 0
 
         // Presentation objects are disposable; retained arrays above are canonical.
         line displacementCeLine = array.get(proximalDisplacementCeLines, displacementIndex)
-        bool displacementCeVisible = showProximalDisplacement and showDisplacementCe
+        bool displacementPresentationVisible = not isMitigated or showMitigatedPdArrays
+        bool displacementCeVisible = showProximalDisplacement and showDisplacementCe and displacementPresentationVisible
         int displacementDirection = array.get(proximalDisplacementDirections, displacementIndex)
         color displacementDisplayColor = isMitigated ? color.new(mitigatedDisplacementCeColor, 35) : displacementDirection == 1 ? bullishDisplacementCeColor : bearishDisplacementCeColor
         if displacementCeVisible
@@ -1521,7 +1523,8 @@ if proximalFvgCount > 0
         // Stage B: create, update, or delete presentation objects only.
         color fvgColor = fvgDirection == 1 ? bullishFvgColor : bearishFvgColor
         line fvgCeLine = array.get(proximalFvgCeLines, fvgIndex)
-        if showProximalFvg and showFvgCe
+        bool fvgPresentationVisible = not fvgMitigated or showMitigatedPdArrays
+        if showProximalFvg and showFvgCe and fvgPresentationVisible
             int fvgCeRightBar = fvgMitigated and not na(fvgMitigationBar) ? fvgMitigationBar : fvgCreationBar + 1
             if na(fvgCeLine)
                 fvgCeLine := line.new(fvgCreationBar, fvgCe, fvgCeRightBar, fvgCe, xloc = xloc.bar_index, extend = fvgMitigated ? extend.none : extend.right, color = fvgMitigated ? color.new(mitigatedFvgColor, 20) : color.new(fvgColor, 20), style = line.style_dashed, width = 1)
@@ -1535,7 +1538,7 @@ if proximalFvgCount > 0
             array.set(proximalFvgCeLines, fvgIndex, na)
 
         label fvgLabel = array.get(proximalFvgLabels, fvgIndex)
-        if showProximalFvg and showFvgLabels
+        if showProximalFvg and showFvgLabels and fvgPresentationVisible
             string fvgLabelText = f_pdContextLabel("FVG", fvgContextTier)
             string fvgTooltip = f_pdContextTooltip("FVG", fvgContextTier, fvgContextOwner, fvgBottom, fvgTop)
             if na(fvgLabel)
@@ -1630,7 +1633,8 @@ if proximalViCount > 0
         // Stage B: create, update, or delete presentation objects only.
         color viColor = viDirection == 1 ? bullishViColor : bearishViColor
         line viCeLine = array.get(proximalViCeLines, viIndex)
-        if showProximalVi and showViCe
+        bool viPresentationVisible = not viMitigated or showMitigatedPdArrays
+        if showProximalVi and showViCe and viPresentationVisible
             int viCeRightBar = viMitigated and not na(viMitigationBar) ? viMitigationBar : viCreationBar + 1
             if na(viCeLine)
                 viCeLine := line.new(viCreationBar, viCe, viCeRightBar, viCe, xloc = xloc.bar_index, extend = viMitigated ? extend.none : extend.right, color = viMitigated ? color.new(mitigatedViColor, 20) : color.new(viColor, 20), style = line.style_solid, width = 1)
@@ -1644,7 +1648,7 @@ if proximalViCount > 0
             array.set(proximalViCeLines, viIndex, na)
 
         label viLabel = array.get(proximalViLabels, viIndex)
-        if showProximalVi and showViLabels
+        if showProximalVi and showViLabels and viPresentationVisible
             string viLabelText = f_pdContextLabel("VI", viContextTier)
             string viTooltip = f_pdContextTooltip("VI", viContextTier, viContextOwner, retainedViBottom, retainedViTop)
             if na(viLabel)
@@ -1764,8 +1768,11 @@ if activeObCount > 0
                 obInvalidated := true
         // Stage B renders the retained terminal lifecycle state without mutating it.
         color activeObDisplayColor = obInvalidated ? invalidatedObColor : activeObBaseColor
+        // This module's historical/non-active presentation state is invalidated.
+        // The master toggle only suppresses its objects; retained state is untouched.
+        bool activeObPresentationVisible = not obInvalidated or showMitigatedPdArrays
 
-        if showActiveOb
+        if showActiveOb and activeObPresentationVisible
             if na(activeObBox)
                 activeObBox := box.new(activeObLeftTime, activeObTop, time, activeObBottom, xloc = xloc.bar_time, bgcolor = activeObDisplayColor, border_color = obInvalidated ? na : color.new(activeObBaseColor, 0))
                 array.set(activeObBoxes, obIndex, activeObBox)
@@ -1777,7 +1784,7 @@ if activeObCount > 0
             box.delete(activeObBox)
             array.set(activeObBoxes, obIndex, na)
 
-        if showActiveOb and showObCe
+        if showActiveOb and showObCe and activeObPresentationVisible
             float activeObCe = (activeObTop + activeObBottom) / 2.0
             if na(activeObCeLine)
                 activeObCeLine := line.new(activeObLeftTime, activeObCe, time, activeObCe, xloc = xloc.bar_time, extend = extend.right, color = color.new(activeObDisplayColor, obInvalidated ? 65 : 20), style = line.style_dotted, width = 1)
@@ -1789,7 +1796,7 @@ if activeObCount > 0
             line.delete(activeObCeLine)
             array.set(activeObCeLines, obIndex, na)
 
-        if showActiveOb and showObLabels
+        if showActiveOb and showObLabels and activeObPresentationVisible
             float activeObCe = (activeObTop + activeObBottom) / 2.0
             string activeObBaseLabel = activeObDirection == 1 ? "OB+" : "OB-"
             string activeObLabelText = f_pdContextLabel(activeObBaseLabel, activeObContextTier)
