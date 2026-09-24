@@ -183,11 +183,7 @@ bool displacement = candleDisplacementRange > displacementStdDevThreshold
 bool bullishDisplacement = displacement and close > open
 bool bearishDisplacement = displacement and close < open
 bool displacementIntersectsEvidenceEnvelope = high >= evidenceEnvelopeLow and low <= evidenceEnvelopeHigh
-bool activeDisplacementQualified = activeEvidenceGeometryAvailable and displacementIntersectsEvidenceEnvelope and (bullishDisplacement or bearishDisplacement)
-bool proximalDisplacement = activeDisplacementQualified
 float displacementCe = (high + low) * 0.5
-color proximalDisplacementCandleColor = showProximalDisplacement and proximalDisplacement and barstate.isconfirmed ? color.new(bullishDisplacement ? bullishDisplacementCeColor : bearishDisplacementCeColor, 35) : na
-barcolor(proximalDisplacementCandleColor, title = "Proximal Displacement Candle")
 
 // Candle overlap decides MRZ relevance; the event's own CE remains its reference.
 // CE does not qualify proximity, and CE mitigation is not acceptance or rejection.
@@ -1289,25 +1285,100 @@ if barstate.islast
             label.delete(ipda20LowLabel)
             ipda20LowLabel := na
 
-// One confirmed proximal displacement creates at most one persistent CE entry.
+// Every retained PD-array event receives exactly one immutable spatial context tier.
+// PROXIMAL preserves the pre-existing evidence-envelope test. Wider context uses
+// each MRZ's own 1W / 2W envelope; it never bridges current and previous MRZs.
+const int PD_CONTEXT_OUTSIDE = 0
+const int PD_CONTEXT_PROXIMAL = 1
+const int PD_CONTEXT_NEAR_1W = 2
+const int PD_CONTEXT_OUTER_2W = 3
+const int PD_CONTEXT_OWNER_NONE = 0
+const int PD_CONTEXT_OWNER_CURRENT = 1
+const int PD_CONTEXT_OWNER_PREVIOUS = 2
+
+bool currentPdContextAvailable = currentMrzAvailable and time >= currentActivationTime
+bool previousPdContextAvailable = currentPdContextAvailable and previousMrzAvailable
+
+f_pdRangeIntersects(float _rangeLow, float _rangeHigh, float _contextLow, float _contextHigh) =>
+    _rangeHigh >= _contextLow and _rangeLow <= _contextHigh
+
+f_pdContextOwner(float _eventCenter, bool _currentQualifies, bool _previousQualifies) =>
+    int owner = PD_CONTEXT_OWNER_NONE
+    if _currentQualifies and _previousQualifies
+        float currentDistance = math.abs(_eventCenter - currentMrzMidpoint)
+        float previousDistance = math.abs(_eventCenter - previousMrzMidpoint)
+        owner := previousDistance < currentDistance ? PD_CONTEXT_OWNER_PREVIOUS : PD_CONTEXT_OWNER_CURRENT
+    else if _currentQualifies
+        owner := PD_CONTEXT_OWNER_CURRENT
+    else if _previousQualifies
+        owner := PD_CONTEXT_OWNER_PREVIOUS
+    owner
+
+f_classifyPdContext(float _rangeLow, float _rangeHigh, bool _isProximal) =>
+    int tier = PD_CONTEXT_OUTSIDE
+    int owner = PD_CONTEXT_OWNER_NONE
+    float eventCenter = (_rangeLow + _rangeHigh) / 2.0
+    bool intersectsCurrent1W = currentPdContextAvailable and f_pdRangeIntersects(_rangeLow, _rangeHigh, currentMinus1W, currentPlus1W)
+    bool intersectsPrevious1W = previousPdContextAvailable and f_pdRangeIntersects(_rangeLow, _rangeHigh, previousMinus1W, previousPlus1W)
+    bool intersectsCurrent2W = currentPdContextAvailable and f_pdRangeIntersects(_rangeLow, _rangeHigh, currentMinus2W, currentPlus2W)
+    bool intersectsPrevious2W = previousPdContextAvailable and f_pdRangeIntersects(_rangeLow, _rangeHigh, previousMinus2W, previousPlus2W)
+    if _isProximal
+        tier := PD_CONTEXT_PROXIMAL
+    else if intersectsCurrent1W or intersectsPrevious1W
+        tier := PD_CONTEXT_NEAR_1W
+        owner := f_pdContextOwner(eventCenter, intersectsCurrent1W, intersectsPrevious1W)
+    else if intersectsCurrent2W or intersectsPrevious2W
+        tier := PD_CONTEXT_OUTER_2W
+        owner := f_pdContextOwner(eventCenter, intersectsCurrent2W, intersectsPrevious2W)
+    [tier, owner]
+
+f_pdContextSuffix(int _tier) =>
+    _tier == PD_CONTEXT_PROXIMAL ? "P" : _tier == PD_CONTEXT_NEAR_1W ? "1W" : _tier == PD_CONTEXT_OUTER_2W ? "2W" : ""
+
+f_pdContextTierText(int _tier) =>
+    _tier == PD_CONTEXT_PROXIMAL ? "PROXIMAL" : _tier == PD_CONTEXT_NEAR_1W ? "NEAR_1W" : _tier == PD_CONTEXT_OUTER_2W ? "OUTER_2W" : "OUTSIDE"
+
+f_pdContextOwnerText(int _owner) =>
+    _owner == PD_CONTEXT_OWNER_CURRENT ? "CURRENT" : _owner == PD_CONTEXT_OWNER_PREVIOUS ? "PREVIOUS" : "NONE"
+
+f_pdContextLabel(string _base, int _tier) =>
+    _base + " · " + f_pdContextSuffix(_tier)
+
+f_pdContextTooltip(string _type, int _tier, int _owner, float _rangeLow, float _rangeHigh) =>
+    _type + "\nTier: " + f_pdContextTierText(_tier) + "\nOwner: " + f_pdContextOwnerText(_owner) + "\nRange: " + str.tostring(_rangeLow, format.mintick) + " - " + str.tostring(_rangeHigh, format.mintick)
+
+// The original strict PROXIMAL predicate is unchanged; the classifier only adds
+// retained context outside that tier.
+bool activeDisplacementQualified = activeEvidenceGeometryAvailable and displacementIntersectsEvidenceEnvelope and (bullishDisplacement or bearishDisplacement)
+bool proximalDisplacement = activeDisplacementQualified
+[displacementContextTier, displacementContextOwner] = f_classifyPdContext(low, high, proximalDisplacement)
+bool retainedDisplacement = (bullishDisplacement or bearishDisplacement) and displacementContextTier != PD_CONTEXT_OUTSIDE
+color proximalDisplacementCandleColor = showProximalDisplacement and retainedDisplacement and barstate.isconfirmed ? color.new(bullishDisplacement ? bullishDisplacementCeColor : bearishDisplacementCeColor, 35) : na
+barcolor(proximalDisplacementCandleColor, title = "Proximal Displacement Candle")
+
+// One confirmed retained displacement creates at most one persistent CE entry.
 // Stage A retains factual evidence independently from Stage B object visibility.
 var line[] proximalDisplacementCeLines = array.new_line()
 var float[] proximalDisplacementCeLevels = array.new_float()
 var int[] proximalDisplacementCreationBars = array.new_int()
 var int[] proximalDisplacementDirections = array.new_int()
+var int[] proximalDisplacementContextTiers = array.new_int()
+var int[] proximalDisplacementContextOwners = array.new_int()
 var bool[] proximalDisplacementMitigated = array.new_bool()
-var int lastProximalDisplacementBar = na
+var int lastRetainedDisplacementBar = na
 
-bool displacementBarNotRegistered = na(lastProximalDisplacementBar) or bar_index != lastProximalDisplacementBar
-bool createProximalDisplacement = proximalDisplacement and barstate.isconfirmed and displacementBarNotRegistered
-if createProximalDisplacement
+bool displacementBarNotRegistered = na(lastRetainedDisplacementBar) or bar_index != lastRetainedDisplacementBar
+bool createRetainedDisplacement = retainedDisplacement and barstate.isconfirmed and displacementBarNotRegistered
+if createRetainedDisplacement
     int displacementDirection = bullishDisplacement ? 1 : -1
     array.push(proximalDisplacementCeLines, na)
     array.push(proximalDisplacementCeLevels, displacementCe)
     array.push(proximalDisplacementCreationBars, bar_index)
     array.push(proximalDisplacementDirections, displacementDirection)
+    array.push(proximalDisplacementContextTiers, displacementContextTier)
+    array.push(proximalDisplacementContextOwners, displacementContextOwner)
     array.push(proximalDisplacementMitigated, false)
-    lastProximalDisplacementBar := bar_index
+    lastRetainedDisplacementBar := bar_index
 
     while array.size(proximalDisplacementCeLevels) > maxProximalDisplacementCes
         line oldestCeLine = array.shift(proximalDisplacementCeLines)
@@ -1316,6 +1387,8 @@ if createProximalDisplacement
         array.shift(proximalDisplacementCeLevels)
         array.shift(proximalDisplacementCreationBars)
         array.shift(proximalDisplacementDirections)
+        array.shift(proximalDisplacementContextTiers)
+        array.shift(proximalDisplacementContextOwners)
         array.shift(proximalDisplacementMitigated)
 
 // Only a later candle body can mitigate CE; wick-only and creation-bar contact do not count.
@@ -1363,6 +1436,18 @@ bool bearishBreakerFvgQualified = bearishFvgBreakaway and bearishFvgIntersectsEv
 bool bullishBreakerFvgQualified = bullishFvgBreakaway and bullishFvgIntersectsEvidenceEnvelope
 bool createBearishProximalFvg = activeEvidenceGeometryAvailable and barstate.isconfirmed and (bearishRunawayFromActiveDisplacement or bearishBreakerFvgQualified)
 bool createBullishProximalFvg = activeEvidenceGeometryAvailable and barstate.isconfirmed and (bullishRunawayFromActiveDisplacement or bullishBreakerFvgQualified)
+// Context tiers use the same canonical Breakaway / Runaway identities, while the
+// preserved strict predicates above remain the only route into PROXIMAL.
+bool bearishCanonicalFvgSignal = bearishFvgBreakaway or (bearishFvgRunaway and bearishDisplacement[1])
+bool bullishCanonicalFvgSignal = bullishFvgBreakaway or (bullishFvgRunaway and bullishDisplacement[1])
+float bearishFvgTop = low[2]
+float bearishFvgBottom = high
+float bullishFvgTop = low
+float bullishFvgBottom = high[2]
+[bearishFvgContextTier, bearishFvgContextOwner] = f_classifyPdContext(bearishFvgBottom, bearishFvgTop, createBearishProximalFvg)
+[bullishFvgContextTier, bullishFvgContextOwner] = f_classifyPdContext(bullishFvgBottom, bullishFvgTop, createBullishProximalFvg)
+bool createBearishRetainedFvg = barstate.isconfirmed and bearishCanonicalFvgSignal and bearishFvgContextTier != PD_CONTEXT_OUTSIDE
+bool createBullishRetainedFvg = barstate.isconfirmed and bullishCanonicalFvgSignal and bullishFvgContextTier != PD_CONTEXT_OUTSIDE
 
 var line[] proximalFvgCeLines = array.new_line()
 var label[] proximalFvgLabels = array.new_label()
@@ -1371,14 +1456,18 @@ var float[] proximalFvgBottoms = array.new_float()
 var float[] proximalFvgCeLevels = array.new_float()
 var int[] proximalFvgDirections = array.new_int()
 var int[] proximalFvgCreationBars = array.new_int()
+var int[] proximalFvgContextTiers = array.new_int()
+var int[] proximalFvgContextOwners = array.new_int()
 var bool[] proximalFvgMitigated = array.new_bool()
 var int[] proximalFvgMitigationBars = array.new_int()
 
-if createBearishProximalFvg or createBullishProximalFvg
-    int fvgDirection = createBullishProximalFvg ? 1 : -1
-    float fvgTop = fvgDirection == 1 ? low : low[2]
-    float fvgBottom = fvgDirection == 1 ? high[2] : high
+if createBearishRetainedFvg or createBullishRetainedFvg
+    int fvgDirection = createBullishRetainedFvg ? 1 : -1
+    float fvgTop = fvgDirection == 1 ? bullishFvgTop : bearishFvgTop
+    float fvgBottom = fvgDirection == 1 ? bullishFvgBottom : bearishFvgBottom
     float fvgCe = (fvgTop + fvgBottom) / 2.0
+    int fvgContextTier = fvgDirection == 1 ? bullishFvgContextTier : bearishFvgContextTier
+    int fvgContextOwner = fvgDirection == 1 ? bullishFvgContextOwner : bearishFvgContextOwner
     array.push(proximalFvgCeLines, na)
     array.push(proximalFvgLabels, na)
     array.push(proximalFvgTops, fvgTop)
@@ -1386,6 +1475,8 @@ if createBearishProximalFvg or createBullishProximalFvg
     array.push(proximalFvgCeLevels, fvgCe)
     array.push(proximalFvgDirections, fvgDirection)
     array.push(proximalFvgCreationBars, bar_index)
+    array.push(proximalFvgContextTiers, fvgContextTier)
+    array.push(proximalFvgContextOwners, fvgContextOwner)
     array.push(proximalFvgMitigated, false)
     array.push(proximalFvgMitigationBars, na)
 
@@ -1401,6 +1492,8 @@ if createBearishProximalFvg or createBullishProximalFvg
         array.shift(proximalFvgCeLevels)
         array.shift(proximalFvgDirections)
         array.shift(proximalFvgCreationBars)
+        array.shift(proximalFvgContextTiers)
+        array.shift(proximalFvgContextOwners)
         array.shift(proximalFvgMitigated)
         array.shift(proximalFvgMitigationBars)
 
@@ -1412,6 +1505,10 @@ if proximalFvgCount > 0
         int fvgCreationBar = array.get(proximalFvgCreationBars, fvgIndex)
         int fvgDirection = array.get(proximalFvgDirections, fvgIndex)
         float fvgCe = array.get(proximalFvgCeLevels, fvgIndex)
+        float fvgTop = array.get(proximalFvgTops, fvgIndex)
+        float fvgBottom = array.get(proximalFvgBottoms, fvgIndex)
+        int fvgContextTier = array.get(proximalFvgContextTiers, fvgIndex)
+        int fvgContextOwner = array.get(proximalFvgContextOwners, fvgIndex)
         int fvgMitigationBar = array.get(proximalFvgMitigationBars, fvgIndex)
         if barstate.isconfirmed and not fvgMitigated and bar_index > fvgCreationBar
             bool fvgCloseThroughCe = fvgDirection == 1 ? close < fvgCe : close > fvgCe
@@ -1439,10 +1536,14 @@ if proximalFvgCount > 0
 
         label fvgLabel = array.get(proximalFvgLabels, fvgIndex)
         if showProximalFvg and showFvgLabels
+            string fvgLabelText = f_pdContextLabel("FVG", fvgContextTier)
+            string fvgTooltip = f_pdContextTooltip("FVG", fvgContextTier, fvgContextOwner, fvgBottom, fvgTop)
             if na(fvgLabel)
-                fvgLabel := label.new(fvgCreationBar, fvgCe, "FVG", xloc = xloc.bar_index, style = label.style_none, textcolor = fvgMitigated ? color.new(mitigatedFvgColor, 0) : color.new(fvgColor, 0), size = size.tiny)
+                fvgLabel := label.new(fvgCreationBar, fvgCe, fvgLabelText, xloc = xloc.bar_index, style = label.style_none, textcolor = fvgMitigated ? color.new(mitigatedFvgColor, 0) : color.new(fvgColor, 0), size = size.tiny, tooltip = fvgTooltip)
                 array.set(proximalFvgLabels, fvgIndex, fvgLabel)
             else
+                label.set_text(fvgLabel, fvgLabelText)
+                label.set_tooltip(fvgLabel, fvgTooltip)
                 label.set_textcolor(fvgLabel, fvgMitigated ? color.new(mitigatedFvgColor, 0) : color.new(fvgColor, 0))
         else if not na(fvgLabel)
             label.delete(fvgLabel)
@@ -1457,6 +1558,9 @@ float viBottom = math.min(open, close[1])
 bool viIntersectsEvidenceEnvelope = viTop >= evidenceEnvelopeLow and viBottom <= evidenceEnvelopeHigh
 bool createBullishProximalVi = activeEvidenceGeometryAvailable and barstate.isconfirmed and bullishViSignal and viIntersectsEvidenceEnvelope
 bool createBearishProximalVi = activeEvidenceGeometryAvailable and barstate.isconfirmed and bearishViSignal and viIntersectsEvidenceEnvelope
+[viContextTier, viContextOwner] = f_classifyPdContext(viBottom, viTop, createBullishProximalVi or createBearishProximalVi)
+bool createBullishRetainedVi = barstate.isconfirmed and bullishViSignal and viContextTier != PD_CONTEXT_OUTSIDE
+bool createBearishRetainedVi = barstate.isconfirmed and bearishViSignal and viContextTier != PD_CONTEXT_OUTSIDE
 
 var line[] proximalViCeLines = array.new_line()
 var label[] proximalViLabels = array.new_label()
@@ -1465,11 +1569,13 @@ var float[] proximalViBottoms = array.new_float()
 var float[] proximalViCeLevels = array.new_float()
 var int[] proximalViDirections = array.new_int()
 var int[] proximalViCreationBars = array.new_int()
+var int[] proximalViContextTiers = array.new_int()
+var int[] proximalViContextOwners = array.new_int()
 var bool[] proximalViMitigated = array.new_bool()
 var int[] proximalViMitigationBars = array.new_int()
 
-if createBullishProximalVi or createBearishProximalVi
-    int viDirection = createBullishProximalVi ? 1 : -1
+if createBullishRetainedVi or createBearishRetainedVi
+    int viDirection = createBullishRetainedVi ? 1 : -1
     float viCe = (viTop + viBottom) / 2.0
     array.push(proximalViCeLines, na)
     array.push(proximalViLabels, na)
@@ -1478,6 +1584,8 @@ if createBullishProximalVi or createBearishProximalVi
     array.push(proximalViCeLevels, viCe)
     array.push(proximalViDirections, viDirection)
     array.push(proximalViCreationBars, bar_index)
+    array.push(proximalViContextTiers, viContextTier)
+    array.push(proximalViContextOwners, viContextOwner)
     array.push(proximalViMitigated, false)
     array.push(proximalViMitigationBars, na)
 
@@ -1493,6 +1601,8 @@ if createBullishProximalVi or createBearishProximalVi
         array.shift(proximalViCeLevels)
         array.shift(proximalViDirections)
         array.shift(proximalViCreationBars)
+        array.shift(proximalViContextTiers)
+        array.shift(proximalViContextOwners)
         array.shift(proximalViMitigated)
         array.shift(proximalViMitigationBars)
 
@@ -1504,6 +1614,10 @@ if proximalViCount > 0
         int viCreationBar = array.get(proximalViCreationBars, viIndex)
         int viDirection = array.get(proximalViDirections, viIndex)
         float viCe = array.get(proximalViCeLevels, viIndex)
+        float retainedViTop = array.get(proximalViTops, viIndex)
+        float retainedViBottom = array.get(proximalViBottoms, viIndex)
+        int viContextTier = array.get(proximalViContextTiers, viIndex)
+        int viContextOwner = array.get(proximalViContextOwners, viIndex)
         int viMitigationBar = array.get(proximalViMitigationBars, viIndex)
         if barstate.isconfirmed and not viMitigated and bar_index > viCreationBar
             bool viCloseThroughCe = viDirection == 1 ? close < viCe : close > viCe
@@ -1531,10 +1645,14 @@ if proximalViCount > 0
 
         label viLabel = array.get(proximalViLabels, viIndex)
         if showProximalVi and showViLabels
+            string viLabelText = f_pdContextLabel("VI", viContextTier)
+            string viTooltip = f_pdContextTooltip("VI", viContextTier, viContextOwner, retainedViBottom, retainedViTop)
             if na(viLabel)
-                viLabel := label.new(viCreationBar, viCe, "VI", xloc = xloc.bar_index, style = label.style_none, textcolor = viMitigated ? color.new(mitigatedViColor, 0) : color.new(viColor, 0), size = size.tiny)
+                viLabel := label.new(viCreationBar, viCe, viLabelText, xloc = xloc.bar_index, style = label.style_none, textcolor = viMitigated ? color.new(mitigatedViColor, 0) : color.new(viColor, 0), size = size.tiny, tooltip = viTooltip)
                 array.set(proximalViLabels, viIndex, viLabel)
             else
+                label.set_text(viLabel, viLabelText)
+                label.set_tooltip(viLabel, viTooltip)
                 label.set_textcolor(viLabel, viMitigated ? color.new(mitigatedViColor, 0) : color.new(viColor, 0))
         else if not na(viLabel)
             label.delete(viLabel)
@@ -1553,6 +1671,9 @@ bool bullishActiveObQualified = activeEvidenceGeometryAvailable and newBullishOb
 bool bearishActiveObQualified = activeEvidenceGeometryAvailable and newBearishObSignal and obIntersectsEvidenceEnvelope
 bool createBullishActiveOb = bullishActiveObQualified
 bool createBearishActiveOb = bearishActiveObQualified
+[obContextTier, obContextOwner] = f_classifyPdContext(obBottom, obTop, createBullishActiveOb or createBearishActiveOb)
+bool createBullishRetainedOb = newBullishObSignal and obContextTier != PD_CONTEXT_OUTSIDE
+bool createBearishRetainedOb = newBearishObSignal and obContextTier != PD_CONTEXT_OUTSIDE
 
 var box[] activeObBoxes = array.new_box()
 var line[] activeObCeLines = array.new_line()
@@ -1563,12 +1684,14 @@ var int[] activeObDirections = array.new_int()
 var color[] activeObBaseColors = array.new_color()
 var int[] activeObCreationBars = array.new_int()
 var int[] activeObLeftTimes = array.new_int()
+var int[] activeObContextTiers = array.new_int()
+var int[] activeObContextOwners = array.new_int()
 var bool[] activeObInteracted = array.new_bool()
 var bool[] activeObCeInteracted = array.new_bool()
 var bool[] activeObInvalidated = array.new_bool()
 
-if createBullishActiveOb or createBearishActiveOb
-    int obDirection = createBullishActiveOb ? 1 : -1
+if createBullishRetainedOb or createBearishRetainedOb
+    int obDirection = createBullishRetainedOb ? 1 : -1
     float activeObCe = (obTop + obBottom) / 2.0
     color activeObColor = obDirection == 1 ? bullishObColor : bearishObColor
     // Clamp the canonical source-candle start to the active episode boundary.
@@ -1582,6 +1705,8 @@ if createBullishActiveOb or createBearishActiveOb
     array.push(activeObBaseColors, activeObColor)
     array.push(activeObCreationBars, bar_index)
     array.push(activeObLeftTimes, activeObLeftTime)
+    array.push(activeObContextTiers, obContextTier)
+    array.push(activeObContextOwners, obContextOwner)
     array.push(activeObInteracted, false)
     array.push(activeObCeInteracted, false)
     array.push(activeObInvalidated, false)
@@ -1602,6 +1727,8 @@ if createBullishActiveOb or createBearishActiveOb
         array.shift(activeObBaseColors)
         array.shift(activeObCreationBars)
         array.shift(activeObLeftTimes)
+        array.shift(activeObContextTiers)
+        array.shift(activeObContextOwners)
         array.shift(activeObInteracted)
         array.shift(activeObCeInteracted)
         array.shift(activeObInvalidated)
@@ -1620,6 +1747,8 @@ if activeObCount > 0
         color activeObBaseColor = array.get(activeObBaseColors, obIndex)
         int activeObCreationBar = array.get(activeObCreationBars, obIndex)
         int activeObLeftTime = array.get(activeObLeftTimes, obIndex)
+        int activeObContextTier = array.get(activeObContextTiers, obIndex)
+        int activeObContextOwner = array.get(activeObContextOwners, obIndex)
         bool obInvalidated = array.get(activeObInvalidated, obIndex)
         if barstate.isconfirmed and bar_index > activeObCreationBar and not obInvalidated
             float activeObCe = (activeObTop + activeObBottom) / 2.0
@@ -1662,10 +1791,15 @@ if activeObCount > 0
 
         if showActiveOb and showObLabels
             float activeObCe = (activeObTop + activeObBottom) / 2.0
+            string activeObBaseLabel = activeObDirection == 1 ? "OB+" : "OB-"
+            string activeObLabelText = f_pdContextLabel(activeObBaseLabel, activeObContextTier)
+            string activeObTooltip = f_pdContextTooltip(activeObBaseLabel, activeObContextTier, activeObContextOwner, activeObBottom, activeObTop)
             if na(activeObLabel)
-                activeObLabel := label.new(activeObLeftTime, activeObCe, activeObDirection == 1 ? "OB+" : "OB-", xloc = xloc.bar_time, style = label.style_none, textcolor = color.new(activeObDisplayColor, obInvalidated ? 55 : 0), size = size.tiny)
+                activeObLabel := label.new(activeObLeftTime, activeObCe, activeObLabelText, xloc = xloc.bar_time, style = label.style_none, textcolor = color.new(activeObDisplayColor, obInvalidated ? 55 : 0), size = size.tiny, tooltip = activeObTooltip)
                 array.set(activeObLabels, obIndex, activeObLabel)
             else
+                label.set_text(activeObLabel, activeObLabelText)
+                label.set_tooltip(activeObLabel, activeObTooltip)
                 label.set_textcolor(activeObLabel, color.new(activeObDisplayColor, obInvalidated ? 55 : 0))
         else if not na(activeObLabel)
             label.delete(activeObLabel)
