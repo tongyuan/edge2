@@ -1,6 +1,6 @@
 //@version=6
 // TD_1.0 + External BSL/SSL Liquidity Context integration
-// BSL/SSL is independent of MRZ proximal-evidence filtering; only factual breach alerts are emitted.
+// BSL/SSL is independent of MRZ proximal-evidence filtering and remains visual context only.
 indicator("TD_1.0", overlay = true, max_boxes_count = 500, max_labels_count = 200, max_lines_count = 500, max_bars_back = 3000)
 
 string GROUP_CONFIGURATION = "MRZ CONFIGURATION"
@@ -53,8 +53,6 @@ float sellsideBreachAtrMargin = input.float(2.3, "SSL Breach ATR Margin", minval
 color buysideLiquidityColor = input.color(color.new(#4caf50, 0), "BSL Color", group = GROUP_EXTERNAL_LIQUIDITY)
 color sellsideLiquidityColor = input.color(color.new(#f23645, 0), "SSL Color", group = GROUP_EXTERNAL_LIQUIDITY)
 string externalLiquidityLabelSizeInput = input.string("Tiny", "Label Size", options = ["Tiny", "Small", "Normal", "Large"], group = GROUP_EXTERNAL_LIQUIDITY)
-bool enableExternalLiquidityBreachAlerts = input.bool(true, "Enable BSL / SSL Breach Alerts", group = GROUP_EXTERNAL_LIQUIDITY)
-bool showExternalLiquidityBreachLabels = input.bool(true, "Show BSL / SSL Breach Labels", group = GROUP_EXTERNAL_LIQUIDITY)
 
 // IPDA 20W — source semantics: standalone ipda.pine.
 // Only the 20W structural range is merged here; 40W/60W, tables and IPDA alerts are intentionally excluded.
@@ -208,9 +206,10 @@ float previousMinus2W = math.round_to_mintick(previousMrzLower - 2.0 * previousM
 // EXTERNAL LIQUIDITY CONTEXT — BSL / SSL
 // Faithful semantic transplant of the supplied BSL_SSL detector, ported to v6.
 // This engine is independent of MRZ/evidence-envelope qualification.
-// Standalone detection alerts and unrelated source features are intentionally omitted.
 // Detector objects preserve the source BSL_SSL lifecycle. Source/start pivot identity,
 // not price proximity, defines an object; nearby and overlapping objects remain independent.
+// Extending/frozen dotted lines expose ACTIVE/no-longer-active state, interaction boxes
+// retain post-interaction context, and Nearest Active exposes unresolved liquidity.
 // ──────────────────────────────────────────────────────────────────────────────
 const int EXT_LIQ_MAX_PIVOTS = 50
 float externalLiquidityAtr = ta.atr(10)
@@ -227,26 +226,6 @@ externalLiquidityLabelSize = switch externalLiquidityLabelSizeInput
 // Use a very small invisible vertical text band while preserving the source-style
 // transparent box, left alignment, and BSL-below / SSL-above placement.
 float externalLiquidityLabelPad = math.max(syminfo.mintick * 2.0, externalLiquidityAtr * 0.03)
-
-
-f_externalLiquidityBreachPayload(_eventType, _side, _sourceBar, _detectionBar, _level, _zoneTop, _zoneBottom, _observedAt) =>
-    string objectId = _side + "|" + str.tostring(_sourceBar) + "|" + str.tostring(_detectionBar) + "|" + str.tostring(_level, format.mintick)
-    string payload = '{"alert":"' + f_alertSymbol() + ' · ' + _eventType + '"'
-    payload += ',"schema_version":"1.0"'
-    payload += ',"event_type":"' + _eventType + '"'
-    payload += ',"symbol":"' + syminfo.tickerid + '"'
-    payload += ',"liquidity_side":"' + _side + '"'
-    payload += ',"object_id":"' + objectId + '"'
-    payload += ',"source_bar":' + str.tostring(_sourceBar)
-    payload += ',"detection_bar":' + str.tostring(_detectionBar)
-    payload += ',"liquidity_level":' + str.tostring(_level, format.mintick)
-    payload += ',"zone_top":' + str.tostring(_zoneTop, format.mintick)
-    payload += ',"zone_bottom":' + str.tostring(_zoneBottom, format.mintick)
-    payload += ',"timeframe":"' + timeframe.period + '"'
-    payload += ',"observed_at":' + str.tostring(_observedAt)
-    payload += ',"price":' + str.tostring(close, format.mintick) + '}'
-    payload
-
 
 var int[] extLiqPivotDirections = array.new_int(EXT_LIQ_MAX_PIVOTS, 0)
 var int[] extLiqPivotBars = array.new_int(EXT_LIQ_MAX_PIVOTS, 0)
@@ -451,45 +430,16 @@ if extBslCount > 0
         int detectionBar = array.get(extBslDetectedBars, i)
         float level = array.get(extBslLevels, i)
         float zoneTop = array.get(extBslZoneTops, i)
-        float zoneBottom = array.get(extBslZoneBottoms, i)
         bool breached = array.get(extBslBreached, i)
         bool breachActive = array.get(extBslBreachActive, i)
-        bool breachedThisBar = false
+        bool breachedOnCurrentBar = false
 
         if not breached and barstate.isconfirmed and high > zoneTop
             breached := true
             breachActive := true
-            breachedThisBar := true
+            breachedOnCurrentBar := true
             array.set(extBslBreached, i, true)
             array.set(extBslBreachActive, i, true)
-
-            if showExternalLiquidityBreachLabels
-                label.new(
-                     bar_index,
-                     high,
-                     "BSL BR",
-                     xloc = xloc.bar_index,
-                     style = label.style_label_down,
-                     color = color.new(buysideLiquidityColor, 0),
-                     textcolor = color.white,
-                     size = size.tiny,
-                     tooltip = "BSL_BREACHED\nObject: BSL|" + str.tostring(sourceBar) + "|" + str.tostring(detectionBar) + "|" + str.tostring(level, format.mintick) + "\nLevel: " + str.tostring(level, format.mintick) + "\nSource Bar: " + str.tostring(sourceBar) + "\nDetected Bar: " + str.tostring(detectionBar) + "\nZone Top: " + str.tostring(zoneTop, format.mintick) + "\nZone Bottom: " + str.tostring(zoneBottom, format.mintick)
-                )
-
-            if enableExternalLiquidityBreachAlerts
-                alert(
-                     f_externalLiquidityBreachPayload(
-                          "BSL_BREACHED",
-                          "BSL",
-                          sourceBar,
-                          detectionBar,
-                          level,
-                          zoneTop,
-                          zoneBottom,
-                          time_close
-                     ),
-                     alert.freq_once_per_bar_close
-                )
 
         else if breached and breachActive
             bool remainsInBreachGeometry = low > level - buysideBreachAtrMargin * externalLiquidityAtr and high < level + buysideBreachAtrMargin * externalLiquidityAtr
@@ -523,7 +473,7 @@ if extBslCount > 0
 
             // The source reaches bar_index on the breach candle, then bar_index + 1
             // on later candles while brZ remains active.
-            int extensionRight = breached and breachActive and not breachedThisBar ? bar_index + 1 : bar_index
+            int extensionRight = breached and breachActive and not breachedOnCurrentBar ? bar_index + 1 : bar_index
             if na(levelLine)
                 levelLine := line.new(detectedBar, level, extensionRight, level, xloc = xloc.bar_index, color = color.new(buysideLiquidityColor, 0), style = line.style_dotted, width = 1)
                 array.set(extBslLines, i, levelLine)
@@ -579,46 +529,17 @@ if extSslCount > 0
         int sourceBar = array.get(extSslLeftBars, i)
         int detectionBar = array.get(extSslDetectedBars, i)
         float level = array.get(extSslLevels, i)
-        float zoneTop = array.get(extSslZoneTops, i)
         float zoneBottom = array.get(extSslZoneBottoms, i)
         bool breached = array.get(extSslBreached, i)
         bool breachActive = array.get(extSslBreachActive, i)
-        bool breachedThisBar = false
+        bool breachedOnCurrentBar = false
 
         if not breached and barstate.isconfirmed and low < zoneBottom
             breached := true
             breachActive := true
-            breachedThisBar := true
+            breachedOnCurrentBar := true
             array.set(extSslBreached, i, true)
             array.set(extSslBreachActive, i, true)
-
-            if showExternalLiquidityBreachLabels
-                label.new(
-                     bar_index,
-                     low,
-                     "SSL BR",
-                     xloc = xloc.bar_index,
-                     style = label.style_label_up,
-                     color = color.new(sellsideLiquidityColor, 0),
-                     textcolor = color.white,
-                     size = size.tiny,
-                     tooltip = "SSL_BREACHED\nObject: SSL|" + str.tostring(sourceBar) + "|" + str.tostring(detectionBar) + "|" + str.tostring(level, format.mintick) + "\nLevel: " + str.tostring(level, format.mintick) + "\nSource Bar: " + str.tostring(sourceBar) + "\nDetected Bar: " + str.tostring(detectionBar) + "\nZone Top: " + str.tostring(zoneTop, format.mintick) + "\nZone Bottom: " + str.tostring(zoneBottom, format.mintick)
-                )
-
-            if enableExternalLiquidityBreachAlerts
-                alert(
-                     f_externalLiquidityBreachPayload(
-                          "SSL_BREACHED",
-                          "SSL",
-                          sourceBar,
-                          detectionBar,
-                          level,
-                          zoneTop,
-                          zoneBottom,
-                          time_close
-                     ),
-                     alert.freq_once_per_bar_close
-                )
 
         else if breached and breachActive
             bool remainsInBreachGeometry = low > level - sellsideBreachAtrMargin * externalLiquidityAtr and high < level + sellsideBreachAtrMargin * externalLiquidityAtr
@@ -652,7 +573,7 @@ if extSslCount > 0
 
             // The source reaches bar_index on the breach candle, then bar_index + 1
             // on later candles while brZ remains active.
-            int extensionRight = breached and breachActive and not breachedThisBar ? bar_index + 1 : bar_index
+            int extensionRight = breached and breachActive and not breachedOnCurrentBar ? bar_index + 1 : bar_index
             if na(levelLine)
                 levelLine := line.new(detectedBar, level, extensionRight, level, xloc = xloc.bar_index, color = color.new(sellsideLiquidityColor, 0), style = line.style_dotted, width = 1)
                 array.set(extSslLines, i, levelLine)

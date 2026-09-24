@@ -142,21 +142,23 @@ class TradeDeskExternalLiquidityContractTests(unittest.TestCase):
         self.assertIn("extBslZoneTops", update_blocks[0])
         self.assertIn("extSslZoneBottoms", update_blocks[1])
 
-    def test_payload_and_tooltips_include_stable_source_identity(self) -> None:
-        for field in (
-            '"object_id"',
-            '"source_bar"',
-            '"detection_bar"',
-            '"liquidity_level"',
-            '"zone_top"',
-            '"zone_bottom"',
-            '"timeframe"',
-            '"observed_at"',
-            '"price"',
+    def test_breach_presentation_layer_is_absent_but_normal_labels_remain(self) -> None:
+        external_liquidity = self.text.split(
+            "// EXTERNAL LIQUIDITY CONTEXT", 1
+        )[1].split("// Minimal direction-neutral", 1)[0]
+        for removed in (
+            "enableExternalLiquidityBreachAlerts",
+            "showExternalLiquidityBreachLabels",
+            "f_externalLiquidityBreachPayload",
+            "BSL_BREACHED",
+            "SSL_BREACHED",
+            '"BSL BR"',
+            '"SSL BR"',
         ):
-            self.assertIn(field, self.text)
-        self.assertIn("Source Bar:", self.text)
-        self.assertIn("Detected Bar:", self.text)
+            self.assertNotIn(removed, self.text)
+        self.assertNotIn("alert(", external_liquidity)
+        self.assertIn('text = "BSL"', external_liquidity)
+        self.assertIn('text = "SSL"', external_liquidity)
 
     def test_confirmed_breach_and_extension_contracts_are_explicit(self) -> None:
         self.assertIn(
@@ -167,11 +169,26 @@ class TradeDeskExternalLiquidityContractTests(unittest.TestCase):
         )
         self.assertEqual(
             self.text.count(
-                "breached and breachActive and not breachedThisBar ? bar_index + 1 : bar_index"
+                "breached and breachActive and not breachedOnCurrentBar ? bar_index + 1 : bar_index"
             ),
             2,
         )
         self.assertEqual(self.text.count("detectedBar + 11"), 4)
+        for required in (
+            "var bool[] extBslBreached",
+            "var bool[] extSslBreached",
+            "var bool[] extBslBreachActive",
+            "var bool[] extSslBreachActive",
+            "array.set(extBslBreached, i, true)",
+            "array.set(extSslBreached, i, true)",
+            "array.set(extBslBreachActive, i, false)",
+            "array.set(extSslBreachActive, i, false)",
+            "extBslBreachBoxes",
+            "extSslBreachBoxes",
+            "line.style_solid",
+            "line.style_dotted",
+        ):
+            self.assertIn(required, self.text)
 
 
 class TradeDeskExternalLiquidityReplayTests(unittest.TestCase):
