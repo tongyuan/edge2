@@ -1,5 +1,7 @@
 //@version=6
-indicator("TD_1.0", overlay = true, max_boxes_count = 25, max_labels_count = 200, max_lines_count = 500)
+// TD_1.0 + External BSL/SSL Liquidity Context integration
+// BSL/SSL is independent of MRZ proximal-evidence filtering; only factual breach alerts are emitted.
+indicator("TD_1.0", overlay = true, max_boxes_count = 500, max_labels_count = 200, max_lines_count = 500, max_bars_back = 3000)
 
 string GROUP_CONFIGURATION = "MRZ CONFIGURATION"
 string GROUP_SLOT_A = "MRZ SLOT A"
@@ -10,6 +12,7 @@ string GROUP_EQM_PD_ARRAYS = "MRZ PROXIMAL EVIDENCE"
 string GROUP_EQM_INTERACTION = "MRZ EQM INTERACTION"
 string GROUP_IPDA_20W = "IPDA 20W"
 string GROUP_STATE_TRANSITION_OBSERVER = "State Transition Observer"
+string GROUP_EXTERNAL_LIQUIDITY = "EXTERNAL LIQUIDITY"
 
 string configuredSymbol = input.symbol("", "Configured Symbol", group = GROUP_CONFIGURATION, confirm = true)
 string activeMrzSlot = input.string("A", "Active MRZ Slot", options = ["A", "B"], group = GROUP_CONFIGURATION)
@@ -29,13 +32,29 @@ bool showPreviousEnvelope = input.bool(false, "Show Previous MRZ 1W / 2W", group
 bool showEqmProximalZone = input.bool(true, "Show MRZ EQM Proximal Zone", group = GROUP_CHART_DISPLAY)
 int eqmProximalZoneWidthPercent = input.int(50, "EQM Proximal Zone Width (%)", minval = 10, maxval = 50, step = 10, group = GROUP_CHART_DISPLAY)
 
-bool enableEqmInteractionAlerts = input.bool(false, "Enable EQM Interaction Alerts", group = GROUP_EQM_INTERACTION)
+bool enableEqmReachedAlerts = input.bool(true, "Enable EQM Reached Alerts", group = GROUP_EQM_INTERACTION)
 
 bool enableStateTransitionObserver = input.bool(true, "Enable State Transition Observer", group = GROUP_STATE_TRANSITION_OBSERVER)
-bool enableAnchorTransitionAlerts = input.bool(true, "Enable Anchor Transition Alerts", group = GROUP_STATE_TRANSITION_OBSERVER)
-bool enableSecondEqmContactAlert = input.bool(true, "Enable Second EQM Contact Alert", group = GROUP_STATE_TRANSITION_OBSERVER)
 bool showStateTransitionLabels = input.bool(true, "Show State Transition Labels", group = GROUP_STATE_TRANSITION_OBSERVER)
 bool showStateDebugPanel = input.bool(true, "Show State Debug Panel", group = GROUP_STATE_TRANSITION_OBSERVER)
+
+// External Liquidity is intentionally NOT MRZ-proximal evidence.
+// It can form anywhere on the chart and remains independent of MRZ geometry.
+bool showExternalLiquidity = input.bool(true, "Show BSL / SSL", group = GROUP_EXTERNAL_LIQUIDITY)
+string externalLiquidityMode = input.string("Present", "Mode", options = ["Present", "Historical"], group = GROUP_EXTERNAL_LIQUIDITY)
+int externalLiquidityDetectionLength = input.int(7, "Detection Length", minval = 3, maxval = 13, group = GROUP_EXTERNAL_LIQUIDITY)
+float externalLiquidityMarginInput = input.float(6.9, "Detection Margin", minval = 4.0, maxval = 9.0, step = 0.1, group = GROUP_EXTERNAL_LIQUIDITY)
+bool showBuysideLiquidity = input.bool(true, "Show BSL", group = GROUP_EXTERNAL_LIQUIDITY)
+bool showSellsideLiquidity = input.bool(true, "Show SSL", group = GROUP_EXTERNAL_LIQUIDITY)
+int externalLiquidityVisibleLevels = input.int(3, "Visible Levels / Side", minval = 1, maxval = 50, group = GROUP_EXTERNAL_LIQUIDITY)
+bool showLiquidityBreachZones = input.bool(true, "Show Breach Zones", group = GROUP_EXTERNAL_LIQUIDITY)
+float buysideBreachAtrMargin = input.float(2.3, "BSL Breach ATR Margin", minval = 1.5, maxval = 10.0, step = 0.1, group = GROUP_EXTERNAL_LIQUIDITY)
+float sellsideBreachAtrMargin = input.float(2.3, "SSL Breach ATR Margin", minval = 1.5, maxval = 10.0, step = 0.1, group = GROUP_EXTERNAL_LIQUIDITY)
+color buysideLiquidityColor = input.color(color.new(#4caf50, 0), "BSL Color", group = GROUP_EXTERNAL_LIQUIDITY)
+color sellsideLiquidityColor = input.color(color.new(#f23645, 0), "SSL Color", group = GROUP_EXTERNAL_LIQUIDITY)
+string externalLiquidityLabelSizeInput = input.string("Tiny", "Label Size", options = ["Tiny", "Small", "Normal", "Large"], group = GROUP_EXTERNAL_LIQUIDITY)
+bool enableExternalLiquidityBreachAlerts = input.bool(true, "Enable BSL / SSL Breach Alerts", group = GROUP_EXTERNAL_LIQUIDITY)
+bool showExternalLiquidityBreachLabels = input.bool(true, "Show BSL / SSL Breach Labels", group = GROUP_EXTERNAL_LIQUIDITY)
 
 // IPDA 20W — source semantics: standalone ipda.pine.
 // Only the 20W structural range is merged here; 40W/60W, tables and IPDA alerts are intentionally excluded.
@@ -156,73 +175,8 @@ float eqmProximalPriceB = previousMrzMidpoint + eqmProximalBoundB * midpointAnch
 float eqmProximalZoneLow = math.round_to_mintick(math.min(eqmProximalPriceA, eqmProximalPriceB))
 float eqmProximalZoneHigh = math.round_to_mintick(math.max(eqmProximalPriceA, eqmProximalPriceB))
 
-int EQM_SIDE_UNKNOWN = 0
-int EQM_SIDE_ABOVE = 1
-int EQM_SIDE_BELOW = -1
-int EQM_INTERACTION_IDLE = 0
-int EQM_INTERACTION_ACTIVE = 1
-
-varip int eqmOutsideSide = EQM_SIDE_UNKNOWN
-varip int eqmInteractionState = EQM_INTERACTION_IDLE
-varip int eqmInteractionTriggerBar = na
-
-bool eqmZoneIntersectsPrice = high >= eqmProximalZoneLow and low <= eqmProximalZoneHigh
-bool eqmFromTop = false
-bool eqmFromBottom = false
-
-if not eqmProximalGeometryAvailable
-    eqmOutsideSide := EQM_SIDE_UNKNOWN
-    eqmInteractionState := EQM_INTERACTION_IDLE
-    eqmInteractionTriggerBar := na
-else if eqmInteractionState == EQM_INTERACTION_ACTIVE
-    bool canRearmAfterTriggerBar = not na(eqmInteractionTriggerBar) and bar_index > eqmInteractionTriggerBar
-    if canRearmAfterTriggerBar and barstate.isconfirmed
-        if close > eqmProximalZoneHigh
-            eqmOutsideSide := EQM_SIDE_ABOVE
-            eqmInteractionState := EQM_INTERACTION_IDLE
-        else if close < eqmProximalZoneLow
-            eqmOutsideSide := EQM_SIDE_BELOW
-            eqmInteractionState := EQM_INTERACTION_IDLE
-else
-    if eqmOutsideSide == EQM_SIDE_ABOVE and eqmZoneIntersectsPrice
-        eqmFromTop := true
-        eqmInteractionState := EQM_INTERACTION_ACTIVE
-        eqmInteractionTriggerBar := bar_index
-    else if eqmOutsideSide == EQM_SIDE_BELOW and eqmZoneIntersectsPrice
-        eqmFromBottom := true
-        eqmInteractionState := EQM_INTERACTION_ACTIVE
-        eqmInteractionTriggerBar := bar_index
-    else if barstate.isconfirmed
-        if close > eqmProximalZoneHigh
-            eqmOutsideSide := EQM_SIDE_ABOVE
-        else if close < eqmProximalZoneLow
-            eqmOutsideSide := EQM_SIDE_BELOW
-
 f_alertSymbol() =>
     syminfo.ticker
-
-f_eqmInteractionPayload(_direction) =>
-    string approachText = _direction == "FROM_BOTTOM" ? "FROM BELOW" : _direction == "FROM_TOP" ? "FROM ABOVE" : _direction
-    string payload = '{"alert":"' + f_alertSymbol() + ' · EQM PROXIMAL · ' + approachText + '"'
-    payload += ',"event_type":"MRZ_EQM_INTERACTION"'
-    payload += ',"symbol":"' + syminfo.tickerid + '"'
-    payload += ',"direction":"' + _direction + '"'
-    payload += ',"eqm_zone_low":' + str.tostring(eqmProximalZoneLow, format.mintick)
-    payload += ',"eqm_zone_high":' + str.tostring(eqmProximalZoneHigh, format.mintick)
-    payload += ',"migration_eqm":' + str.tostring(migrationEqm, format.mintick)
-    payload += ',"current_mrz_lower":' + str.tostring(currentMrzLower, format.mintick)
-    payload += ',"current_mrz_upper":' + str.tostring(currentMrzUpper, format.mintick)
-    payload += ',"previous_mrz_lower":' + str.tostring(previousMrzLower, format.mintick)
-    payload += ',"previous_mrz_upper":' + str.tostring(previousMrzUpper, format.mintick)
-    payload += ',"timeframe":"' + timeframe.period + '"'
-    payload += ',"observed_at":' + str.tostring(time)
-    payload += ',"price":' + str.tostring(close, format.mintick) + '}'
-    payload
-
-if enableEqmInteractionAlerts and eqmFromTop
-    alert(f_eqmInteractionPayload("FROM_TOP"), alert.freq_once_per_bar)
-if enableEqmInteractionAlerts and eqmFromBottom
-    alert(f_eqmInteractionPayload("FROM_BOTTOM"), alert.freq_once_per_bar)
 
 // Keep the source displacement definition unchanged; the active evidence envelope only filters displayed events.
 float candleDisplacementRange = displacementType == "Open to Close" ? math.abs(open - close) : high - low
@@ -249,6 +203,522 @@ float previousPlus1W = math.round_to_mintick(previousMrzUpper + previousMrzWidth
 float previousMinus1W = math.round_to_mintick(previousMrzLower - previousMrzWidth)
 float previousPlus2W = math.round_to_mintick(previousMrzUpper + 2.0 * previousMrzWidth)
 float previousMinus2W = math.round_to_mintick(previousMrzLower - 2.0 * previousMrzWidth)
+
+// ──────────────────────────────────────────────────────────────────────────────
+// EXTERNAL LIQUIDITY CONTEXT — BSL / SSL
+// Faithful semantic transplant of the supplied BSL_SSL detector, ported to v6.
+// This engine is independent of MRZ/evidence-envelope qualification.
+// Standalone detection alerts and unrelated source features are intentionally omitted.
+// Detector objects preserve the source BSL_SSL lifecycle. Source/start pivot identity,
+// not price proximity, defines an object; nearby and overlapping objects remain independent.
+// ──────────────────────────────────────────────────────────────────────────────
+const int EXT_LIQ_MAX_PIVOTS = 50
+float externalLiquidityAtr = ta.atr(10)
+float externalLiquidityMargin = 10.0 / externalLiquidityMarginInput
+bool externalLiquidityPeriodEligible = externalLiquidityMode == "Present" ? last_bar_index - bar_index <= 500 : true
+
+externalLiquidityLabelSize = switch externalLiquidityLabelSizeInput
+    "Tiny" => size.tiny
+    "Small" => size.small
+    "Normal" => size.normal
+    "Large" => size.large
+
+// A zero-height box can fail to render text reliably after the integration.
+// Use a very small invisible vertical text band while preserving the source-style
+// transparent box, left alignment, and BSL-below / SSL-above placement.
+float externalLiquidityLabelPad = math.max(syminfo.mintick * 2.0, externalLiquidityAtr * 0.03)
+
+
+f_externalLiquidityBreachPayload(_eventType, _side, _sourceBar, _detectionBar, _level, _zoneTop, _zoneBottom, _observedAt) =>
+    string objectId = _side + "|" + str.tostring(_sourceBar) + "|" + str.tostring(_detectionBar) + "|" + str.tostring(_level, format.mintick)
+    string payload = '{"alert":"' + f_alertSymbol() + ' · ' + _eventType + '"'
+    payload += ',"schema_version":"1.0"'
+    payload += ',"event_type":"' + _eventType + '"'
+    payload += ',"symbol":"' + syminfo.tickerid + '"'
+    payload += ',"liquidity_side":"' + _side + '"'
+    payload += ',"object_id":"' + objectId + '"'
+    payload += ',"source_bar":' + str.tostring(_sourceBar)
+    payload += ',"detection_bar":' + str.tostring(_detectionBar)
+    payload += ',"liquidity_level":' + str.tostring(_level, format.mintick)
+    payload += ',"zone_top":' + str.tostring(_zoneTop, format.mintick)
+    payload += ',"zone_bottom":' + str.tostring(_zoneBottom, format.mintick)
+    payload += ',"timeframe":"' + timeframe.period + '"'
+    payload += ',"observed_at":' + str.tostring(_observedAt)
+    payload += ',"price":' + str.tostring(close, format.mintick) + '}'
+    payload
+
+
+var int[] extLiqPivotDirections = array.new_int(EXT_LIQ_MAX_PIVOTS, 0)
+var int[] extLiqPivotBars = array.new_int(EXT_LIQ_MAX_PIVOTS, 0)
+var float[] extLiqPivotPrices = array.new_float(EXT_LIQ_MAX_PIVOTS, na)
+
+var int[] extBslLeftBars = array.new_int()
+var int[] extBslDetectedBars = array.new_int()
+var float[] extBslLevels = array.new_float()
+var float[] extBslZoneTops = array.new_float()
+var float[] extBslZoneBottoms = array.new_float()
+var bool[] extBslBreached = array.new_bool()
+var bool[] extBslBreachActive = array.new_bool()
+var line[] extBslSolidLines = array.new_line()
+var line[] extBslLines = array.new_line() // dotted extension line
+var box[] extBslTextBoxes = array.new_box()
+var box[] extBslBreachBoxes = array.new_box()
+
+var int[] extSslLeftBars = array.new_int()
+var int[] extSslDetectedBars = array.new_int()
+var float[] extSslLevels = array.new_float()
+var float[] extSslZoneTops = array.new_float()
+var float[] extSslZoneBottoms = array.new_float()
+var bool[] extSslBreached = array.new_bool()
+var bool[] extSslBreachActive = array.new_bool()
+var line[] extSslSolidLines = array.new_line()
+var line[] extSslLines = array.new_line() // dotted extension line
+var box[] extSslTextBoxes = array.new_box()
+var box[] extSslBreachBoxes = array.new_box()
+
+float extLiqPivotHigh = ta.pivothigh(externalLiquidityDetectionLength, 1)
+float extLiqPivotLow = ta.pivotlow(externalLiquidityDetectionLength, 1)
+int extLiqPivotBar = bar_index - 1
+
+if not na(extLiqPivotHigh)
+    int extDir = array.get(extLiqPivotDirections, 0)
+    float extPrice = nz(high[1])
+
+    if extDir < 1
+        array.unshift(extLiqPivotDirections, 1)
+        array.unshift(extLiqPivotBars, extLiqPivotBar)
+        array.unshift(extLiqPivotPrices, extPrice)
+        array.pop(extLiqPivotDirections)
+        array.pop(extLiqPivotBars)
+        array.pop(extLiqPivotPrices)
+    else if extDir == 1 and extLiqPivotHigh > array.get(extLiqPivotPrices, 0)
+        array.set(extLiqPivotBars, 0, extLiqPivotBar)
+        array.set(extLiqPivotPrices, 0, extPrice)
+
+    if externalLiquidityPeriodEligible
+        int extCount = 0
+        float extSourceLevel = 0.0
+        int extStartBar = 0
+        float extMinP = 0.0
+        float extMaxP = 10e6
+
+        for i = 0 to EXT_LIQ_MAX_PIVOTS - 1
+            if array.get(extLiqPivotDirections, i) == 1
+                float pivotPrice = array.get(extLiqPivotPrices, i)
+                if pivotPrice > extLiqPivotHigh + (externalLiquidityAtr / externalLiquidityMargin)
+                    break
+                else if pivotPrice > extLiqPivotHigh - (externalLiquidityAtr / externalLiquidityMargin) and pivotPrice < extLiqPivotHigh + (externalLiquidityAtr / externalLiquidityMargin)
+                    extCount += 1
+                    extStartBar := array.get(extLiqPivotBars, i)
+                    extSourceLevel := pivotPrice
+                    if pivotPrice > extMinP
+                        extMinP := pivotPrice
+                    if pivotPrice < extMaxP
+                        extMaxP := pivotPrice
+
+        if extCount > 2
+            float zoneCenter = math.avg(extMinP, extMaxP)
+            float zoneTop = zoneCenter + (externalLiquidityAtr / externalLiquidityMargin)
+            float zoneBottom = zoneCenter - (externalLiquidityAtr / externalLiquidityMargin)
+            bool updateExisting = array.size(extBslLeftBars) > 0 and extStartBar == array.get(extBslLeftBars, 0)
+
+            if updateExisting
+                // Source parity: same st_B updates bx bounds only. The original st_P
+                // remains the displayed/alerted liquidity level for this object.
+                array.set(extBslZoneTops, 0, zoneTop)
+                array.set(extBslZoneBottoms, 0, zoneBottom)
+            else
+                // A new source/start pivot is an independent unbreached detector object.
+                array.unshift(extBslLeftBars, extStartBar)
+                array.unshift(extBslDetectedBars, bar_index - 1)
+                array.unshift(extBslLevels, extSourceLevel)
+                array.unshift(extBslZoneTops, zoneTop)
+                array.unshift(extBslZoneBottoms, zoneBottom)
+                array.unshift(extBslBreached, false)
+                array.unshift(extBslBreachActive, false)
+                array.unshift(extBslSolidLines, na)
+                array.unshift(extBslLines, na)
+                array.unshift(extBslTextBoxes, na)
+                array.unshift(extBslBreachBoxes, na)
+
+                while array.size(extBslLevels) > externalLiquidityVisibleLevels
+                    line oldSolidLine = array.pop(extBslSolidLines)
+                    if not na(oldSolidLine)
+                        line.delete(oldSolidLine)
+                    line oldLine = array.pop(extBslLines)
+                    if not na(oldLine)
+                        line.delete(oldLine)
+                    box oldTextBox = array.pop(extBslTextBoxes)
+                    if not na(oldTextBox)
+                        box.delete(oldTextBox)
+                    box oldBox = array.pop(extBslBreachBoxes)
+                    if not na(oldBox)
+                        box.delete(oldBox)
+                    array.pop(extBslLeftBars)
+                    array.pop(extBslDetectedBars)
+                    array.pop(extBslLevels)
+                    array.pop(extBslZoneTops)
+                    array.pop(extBslZoneBottoms)
+                    array.pop(extBslBreached)
+                    array.pop(extBslBreachActive)
+
+if not na(extLiqPivotLow)
+    int extDir = array.get(extLiqPivotDirections, 0)
+    float extPrice = nz(low[1])
+
+    if extDir > -1
+        array.unshift(extLiqPivotDirections, -1)
+        array.unshift(extLiqPivotBars, extLiqPivotBar)
+        array.unshift(extLiqPivotPrices, extPrice)
+        array.pop(extLiqPivotDirections)
+        array.pop(extLiqPivotBars)
+        array.pop(extLiqPivotPrices)
+    else if extDir == -1 and extLiqPivotLow < array.get(extLiqPivotPrices, 0)
+        array.set(extLiqPivotBars, 0, extLiqPivotBar)
+        array.set(extLiqPivotPrices, 0, extPrice)
+
+    if externalLiquidityPeriodEligible
+        int extCount = 0
+        float extSourceLevel = 0.0
+        int extStartBar = 0
+        float extMinP = 0.0
+        float extMaxP = 10e6
+
+        for i = 0 to EXT_LIQ_MAX_PIVOTS - 1
+            if array.get(extLiqPivotDirections, i) == -1
+                float pivotPrice = array.get(extLiqPivotPrices, i)
+                if pivotPrice < extLiqPivotLow - (externalLiquidityAtr / externalLiquidityMargin)
+                    break
+                else if pivotPrice > extLiqPivotLow - (externalLiquidityAtr / externalLiquidityMargin) and pivotPrice < extLiqPivotLow + (externalLiquidityAtr / externalLiquidityMargin)
+                    extCount += 1
+                    extStartBar := array.get(extLiqPivotBars, i)
+                    extSourceLevel := pivotPrice
+                    if pivotPrice > extMinP
+                        extMinP := pivotPrice
+                    if pivotPrice < extMaxP
+                        extMaxP := pivotPrice
+
+        if extCount > 2
+            float zoneCenter = math.avg(extMinP, extMaxP)
+            float zoneTop = zoneCenter + (externalLiquidityAtr / externalLiquidityMargin)
+            float zoneBottom = zoneCenter - (externalLiquidityAtr / externalLiquidityMargin)
+            bool updateExisting = array.size(extSslLeftBars) > 0 and extStartBar == array.get(extSslLeftBars, 0)
+
+            if updateExisting
+                // Source parity: same st_B updates bx bounds only. The original st_P
+                // remains the displayed/alerted liquidity level for this object.
+                array.set(extSslZoneTops, 0, zoneTop)
+                array.set(extSslZoneBottoms, 0, zoneBottom)
+            else
+                // A new source/start pivot is an independent unbreached detector object.
+                array.unshift(extSslLeftBars, extStartBar)
+                array.unshift(extSslDetectedBars, bar_index - 1)
+                array.unshift(extSslLevels, extSourceLevel)
+                array.unshift(extSslZoneTops, zoneTop)
+                array.unshift(extSslZoneBottoms, zoneBottom)
+                array.unshift(extSslBreached, false)
+                array.unshift(extSslBreachActive, false)
+                array.unshift(extSslSolidLines, na)
+                array.unshift(extSslLines, na)
+                array.unshift(extSslTextBoxes, na)
+                array.unshift(extSslBreachBoxes, na)
+
+                while array.size(extSslLevels) > externalLiquidityVisibleLevels
+                    line oldSolidLine = array.pop(extSslSolidLines)
+                    if not na(oldSolidLine)
+                        line.delete(oldSolidLine)
+                    line oldLine = array.pop(extSslLines)
+                    if not na(oldLine)
+                        line.delete(oldLine)
+                    box oldTextBox = array.pop(extSslTextBoxes)
+                    if not na(oldTextBox)
+                        box.delete(oldTextBox)
+                    box oldBox = array.pop(extSslBreachBoxes)
+                    if not na(oldBox)
+                        box.delete(oldBox)
+                    array.pop(extSslLeftBars)
+                    array.pop(extSslDetectedBars)
+                    array.pop(extSslLevels)
+                    array.pop(extSslZoneTops)
+                    array.pop(extSslZoneBottoms)
+                    array.pop(extSslBreached)
+                    array.pop(extSslBreachActive)
+
+int extBslCount = array.size(extBslLevels)
+if extBslCount > 0
+    for i = 0 to extBslCount - 1
+        int sourceBar = array.get(extBslLeftBars, i)
+        int detectionBar = array.get(extBslDetectedBars, i)
+        float level = array.get(extBslLevels, i)
+        float zoneTop = array.get(extBslZoneTops, i)
+        float zoneBottom = array.get(extBslZoneBottoms, i)
+        bool breached = array.get(extBslBreached, i)
+        bool breachActive = array.get(extBslBreachActive, i)
+        bool breachedThisBar = false
+
+        if not breached and barstate.isconfirmed and high > zoneTop
+            breached := true
+            breachActive := true
+            breachedThisBar := true
+            array.set(extBslBreached, i, true)
+            array.set(extBslBreachActive, i, true)
+
+            if showExternalLiquidityBreachLabels
+                label.new(
+                     bar_index,
+                     high,
+                     "BSL BR",
+                     xloc = xloc.bar_index,
+                     style = label.style_label_down,
+                     color = color.new(buysideLiquidityColor, 0),
+                     textcolor = color.white,
+                     size = size.tiny,
+                     tooltip = "BSL_BREACHED\nObject: BSL|" + str.tostring(sourceBar) + "|" + str.tostring(detectionBar) + "|" + str.tostring(level, format.mintick) + "\nLevel: " + str.tostring(level, format.mintick) + "\nSource Bar: " + str.tostring(sourceBar) + "\nDetected Bar: " + str.tostring(detectionBar) + "\nZone Top: " + str.tostring(zoneTop, format.mintick) + "\nZone Bottom: " + str.tostring(zoneBottom, format.mintick)
+                )
+
+            if enableExternalLiquidityBreachAlerts
+                alert(
+                     f_externalLiquidityBreachPayload(
+                          "BSL_BREACHED",
+                          "BSL",
+                          sourceBar,
+                          detectionBar,
+                          level,
+                          zoneTop,
+                          zoneBottom,
+                          time_close
+                     ),
+                     alert.freq_once_per_bar_close
+                )
+
+        else if breached and breachActive
+            bool remainsInBreachGeometry = low > level - buysideBreachAtrMargin * externalLiquidityAtr and high < level + buysideBreachAtrMargin * externalLiquidityAtr
+            if not remainsInBreachGeometry
+                breachActive := false
+                array.set(extBslBreachActive, i, false)
+
+        bool visible = showExternalLiquidity and showBuysideLiquidity and i < externalLiquidityVisibleLevels
+        line solidLine = array.get(extBslSolidLines, i)
+        line levelLine = array.get(extBslLines, i)
+        box levelTextBox = array.get(extBslTextBoxes, i)
+        box breachBox = array.get(extBslBreachBoxes, i)
+
+        if visible
+            int leftBar = sourceBar
+            int detectedBar = detectionBar
+
+            // Match original BSL_SSL presentation:
+            // solid segment from first qualifying pivot to detection,
+            // then dotted extension from detection forward.
+            if na(solidLine)
+                solidLine := line.new(leftBar, level, detectedBar, level, xloc = xloc.bar_index, color = color.new(buysideLiquidityColor, 0), style = line.style_solid, width = 1)
+                array.set(extBslSolidLines, i, solidLine)
+            else
+                line.set_x1(solidLine, leftBar)
+                line.set_x2(solidLine, detectedBar)
+                line.set_y1(solidLine, level)
+                line.set_y2(solidLine, level)
+                line.set_color(solidLine, color.new(buysideLiquidityColor, 0))
+                line.set_style(solidLine, line.style_solid)
+
+            // The source reaches bar_index on the breach candle, then bar_index + 1
+            // on later candles while brZ remains active.
+            int extensionRight = breached and breachActive and not breachedThisBar ? bar_index + 1 : bar_index
+            if na(levelLine)
+                levelLine := line.new(detectedBar, level, extensionRight, level, xloc = xloc.bar_index, color = color.new(buysideLiquidityColor, 0), style = line.style_dotted, width = 1)
+                array.set(extBslLines, i, levelLine)
+            else
+                if not breached or breachActive
+                    line.set_x2(levelLine, extensionRight)
+                line.set_x1(levelLine, detectedBar)
+                line.set_y1(levelLine, level)
+                line.set_y2(levelLine, level)
+                line.set_color(levelLine, color.new(buysideLiquidityColor, 0))
+                line.set_style(levelLine, line.style_dotted)
+
+            // Match the source BSL_SSL.pine label presentation:
+            // transparent text box, left-aligned, BSL text below the level.
+            if na(levelTextBox)
+                levelTextBox := box.new(leftBar, level + externalLiquidityLabelPad, detectedBar + 11, level, xloc = xloc.bar_index, text = "BSL", text_size = externalLiquidityLabelSize, text_halign = text.align_left, text_valign = text.align_bottom, text_color = color.new(buysideLiquidityColor, 10), bgcolor = color.new(color.white, 100), border_color = color.new(color.white, 100))
+                array.set(extBslTextBoxes, i, levelTextBox)
+            else
+                box.set_left(levelTextBox, leftBar)
+                box.set_right(levelTextBox, detectedBar + 11)
+                box.set_top(levelTextBox, level + externalLiquidityLabelPad)
+                box.set_bottom(levelTextBox, level)
+                box.set_text_color(levelTextBox, color.new(buysideLiquidityColor, 10))
+
+            if showLiquidityBreachZones and breached and breachActive
+                float breachTop = math.min(level + buysideBreachAtrMargin * externalLiquidityAtr, high)
+                if na(breachBox)
+                    breachBox := box.new(bar_index - 1, breachTop, bar_index + 1, level, xloc = xloc.bar_index, bgcolor = color.new(buysideLiquidityColor, 82), border_color = na)
+                    array.set(extBslBreachBoxes, i, breachBox)
+                else
+                    box.set_right(breachBox, bar_index + 1)
+                    box.set_top(breachBox, math.max(box.get_top(breachBox), breachTop))
+            else if not na(breachBox) and not showLiquidityBreachZones
+                box.delete(breachBox)
+                array.set(extBslBreachBoxes, i, na)
+        else
+            if not na(solidLine)
+                line.delete(solidLine)
+                array.set(extBslSolidLines, i, na)
+            if not na(levelLine)
+                line.delete(levelLine)
+                array.set(extBslLines, i, na)
+            if not na(levelTextBox)
+                box.delete(levelTextBox)
+                array.set(extBslTextBoxes, i, na)
+            if not na(breachBox)
+                box.delete(breachBox)
+                array.set(extBslBreachBoxes, i, na)
+
+int extSslCount = array.size(extSslLevels)
+if extSslCount > 0
+    for i = 0 to extSslCount - 1
+        int sourceBar = array.get(extSslLeftBars, i)
+        int detectionBar = array.get(extSslDetectedBars, i)
+        float level = array.get(extSslLevels, i)
+        float zoneTop = array.get(extSslZoneTops, i)
+        float zoneBottom = array.get(extSslZoneBottoms, i)
+        bool breached = array.get(extSslBreached, i)
+        bool breachActive = array.get(extSslBreachActive, i)
+        bool breachedThisBar = false
+
+        if not breached and barstate.isconfirmed and low < zoneBottom
+            breached := true
+            breachActive := true
+            breachedThisBar := true
+            array.set(extSslBreached, i, true)
+            array.set(extSslBreachActive, i, true)
+
+            if showExternalLiquidityBreachLabels
+                label.new(
+                     bar_index,
+                     low,
+                     "SSL BR",
+                     xloc = xloc.bar_index,
+                     style = label.style_label_up,
+                     color = color.new(sellsideLiquidityColor, 0),
+                     textcolor = color.white,
+                     size = size.tiny,
+                     tooltip = "SSL_BREACHED\nObject: SSL|" + str.tostring(sourceBar) + "|" + str.tostring(detectionBar) + "|" + str.tostring(level, format.mintick) + "\nLevel: " + str.tostring(level, format.mintick) + "\nSource Bar: " + str.tostring(sourceBar) + "\nDetected Bar: " + str.tostring(detectionBar) + "\nZone Top: " + str.tostring(zoneTop, format.mintick) + "\nZone Bottom: " + str.tostring(zoneBottom, format.mintick)
+                )
+
+            if enableExternalLiquidityBreachAlerts
+                alert(
+                     f_externalLiquidityBreachPayload(
+                          "SSL_BREACHED",
+                          "SSL",
+                          sourceBar,
+                          detectionBar,
+                          level,
+                          zoneTop,
+                          zoneBottom,
+                          time_close
+                     ),
+                     alert.freq_once_per_bar_close
+                )
+
+        else if breached and breachActive
+            bool remainsInBreachGeometry = low > level - sellsideBreachAtrMargin * externalLiquidityAtr and high < level + sellsideBreachAtrMargin * externalLiquidityAtr
+            if not remainsInBreachGeometry
+                breachActive := false
+                array.set(extSslBreachActive, i, false)
+
+        bool visible = showExternalLiquidity and showSellsideLiquidity and i < externalLiquidityVisibleLevels
+        line solidLine = array.get(extSslSolidLines, i)
+        line levelLine = array.get(extSslLines, i)
+        box levelTextBox = array.get(extSslTextBoxes, i)
+        box breachBox = array.get(extSslBreachBoxes, i)
+
+        if visible
+            int leftBar = sourceBar
+            int detectedBar = detectionBar
+
+            // Match original BSL_SSL presentation:
+            // solid segment from first qualifying pivot to detection,
+            // then dotted extension from detection forward.
+            if na(solidLine)
+                solidLine := line.new(leftBar, level, detectedBar, level, xloc = xloc.bar_index, color = color.new(sellsideLiquidityColor, 0), style = line.style_solid, width = 1)
+                array.set(extSslSolidLines, i, solidLine)
+            else
+                line.set_x1(solidLine, leftBar)
+                line.set_x2(solidLine, detectedBar)
+                line.set_y1(solidLine, level)
+                line.set_y2(solidLine, level)
+                line.set_color(solidLine, color.new(sellsideLiquidityColor, 0))
+                line.set_style(solidLine, line.style_solid)
+
+            // The source reaches bar_index on the breach candle, then bar_index + 1
+            // on later candles while brZ remains active.
+            int extensionRight = breached and breachActive and not breachedThisBar ? bar_index + 1 : bar_index
+            if na(levelLine)
+                levelLine := line.new(detectedBar, level, extensionRight, level, xloc = xloc.bar_index, color = color.new(sellsideLiquidityColor, 0), style = line.style_dotted, width = 1)
+                array.set(extSslLines, i, levelLine)
+            else
+                if not breached or breachActive
+                    line.set_x2(levelLine, extensionRight)
+                line.set_x1(levelLine, detectedBar)
+                line.set_y1(levelLine, level)
+                line.set_y2(levelLine, level)
+                line.set_color(levelLine, color.new(sellsideLiquidityColor, 0))
+                line.set_style(levelLine, line.style_dotted)
+
+            // Match the source BSL_SSL.pine label presentation:
+            // transparent text box, left-aligned, SSL text above the level.
+            if na(levelTextBox)
+                levelTextBox := box.new(leftBar, level, detectedBar + 11, level - externalLiquidityLabelPad, xloc = xloc.bar_index, text = "SSL", text_size = externalLiquidityLabelSize, text_halign = text.align_left, text_valign = text.align_top, text_color = color.new(sellsideLiquidityColor, 10), bgcolor = color.new(color.white, 100), border_color = color.new(color.white, 100))
+                array.set(extSslTextBoxes, i, levelTextBox)
+            else
+                box.set_left(levelTextBox, leftBar)
+                box.set_right(levelTextBox, detectedBar + 11)
+                box.set_top(levelTextBox, level)
+                box.set_bottom(levelTextBox, level - externalLiquidityLabelPad)
+                box.set_text_color(levelTextBox, color.new(sellsideLiquidityColor, 10))
+
+            if showLiquidityBreachZones and breached and breachActive
+                float breachBottom = math.max(level - sellsideBreachAtrMargin * externalLiquidityAtr, low)
+                if na(breachBox)
+                    breachBox := box.new(bar_index - 1, level, bar_index + 1, breachBottom, xloc = xloc.bar_index, bgcolor = color.new(sellsideLiquidityColor, 82), border_color = na)
+                    array.set(extSslBreachBoxes, i, breachBox)
+                else
+                    box.set_right(breachBox, bar_index + 1)
+                    box.set_bottom(breachBox, math.min(box.get_bottom(breachBox), breachBottom))
+            else if not na(breachBox) and not showLiquidityBreachZones
+                box.delete(breachBox)
+                array.set(extSslBreachBoxes, i, na)
+        else
+            if not na(solidLine)
+                line.delete(solidLine)
+                array.set(extSslSolidLines, i, na)
+            if not na(levelLine)
+                line.delete(levelLine)
+                array.set(extSslLines, i, na)
+            if not na(levelTextBox)
+                box.delete(levelTextBox)
+                array.set(extSslTextBoxes, i, na)
+            if not na(breachBox)
+                box.delete(breachBox)
+                array.set(extSslBreachBoxes, i, na)
+
+float nearestActiveBslAbove = na
+float nearestActiveSslBelow = na
+
+if extBslCount > 0
+    for i = 0 to extBslCount - 1
+        if not array.get(extBslBreached, i)
+            float level = array.get(extBslLevels, i)
+            if level > close and (na(nearestActiveBslAbove) or level < nearestActiveBslAbove)
+                nearestActiveBslAbove := level
+
+if extSslCount > 0
+    for i = 0 to extSslCount - 1
+        if not array.get(extSslBreached, i)
+            float level = array.get(extSslLevels, i)
+            if level < close and (na(nearestActiveSslBelow) or level > nearestActiveSslBelow)
+                nearestActiveSslBelow := level
+
 
 // Minimal direction-neutral structural-anchor observer. Authoritative geometry
 // describes the environment; confirmed prospective contacts describe the path.
@@ -309,40 +779,77 @@ f_observerContactList(_currentMidContact, _eqmContact, _previousMidContact) =>
         contactList := contactList == "" ? "PREVIOUS MRZ MIDPOINT" : contactList + " + PREVIOUS MRZ MIDPOINT"
     contactList
 
-f_observerAlertContactText(_contactMask) =>
-    _contactMask == OBS_CONTACT_CURRENT_MIDPOINT ? "CURRENT MID" : _contactMask == OBS_CONTACT_MIGRATION_EQM ? "EQM" : _contactMask == OBS_CONTACT_PREVIOUS_MIDPOINT ? "PREV MID" : _contactMask == 0 ? "NONE" : "MULTI-ANCHOR"
+f_mrzContextId() =>
+    configuredTickerId + "|S|" + activeMrzSlot + "|C|" + str.tostring(currentActivationTime) + "|" + str.tostring(currentMrzLower, format.mintick) + "|" + str.tostring(currentMrzUpper, format.mintick) + "|P|" + str.tostring(previousActivationTime) + "|" + str.tostring(previousMrzLower, format.mintick) + "|" + str.tostring(previousMrzUpper, format.mintick)
 
-f_observerAnchorTransitionAlert(_previousContactMask, _currentContactMask) =>
-    bool singleAnchorContact = _currentContactMask == OBS_CONTACT_CURRENT_MIDPOINT or _currentContactMask == OBS_CONTACT_MIGRATION_EQM or _currentContactMask == OBS_CONTACT_PREVIOUS_MIDPOINT
-    singleAnchorContact ? f_alertSymbol() + " · " + f_observerAlertContactText(_previousContactMask) + " → " + f_observerAlertContactText(_currentContactMask) : f_alertSymbol() + " · MULTI-ANCHOR CONTACT"
+f_mrzMigration() =>
+    not currentMrzAvailable or not previousMrzAvailable ? "UNAVAILABLE" : currentMrzMidpoint > previousMrzMidpoint ? "HIGHER" : currentMrzMidpoint < previousMrzMidpoint ? "LOWER" : "COINCIDENT"
 
-f_observerAnchorTransitionPayload(_previousContact, _currentContact, _previousContactMask, _currentContactMask, _lastReachedAnchor, _pathStep, _observedAt) =>
-    string payload = '{"alert":"' + f_observerAnchorTransitionAlert(_previousContactMask, _currentContactMask) + '"'
-    payload += ',"event_type":"MRZ_ANCHOR_TRANSITION"'
+f_observerEqmReachedPayload(_encounterMechanism, _previousContact, _currentContact, _previousContactMask, _currentContactMask, _lastReachedAnchor, _previousReachedAnchor, _pathStep, _eqmContactCount, _observedAt) =>
+    string payload = '{"alert":"' + f_alertSymbol() + ' · MIG EQM REACHED"'
+    payload += ',"schema_version":"1.0"'
+    payload += ',"event_type":"MRZ_EQM_REACHED"'
     payload += ',"symbol":"' + syminfo.tickerid + '"'
+    payload += ',"mrz_context_id":"' + f_mrzContextId() + '"'
+    payload += ',"encounter_mechanism":"' + _encounterMechanism + '"'
+    payload += ',"active_mrz_slot":"' + activeMrzSlot + '"'
+    payload += ',"current_mrz_lower":' + str.tostring(currentMrzLower, format.mintick)
+    payload += ',"current_mrz_upper":' + str.tostring(currentMrzUpper, format.mintick)
+    payload += ',"current_mrz_midpoint":' + str.tostring(currentMrzMidpoint, format.mintick)
+    payload += ',"current_activation_time":' + str.tostring(currentActivationTime)
+    payload += ',"previous_mrz_lower":' + str.tostring(previousMrzLower, format.mintick)
+    payload += ',"previous_mrz_upper":' + str.tostring(previousMrzUpper, format.mintick)
+    payload += ',"previous_mrz_midpoint":' + str.tostring(previousMrzMidpoint, format.mintick)
+    payload += ',"previous_activation_time":' + str.tostring(previousActivationTime)
+    payload += ',"migration_eqm":' + str.tostring(migrationEqm, format.mintick)
+    payload += ',"mrz_migration":"' + f_mrzMigration() + '"'
+    payload += ',"nearest_active_bsl_above":' + (na(nearestActiveBslAbove) ? "null" : str.tostring(nearestActiveBslAbove, format.mintick))
+    payload += ',"nearest_active_ssl_below":' + (na(nearestActiveSslBelow) ? "null" : str.tostring(nearestActiveSslBelow, format.mintick))
+    payload += ',"eqm_contact_count":' + str.tostring(_eqmContactCount)
+    payload += ',"path_step":' + str.tostring(_pathStep)
     payload += ',"previous_contact":"' + _previousContact + '"'
     payload += ',"current_contact":"' + _currentContact + '"'
     payload += ',"previous_contact_mask":' + str.tostring(_previousContactMask)
     payload += ',"current_contact_mask":' + str.tostring(_currentContactMask)
     payload += ',"last_reached_anchor":"' + f_observerLastAnchorText(_lastReachedAnchor) + '"'
-    payload += ',"path_step":' + str.tostring(_pathStep)
-    payload += ',"current_mrz_midpoint":' + str.tostring(currentMrzMidpoint, format.mintick)
-    payload += ',"migration_eqm":' + str.tostring(migrationEqm, format.mintick)
-    payload += ',"previous_mrz_midpoint":' + str.tostring(previousMrzMidpoint, format.mintick)
+    payload += ',"previous_reached_anchor":"' + f_observerLastAnchorText(_previousReachedAnchor) + '"'
     payload += ',"timeframe":"' + timeframe.period + '"'
     payload += ',"observed_at":' + str.tostring(_observedAt)
     payload += ',"price":' + str.tostring(close, format.mintick) + '}'
     payload
 
-f_observerSecondEqmContactPayload(_eqmContactCount, _pathStep, _observedAt) =>
-    string payload = '{"alert":"' + f_alertSymbol() + ' · 2ND EQM CONTACT"'
-    payload += ',"event_type":"MRZ_SECOND_EQM_CONTACT"'
+f_observerEndpointEqmReachedPayload(_eventType, _alertLabel, _eqmAnchor, _anchorPrice, _armSide, _armLevel, _previousContact, _currentContact, _previousContactMask, _currentContactMask, _lastReachedAnchor, _previousReachedAnchor, _pathStep, _observedAt) =>
+    string payload = '{"alert":"' + f_alertSymbol() + ' · ' + _alertLabel + '"'
+    payload += ',"schema_version":"1.0"'
+    payload += ',"event_type":"' + _eventType + '"'
     payload += ',"symbol":"' + syminfo.tickerid + '"'
-    payload += ',"eqm_contact_count":' + str.tostring(_eqmContactCount)
-    payload += ',"migration_eqm":' + str.tostring(migrationEqm, format.mintick)
+    payload += ',"mrz_context_id":"' + f_mrzContextId() + '"'
+    payload += ',"eqm_anchor":"' + _eqmAnchor + '"'
+    payload += ',"encounter_mechanism":"2W_ARMED_RETURN"'
+    payload += ',"arm_reference":"2W"'
+    payload += ',"arm_side":"' + _armSide + '"'
+    payload += ',"arm_level":' + str.tostring(_armLevel, format.mintick)
+    payload += ',"anchor_price":' + str.tostring(_anchorPrice, format.mintick)
+    payload += ',"active_mrz_slot":"' + activeMrzSlot + '"'
+    payload += ',"current_mrz_lower":' + str.tostring(currentMrzLower, format.mintick)
+    payload += ',"current_mrz_upper":' + str.tostring(currentMrzUpper, format.mintick)
     payload += ',"current_mrz_midpoint":' + str.tostring(currentMrzMidpoint, format.mintick)
+    payload += ',"current_activation_time":' + str.tostring(currentActivationTime)
+    payload += ',"previous_mrz_lower":' + str.tostring(previousMrzLower, format.mintick)
+    payload += ',"previous_mrz_upper":' + str.tostring(previousMrzUpper, format.mintick)
     payload += ',"previous_mrz_midpoint":' + str.tostring(previousMrzMidpoint, format.mintick)
+    payload += ',"previous_activation_time":' + str.tostring(previousActivationTime)
+    payload += ',"migration_eqm":' + str.tostring(migrationEqm, format.mintick)
+    payload += ',"mrz_migration":"' + f_mrzMigration() + '"'
+    payload += ',"nearest_active_bsl_above":' + (na(nearestActiveBslAbove) ? "null" : str.tostring(nearestActiveBslAbove, format.mintick))
+    payload += ',"nearest_active_ssl_below":' + (na(nearestActiveSslBelow) ? "null" : str.tostring(nearestActiveSslBelow, format.mintick))
     payload += ',"path_step":' + str.tostring(_pathStep)
+    payload += ',"previous_contact":"' + _previousContact + '"'
+    payload += ',"current_contact":"' + _currentContact + '"'
+    payload += ',"previous_contact_mask":' + str.tostring(_previousContactMask)
+    payload += ',"current_contact_mask":' + str.tostring(_currentContactMask)
+    payload += ',"last_reached_anchor":"' + f_observerLastAnchorText(_lastReachedAnchor) + '"'
+    payload += ',"previous_reached_anchor":"' + f_observerLastAnchorText(_previousReachedAnchor) + '"'
     payload += ',"timeframe":"' + timeframe.period + '"'
     payload += ',"observed_at":' + str.tostring(_observedAt)
     payload += ',"price":' + str.tostring(close, format.mintick) + '}'
@@ -391,7 +898,7 @@ if stateObserverGeometryAvailable
 string observerPriceRegion = stateObserverGeometryAvailable ? f_observerPriceRegion(close, currentMrzLower, currentMrzUpper, currentMrzMidpoint, migrationEqm, previousMrzLower, previousMrzUpper, previousMrzMidpoint) : "UNAVAILABLE"
 // These panel fields expose deterministic structural context so downstream
 // discretionary analysis does not need to re-derive known facts.
-string observerMrzMigration = not currentMrzAvailable or not previousMrzAvailable ? "UNAVAILABLE" : currentMrzMidpoint > previousMrzMidpoint ? "HIGHER" : currentMrzMidpoint < previousMrzMidpoint ? "LOWER" : "COINCIDENT"
+string observerMrzMigration = f_mrzMigration()
 string observerIpda20Zone = not ipda20Ready or na(close) ? "UNAVAILABLE" : close < ipda20Low ? "BELOW 20W LOW" : close < ipda20Quarter ? "DEEP DISCOUNT" : close < ipda20Eqm ? "SHALLOW DISCOUNT" : close < ipda20ThreeQuarter ? "SHALLOW PREMIUM" : close <= ipda20High ? "DEEP PREMIUM" : "ABOVE 20W HIGH"
 
 var int observerState = OBS_STATE_PRE_ACTIVATION
@@ -403,7 +910,6 @@ var int observerLastReachedAt = na
 var int observerLastReachedBar = na
 var int observerObservedPathSteps = 0
 var int observerEqmDistinctContactCount = 0
-var bool observerSecondEqmContactEligible = true
 var bool observerCurrentMidContactActive = false
 var bool observerEqmContactActive = false
 var bool observerPreviousMidContactActive = false
@@ -418,16 +924,33 @@ var float observerStoredPreviousUpper = na
 var int observerStoredPreviousActivation = na
 var label[] observerStateLabels = array.new_label()
 
+// CUR/PRE EQM attention events use their owning MRZ ±2W envelope as a re-arm.
+// A confirmed candle range reaching either ±2W arms the midpoint for one later
+// clean midpoint contact. The arm is consumed until another ±2W excursion.
+var bool observerCurrentEqmArmed = false
+var string observerCurrentEqmArmSide = "NONE"
+var float observerCurrentEqmArmLevel = na
+var bool observerPreviousEqmArmed = false
+var string observerPreviousEqmArmSide = "NONE"
+var float observerPreviousEqmArmLevel = na
+
 bool observerCurrentMidReachedEvent = false
 bool observerEqmReachedEvent = false
 bool observerPreviousMidReachedEvent = false
 bool observerMultiAnchorContactEvent = false
 bool observerAttentionTransition = false
-bool observerSecondEqmContactEvent = false
+bool observerEqmEncounterEvent = false
 int observerPriorContactMaskForEvent = 0
 string observerPriorContactSummaryForEvent = "NONE"
 string observerContactSummary = ""
+string observerEqmEncounterMechanism = "NONE"
 float observerMultiAnchorLabelPrice = na
+bool observerCurrentEqmReachedAttentionEvent = false
+bool observerPreviousEqmReachedAttentionEvent = false
+string observerCurrentEqmArmSideForEvent = "NONE"
+float observerCurrentEqmArmLevelForEvent = na
+string observerPreviousEqmArmSideForEvent = "NONE"
+float observerPreviousEqmArmLevelForEvent = na
 
 bool observerStructureChanged = stateObserverGeometryAvailable and (not observerStructureIdentityStored or observerStoredActiveMrzSlot != activeMrzSlot or observerStoredTickerId != configuredTickerId or observerStoredCurrentLower != currentMrzLower or observerStoredCurrentUpper != currentMrzUpper or observerStoredCurrentActivation != currentActivationTime or observerStoredPreviousLower != previousMrzLower or observerStoredPreviousUpper != previousMrzUpper or observerStoredPreviousActivation != previousActivationTime)
 
@@ -441,7 +964,6 @@ if not stateObserverGeometryAvailable
     observerLastReachedBar := na
     observerObservedPathSteps := 0
     observerEqmDistinctContactCount := 0
-    observerSecondEqmContactEligible := true
     observerCurrentMidContactActive := false
     observerEqmContactActive := false
     observerPreviousMidContactActive := false
@@ -454,6 +976,12 @@ if not stateObserverGeometryAvailable
     observerStoredPreviousLower := na
     observerStoredPreviousUpper := na
     observerStoredPreviousActivation := na
+    observerCurrentEqmArmed := false
+    observerCurrentEqmArmSide := "NONE"
+    observerCurrentEqmArmLevel := na
+    observerPreviousEqmArmed := false
+    observerPreviousEqmArmSide := "NONE"
+    observerPreviousEqmArmLevel := na
     while array.size(observerStateLabels) > 0
         label inactiveObserverLabel = array.shift(observerStateLabels)
         if not na(inactiveObserverLabel)
@@ -462,6 +990,10 @@ else if barstate.isconfirmed
     bool observerCurrentMidContactOnBar = low <= currentMrzMidpoint and high >= currentMrzMidpoint
     bool observerEqmContactOnBar = low <= migrationEqm and high >= migrationEqm
     bool observerPreviousMidContactOnBar = low <= previousMrzMidpoint and high >= previousMrzMidpoint
+    bool observerCurrentUpper2WReachedOnBar = high >= currentPlus2W
+    bool observerCurrentLower2WReachedOnBar = low <= currentMinus2W
+    bool observerPreviousUpper2WReachedOnBar = high >= previousPlus2W
+    bool observerPreviousLower2WReachedOnBar = low <= previousMinus2W
 
     if observerStructureChanged
         // Start the new structure prospectively. Contacts on this reset bar are
@@ -475,7 +1007,6 @@ else if barstate.isconfirmed
         observerLastReachedBar := na
         observerObservedPathSteps := 0
         observerEqmDistinctContactCount := 0
-        observerSecondEqmContactEligible := true
         observerCurrentMidContactActive := observerCurrentMidContactOnBar
         observerEqmContactActive := observerEqmContactOnBar
         observerPreviousMidContactActive := observerPreviousMidContactOnBar
@@ -488,6 +1019,12 @@ else if barstate.isconfirmed
         observerStoredPreviousLower := previousMrzLower
         observerStoredPreviousUpper := previousMrzUpper
         observerStoredPreviousActivation := previousActivationTime
+        observerCurrentEqmArmed := false
+        observerCurrentEqmArmSide := "NONE"
+        observerCurrentEqmArmLevel := na
+        observerPreviousEqmArmed := false
+        observerPreviousEqmArmSide := "NONE"
+        observerPreviousEqmArmLevel := na
         while array.size(observerStateLabels) > 0
             label oldStructureObserverLabel = array.shift(observerStateLabels)
             if not na(oldStructureObserverLabel)
@@ -499,34 +1036,39 @@ else if barstate.isconfirmed
         bool observerCurrentMidContactStarted = observerCurrentMidContactOnBar and not observerCurrentMidContactActive
         bool observerEqmContactStarted = observerEqmContactOnBar and not observerEqmContactActive
         bool observerPreviousMidContactStarted = observerPreviousMidContactOnBar and not observerPreviousMidContactActive
-        int observerAnchorContactsStarted = (observerCurrentMidContactStarted ? 1 : 0) + (observerEqmContactStarted ? 1 : 0) + (observerPreviousMidContactStarted ? 1 : 0)
+        // A wholly opposite-side bar following a confirmed close across EQM is
+        // an encounter even when neither candle range contains the EQM price.
+        bool observerEqmGapCrossFromBelow = not observerEqmContactActive and not na(close[1]) and close[1] < migrationEqm and low > migrationEqm
+        bool observerEqmGapCrossFromAbove = not observerEqmContactActive and not na(close[1]) and close[1] > migrationEqm and high < migrationEqm
+        bool observerEqmGapCross = not observerEqmContactOnBar and (observerEqmGapCrossFromBelow or observerEqmGapCrossFromAbove)
+        bool observerEqmEncounterStarted = observerEqmContactStarted or observerEqmGapCross
+        int observerAnchorContactsStarted = (observerCurrentMidContactStarted ? 1 : 0) + (observerEqmEncounterStarted ? 1 : 0) + (observerPreviousMidContactStarted ? 1 : 0)
 
         if observerAnchorContactsStarted > 0
-            int observerNewContactMask = (observerCurrentMidContactStarted ? OBS_CONTACT_CURRENT_MIDPOINT : 0) + (observerEqmContactStarted ? OBS_CONTACT_MIGRATION_EQM : 0) + (observerPreviousMidContactStarted ? OBS_CONTACT_PREVIOUS_MIDPOINT : 0)
+            int observerNewContactMask = (observerCurrentMidContactStarted ? OBS_CONTACT_CURRENT_MIDPOINT : 0) + (observerEqmEncounterStarted ? OBS_CONTACT_MIGRATION_EQM : 0) + (observerPreviousMidContactStarted ? OBS_CONTACT_PREVIOUS_MIDPOINT : 0)
             observerPriorContactMaskForEvent := observerLastContactMask
             observerPriorContactSummaryForEvent := observerLastContactSummary
             observerAttentionTransition := observerPriorContactMaskForEvent == 0 or observerNewContactMask != observerPriorContactMaskForEvent
             observerPreviousReachedAnchor := observerLastReachedAnchor
-            observerLastReachedAnchor := observerAnchorContactsStarted > 1 ? OBS_ANCHOR_MULTIPLE : observerCurrentMidContactStarted ? OBS_ANCHOR_CURRENT_MIDPOINT : observerEqmContactStarted ? OBS_ANCHOR_MIGRATION_EQM : OBS_ANCHOR_PREVIOUS_MIDPOINT
+            observerLastReachedAnchor := observerAnchorContactsStarted > 1 ? OBS_ANCHOR_MULTIPLE : observerCurrentMidContactStarted ? OBS_ANCHOR_CURRENT_MIDPOINT : observerEqmEncounterStarted ? OBS_ANCHOR_MIGRATION_EQM : OBS_ANCHOR_PREVIOUS_MIDPOINT
             observerLastContactMask := observerNewContactMask
             observerLastReachedAt := time_close
             observerLastReachedBar := bar_index
             observerObservedPathSteps += 1
-            if observerEqmContactStarted
+            if observerEqmEncounterStarted
                 observerEqmDistinctContactCount += 1
-                if observerEqmDistinctContactCount == 2 and observerSecondEqmContactEligible
-                    observerSecondEqmContactEvent := true
-                    observerSecondEqmContactEligible := false
-            observerContactSummary := f_observerContactList(observerCurrentMidContactStarted, observerEqmContactStarted, observerPreviousMidContactStarted)
+                observerEqmEncounterEvent := true
+                observerEqmEncounterMechanism := observerEqmGapCross ? "GAP_CROSS" : "NORMAL_CONTACT"
+            observerContactSummary := f_observerContactList(observerCurrentMidContactStarted, observerEqmEncounterStarted, observerPreviousMidContactStarted)
             observerLastContactSummary := observerContactSummary
             observerCurrentMidReachedEvent := observerAnchorContactsStarted == 1 and observerCurrentMidContactStarted
-            observerEqmReachedEvent := observerAnchorContactsStarted == 1 and observerEqmContactStarted
+            observerEqmReachedEvent := observerAnchorContactsStarted == 1 and observerEqmEncounterStarted
             observerPreviousMidReachedEvent := observerAnchorContactsStarted == 1 and observerPreviousMidContactStarted
             observerMultiAnchorContactEvent := observerAnchorContactsStarted > 1
             if observerMultiAnchorContactEvent
-                float contactedLow = observerCurrentMidContactStarted ? currentMrzMidpoint : observerEqmContactStarted ? migrationEqm : previousMrzMidpoint
+                float contactedLow = observerCurrentMidContactStarted ? currentMrzMidpoint : observerEqmEncounterStarted ? migrationEqm : previousMrzMidpoint
                 float contactedHigh = contactedLow
-                if observerEqmContactStarted
+                if observerEqmEncounterStarted
                     contactedLow := math.min(contactedLow, migrationEqm)
                     contactedHigh := math.max(contactedHigh, migrationEqm)
                 if observerPreviousMidContactStarted
@@ -534,46 +1076,89 @@ else if barstate.isconfirmed
                     contactedHigh := math.max(contactedHigh, previousMrzMidpoint)
                 observerMultiAnchorLabelPrice := math.round_to_mintick((contactedLow + contactedHigh) / 2.0)
 
+        // CUR / PRE EQM attention lifecycle.
+        // Consume an existing arm on the first later clean single-anchor midpoint contact.
+        if observerCurrentMidReachedEvent and observerCurrentEqmArmed
+            observerCurrentEqmReachedAttentionEvent := true
+            observerCurrentEqmArmSideForEvent := observerCurrentEqmArmSide
+            observerCurrentEqmArmLevelForEvent := observerCurrentEqmArmLevel
+
+        if observerPreviousMidReachedEvent and observerPreviousEqmArmed
+            observerPreviousEqmReachedAttentionEvent := true
+            observerPreviousEqmArmSideForEvent := observerPreviousEqmArmSide
+            observerPreviousEqmArmLevelForEvent := observerPreviousEqmArmLevel
+
+        if observerCurrentEqmReachedAttentionEvent
+            observerCurrentEqmArmed := false
+            observerCurrentEqmArmSide := "NONE"
+            observerCurrentEqmArmLevel := na
+        else
+            // Do not arm from a bar that also contacts CUR EQM: intrabar ordering is unknowable.
+            bool observerCurrentEqmArmCandidate = not observerCurrentMidContactOnBar and (observerCurrentUpper2WReachedOnBar or observerCurrentLower2WReachedOnBar)
+            if observerCurrentEqmArmCandidate
+                observerCurrentEqmArmed := true
+                if observerCurrentUpper2WReachedOnBar
+                    observerCurrentEqmArmSide := "UPPER"
+                    observerCurrentEqmArmLevel := currentPlus2W
+                else
+                    observerCurrentEqmArmSide := "LOWER"
+                    observerCurrentEqmArmLevel := currentMinus2W
+
+        if observerPreviousEqmReachedAttentionEvent
+            observerPreviousEqmArmed := false
+            observerPreviousEqmArmSide := "NONE"
+            observerPreviousEqmArmLevel := na
+        else
+            // Do not arm from a bar that also contacts PRE EQM: intrabar ordering is unknowable.
+            bool observerPreviousEqmArmCandidate = not observerPreviousMidContactOnBar and (observerPreviousUpper2WReachedOnBar or observerPreviousLower2WReachedOnBar)
+            if observerPreviousEqmArmCandidate
+                observerPreviousEqmArmed := true
+                if observerPreviousUpper2WReachedOnBar
+                    observerPreviousEqmArmSide := "UPPER"
+                    observerPreviousEqmArmLevel := previousPlus2W
+                else
+                    observerPreviousEqmArmSide := "LOWER"
+                    observerPreviousEqmArmLevel := previousMinus2W
+
         observerCurrentMidContactActive := observerCurrentMidContactOnBar
         observerEqmContactActive := observerEqmContactOnBar
         observerPreviousMidContactActive := observerPreviousMidContactOnBar
 
-if observerCurrentMidReachedEvent and observerAttentionTransition and showStateTransitionLabels
-    string observerCurrentMidTooltip = "Path Step: " + str.tostring(observerObservedPathSteps) + "\nEvent: CURRENT MIDPOINT REACHED\nTimestamp: " + f_observerTimeText(observerLastReachedAt) + "\nContact: " + observerContactSummary + "\nPrior Contact: " + observerPriorContactSummaryForEvent + "\nPrior Reached Anchor: " + f_observerLastAnchorText(observerPreviousReachedAnchor) + "\nAnchor: " + f_observerPriceText(currentMrzMidpoint)
-    bool observerCurrentMidLabelAbove = currentMrzMidpoint >= close
-    label observerCurrentMidLabel = label.new(bar_index, observerCurrentMidLabelAbove ? high : low, "CURRENT MIDPOINT REACHED", xloc = xloc.bar_index, style = observerCurrentMidLabelAbove ? label.style_label_down : label.style_label_up, color = color.new(color.purple, 30), textcolor = color.white, size = size.tiny, tooltip = observerCurrentMidTooltip)
-    array.push(observerStateLabels, observerCurrentMidLabel)
+bool observerTransitionedIntoEqm = observerEqmEncounterEvent and observerPreviousReachedAnchor != OBS_ANCHOR_MIGRATION_EQM and observerLastReachedAnchor == OBS_ANCHOR_MIGRATION_EQM
 
-if observerEqmReachedEvent and observerAttentionTransition and showStateTransitionLabels
-    string observerEqmTooltip = "Path Step: " + str.tostring(observerObservedPathSteps) + "\nEvent: EQM REACHED\nTimestamp: " + f_observerTimeText(observerLastReachedAt) + "\nContact: " + observerContactSummary + "\nPrior Contact: " + observerPriorContactSummaryForEvent + "\nPrior Reached Anchor: " + f_observerLastAnchorText(observerPreviousReachedAnchor) + "\nAnchor: " + f_observerPriceText(migrationEqm)
+if observerTransitionedIntoEqm and showStateTransitionLabels
+    string observerEqmTooltip = "Path Step: " + str.tostring(observerObservedPathSteps) + "\nEvent: MIG EQM REACHED\nTimestamp: " + f_observerTimeText(observerLastReachedAt) + "\nContact: " + observerContactSummary + "\nPrior Contact: " + observerPriorContactSummaryForEvent + "\nPrior Reached Anchor: " + f_observerLastAnchorText(observerPreviousReachedAnchor) + "\nAnchor: " + f_observerPriceText(migrationEqm)
     bool observerEqmLabelAbove = migrationEqm >= close
-    label observerEqmLabel = label.new(bar_index, observerEqmLabelAbove ? high : low, "EQM REACHED", xloc = xloc.bar_index, style = observerEqmLabelAbove ? label.style_label_down : label.style_label_up, color = color.new(color.purple, 15), textcolor = color.white, size = size.tiny, tooltip = observerEqmTooltip)
+    label observerEqmLabel = label.new(bar_index, observerEqmLabelAbove ? high : low, "MIG EQM", xloc = xloc.bar_index, style = observerEqmLabelAbove ? label.style_label_down : label.style_label_up, color = color.new(color.purple, 15), textcolor = color.white, size = size.tiny, tooltip = observerEqmTooltip)
     array.push(observerStateLabels, observerEqmLabel)
 
-if observerPreviousMidReachedEvent and observerAttentionTransition and showStateTransitionLabels
-    string observerPreviousMidTooltip = "Path Step: " + str.tostring(observerObservedPathSteps) + "\nEvent: PREV_MID_PT\nTimestamp: " + f_observerTimeText(observerLastReachedAt) + "\nContact: " + observerContactSummary + "\nPrior Contact: " + observerPriorContactSummaryForEvent + "\nPrior Reached Anchor: " + f_observerLastAnchorText(observerPreviousReachedAnchor) + "\nAnchor: " + f_observerPriceText(previousMrzMidpoint)
-    bool observerPreviousMidLabelAbove = previousMrzMidpoint >= close
-    label observerPreviousMidLabel = label.new(bar_index, observerPreviousMidLabelAbove ? high : low, "PREV_MID_PT", xloc = xloc.bar_index, style = observerPreviousMidLabelAbove ? label.style_label_down : label.style_label_up, color = color.new(color.gray, 30), textcolor = color.white, size = size.tiny, tooltip = observerPreviousMidTooltip)
-    array.push(observerStateLabels, observerPreviousMidLabel)
+if enableEqmReachedAlerts and observerTransitionedIntoEqm and barstate.isconfirmed
+    alert(f_observerEqmReachedPayload(observerEqmEncounterMechanism, observerPriorContactSummaryForEvent, observerContactSummary, observerPriorContactMaskForEvent, observerLastContactMask, observerLastReachedAnchor, observerPreviousReachedAnchor, observerObservedPathSteps, observerEqmDistinctContactCount, observerLastReachedAt), alert.freq_once_per_bar_close)
 
-if observerMultiAnchorContactEvent and observerAttentionTransition and showStateTransitionLabels
-    string observerMultiAnchorTooltip = "Path Step: " + str.tostring(observerObservedPathSteps) + "\nEvent: MULTI-ANCHOR CONTACT\nTimestamp: " + f_observerTimeText(observerLastReachedAt) + "\nContacts: " + observerContactSummary + "\nPrior Contact: " + observerPriorContactSummaryForEvent + "\nAnchor Order: AMBIGUOUS\nPrior Reached Anchor: " + f_observerLastAnchorText(observerPreviousReachedAnchor)
-    bool observerMultiAnchorLabelAbove = observerMultiAnchorLabelPrice >= close
-    label observerMultiAnchorLabel = label.new(bar_index, observerMultiAnchorLabelAbove ? high : low, "MULTI-ANCHOR CONTACT", xloc = xloc.bar_index, style = observerMultiAnchorLabelAbove ? label.style_label_down : label.style_label_up, color = color.new(color.orange, 20), textcolor = color.white, size = size.tiny, tooltip = observerMultiAnchorTooltip)
-    array.push(observerStateLabels, observerMultiAnchorLabel)
+if observerCurrentEqmReachedAttentionEvent and showStateTransitionLabels
+    string observerCurrentEqmTooltip = "Event: CURRENT_EQM_REACHED\nTimestamp: " + f_observerTimeText(observerLastReachedAt) + "\nAnchor: " + f_observerPriceText(currentMrzMidpoint) + "\nArmed By: " + observerCurrentEqmArmSideForEvent + " 2W\n2W Level: " + f_observerPriceText(observerCurrentEqmArmLevelForEvent) + "\nPath Step: " + str.tostring(observerObservedPathSteps)
+    bool observerCurrentEqmLabelAbove = currentMrzMidpoint >= close
+    label observerCurrentEqmLabel = label.new(bar_index, observerCurrentEqmLabelAbove ? high : low, "CUR EQM", xloc = xloc.bar_index, style = observerCurrentEqmLabelAbove ? label.style_label_down : label.style_label_up, color = color.new(color.purple, 15), textcolor = color.white, size = size.tiny, tooltip = observerCurrentEqmTooltip)
+    array.push(observerStateLabels, observerCurrentEqmLabel)
 
-if enableAnchorTransitionAlerts and observerAttentionTransition and barstate.isconfirmed
-    alert(f_observerAnchorTransitionPayload(observerPriorContactSummaryForEvent, observerContactSummary, observerPriorContactMaskForEvent, observerLastContactMask, observerLastReachedAnchor, observerObservedPathSteps, observerLastReachedAt), alert.freq_once_per_bar_close)
+if observerPreviousEqmReachedAttentionEvent and showStateTransitionLabels
+    string observerPreviousEqmTooltip = "Event: PREVIOUS_EQM_REACHED\nTimestamp: " + f_observerTimeText(observerLastReachedAt) + "\nAnchor: " + f_observerPriceText(previousMrzMidpoint) + "\nArmed By: " + observerPreviousEqmArmSideForEvent + " 2W\n2W Level: " + f_observerPriceText(observerPreviousEqmArmLevelForEvent) + "\nPath Step: " + str.tostring(observerObservedPathSteps)
+    bool observerPreviousEqmLabelAbove = previousMrzMidpoint >= close
+    label observerPreviousEqmLabel = label.new(bar_index, observerPreviousEqmLabelAbove ? high : low, "PRE EQM", xloc = xloc.bar_index, style = observerPreviousEqmLabelAbove ? label.style_label_down : label.style_label_up, color = color.new(color.gray, 15), textcolor = color.white, size = size.tiny, tooltip = observerPreviousEqmTooltip)
+    array.push(observerStateLabels, observerPreviousEqmLabel)
 
-if enableSecondEqmContactAlert and observerSecondEqmContactEvent and barstate.isconfirmed
-    alert(f_observerSecondEqmContactPayload(observerEqmDistinctContactCount, observerObservedPathSteps, observerLastReachedAt), alert.freq_once_per_bar_close)
+if enableEqmReachedAlerts and observerCurrentEqmReachedAttentionEvent and barstate.isconfirmed
+    alert(f_observerEndpointEqmReachedPayload("CURRENT_EQM_REACHED", "CUR EQM REACHED", "CURRENT", currentMrzMidpoint, observerCurrentEqmArmSideForEvent, observerCurrentEqmArmLevelForEvent, observerPriorContactSummaryForEvent, observerContactSummary, observerPriorContactMaskForEvent, observerLastContactMask, observerLastReachedAnchor, observerPreviousReachedAnchor, observerObservedPathSteps, observerLastReachedAt), alert.freq_once_per_bar_close)
+
+if enableEqmReachedAlerts and observerPreviousEqmReachedAttentionEvent and barstate.isconfirmed
+    alert(f_observerEndpointEqmReachedPayload("PREVIOUS_EQM_REACHED", "PRE EQM REACHED", "PREVIOUS", previousMrzMidpoint, observerPreviousEqmArmSideForEvent, observerPreviousEqmArmLevelForEvent, observerPriorContactSummaryForEvent, observerContactSummary, observerPriorContactMaskForEvent, observerLastContactMask, observerLastReachedAnchor, observerPreviousReachedAnchor, observerObservedPathSteps, observerLastReachedAt), alert.freq_once_per_bar_close)
 
 while array.size(observerStateLabels) > MAX_STATE_OBSERVER_LABELS
     label oldestObserverLabel = array.shift(observerStateLabels)
     if not na(oldestObserverLabel)
         label.delete(oldestObserverLabel)
 
-var table stateObserverPanel = table.new(position.bottom_right, 2, 12)
+var table stateObserverPanel = table.new(position.bottom_right, 2, 14)
 if barstate.islast and showStateDebugPanel
     color observerPanelBackground = color.new(color.black, 18)
     color observerPanelLabelColor = color.new(color.silver, 0)
@@ -601,6 +1186,10 @@ if barstate.islast and showStateDebugPanel
     table.cell(stateObserverPanel, 1, 10, f_observerPanelTimeText(observerLastReachedAt), text_color = color.white, bgcolor = observerPanelBackground)
     table.cell(stateObserverPanel, 0, 11, "Last Contact", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
     table.cell(stateObserverPanel, 1, 11, observerLastContactSummary, text_color = color.white, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 0, 12, "Nearest Active BSL", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 1, 12, f_observerPriceText(nearestActiveBslAbove), text_color = color.white, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 0, 13, "Nearest Active SSL", text_color = observerPanelLabelColor, bgcolor = observerPanelBackground)
+    table.cell(stateObserverPanel, 1, 13, f_observerPriceText(nearestActiveSslBelow), text_color = color.white, bgcolor = observerPanelBackground)
 
 color currentUpperColor = color.rgb(214, 80, 80)
 color currentMidpointColor = color.new(color.purple, 0)
