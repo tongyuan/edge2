@@ -1,0 +1,482 @@
+//@version=6
+indicator("External Range Liquidity", "External Liquidity", overlay=true, max_lines_count=200, max_labels_count=200, max_bars_back=5000)
+
+// Clean-room external-range detector. This script uses only confirmed pivots and
+// one explicit range. It does not cluster, match, or rank internal liquidity.
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Inputs
+// ─────────────────────────────────────────────────────────────────────────────
+string GROUP_ENGINE = "EXTERNAL SWING ENGINE"
+string GROUP_DISPLAY = "DISPLAY"
+
+string sourceTf = input.timeframe("240", "Source Timeframe", group=GROUP_ENGINE)
+int swingLength = input.int(7, "Swing Length", minval=1, maxval=50, group=GROUP_ENGINE)
+int retainedPurgedLevels = input.int(40, "Purged Levels Retained", minval=1, maxval=100, group=GROUP_ENGINE)
+
+bool showSwingMarkers = input.bool(false, "Show Swing Markers", group=GROUP_DISPLAY)
+bool showEstablishmentLabels = input.bool(false, "Show Establishment Labels", group=GROUP_DISPLAY)
+bool showPurgeLabels = input.bool(true, "Show Purge Labels", group=GROUP_DISPLAY)
+bool showPanel = input.bool(true, "Show Panel", group=GROUP_DISPLAY)
+
+color bslColor = input.color(color.new(#4CAF50, 0), "Open External BSL", group=GROUP_DISPLAY)
+color sslColor = input.color(color.new(#F23645, 0), "Open External SSL", group=GROUP_DISPLAY)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Constants and helpers
+// ─────────────────────────────────────────────────────────────────────────────
+const int STATE_NONE = 0
+const int STATE_OPEN = 1
+const int STATE_PURGED = 2
+const int MAX_AUDIT_LABELS = 120
+
+f_tf_name(string tf) =>
+    float seconds = timeframe.in_seconds(tf)
+    string name = tf
+    if not na(seconds)
+        if seconds % 604800 == 0
+            name := str.tostring(int(seconds / 604800)) + "W"
+        else if seconds % 86400 == 0
+            name := str.tostring(int(seconds / 86400)) + "D"
+        else if seconds % 3600 == 0
+            name := str.tostring(int(seconds / 3600)) + "H"
+        else if seconds % 60 == 0
+            name := str.tostring(int(seconds / 60)) + "m"
+    name
+
+f_price(float value) =>
+    na(value) ? "-" : str.tostring(value, format.mintick)
+
+f_time(int value) =>
+    na(value) ? "-" : str.format_time(value, "dd MMM yyyy HH:mm", syminfo.timezone)
+
+f_state(int state) =>
+    state == STATE_OPEN ? "OPEN" : state == STATE_PURGED ? "PURGED" : "WAITING"
+
+f_open_line(int establishedTime, int rightTime, float level, color levelColor) =>
+    line.new(establishedTime, level, rightTime, level,
+         xloc=xloc.bar_time, extend=extend.right, color=levelColor,
+         style=line.style_solid, width=1)
+
+f_retain_line(line[] lines, line item, int limit) =>
+    array.push(lines, item)
+    while array.size(lines) > limit
+        line oldest = array.shift(lines)
+        if not na(oldest)
+            line.delete(oldest)
+
+f_retain_label(label[] labels, label item) =>
+    array.push(labels, item)
+    while array.size(labels) > MAX_AUDIT_LABELS
+        label oldest = array.shift(labels)
+        if not na(oldest)
+            label.delete(oldest)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Confirmed source-timeframe feed
+//
+// A source event is processed only when the next source candle opens. The [1]
+// values therefore belong to one fully completed source candle. A pivot value
+// confirms on that event candle; its source is swingLength candles earlier.
+// ─────────────────────────────────────────────────────────────────────────────
+float chartSeconds = timeframe.in_seconds(timeframe.period)
+float sourceSeconds = timeframe.in_seconds(sourceTf)
+bool timeframeSupported = not na(chartSeconds) and not na(sourceSeconds) and chartSeconds <= sourceSeconds
+string sourceTfName = f_tf_name(sourceTf)
+
+[sourceOpenTime,
+ sourceEventTime,
+ sourceEventHigh,
+ sourceEventLow,
+ sourcePivotTime,
+ sourcePivotHigh,
+ sourcePivotLow] = request.security(
+     syminfo.tickerid,
+     sourceTf,
+     [
+         time,
+         time[1],
+         high[1],
+         low[1],
+         time[swingLength + 1],
+         ta.pivothigh(high, swingLength, swingLength)[1],
+         ta.pivotlow(low, swingLength, swingLength)[1]
+     ],
+     gaps=barmerge.gaps_off,
+     lookahead=barmerge.lookahead_off)
+
+bool newSourceBar = timeframeSupported and not na(sourceOpenTime[1]) and sourceOpenTime != sourceOpenTime[1]
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Range and lifecycle state
+// ─────────────────────────────────────────────────────────────────────────────
+var int nextBoundaryId = 1
+
+var int bslId = 0
+var float bslLevel = na
+var int bslState = STATE_NONE
+var int bslSourceTime = na
+var int bslEstablishedTime = na
+var int bslPurgeTime = na
+var line bslOpenLine = na
+
+var int sslId = 0
+var float sslLevel = na
+var int sslState = STATE_NONE
+var int sslSourceTime = na
+var int sslEstablishedTime = na
+var int sslPurgeTime = na
+var line sslOpenLine = na
+
+// Pending pivots are used only while one or both sides have no OPEN boundary.
+// Consecutive same-side pivots retain the more extreme candidate.
+var float pendingHigh = na
+var int pendingHighSourceTime = na
+var int pendingHighConfirmedTime = na
+var float pendingLow = na
+var int pendingLowSourceTime = na
+var int pendingLowConfirmedTime = na
+
+var line[] purgedLines = array.new_line()
+var label[] auditLabels = array.new_label()
+
+var string lastPurgeSide = "-"
+var int lastPurgeTime = na
+
+// Event-local state for alerts. These values reset on every chart bar.
+bool bslPurgedEvent = false
+bool sslPurgedEvent = false
+bool bslEstablishedEvent = false
+bool sslEstablishedEvent = false
+
+float bslEventLevel = na
+float bslEventSourceTime = na
+float bslEventEstablishedTime = na
+float bslEventTime = na
+float sslEventLevel = na
+float sslEventSourceTime = na
+float sslEventEstablishedTime = na
+float sslEventTime = na
+
+// ============================================================================
+// Process one completed source-timeframe candle
+// ============================================================================
+if newSourceBar and not na(sourceEventTime)
+    // 1) Purges are evaluated before this event's newly confirmed pivots. The
+    // strict establishment-time comparison makes hindsight sweeps impossible.
+    bool hitBsl = bslState == STATE_OPEN and bslEstablishedTime < sourceEventTime and sourceEventHigh > bslLevel
+    bool hitSsl = sslState == STATE_OPEN and sslEstablishedTime < sourceEventTime and sourceEventLow < sslLevel
+
+    if hitBsl
+        bslPurgedEvent := true
+        bslState := STATE_PURGED
+        bslPurgeTime := sourceEventTime
+        pendingHigh := na
+        pendingHighSourceTime := na
+        pendingHighConfirmedTime := na
+
+        bslEventLevel := bslLevel
+        bslEventSourceTime := float(bslSourceTime)
+        bslEventEstablishedTime := float(bslEstablishedTime)
+        bslEventTime := float(sourceEventTime)
+
+        if not na(bslOpenLine)
+            line.set_extend(bslOpenLine, extend.none)
+            line.set_x2(bslOpenLine, sourceEventTime)
+            line.set_style(bslOpenLine, line.style_dashed)
+            line.set_color(bslOpenLine, color.new(bslColor, 65))
+            f_retain_line(purgedLines, bslOpenLine, retainedPurgedLevels)
+            bslOpenLine := na
+
+        if showPurgeLabels
+            string tooltip = "Boundary ID: " + str.tostring(bslId) + "\nSwing: " + f_time(bslSourceTime) + "\nEstablished: " + f_time(bslEstablishedTime) + "\nPurged: " + f_time(sourceEventTime)
+            label item = label.new(sourceEventTime, bslLevel, "BSL PURGED",
+                 xloc=xloc.bar_time, style=label.style_label_down,
+                 color=color.new(bslColor, 55), textcolor=color.white,
+                 size=size.tiny, tooltip=tooltip)
+            f_retain_label(auditLabels, item)
+
+    if hitSsl
+        sslPurgedEvent := true
+        sslState := STATE_PURGED
+        sslPurgeTime := sourceEventTime
+        pendingLow := na
+        pendingLowSourceTime := na
+        pendingLowConfirmedTime := na
+
+        sslEventLevel := sslLevel
+        sslEventSourceTime := float(sslSourceTime)
+        sslEventEstablishedTime := float(sslEstablishedTime)
+        sslEventTime := float(sourceEventTime)
+
+        if not na(sslOpenLine)
+            line.set_extend(sslOpenLine, extend.none)
+            line.set_x2(sslOpenLine, sourceEventTime)
+            line.set_style(sslOpenLine, line.style_dashed)
+            line.set_color(sslOpenLine, color.new(sslColor, 65))
+            f_retain_line(purgedLines, sslOpenLine, retainedPurgedLevels)
+            sslOpenLine := na
+
+        if showPurgeLabels
+            string tooltip = "Boundary ID: " + str.tostring(sslId) + "\nSwing: " + f_time(sslSourceTime) + "\nEstablished: " + f_time(sslEstablishedTime) + "\nPurged: " + f_time(sourceEventTime)
+            label item = label.new(sourceEventTime, sslLevel, "SSL PURGED",
+                 xloc=xloc.bar_time, style=label.style_label_up,
+                 color=color.new(sslColor, 55), textcolor=color.white,
+                 size=size.tiny, tooltip=tooltip)
+            f_retain_label(auditLabels, item)
+
+    if hitBsl and hitSsl
+        lastPurgeSide := "BOTH"
+        lastPurgeTime := sourceEventTime
+    else if hitBsl
+        lastPurgeSide := "BSL"
+        lastPurgeTime := sourceEventTime
+    else if hitSsl
+        lastPurgeSide := "SSL"
+        lastPurgeTime := sourceEventTime
+
+    // 2) Classify newly confirmed pivots. An OPEN side expands only when the
+    // pivot exceeds its boundary. Otherwise the pivot is internal and ignored.
+    bool highConfirmed = not na(sourcePivotHigh)
+    bool lowConfirmed = not na(sourcePivotLow)
+    string highClassification = "INTERNAL"
+    string lowClassification = "INTERNAL"
+
+    if highConfirmed
+        if bslState == STATE_OPEN
+            if sourcePivotHigh > bslLevel
+                highClassification := "EXTERNAL EXPANSION"
+                if not na(bslOpenLine)
+                    line.delete(bslOpenLine)
+                bslId := nextBoundaryId
+                nextBoundaryId += 1
+                bslLevel := sourcePivotHigh
+                bslSourceTime := sourcePivotTime
+                bslEstablishedTime := sourceEventTime
+                bslPurgeTime := na
+                bslState := STATE_OPEN
+                bslOpenLine := f_open_line(sourceEventTime, sourceOpenTime, bslLevel, bslColor)
+                bslEstablishedEvent := true
+                bslEventLevel := bslLevel
+                bslEventSourceTime := float(bslSourceTime)
+                bslEventEstablishedTime := float(bslEstablishedTime)
+                bslEventTime := float(sourceEventTime)
+        else if bslState != STATE_PURGED or na(bslPurgeTime) or sourceEventTime > bslPurgeTime
+            highClassification := "PENDING EXTERNAL"
+            if na(pendingHigh) or sourcePivotHigh > pendingHigh
+                pendingHigh := sourcePivotHigh
+                pendingHighSourceTime := sourcePivotTime
+                pendingHighConfirmedTime := sourceEventTime
+
+    if lowConfirmed
+        if sslState == STATE_OPEN
+            if sourcePivotLow < sslLevel
+                lowClassification := "EXTERNAL EXPANSION"
+                if not na(sslOpenLine)
+                    line.delete(sslOpenLine)
+                sslId := nextBoundaryId
+                nextBoundaryId += 1
+                sslLevel := sourcePivotLow
+                sslSourceTime := sourcePivotTime
+                sslEstablishedTime := sourceEventTime
+                sslPurgeTime := na
+                sslState := STATE_OPEN
+                sslOpenLine := f_open_line(sourceEventTime, sourceOpenTime, sslLevel, sslColor)
+                sslEstablishedEvent := true
+                sslEventLevel := sslLevel
+                sslEventSourceTime := float(sslSourceTime)
+                sslEventEstablishedTime := float(sslEstablishedTime)
+                sslEventTime := float(sourceEventTime)
+        else if sslState != STATE_PURGED or na(sslPurgeTime) or sourceEventTime > sslPurgeTime
+            lowClassification := "PENDING EXTERNAL"
+            if na(pendingLow) or sourcePivotLow < pendingLow
+                pendingLow := sourcePivotLow
+                pendingLowSourceTime := sourcePivotTime
+                pendingLowConfirmedTime := sourceEventTime
+
+    // 3) Bootstrap when neither side is OPEN. This requires one confirmed high
+    // and one confirmed low; same-side repeats were reduced to the extreme.
+    if bslState != STATE_OPEN and sslState != STATE_OPEN and not na(pendingHigh) and not na(pendingLow) and pendingHigh > pendingLow
+        bslId := nextBoundaryId
+        nextBoundaryId += 1
+        bslLevel := pendingHigh
+        bslSourceTime := pendingHighSourceTime
+        bslEstablishedTime := sourceEventTime
+        bslPurgeTime := na
+        bslState := STATE_OPEN
+        bslOpenLine := f_open_line(sourceEventTime, sourceOpenTime, bslLevel, bslColor)
+        bslEstablishedEvent := true
+        bslEventLevel := bslLevel
+        bslEventSourceTime := float(bslSourceTime)
+        bslEventEstablishedTime := float(bslEstablishedTime)
+        bslEventTime := float(sourceEventTime)
+
+        sslId := nextBoundaryId
+        nextBoundaryId += 1
+        sslLevel := pendingLow
+        sslSourceTime := pendingLowSourceTime
+        sslEstablishedTime := sourceEventTime
+        sslPurgeTime := na
+        sslState := STATE_OPEN
+        sslOpenLine := f_open_line(sourceEventTime, sourceOpenTime, sslLevel, sslColor)
+        sslEstablishedEvent := true
+        sslEventLevel := sslLevel
+        sslEventSourceTime := float(sslSourceTime)
+        sslEventEstablishedTime := float(sslEstablishedTime)
+        sslEventTime := float(sourceEventTime)
+
+        pendingHigh := na
+        pendingHighSourceTime := na
+        pendingHighConfirmedTime := na
+        pendingLow := na
+        pendingLowSourceTime := na
+        pendingLowConfirmedTime := na
+
+    // 4) Reopen one independently purged side from subsequent confirmed swing
+    // structure. It must preserve a valid high-above-low external range.
+    else
+        if bslState != STATE_OPEN and sslState == STATE_OPEN and not na(pendingHigh) and pendingHigh > sslLevel
+            bslId := nextBoundaryId
+            nextBoundaryId += 1
+            bslLevel := pendingHigh
+            bslSourceTime := pendingHighSourceTime
+            bslEstablishedTime := sourceEventTime
+            bslPurgeTime := na
+            bslState := STATE_OPEN
+            bslOpenLine := f_open_line(sourceEventTime, sourceOpenTime, bslLevel, bslColor)
+            bslEstablishedEvent := true
+            bslEventLevel := bslLevel
+            bslEventSourceTime := float(bslSourceTime)
+            bslEventEstablishedTime := float(bslEstablishedTime)
+            bslEventTime := float(sourceEventTime)
+            pendingHigh := na
+            pendingHighSourceTime := na
+            pendingHighConfirmedTime := na
+
+        if sslState != STATE_OPEN and bslState == STATE_OPEN and not na(pendingLow) and pendingLow < bslLevel
+            sslId := nextBoundaryId
+            nextBoundaryId += 1
+            sslLevel := pendingLow
+            sslSourceTime := pendingLowSourceTime
+            sslEstablishedTime := sourceEventTime
+            sslPurgeTime := na
+            sslState := STATE_OPEN
+            sslOpenLine := f_open_line(sourceEventTime, sourceOpenTime, sslLevel, sslColor)
+            sslEstablishedEvent := true
+            sslEventLevel := sslLevel
+            sslEventSourceTime := float(sslSourceTime)
+            sslEventEstablishedTime := float(sslEstablishedTime)
+            sslEventTime := float(sourceEventTime)
+            pendingLow := na
+            pendingLowSourceTime := na
+            pendingLowConfirmedTime := na
+
+    // Optional swing markers include the classification in their tooltip. The
+    // marker is placed at the pivot source time, never at the confirmation time.
+    if showSwingMarkers and highConfirmed
+        string tooltip = highClassification + "\nSource: " + f_time(sourcePivotTime) + "\nConfirmed: " + f_time(sourceEventTime) + "\nLevel: " + f_price(sourcePivotHigh)
+        label item = label.new(sourcePivotTime, sourcePivotHigh, "H",
+             xloc=xloc.bar_time, style=label.style_label_down,
+             color=color.new(bslColor, 75), textcolor=color.white,
+             size=size.tiny, tooltip=tooltip)
+        f_retain_label(auditLabels, item)
+
+    if showSwingMarkers and lowConfirmed
+        string tooltip = lowClassification + "\nSource: " + f_time(sourcePivotTime) + "\nConfirmed: " + f_time(sourceEventTime) + "\nLevel: " + f_price(sourcePivotLow)
+        label item = label.new(sourcePivotTime, sourcePivotLow, "L",
+             xloc=xloc.bar_time, style=label.style_label_up,
+             color=color.new(sslColor, 75), textcolor=color.white,
+             size=size.tiny, tooltip=tooltip)
+        f_retain_label(auditLabels, item)
+
+    if showEstablishmentLabels and bslEstablishedEvent
+        string tooltip = "Boundary ID: " + str.tostring(bslId) + "\nSwing: " + f_time(bslSourceTime) + "\nEstablished: " + f_time(bslEstablishedTime)
+        label item = label.new(bslEstablishedTime, bslLevel, "EXT BSL",
+             xloc=xloc.bar_time, style=label.style_label_down,
+             color=bslColor, textcolor=color.white, size=size.tiny, tooltip=tooltip)
+        f_retain_label(auditLabels, item)
+
+    if showEstablishmentLabels and sslEstablishedEvent
+        string tooltip = "Boundary ID: " + str.tostring(sslId) + "\nSwing: " + f_time(sslSourceTime) + "\nEstablished: " + f_time(sslEstablishedTime)
+        label item = label.new(sslEstablishedTime, sslLevel, "EXT SSL",
+             xloc=xloc.bar_time, style=label.style_label_up,
+             color=sslColor, textcolor=color.white, size=size.tiny, tooltip=tooltip)
+        f_retain_label(auditLabels, item)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Data-window outputs and alert payload fields
+// ─────────────────────────────────────────────────────────────────────────────
+plot(bslState == STATE_OPEN ? bslLevel : na, "External BSL (Open)", color=bslColor, display=display.data_window)
+plot(sslState == STATE_OPEN ? sslLevel : na, "External SSL (Open)", color=sslColor, display=display.data_window)
+
+plot(sourceSeconds, "Source TF Seconds", display=display.none)
+plot(bslEventLevel, "BSL Event Level", display=display.none)
+plot(bslEventSourceTime, "BSL Event Source Time", display=display.none)
+plot(bslEventEstablishedTime, "BSL Event Established Time", display=display.none)
+plot(bslEventTime, "BSL Event Time", display=display.none)
+plot(sslEventLevel, "SSL Event Level", display=display.none)
+plot(sslEventSourceTime, "SSL Event Source Time", display=display.none)
+plot(sslEventEstablishedTime, "SSL Event Established Time", display=display.none)
+plot(sslEventTime, "SSL Event Time", display=display.none)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Compact panel
+// ─────────────────────────────────────────────────────────────────────────────
+float rangeWidth = not na(bslLevel) and not na(sslLevel) ? bslLevel - sslLevel : na
+var table panel = table.new(position.top_right, 2, 14, border_width=1)
+
+if barstate.islast
+    if showPanel
+        color headerBg = color.new(color.black, 0)
+        color cellBg = color.new(color.black, 82)
+        color labelText = color.new(color.white, 25)
+
+        table.cell(panel, 0, 0, "EXTERNAL LIQUIDITY", text_color=color.white, bgcolor=headerBg)
+        table.cell(panel, 1, 0, sourceTfName, text_color=color.white, bgcolor=headerBg)
+        table.cell(panel, 0, 1, "External BSL", text_color=labelText, bgcolor=cellBg)
+        table.cell(panel, 1, 1, f_price(bslLevel), text_color=bslColor, bgcolor=cellBg)
+        table.cell(panel, 0, 2, "BSL State", text_color=labelText, bgcolor=cellBg)
+        table.cell(panel, 1, 2, f_state(bslState), text_color=bslState == STATE_OPEN ? bslColor : color.gray, bgcolor=cellBg)
+        table.cell(panel, 0, 3, "BSL Source", text_color=labelText, bgcolor=cellBg)
+        table.cell(panel, 1, 3, f_time(bslSourceTime), text_color=color.white, bgcolor=cellBg)
+        table.cell(panel, 0, 4, "External SSL", text_color=labelText, bgcolor=cellBg)
+        table.cell(panel, 1, 4, f_price(sslLevel), text_color=sslColor, bgcolor=cellBg)
+        table.cell(panel, 0, 5, "SSL State", text_color=labelText, bgcolor=cellBg)
+        table.cell(panel, 1, 5, f_state(sslState), text_color=sslState == STATE_OPEN ? sslColor : color.gray, bgcolor=cellBg)
+        table.cell(panel, 0, 6, "SSL Source", text_color=labelText, bgcolor=cellBg)
+        table.cell(panel, 1, 6, f_time(sslSourceTime), text_color=color.white, bgcolor=cellBg)
+        table.cell(panel, 0, 7, "Range Width", text_color=labelText, bgcolor=cellBg)
+        table.cell(panel, 1, 7, f_price(rangeWidth), text_color=color.white, bgcolor=cellBg)
+        table.cell(panel, 0, 8, "Last Purge", text_color=labelText, bgcolor=cellBg)
+        table.cell(panel, 1, 8, lastPurgeSide, text_color=color.white, bgcolor=cellBg)
+        table.cell(panel, 0, 9, "Last Purge Time", text_color=labelText, bgcolor=cellBg)
+        table.cell(panel, 1, 9, f_time(lastPurgeTime), text_color=color.white, bgcolor=cellBg)
+        table.cell(panel, 0, 10, "Sweep Rule", text_color=labelText, bgcolor=cellBg)
+        table.cell(panel, 1, 10, "WICK THROUGH LEVEL", text_color=color.white, bgcolor=cellBg)
+        table.cell(panel, 0, 11, "Swing Length", text_color=labelText, bgcolor=cellBg)
+        table.cell(panel, 1, 11, str.tostring(swingLength), text_color=color.white, bgcolor=cellBg)
+        table.cell(panel, 0, 12, "Source TF", text_color=labelText, bgcolor=cellBg)
+        table.cell(panel, 1, 12, sourceTfName, text_color=color.white, bgcolor=cellBg)
+        table.cell(panel, 0, 13, "TF Check", text_color=labelText, bgcolor=cellBg)
+        table.cell(panel, 1, 13, timeframeSupported ? "OK" : "Chart TF must be ≤ Source TF",
+             text_color=timeframeSupported ? color.white : color.yellow, bgcolor=cellBg)
+    else
+        for row = 0 to 13
+            table.cell(panel, 0, row, "")
+            table.cell(panel, 1, row, "")
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Factual alerts. Epoch-millisecond audit fields are exposed through hidden
+// plots because alertcondition messages must be compile-time constant strings.
+// ─────────────────────────────────────────────────────────────────────────────
+alertcondition(bslPurgedEvent, "EXTERNAL_BSL_PURGED",
+     "symbol={{ticker}}; source_tf_seconds={{plot(\"Source TF Seconds\")}}; side=BSL; level={{plot(\"BSL Event Level\")}}; source_swing_time={{plot(\"BSL Event Source Time\")}}; established_time={{plot(\"BSL Event Established Time\")}}; event_time={{plot(\"BSL Event Time\")}}")
+
+alertcondition(sslPurgedEvent, "EXTERNAL_SSL_PURGED",
+     "symbol={{ticker}}; source_tf_seconds={{plot(\"Source TF Seconds\")}}; side=SSL; level={{plot(\"SSL Event Level\")}}; source_swing_time={{plot(\"SSL Event Source Time\")}}; established_time={{plot(\"SSL Event Established Time\")}}; event_time={{plot(\"SSL Event Time\")}}")
+
+alertcondition(bslEstablishedEvent, "EXTERNAL_BSL_ESTABLISHED",
+     "symbol={{ticker}}; source_tf_seconds={{plot(\"Source TF Seconds\")}}; side=BSL; level={{plot(\"BSL Event Level\")}}; source_swing_time={{plot(\"BSL Event Source Time\")}}; established_time={{plot(\"BSL Event Established Time\")}}; event_time={{plot(\"BSL Event Time\")}}")
+
+alertcondition(sslEstablishedEvent, "EXTERNAL_SSL_ESTABLISHED",
+     "symbol={{ticker}}; source_tf_seconds={{plot(\"Source TF Seconds\")}}; side=SSL; level={{plot(\"SSL Event Level\")}}; source_swing_time={{plot(\"SSL Event Source Time\")}}; established_time={{plot(\"SSL Event Established Time\")}}; event_time={{plot(\"SSL Event Time\")}}")
