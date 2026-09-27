@@ -67,7 +67,13 @@ button:disabled { cursor: progress; opacity: 0.65; }
 .report-meta span, .section-label { display: block; margin-bottom: 9px; color: var(--muted); font-size: 0.65rem; font-weight: 760; letter-spacing: 0.12em; }
 .report-meta strong { font-size: 0.8rem; line-height: 1.45; }
 .card-filter { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 18px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
-.card-filter > span { color: var(--muted); font-size: 0.65rem; font-weight: 760; letter-spacing: 0.12em; }
+.symbol-search { display: grid; grid-template-columns: auto minmax(180px, 300px); align-items: center; gap: 5px 12px; min-width: 0; }
+.symbol-search label { color: var(--muted); font-size: 0.65rem; font-weight: 760; letter-spacing: 0.12em; white-space: nowrap; }
+.symbol-search input { width: 100%; min-height: 44px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 9px; outline: none; background: rgba(8, 11, 16, 0.58); color: var(--text); font: inherit; font-size: 0.86rem; font-weight: 680; letter-spacing: 0.02em; text-transform: uppercase; }
+.symbol-search input::placeholder { color: #718097; font-weight: 560; }
+.symbol-search input:focus-visible { border-color: #4d8b79; box-shadow: 0 0 0 3px rgba(98, 230, 181, 0.11); }
+.filter-result-status { grid-column: 2; color: var(--muted); font-size: 0.69rem; line-height: 1.35; }
+.filter-result-status[hidden] { display: none; }
 .filter-options { display: flex; gap: 7px; }
 .filter-option { display: inline-flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px; min-height: 44px; min-width: 88px; border-color: var(--line); background: rgba(8, 11, 16, 0.32); color: #c9d4e2; }
 .filter-option.active { border-color: #4d8b79; background: var(--accent-soft); color: var(--accent); }
@@ -202,6 +208,8 @@ button:disabled { cursor: progress; opacity: 0.65; }
   .lifecycle { grid-template-columns: 1fr; }
   .report-meta, .mrz-authority-grid, .evidence-grid, .detail-grid, .successor .detail-grid, .formation-detail-grid { grid-template-columns: minmax(0, 1fr); }
   .card-filter { align-items: stretch; flex-direction: column; }
+  .symbol-search { grid-template-columns: minmax(0, 1fr); }
+  .symbol-search label, .symbol-search input, .filter-result-status { grid-column: 1; }
   .filter-options { width: 100%; }
   .filter-option { flex: 1 1 0; min-height: 44px; }
   .migration-chronology-heading { align-items: flex-start; flex-direction: column; gap: 8px; }

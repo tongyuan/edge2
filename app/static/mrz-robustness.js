@@ -54,17 +54,27 @@ function hasValidMigrationProvenance(report) {
     && currentLower <= currentUpper;
 }
 
-function filterReports(reports, filterMode = "all") {
+function normalizedSymbolQuery(searchQuery) {
+  return String(searchQuery ?? "").trim().toUpperCase();
+}
+
+function filterReports(reports, filterMode = "all", searchQuery = "") {
+  let filteredReports;
   if (filterMode === "pressure") {
-    return reports.filter((report) => {
+    filteredReports = reports.filter((report) => {
       const pressure = report.current_pressure || report.migration_pressure;
       return report.structural_authority?.status === "AUTHORITATIVE"
         && pressure?.status === "UNDER_PRESSURE"
         && ["UP", "DOWN"].includes(pressure.direction);
     });
+  } else if (filterMode === "migrated") {
+    filteredReports = reports.filter((report) => hasValidMigrationProvenance(report));
+  } else {
+    filteredReports = [...reports];
   }
-  if (filterMode !== "migrated") return [...reports];
-  return reports.filter((report) => hasValidMigrationProvenance(report));
+  const query = normalizedSymbolQuery(searchQuery);
+  if (!query) return filteredReports;
+  return filteredReports.filter((report) => normalizedSymbolQuery(report?.symbol).includes(query));
 }
 
 function operatorViewCounts(reports) {
@@ -448,8 +458,13 @@ function reportMarkup(
   timestampFormatter = (value) => value,
   filterMode = "all",
   focusedSymbol = null,
+  searchQuery = "",
 ) {
-  const visibleReports = filterReports(reports, filterMode);
+  const visibleReports = filterReports(reports, filterMode, searchQuery);
+  const normalizedQuery = normalizedSymbolQuery(searchQuery);
+  if (normalizedQuery && !visibleReports.length) {
+    return `<section class="empty-report">No symbols match “${escapeHtml(String(searchQuery).trim())}”.</section>`;
+  }
   if (filterMode === "pressure" && !visibleReports.length) {
     return '<section class="empty-report">No directional pressure currently detected.</section>';
   }
@@ -504,11 +519,14 @@ if (typeof document !== "undefined") {
     const pressureFilterButton = document.getElementById("filterPressure");
     const allCount = document.getElementById("allCount");
     const pressureCount = document.getElementById("pressureCount");
+    const symbolSearch = document.getElementById("symbolSearch");
+    const filterResultStatus = document.getElementById("filterResultStatus");
     const viewButtons = [allFilterButton, pressureFilterButton];
     const requestedSymbol = operatorCardSymbolFromSearch(window.location.search);
     const requestedSection = operatorCardSectionFromHash(window.location.hash);
     let reports = [];
     let filterMode = "all";
+    let searchQuery = "";
     let requestedCardFocused = false;
 
     function renderReports() {
@@ -517,10 +535,17 @@ if (typeof document !== "undefined") {
         formatOperatorTimestampUtcMinus4,
         filterMode,
         requestedSymbol,
+        searchQuery,
       );
       const counts = operatorViewCounts(reports);
+      const visibleCount = filterReports(reports, filterMode, searchQuery).length;
+      const viewCount = filterMode === "pressure" ? counts.pressure : counts.all;
       allCount.textContent = counts.all;
       pressureCount.textContent = counts.pressure;
+      filterResultStatus.textContent = normalizedSymbolQuery(searchQuery)
+        ? `Showing ${visibleCount} of ${viewCount} ${viewCount === 1 ? "symbol" : "symbols"}`
+        : "";
+      filterResultStatus.hidden = !normalizedSymbolQuery(searchQuery);
       viewButtons.forEach((button) => {
         const selected = button === (filterMode === "pressure" ? pressureFilterButton : allFilterButton);
         button.classList.toggle("active", selected);
@@ -575,6 +600,17 @@ if (typeof document !== "undefined") {
     refreshButton.addEventListener("click", loadReport);
     allFilterButton.addEventListener("click", () => selectFilter("all"));
     pressureFilterButton.addEventListener("click", () => selectFilter("pressure"));
+    symbolSearch.addEventListener("input", (event) => {
+      searchQuery = event.target.value;
+      renderReports();
+    });
+    symbolSearch.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape" || !normalizedSymbolQuery(searchQuery)) return;
+      event.preventDefault();
+      symbolSearch.value = "";
+      searchQuery = "";
+      renderReports();
+    });
     viewButtons.forEach((button, index) => {
       button.addEventListener("keydown", (event) => {
         let nextIndex;
@@ -603,6 +639,7 @@ if (typeof module === "object" && module.exports) {
     midpointValue,
     migrationEqmValue,
     migrationProvenanceMarkup,
+    normalizedSymbolQuery,
     normalizedSpanText,
     operatorCardSectionFromHash,
     operatorCardSymbolFromSearch,

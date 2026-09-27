@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="EDGE 2.0 MRZ operation card" />
     <title>EDGE 2.0 · MRZ Operation Card</title>
-    <link rel="stylesheet" href="/static/mrz-robustness.css?v=current-pressure-20260920" />
+    <link rel="stylesheet" href="/static/mrz-robustness.css?v=symbol-search-20260928" />
     <link rel="stylesheet" href="/static/diagnostics-nav.css?v=views-menu-20260907" />
   </head>
   <body>
@@ -55,8 +55,12 @@
           <article><span>ACTIVE MRZS</span><strong id="activeMrzCount">0</strong></article>
           <article><span>BEHAVIOR EVIDENCE</span><strong>Strictly after authoritative activation event</strong></article>
         </section>
-        <section class="card-filter" aria-label="Operator Card views">
-          <span>SHOW SYMBOLS</span>
+        <section class="card-filter" aria-label="Operator Card symbol search and views">
+          <div class="symbol-search">
+            <label for="symbolSearch">SEARCH SYMBOL</label>
+            <input id="symbolSearch" type="search" inputmode="search" placeholder="BTCUSDT" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-describedby="filterResultStatus">
+            <span class="filter-result-status" id="filterResultStatus" role="status" aria-live="polite" hidden></span>
+          </div>
           <div class="filter-options" role="tablist" aria-label="Operator Card view">
             <button class="filter-option active" id="filterAll" type="button" role="tab" aria-selected="true" aria-controls="activeReports" tabindex="0">All <span class="filter-count" id="allCount">0</span></button>
             <button class="filter-option" id="filterPressure" type="button" role="tab" aria-selected="false" aria-controls="activeReports" tabindex="-1">Pressure <span class="filter-count" id="pressureCount">0</span></button>
@@ -67,6 +71,6 @@
     </main>
     <script src="/static/diagnostics-nav.js?v=views-menu-20260907" defer></script>
     <script src="/static/operator-time.js?v=operator-card-semantics-20260829" defer></script>
-    <script src="/static/mrz-robustness.js?v=current-pressure-20260920" defer></script>
+    <script src="/static/mrz-robustness.js?v=symbol-search-20260928" defer></script>
   </body>
 </html>
