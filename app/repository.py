@@ -1526,6 +1526,95 @@ class EdgeRepository:
         finally:
             connection.close()
 
+    def tradedesk_authority_inputs(self) -> tuple[Mapping[str, Any], ...]:
+        """Return current authority and its immediate persisted lineage read-only."""
+        connection = connect(self.database_url)
+        try:
+            connection.set_session(
+                readonly=True,
+                isolation_level="REPEATABLE READ",
+            )
+            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        active.symbol,
+                        active.route_owner AS current_route_owner,
+                        active.activation_source AS current_activation_source,
+                        active.core_mrz_lower AS current_lower,
+                        active.core_mrz_upper AS current_upper,
+                        active.core_mrz_midpoint AS current_midpoint,
+                        active.activated_at AS current_activated_at,
+                        active.activation_event_id AS current_activation_event_id,
+                        current_event.event_key AS current_authority_event_key,
+                        current_event.sequence AS current_event_sequence,
+                        current_event.event_type AS current_event_type,
+                        current_event.symbol AS current_event_symbol,
+                        current_event.route_owner AS current_event_route_owner,
+                        current_event.previous_route_owner
+                            AS current_event_previous_route_owner,
+                        current_event.activation_source
+                            AS current_event_activation_source,
+                        current_event.occurred_at AS current_event_occurred_at,
+                        current_event.trigger_event_id
+                            AS current_event_trigger_event_id,
+                        current_event.old_core_mrz_lower
+                            AS current_event_old_lower,
+                        current_event.old_core_mrz_upper
+                            AS current_event_old_upper,
+                        current_event.new_core_mrz_lower
+                            AS current_event_lower,
+                        current_event.new_core_mrz_upper
+                            AS current_event_upper,
+                        current_event.new_core_mrz_midpoint
+                            AS current_event_midpoint,
+                        current_trigger.symbol AS current_trigger_symbol,
+                        previous_event.event_key AS previous_authority_event_key,
+                        previous_event.sequence AS previous_event_sequence,
+                        previous_event.event_type AS previous_event_type,
+                        previous_event.symbol AS previous_event_symbol,
+                        previous_event.route_owner AS previous_event_route_owner,
+                        previous_event.occurred_at AS previous_activated_at,
+                        previous_event.trigger_event_id
+                            AS previous_activation_event_id,
+                        previous_event.new_core_mrz_lower AS previous_lower,
+                        previous_event.new_core_mrz_upper AS previous_upper,
+                        previous_event.new_core_mrz_midpoint AS previous_midpoint,
+                        previous_trigger.symbol AS previous_trigger_symbol
+                    FROM active_mrz active
+                    LEFT JOIN LATERAL (
+                        SELECT authority.*
+                        FROM mrz_events authority
+                        WHERE authority.symbol = active.symbol
+                          AND authority.event_type IN (
+                              'MRZ_ACTIVATED', 'MRZ_MIGRATED'
+                          )
+                        ORDER BY authority.sequence DESC
+                        LIMIT 1
+                    ) current_event ON TRUE
+                    LEFT JOIN observations current_trigger
+                        ON current_trigger.event_id = current_event.trigger_event_id
+                    LEFT JOIN LATERAL (
+                        SELECT authority.*
+                        FROM mrz_events authority
+                        WHERE authority.symbol = active.symbol
+                          AND authority.event_type IN (
+                              'MRZ_ACTIVATED', 'MRZ_MIGRATED'
+                          )
+                          AND authority.sequence < current_event.sequence
+                        ORDER BY authority.sequence DESC
+                        LIMIT 1
+                    ) previous_event
+                        ON current_event.event_type = 'MRZ_MIGRATED'
+                    LEFT JOIN observations previous_trigger
+                        ON previous_trigger.event_id = previous_event.trigger_event_id
+                    ORDER BY active.symbol ASC
+                    """
+                )
+                return tuple(cursor.fetchall())
+        finally:
+            connection.close()
+
     def location_migration_tendency(self) -> dict[str, dict[str, Any]]:
         """Return aggregates and their canonical migration evidence records."""
         connection = connect(self.database_url)

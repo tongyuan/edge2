@@ -5,9 +5,9 @@ import json
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Literal, Mapping
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -33,6 +33,10 @@ from app.repository import (
     json_diagnostics,
     sanitize_payload,
 )
+from app.tradedesk_authority import (
+    TradeDeskAuthorityInconsistent,
+    TradeDeskAuthorityService,
+)
 from app.validation import ObservationPayload
 
 
@@ -45,6 +49,31 @@ class NearMissPromotionRequest(BaseModel):
 
     route: Route
     candidate_identity: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class TradeDeskMRZResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    lower: str
+    upper: str
+    activated_at: str
+    activation_event_id: str
+
+
+class TradeDeskAuthoritySymbolResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    symbol: str
+    current_mrz: TradeDeskMRZResponse
+    previous_mrz: TradeDeskMRZResponse | None
+
+
+class TradeDeskAuthorityResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1]
+    generated_at: str
+    symbols: list[TradeDeskAuthoritySymbolResponse]
 
 
 def supplied_secret(request: Request, payload: Any) -> str | None:
@@ -550,6 +579,31 @@ def create_app(
             status_code=200 if outcome.duplicate else 201,
             headers={"Cache-Control": "no-store, max-age=0"},
         )
+
+    @application.get(
+        "/api/tradedesk-authority",
+        response_model=TradeDeskAuthorityResponse,
+    )
+    def tradedesk_authority(
+        response: Response,
+    ) -> TradeDeskAuthorityResponse | JSONResponse:
+        service = TradeDeskAuthorityService(repository.tradedesk_authority_inputs)
+        try:
+            report = service.generate_report()
+        except TradeDeskAuthorityInconsistent as exc:
+            LOGGER.error("TradeDesk authority snapshot is inconsistent: %s", exc)
+            return JSONResponse(
+                {
+                    "detail": {
+                        "code": "authoritative_state_inconsistent",
+                        "message": str(exc),
+                    }
+                },
+                status_code=503,
+                headers={"Cache-Control": "no-store, max-age=0"},
+            )
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return TradeDeskAuthorityResponse.model_validate(report)
 
     @application.get("/api/diagnostics/mrz-robustness")
     def mrz_robustness() -> JSONResponse:
