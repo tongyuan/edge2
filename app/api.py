@@ -350,6 +350,21 @@ def create_app(
                 {"ok": False, "error": "authentication_failed"},
                 status_code=401,
             )
+        try:
+            outcome = repository.ingest_polr_lifecycle(payload)
+        except Exception:
+            LOGGER.exception(
+                "POLR lifecycle persistence failed",
+                extra={
+                    "event_id": payload.event_id,
+                    "setup_id": payload.setup_id,
+                    "event_type": payload.event_type,
+                },
+            )
+            return JSONResponse(
+                {"ok": False, "error": "processing_failed"},
+                status_code=500,
+            )
         LOGGER.info(
             "POLR lifecycle event received",
             extra={
@@ -359,6 +374,7 @@ def create_app(
                 "symbol": payload.symbol,
                 "direction": payload.direction,
                 "event_at": payload.event_at,
+                "duplicate": outcome.duplicate,
             },
         )
         return JSONResponse({"ok": True, "event_id": payload.event_id})
