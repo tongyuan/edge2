@@ -37,7 +37,7 @@ from app.tradedesk_authority import (
     TradeDeskAuthorityInconsistent,
     TradeDeskAuthorityService,
 )
-from app.validation import ObservationPayload
+from app.validation import ObservationPayload, POLRLifecyclePayload
 
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -339,6 +339,29 @@ def create_app(
             },
             status_code=201,
         )
+
+    @application.post("/api/polr/lifecycle")
+    def polr_lifecycle(
+        payload: POLRLifecyclePayload,
+        request: Request,
+    ) -> JSONResponse:
+        if not secret_is_valid(resolved, request, {}):
+            return JSONResponse(
+                {"ok": False, "error": "authentication_failed"},
+                status_code=401,
+            )
+        LOGGER.info(
+            "POLR lifecycle event received",
+            extra={
+                "event_id": payload.event_id,
+                "setup_id": payload.setup_id,
+                "event_type": payload.event_type,
+                "symbol": payload.symbol,
+                "direction": payload.direction,
+                "event_at": payload.event_at,
+            },
+        )
+        return JSONResponse({"ok": True, "event_id": payload.event_id})
 
     @application.get("/api/symbols")
     def symbols() -> dict[str, Any]:

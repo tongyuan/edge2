@@ -28,6 +28,20 @@ server {
         proxy_read_timeout 15s;
     }
 
+    location = /api/polr/lifecycle {
+        limit_except POST {
+            deny all;
+        }
+
+        proxy_pass $edge2_app/api/polr/lifecycle;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-EDGE2-Webhook-Secret "${EDGE2_UPSTREAM_WEBHOOK_SECRET}";
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 15s;
+    }
+
     location = / {
         proxy_pass $edge2_app/;
         proxy_set_header Host $host;

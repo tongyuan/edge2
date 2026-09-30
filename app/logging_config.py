@@ -17,7 +17,10 @@ class JsonFormatter(logging.Formatter):
         for key in (
             "event_type",
             "event_id",
+            "setup_id",
             "symbol",
+            "direction",
+            "event_at",
             "route_owner",
             "reason_code",
             "core_mrz_lower",
