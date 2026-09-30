@@ -82,3 +82,58 @@ class ObservationPayload(BaseModel):
 
     def price_tick(self, configured_ticks: dict[str, Decimal]) -> Decimal:
         return configured_ticks.get(self.symbol, decimal_tick(self.observation_price))
+
+
+class POLRLifecyclePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    schema_version: Literal["1.0"]
+    event_id: str = Field(min_length=1, max_length=160)
+    setup_id: str = Field(min_length=1, max_length=160)
+    event_type: Literal[
+        "MSS_CONFIRMED",
+        "RR_QUALIFIED",
+        "GRADE_A",
+        "GRADE_A_PLUS",
+        "SETUP_FAILED",
+        "SETUP_RETIRED",
+        "TARGET_TAKEN",
+    ]
+    symbol: str = Field(min_length=1, max_length=32)
+    direction: Literal["LONG", "SHORT"]
+    mss_at: int = Field(gt=0)
+    event_at: int = Field(gt=0)
+    sweep_price: Decimal
+    target_price: Decimal
+    target_side: Literal["BSL", "SSL"]
+    grade: str | None = Field(max_length=32)
+    rr_to_target: Decimal | None = None
+    rr_qualified_at: int | None = Field(default=None, gt=0)
+    rr_source: Literal["SB", "BISI", "SIBI", "VI", "IFVG", "OTE"] | None = None
+    rr_reference_price: Decimal | None = None
+    setup_rr: Decimal | None = None
+    event_price: Decimal
+    chart_timeframe: str = Field(min_length=1, max_length=32)
+    range_timeframe: str = Field(min_length=1, max_length=32)
+    message: str = Field(min_length=1, max_length=1024)
+
+    @field_validator("event_id", "setup_id")
+    @classmethod
+    def validate_identifier(cls, value: str) -> str:
+        if any(ord(character) < 32 for character in value):
+            raise ValueError("identifier must be non-empty printable text")
+        return value
+
+    @field_validator("sweep_price", "target_price", "event_price")
+    @classmethod
+    def validate_finite_price(cls, value: Decimal) -> Decimal:
+        if not value.is_finite():
+            raise ValueError("prices must be finite")
+        return value
+
+    @field_validator("rr_to_target", "rr_reference_price", "setup_rr")
+    @classmethod
+    def validate_finite_rr(cls, value: Decimal | None) -> Decimal | None:
+        if value is not None and not value.is_finite():
+            raise ValueError("numeric values must be finite")
+        return value
