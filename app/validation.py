@@ -107,7 +107,6 @@ class POLRLifecyclePayload(BaseModel):
     target_price: Decimal
     target_side: Literal["BSL", "SSL"]
     grade: str | None = Field(max_length=32)
-    rr_to_target: Decimal | None = None
     rr_qualified_at: int | None = Field(default=None, gt=0)
     rr_source: Literal["SB", "BISI", "SIBI", "VI", "IFVG", "OTE"] | None = None
     rr_reference_price: Decimal | None = None
@@ -131,7 +130,7 @@ class POLRLifecyclePayload(BaseModel):
             raise ValueError("prices must be finite")
         return value
 
-    @field_validator("rr_to_target", "rr_reference_price", "setup_rr")
+    @field_validator("rr_reference_price", "setup_rr")
     @classmethod
     def validate_finite_rr(cls, value: Decimal | None) -> Decimal | None:
         if value is not None and not value.is_finite():

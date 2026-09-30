@@ -5,7 +5,7 @@ import json
 import logging
 from collections import deque
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Mapping, Sequence
 
@@ -39,7 +39,7 @@ from app.structure import (
     classify_structural_location,
     ipda_directional_context,
 )
-from app.validation import ObservationPayload, normalize_symbol
+from app.validation import ObservationPayload, POLRLifecyclePayload, normalize_symbol
 
 
 LOGGER = logging.getLogger("edge2.repository")
@@ -73,6 +73,14 @@ class IngestionOutcome:
     symbol: str
     replay: ReplayResult | None
     triggered_transitions: tuple[MRZTransition, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class POLRLifecycleIngestionOutcome:
+    duplicate: bool
+    event_id: str
+    setup_id: str
+    rr_conflicts: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -505,6 +513,212 @@ class EdgeRepository:
                     symbol=payload.symbol,
                     replay=replay,
                     triggered_transitions=triggered,
+                )
+
+    def ingest_polr_lifecycle(
+        self,
+        payload: POLRLifecyclePayload,
+    ) -> POLRLifecycleIngestionOutcome:
+        mss_at = datetime.fromtimestamp(payload.mss_at / 1000, tz=timezone.utc)
+        event_at = datetime.fromtimestamp(payload.event_at / 1000, tz=timezone.utc)
+        rr_qualified_at = (
+            datetime.fromtimestamp(payload.rr_qualified_at / 1000, tz=timezone.utc)
+            if payload.rr_qualified_at is not None
+            else None
+        )
+        with transaction(self.database_url) as connection:
+            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                    (payload.setup_id,),
+                )
+                cursor.execute(
+                    """
+                    INSERT INTO polr_lifecycle_events (
+                        schema_version, event_id, setup_id, event_type,
+                        symbol, direction, mss_at, event_at,
+                        sweep_price, target_price, target_side, grade,
+                        rr_qualified_at, rr_source, rr_reference_price, setup_rr,
+                        event_price, chart_timeframe, range_timeframe, message
+                    )
+                    VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    )
+                    ON CONFLICT (event_id) DO NOTHING
+                    RETURNING received_at
+                    """,
+                    (
+                        payload.schema_version,
+                        payload.event_id,
+                        payload.setup_id,
+                        payload.event_type,
+                        payload.symbol,
+                        payload.direction,
+                        mss_at,
+                        event_at,
+                        payload.sweep_price,
+                        payload.target_price,
+                        payload.target_side,
+                        payload.grade,
+                        rr_qualified_at,
+                        payload.rr_source,
+                        payload.rr_reference_price,
+                        payload.setup_rr,
+                        payload.event_price,
+                        payload.chart_timeframe,
+                        payload.range_timeframe,
+                        payload.message,
+                    ),
+                )
+                inserted = cursor.fetchone()
+                if inserted is None:
+                    cursor.execute(
+                        """
+                        UPDATE polr_setups
+                        SET last_received_at = clock_timestamp()
+                        WHERE setup_id = (
+                            SELECT setup_id
+                            FROM polr_lifecycle_events
+                            WHERE event_id = %s
+                        )
+                        """,
+                        (payload.event_id,),
+                    )
+                    return POLRLifecycleIngestionOutcome(
+                        duplicate=True,
+                        event_id=payload.event_id,
+                        setup_id=payload.setup_id,
+                        rr_conflicts=(),
+                    )
+
+                received_at = inserted["received_at"]
+                cursor.execute(
+                    "SELECT * FROM polr_setups WHERE setup_id = %s FOR UPDATE",
+                    (payload.setup_id,),
+                )
+                setup = cursor.fetchone()
+                incoming_grade = (
+                    payload.grade if payload.grade in {"A", "A+"} else None
+                )
+                incoming_status = {
+                    "SETUP_FAILED": "FAILED",
+                    "SETUP_RETIRED": "RETIRED",
+                    "TARGET_TAKEN": "TARGET_TAKEN",
+                }.get(payload.event_type, "LIVE")
+
+                if setup is None:
+                    cursor.execute(
+                        """
+                        INSERT INTO polr_setups (
+                            setup_id, symbol, direction, mss_at,
+                            sweep_price, target_price, target_side,
+                            rr_qualified_at, rr_source, rr_reference_price, setup_rr,
+                            highest_grade, status,
+                            first_seen_at, last_event_at, last_received_at
+                        )
+                        VALUES (
+                            %s, %s, %s, %s, %s, %s, %s, %s,
+                            %s, %s, %s, %s, %s, %s, %s, %s
+                        )
+                        """,
+                        (
+                            payload.setup_id,
+                            payload.symbol,
+                            payload.direction,
+                            mss_at,
+                            payload.sweep_price,
+                            payload.target_price,
+                            payload.target_side,
+                            rr_qualified_at,
+                            payload.rr_source,
+                            payload.rr_reference_price,
+                            payload.setup_rr,
+                            incoming_grade,
+                            incoming_status,
+                            received_at,
+                            event_at,
+                            received_at,
+                        ),
+                    )
+                    return POLRLifecycleIngestionOutcome(
+                        duplicate=False,
+                        event_id=payload.event_id,
+                        setup_id=payload.setup_id,
+                        rr_conflicts=(),
+                    )
+
+                rr_values = {
+                    "rr_qualified_at": rr_qualified_at,
+                    "rr_source": payload.rr_source,
+                    "rr_reference_price": payload.rr_reference_price,
+                    "setup_rr": payload.setup_rr,
+                }
+                frozen_rr: dict[str, Any] = {}
+                rr_conflicts: list[str] = []
+                for field, incoming in rr_values.items():
+                    current = setup[field]
+                    if current is None:
+                        frozen_rr[field] = incoming
+                    else:
+                        frozen_rr[field] = current
+                        if incoming is not None and incoming != current:
+                            rr_conflicts.append(field)
+
+                grade_rank = {None: 0, "A": 1, "A+": 2}
+                current_grade = setup["highest_grade"]
+                highest_grade = (
+                    incoming_grade
+                    if grade_rank[incoming_grade] > grade_rank[current_grade]
+                    else current_grade
+                )
+                current_status = str(setup["status"])
+                status = current_status
+                if current_status == "LIVE" and incoming_status != "LIVE":
+                    status = incoming_status
+                elif current_status == "RETIRED" and incoming_status == "TARGET_TAKEN":
+                    status = "TARGET_TAKEN"
+
+                cursor.execute(
+                    """
+                    UPDATE polr_setups
+                    SET rr_qualified_at = %s,
+                        rr_source = %s,
+                        rr_reference_price = %s,
+                        setup_rr = %s,
+                        highest_grade = %s,
+                        status = %s,
+                        last_event_at = GREATEST(last_event_at, %s),
+                        last_received_at = %s
+                    WHERE setup_id = %s
+                    """,
+                    (
+                        frozen_rr["rr_qualified_at"],
+                        frozen_rr["rr_source"],
+                        frozen_rr["rr_reference_price"],
+                        frozen_rr["setup_rr"],
+                        highest_grade,
+                        status,
+                        event_at,
+                        received_at,
+                        payload.setup_id,
+                    ),
+                )
+                conflicts = tuple(rr_conflicts)
+                if conflicts:
+                    LOGGER.warning(
+                        "POLR frozen RR conflict preserved without overwrite",
+                        extra={
+                            "event_id": payload.event_id,
+                            "setup_id": payload.setup_id,
+                            "conflicting_fields": list(conflicts),
+                        },
+                    )
+                return POLRLifecycleIngestionOutcome(
+                    duplicate=False,
+                    event_id=payload.event_id,
+                    setup_id=payload.setup_id,
+                    rr_conflicts=conflicts,
                 )
 
     def _replace_derived_state(self, cursor: RealDictCursor, replay: ReplayResult) -> None:
