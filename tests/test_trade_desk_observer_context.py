@@ -131,6 +131,18 @@ def statements(source):
     return "\n".join(result)
 
 
+class SeriesFloat(float):
+    def __new__(cls, value, previous=None):
+        instance = super().__new__(cls, value)
+        instance.previous = previous
+        return instance
+
+    def __getitem__(self, offset):
+        if offset != 1:
+            raise IndexError(offset)
+        return self.previous
+
+
 class SourceObserver:
     def __init__(self, source):
         self.source = source
@@ -159,7 +171,7 @@ class SourceObserver:
             "showPreviousMrz": True, "showCurrentEnvelope": False,
             "showPreviousEnvelope": False, "showEqmProximalZone": True,
             "eqmProximalZoneWidthPercent": 50, "enableStateTransitionObserver": True,
-            "enableAnchorTransitionAlerts": True, "enableSecondEqmContactAlert": True,
+            "enableEqmReachedAlerts": True,
             "showStateDebugPanel": True, "ipda20Ready": False,
             "ipda20Low": None, "ipda20High": None, "ipda20Eqm": None,
             "ipda20Quarter": None, "ipda20ThreeQuarter": None,
@@ -174,12 +186,60 @@ class SourceObserver:
             exec("def " + signature.strip() + ":\n" + "\n".join(body_lines), self.env)
         initialization = source.split("var int observerState", 1)[1].split("bool observerCurrentMidReachedEvent", 1)[0]
         exec(statements("var int observerState" + initialization), self.env)
-        self.geometry = statements("bool slotAIsActive" + source.split("bool slotAIsActive", 1)[1].split("int EQM_SIDE_UNKNOWN", 1)[0])
+        self.geometry = statements(
+            "bool slotAIsActive"
+            + source.split("bool slotAIsActive", 1)[1].split(
+                "f_alertSymbol() =>", 1
+            )[0]
+        )
         self.widths = statements("float currentMrzWidth" + source.split("float currentMrzWidth", 1)[1].split("// Minimal direction-neutral", 1)[0])
         self.derived = statements("bool stateObserverGeometryAvailable" + source.split("bool stateObserverGeometryAvailable", 1)[1].split("var int observerState", 1)[0])
-        self.core = statements("bool observerCurrentMidReachedEvent" + source.split("bool observerCurrentMidReachedEvent", 1)[1].split("if observerCurrentMidReachedEvent", 1)[0])
-        emission = "if enableAnchorTransitionAlerts" + source.split("if enableAnchorTransitionAlerts", 1)[1].split("while array.size(observerStateLabels) > MAX_STATE_OBSERVER_LABELS", 1)[0]
-        self.emission = statements(emission.replace("alert.freq_once_per_bar_close", "alert_frequency"))
+        self.core = statements(
+            "bool observerCurrentMidReachedEvent"
+            + source.split("bool observerCurrentMidReachedEvent", 1)[1].split(
+                "bool observerTransitionedIntoEqm", 1
+            )[0]
+        )
+        migration_eqm_alert = (
+            "if enableEqmReachedAlerts and observerTransitionedIntoEqm"
+            + source.split(
+                "if enableEqmReachedAlerts and observerTransitionedIntoEqm", 1
+            )[1].split(
+                "if observerCurrentEqmReachedAttentionEvent and showStateTransitionLabels", 1
+            )[0]
+        )
+        current_eqm_alert = (
+            "if enableEqmReachedAlerts and observerCurrentEqmReachedAttentionEvent"
+            + source.split(
+                "if enableEqmReachedAlerts and observerCurrentEqmReachedAttentionEvent", 1
+            )[1].split(
+                "if enableEqmReachedAlerts and observerPreviousEqmReachedAttentionEvent", 1
+            )[0]
+        )
+        previous_eqm_alert = (
+            "if enableEqmReachedAlerts and observerPreviousEqmReachedAttentionEvent"
+            + source.split(
+                "if enableEqmReachedAlerts and observerPreviousEqmReachedAttentionEvent", 1
+            )[1].split(
+                "while array.size(observerStateLabels) > MAX_STATE_OBSERVER_LABELS", 1
+            )[0]
+        )
+        transition_flag = (
+            "bool observerTransitionedIntoEqm"
+            + source.split("bool observerTransitionedIntoEqm", 1)[1].split("\n", 1)[0]
+        )
+        self.emission = statements(
+            "\n".join(
+                (
+                    transition_flag,
+                    migration_eqm_alert,
+                    current_eqm_alert,
+                    previous_eqm_alert,
+                )
+            ).replace(
+                "alert.freq_once_per_bar_close", "alert_frequency"
+            )
+        )
         panel = source.split("var table stateObserverPanel", 1)[1].split("color currentUpperColor", 1)[0]
         self.panel_expressions = re.findall(r'table.cell\(stateObserverPanel, ([01]), (\d+), (.*?), text_color', panel)
 
@@ -196,8 +256,10 @@ class SourceObserver:
     def bar(self, low, high=None, close=None, *, confirmed=True, realtime=True, **context):
         self.env.update(context)
         index = self.env.get("bar_index", -1) + 1
+        previous_close = self.env.get("close")
+        current_close = low if close is None else close
         self.env.update(low=low, high=low if high is None else high,
-                        close=low if close is None else close, bar_index=index,
+                        close=SeriesFloat(current_close, previous_close), bar_index=index,
                         time=1000 + index * 60000, time_close=61000 + index * 60000,
                         barstate=SimpleNamespace(isconfirmed=confirmed, islast=True, isrealtime=realtime))
         self.alerts = []
@@ -232,19 +294,12 @@ class TradeDeskContextTests(unittest.TestCase):
         self.assertEqual(observer.env["observerStateLabels"], [])
 
     def assert_transition(self, observer, panel, alerts, expected_step, expected_anchor):
-        payload = next(item for item in alerts if item["event_type"] == "MRZ_ANCHOR_TRANSITION")
-        self.assertEqual(panel["Path Step #"], str(payload["path_step"]))
-        self.assertEqual(payload["path_step"], expected_step)
-        self.assertEqual(panel["Last Reached Anchor"], payload["last_reached_anchor"])
-        self.assertEqual(payload["last_reached_anchor"], expected_anchor)
-        self.assertEqual(panel["Last Contact"], payload["current_contact"])
-        for key, variable in (("current_mrz_midpoint", "currentMrzMidpoint"),
-                              ("previous_mrz_midpoint", "previousMrzMidpoint"),
-                              ("migration_eqm", "migrationEqm")):
-            self.assertEqual(payload[key], observer.env[variable])
-        self.assertEqual(payload["observed_at"], observer.env["observerLastReachedAt"])
-        self.assertEqual(panel["Last Contact At"], observer.env["f_observerPanelTimeText"](payload["observed_at"]))
-        return payload
+        self.assertEqual(panel["Path Step #"], str(expected_step))
+        self.assertEqual(panel["Last Reached Anchor"], expected_anchor)
+        self.assertEqual(
+            panel["Last Contact At"],
+            observer.env["f_observerPanelTimeText"](observer.env["observerLastReachedAt"]),
+        )
 
     def test_sol_geometry_and_migration_directions(self):
         observer = self.new()
@@ -263,14 +318,25 @@ class TradeDeskContextTests(unittest.TestCase):
             observer.bar(102.14, 102.16, 102.15)
             observer.bar(101)
         panel, alerts = observer.bar(102.98, 103.0, 102.99)
-        payload = self.assert_transition(observer, panel, alerts, 23, "MIGRATION EQM")
-        self.assertEqual(payload["alert"], "SOLUSDT · CURRENT MID → EQM")
+        self.assert_transition(observer, panel, alerts, 23, "MIGRATION EQM")
+        payload = next(item for item in alerts if item["event_type"] == "MRZ_EQM_REACHED")
+        self.assertEqual(payload["alert"], "SOLUSDT · MIG EQM REACHED")
+        self.assertEqual(payload["path_step"], 23)
+        self.assertEqual(payload["last_reached_anchor"], "MIGRATION EQM")
+        self.assertEqual(payload["current_contact"], panel["Last Contact"])
+        for key, variable in (("current_mrz_midpoint", "currentMrzMidpoint"),
+                              ("previous_mrz_midpoint", "previousMrzMidpoint"),
+                              ("migration_eqm", "migrationEqm")):
+            self.assertEqual(payload[key], observer.env[variable])
+        self.assertEqual(payload["observed_at"], observer.env["observerLastReachedAt"])
         self.assertEqual(panel["Previous Reached Anchor"], "CURRENT MRZ MIDPOINT")
         panel, alerts = observer.bar(103.82, 103.84, 103.83)
-        payload = self.assert_transition(observer, panel, alerts, 24, "PREVIOUS MRZ MIDPOINT")
-        self.assertEqual(payload["alert"], "SOLUSDT · EQM → PREV MID")
+        self.assert_transition(observer, panel, alerts, 24, "PREVIOUS MRZ MIDPOINT")
+        payload = next(item for item in alerts if item["event_type"] == "PREVIOUS_EQM_REACHED")
+        self.assertEqual(payload["alert"], "SOLUSDT · PRE EQM REACHED")
+        self.assertEqual(payload["path_step"], 24)
+        self.assertEqual(payload["last_reached_anchor"], "PREVIOUS MRZ MIDPOINT")
         self.assertEqual(panel["Previous Reached Anchor"], "MIGRATION EQM")
-        self.assertNotIn("previous_reached_anchor", payload)  # Existing schema, not an invented field.
 
     def test_each_authoritative_identity_change_resets_and_baselines(self):
         changes = ({"slotALower": 101.9}, {"slotAUpper": 102.4}, {"slotAActivationTime": 2},
@@ -282,7 +348,33 @@ class TradeDeskContextTests(unittest.TestCase):
                 observer = self.new()
                 observer.bar(102.98, 103.0, 102.99)
                 observer.env["observerStateLabels"].append("old-context-label")
-                panel, alerts = observer.bar(101, **change)
+                observer.env.update(change)
+                if observer.env["activeMrzSlot"] == "A":
+                    current_lower = observer.env["slotALower"]
+                    current_upper = observer.env["slotAUpper"]
+                    previous_lower = observer.env["slotBLower"]
+                    previous_upper = observer.env["slotBUpper"]
+                else:
+                    current_lower = observer.env["slotBLower"]
+                    current_upper = observer.env["slotBUpper"]
+                    previous_lower = observer.env["slotALower"]
+                    previous_upper = observer.env["slotAUpper"]
+                expected_midpoint = float(
+                    Decimal(str((current_lower + current_upper) / 2.0)).quantize(
+                        Decimal("0.01"), rounding=ROUND_HALF_UP
+                    )
+                )
+                previous_midpoint = float(
+                    Decimal(str((previous_lower + previous_upper) / 2.0)).quantize(
+                        Decimal("0.01"), rounding=ROUND_HALF_UP
+                    )
+                )
+                safe_baseline = (
+                    expected_midpoint - 0.2
+                    if previous_midpoint > expected_midpoint
+                    else expected_midpoint + 0.2
+                )
+                panel, alerts = observer.bar(safe_baseline)
                 self.assert_reset(observer, panel, alerts)
                 midpoint = observer.env["currentMrzMidpoint"]
                 panel, alerts = observer.bar(midpoint - .01, midpoint + .01, midpoint)
@@ -322,9 +414,7 @@ class TradeDeskContextTests(unittest.TestCase):
         panel, alerts = observer.bar(102.98, 103.0, 102.99)
         self.assertEqual(panel["Path Step #"], "2")
         self.assertEqual(panel["Distinct EQM Contacts"], "2")
-        self.assertEqual([item["event_type"] for item in alerts], ["MRZ_SECOND_EQM_CONTACT"])
-        self.assertEqual(alerts[0]["path_step"], 2)
-        self.assertEqual(alerts[0]["eqm_contact_count"], 2)
+        self.assertEqual(alerts, [])
 
     def test_replay_reload_and_timeframe_run_are_deterministic(self):
         bars = [(101,), (102.14, 102.16, 102.15), (102.98, 103.0, 102.99),
@@ -357,8 +447,8 @@ class TradeDeskContextTests(unittest.TestCase):
         self.assertEqual(panel["MRZ Migration"], "HIGHER")
         self.assertEqual(chart_run.env["previousMrzMidpoint"], 99.85)
         self.assertEqual(chart_run.env["migrationEqm"], 100.67)
-        self.assertEqual(panel["Path Step #"], "6")
-        self.assertEqual(panel["Previous Reached Anchor"], "CURRENT MRZ MIDPOINT")
+        self.assertEqual(panel["Path Step #"], "13")
+        self.assertEqual(panel["Previous Reached Anchor"], "MIGRATION EQM")
         _, alerts = alert_run.bar(102.98, 103.0, 102.99)
         self.assertEqual(alerts[0]["current_mrz_midpoint"], 102.15)
         # Bounds were observed live; bars, activation values and counts here are
@@ -371,7 +461,7 @@ class TradeDeskContextTests(unittest.TestCase):
         self.assertNotIn("var string observerMrzMigration", self.source)
         self.assertNotIn("barstate.isnew", self.source)
         mutation = self.source.index("observerObservedPathSteps += 1")
-        emission = self.source.index("if enableAnchorTransitionAlerts")
+        emission = self.source.index("if enableEqmReachedAlerts and observerTransitionedIntoEqm")
         render = self.source.index("if barstate.islast and showStateDebugPanel")
         self.assertLess(mutation, emission)
         self.assertLess(emission, render)
