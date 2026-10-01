@@ -26,6 +26,7 @@ def clean(database_url: str) -> None:
             cursor.execute(
                 """
                 TRUNCATE TABLE
+                    polr_entry_attempts,
                     polr_lifecycle_events,
                     polr_setups,
                     saved_symbol_groups,

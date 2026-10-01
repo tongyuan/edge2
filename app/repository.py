@@ -526,6 +526,21 @@ class EdgeRepository:
             if payload.rr_qualified_at is not None
             else None
         )
+        entry_touched_at = (
+            datetime.fromtimestamp(payload.entry_touched_at / 1000, tz=timezone.utc)
+            if payload.entry_touched_at is not None
+            else None
+        )
+        entry_confirmed_at = (
+            datetime.fromtimestamp(payload.entry_confirmed_at / 1000, tz=timezone.utc)
+            if payload.entry_confirmed_at is not None
+            else None
+        )
+        ote_confirmed_at = (
+            datetime.fromtimestamp(payload.ote_confirmed_at / 1000, tz=timezone.utc)
+            if payload.ote_confirmed_at is not None
+            else None
+        )
         with transaction(self.database_url) as connection:
             with connection.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute(
@@ -539,11 +554,20 @@ class EdgeRepository:
                         symbol, direction, mss_at, event_at,
                         sweep_price, target_price, target_side, grade,
                         rr_qualified_at, rr_source, rr_reference_price, setup_rr,
-                        event_price, chart_timeframe, range_timeframe, message
+                        event_price, chart_timeframe, range_timeframe, message,
+                        entry_id, entry_attempt, entry_source, confirmation_method,
+                        entry_zone_top, entry_zone_bottom, ote_top, ote_bottom, ote_confirmed_at,
+                        range_low, range_high, range_third, ote_required, minimum_grade,
+                        grade_at_touch, grade_at_confirmation,
+                        entry_touched_at, entry_confirmed_at,
+                        entry_price, stop_price, entry_rr
                     )
                     VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s
                     )
                     ON CONFLICT (event_id) DO NOTHING
                     RETURNING received_at
@@ -569,6 +593,27 @@ class EdgeRepository:
                         payload.chart_timeframe,
                         payload.range_timeframe,
                         payload.message,
+                        payload.entry_id,
+                        payload.entry_attempt,
+                        payload.entry_source,
+                        payload.confirmation_method,
+                        payload.entry_zone_top,
+                        payload.entry_zone_bottom,
+                        payload.ote_top,
+                        payload.ote_bottom,
+                        ote_confirmed_at,
+                        payload.range_low,
+                        payload.range_high,
+                        payload.range_third,
+                        payload.ote_required,
+                        payload.minimum_grade,
+                        payload.grade_at_touch,
+                        payload.grade_at_confirmation,
+                        entry_touched_at,
+                        entry_confirmed_at,
+                        payload.entry_price,
+                        payload.stop_price,
+                        payload.entry_rr,
                     ),
                 )
                 inserted = cursor.fetchone()
@@ -585,6 +630,15 @@ class EdgeRepository:
                         """,
                         (payload.event_id,),
                     )
+                    if payload.entry_id is not None:
+                        cursor.execute(
+                            """
+                            UPDATE polr_entry_attempts
+                            SET last_received_at = clock_timestamp()
+                            WHERE entry_id = %s
+                            """,
+                            (payload.entry_id,),
+                        )
                     return POLRLifecycleIngestionOutcome(
                         duplicate=True,
                         event_id=payload.event_id,
@@ -640,6 +694,15 @@ class EdgeRepository:
                             event_at,
                             received_at,
                         ),
+                    )
+                    self._ingest_polr_entry_attempt(
+                        cursor,
+                        payload,
+                        event_at=event_at,
+                        received_at=received_at,
+                        entry_touched_at=entry_touched_at,
+                        entry_confirmed_at=entry_confirmed_at,
+                        ote_confirmed_at=ote_confirmed_at,
                     )
                     return POLRLifecycleIngestionOutcome(
                         duplicate=False,
@@ -704,6 +767,15 @@ class EdgeRepository:
                         payload.setup_id,
                     ),
                 )
+                self._ingest_polr_entry_attempt(
+                    cursor,
+                    payload,
+                    event_at=event_at,
+                    received_at=received_at,
+                    entry_touched_at=entry_touched_at,
+                    entry_confirmed_at=entry_confirmed_at,
+                    ote_confirmed_at=ote_confirmed_at,
+                )
                 conflicts = tuple(rr_conflicts)
                 if conflicts:
                     LOGGER.warning(
@@ -720,6 +792,139 @@ class EdgeRepository:
                     setup_id=payload.setup_id,
                     rr_conflicts=conflicts,
                 )
+
+    def _ingest_polr_entry_attempt(
+        self,
+        cursor: RealDictCursor,
+        payload: POLRLifecyclePayload,
+        *,
+        event_at: datetime,
+        received_at: datetime,
+        entry_touched_at: datetime | None,
+        entry_confirmed_at: datetime | None,
+        ote_confirmed_at: datetime | None,
+    ) -> None:
+        if payload.event_type == "TARGET_TAKEN":
+            cursor.execute(
+                """
+                UPDATE polr_entry_attempts
+                SET status = 'TARGET_TAKEN',
+                    last_event_at = GREATEST(last_event_at, %s),
+                    last_received_at = %s
+                WHERE setup_id = %s
+                  AND status = 'CONFIRMED'
+                """,
+                (event_at, received_at, payload.setup_id),
+            )
+            return
+
+        incoming_status = {
+            "ENTRY_TOUCHED": "CANDIDATE",
+            "ENTRY_CONFIRMED": "CONFIRMED",
+            "ENTRY_INVALIDATED": "INVALIDATED",
+            "ENTRY_STOPPED": "STOPPED",
+            "ENTRY_AMBIGUOUS": "AMBIGUOUS",
+        }.get(payload.event_type)
+        if incoming_status is None:
+            return
+
+        cursor.execute(
+            "SELECT * FROM polr_entry_attempts WHERE entry_id = %s FOR UPDATE",
+            (payload.entry_id,),
+        )
+        attempt = cursor.fetchone()
+        if attempt is None:
+            cursor.execute(
+                """
+                INSERT INTO polr_entry_attempts (
+                    entry_id, setup_id, attempt_no, status, source,
+                    confirmation_method, zone_top, zone_bottom,
+                    ote_top, ote_bottom, ote_confirmed_at,
+                    range_low, range_high, range_third,
+                    ote_required,
+                    minimum_grade, grade_at_touch, grade_at_confirmation,
+                    touched_at, confirmed_at, entry_price, stop_price,
+                    target_price, entry_rr, last_event_at, last_received_at
+                )
+                VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                )
+                """,
+                (
+                    payload.entry_id,
+                    payload.setup_id,
+                    payload.entry_attempt,
+                    incoming_status,
+                    payload.entry_source,
+                    payload.confirmation_method,
+                    payload.entry_zone_top,
+                    payload.entry_zone_bottom,
+                    payload.ote_top,
+                    payload.ote_bottom,
+                    ote_confirmed_at,
+                    payload.range_low,
+                    payload.range_high,
+                    payload.range_third,
+                    payload.ote_required,
+                    payload.minimum_grade,
+                    payload.grade_at_touch,
+                    payload.grade_at_confirmation,
+                    entry_touched_at,
+                    entry_confirmed_at,
+                    payload.entry_price,
+                    payload.stop_price,
+                    payload.target_price,
+                    payload.entry_rr,
+                    event_at,
+                    received_at,
+                ),
+            )
+            return
+
+        current_status = str(attempt["status"])
+        status = current_status
+        if current_status == "CANDIDATE" and incoming_status in {
+            "CONFIRMED",
+            "INVALIDATED",
+        }:
+            status = incoming_status
+        elif current_status == "CONFIRMED" and incoming_status in {
+            "STOPPED",
+            "AMBIGUOUS",
+        }:
+            status = incoming_status
+
+        cursor.execute(
+            """
+            UPDATE polr_entry_attempts
+            SET status = %s,
+                minimum_grade = COALESCE(minimum_grade, %s),
+                grade_at_touch = COALESCE(grade_at_touch, %s),
+                grade_at_confirmation = COALESCE(grade_at_confirmation, %s),
+                confirmed_at = COALESCE(confirmed_at, %s),
+                entry_price = COALESCE(entry_price, %s),
+                stop_price = COALESCE(stop_price, %s),
+                entry_rr = COALESCE(entry_rr, %s),
+                last_event_at = GREATEST(last_event_at, %s),
+                last_received_at = %s
+            WHERE entry_id = %s
+            """,
+            (
+                status,
+                payload.minimum_grade,
+                payload.grade_at_touch,
+                payload.grade_at_confirmation,
+                entry_confirmed_at,
+                payload.entry_price,
+                payload.stop_price,
+                payload.entry_rr,
+                event_at,
+                received_at,
+                payload.entry_id,
+            ),
+        )
 
     def _replace_derived_state(self, cursor: RealDictCursor, replay: ReplayResult) -> None:
         cursor.execute("DELETE FROM mrz_events WHERE symbol = %s", (replay.symbol,))
