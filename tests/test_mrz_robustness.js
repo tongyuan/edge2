@@ -12,6 +12,7 @@ const {
   midpointValue,
   migrationEqmValue,
   migrationProvenanceMarkup,
+  normalizedSymbolQuery,
   normalizedSpanText,
   operatorCardSectionFromHash,
   operatorCardSymbolFromSearch,
@@ -127,8 +128,8 @@ const operationCardHtml = fs.readFileSync(
   require.resolve("../app/static/mrz-robustness.html"),
   "utf8",
 );
-assert.match(operationCardHtml, /mrz-robustness\.css\?v=current-pressure-20260920/);
-assert.match(operationCardHtml, /mrz-robustness\.js\?v=current-pressure-20260920/);
+assert.match(operationCardHtml, /mrz-robustness\.css\?v=symbol-search-restore-20261002/);
+assert.match(operationCardHtml, /mrz-robustness\.js\?v=symbol-search-restore-20261002/);
 assert.doesNotMatch(operationCardSource, /bb_mrz_(?:discount|premium)/);
 assert.doesNotMatch(operationCardSource, /trade recommendation/i);
 assert.doesNotMatch(operationCardSource, /Candidate forming|Awaiting confirmation/i);
@@ -138,8 +139,13 @@ assert.doesNotMatch(
 );
 assert.doesNotMatch(
   `${operationCardSource}\n${operationCardHtml}`,
-  /<select|type=["']search["']|data-sort|data-filter/i,
+  /<select|data-sort|data-filter/i,
 );
+assert.match(operationCardHtml, /<label for="symbolSearch">SEARCH SYMBOL<\/label>/);
+assert.match(operationCardHtml, /id="symbolSearch" type="search"[^>]*autocomplete="off"/);
+assert.match(operationCardHtml, /id="filterResultStatus" role="status" aria-live="polite" hidden/);
+assert.match(operationCardCss, /\.symbol-search input \{[^}]*min-height: 44px/);
+assert.match(operationCardCss, /@media \(max-width: 720px\)[\s\S]*\.symbol-search \{ grid-template-columns: minmax\(0, 1fr\); \}/);
 assert.match(operationCardHtml, /role="tablist" aria-label="Operator Card view"/);
 assert.match(operationCardHtml, /id="filterAll"[^>]*role="tab"[^>]*aria-selected="true"[^>]*>All /);
 assert.match(
@@ -1024,6 +1030,7 @@ const consolidatingReport = { ...ethBalancedReport, symbol: "ABC" };
 const quietReport = { ...wldReport, symbol: "DEF" };
 const pressureDataset = [zecReport, quietReport, upwardReport, downwardNoMigrationReport, consolidatingReport];
 const pressureDatasetBefore = structuredClone(pressureDataset);
+assert.equal(normalizedSymbolQuery("  btcUsdt  "), "BTCUSDT");
 assert.deepEqual(operatorViewCounts(pressureDataset), { all: 5, pressure: 2 });
 assert.deepEqual(
   filterReports(pressureDataset, "pressure").map((report) => report.symbol),
@@ -1034,6 +1041,26 @@ assert.deepEqual(
   filterReports(pressureDataset, "all").map((report) => report.symbol),
   pressureDataset.map((report) => report.symbol),
   "All preserves the authoritative backend ordering and complete population",
+);
+assert.deepEqual(
+  filterReports(pressureDataset, "all", "  99 ").map((report) => report.symbol),
+  ["9988"],
+  "symbol search trims whitespace and matches partial symbols",
+);
+assert.deepEqual(
+  filterReports(pressureDataset, "all", "xYz").map((report) => report.symbol),
+  ["XYZ"],
+  "symbol search is case-insensitive",
+);
+assert.deepEqual(
+  filterReports(pressureDataset, "pressure", "99").map((report) => report.symbol),
+  ["9988"],
+  "symbol search applies within the selected Pressure view",
+);
+assert.deepEqual(
+  filterReports(pressureDataset, "all", "BTD"),
+  [],
+  "search matches the symbol field only, not route or structural labels",
 );
 assert.equal(filterReports([{
   ...upwardReport,
@@ -1061,6 +1088,22 @@ assert.match(noMigrationPressureSummary, /↑ 0 · ↓ 4 · 4 outside/);
 assert.match(noMigrationPressureSummary, /No previous MRZ/);
 assert.doesNotMatch(noMigrationPressureSummary, /authority-migration-direction|MIGRATION EQM/);
 assert.deepEqual(pressureDataset, pressureDatasetBefore, "filtering and rendering never mutate authoritative data");
+assert.match(
+  reportMarkup(pressureDataset, (value) => value, "all", null, "  99 "),
+  /data-symbol="9988"/,
+);
+assert.doesNotMatch(
+  reportMarkup(pressureDataset, (value) => value, "all", null, "  99 "),
+  /data-symbol="(?:ABC|DEF|XYZ|ZECUSDT)"/,
+);
+assert.match(
+  reportMarkup(pressureDataset, (value) => value, "pressure", null, "quiet"),
+  /No symbols match “quiet”\./,
+  "a search miss takes precedence over the generic Pressure empty state",
+);
+const escapedSearchMarkup = reportMarkup(pressureDataset, (value) => value, "all", null, '<script>');
+assert.match(escapedSearchMarkup, /No symbols match “&lt;script&gt;”\./);
+assert.doesNotMatch(escapedSearchMarkup, /<script>/);
 assert.deepEqual(operatorViewCounts([consolidatingReport, quietReport]), { all: 2, pressure: 0 });
 assert.match(reportMarkup([consolidatingReport, quietReport], (value) => value, "pressure"), /No directional pressure currently detected\./);
 assert.match(reportMarkup([], (value) => value, "pressure"), /No directional pressure currently detected\./);
@@ -1225,13 +1268,14 @@ function browserHarness(initialReports, search = "", hash = "") {
   for (const id of [
     "refreshReport", "reportStatus", "reportContent", "activeReports",
     "filterAll", "filterPressure", "allCount", "pressureCount",
-    "generatedAt", "activeMrzCount",
+    "symbolSearch", "filterResultStatus", "generatedAt", "activeMrzCount",
   ]) {
     elements[id] = {
-      hidden: id === "reportContent",
+      hidden: ["reportContent", "filterResultStatus"].includes(id),
       disabled: false,
       innerHTML: "",
       textContent: "",
+      value: "",
       attributes: {},
       listeners: {},
       classes: new Set(),
@@ -1304,6 +1348,28 @@ async function testPressureTabInteractions() {
   assert.equal(String(elements.pressureCount.textContent), "8", "Pressure 8 is visible");
   assert.equal((elements.activeReports.innerHTML.match(/data-symbol=/g) || []).length, 42);
   const allMarkupBefore = elements.activeReports.innerHTML;
+
+  elements.symbolSearch.value = "  9988 ";
+  elements.symbolSearch.listeners.input({ target: elements.symbolSearch });
+  assert.equal((elements.activeReports.innerHTML.match(/data-symbol=/g) || []).length, 1);
+  assert.match(elements.activeReports.innerHTML, /data-symbol="9988"/);
+  assert.equal(elements.filterResultStatus.hidden, false);
+  assert.equal(elements.filterResultStatus.textContent, "Showing 1 of 42 symbols");
+  assert.equal(String(elements.allCount.textContent), "42", "search does not rewrite the All total");
+  assert.equal(String(elements.pressureCount.textContent), "8", "search does not rewrite the Pressure total");
+  elements.filterPressure.listeners.click();
+  assert.match(elements.activeReports.innerHTML, /data-symbol="9988"/);
+  assert.equal(elements.filterResultStatus.textContent, "Showing 1 of 8 symbols");
+  elements.filterAll.listeners.click();
+  let searchEscapePrevented = false;
+  elements.symbolSearch.listeners.keydown({
+    key: "Escape",
+    preventDefault() { searchEscapePrevented = true; },
+  });
+  assert.equal(searchEscapePrevented, true);
+  assert.equal(elements.symbolSearch.value, "");
+  assert.equal(elements.filterResultStatus.hidden, true);
+  assert.equal(elements.activeReports.innerHTML, allMarkupBefore, "Escape clears search and restores API order");
   elements.filterPressure.listeners.click();
   assert.equal(elements.filterPressure.attributes["aria-selected"], "true");
   assert.ok(elements.filterPressure.classes.has("active"));
@@ -1336,6 +1402,13 @@ async function testPressureTabInteractions() {
   assert.match(elements.activeReports.innerHTML, /No directional pressure currently detected\./);
   elements.filterAll.listeners.click();
   assert.equal((elements.activeReports.innerHTML.match(/data-symbol=/g) || []).length, 2);
+  elements.symbolSearch.value = "dEf";
+  elements.symbolSearch.listeners.input({ target: elements.symbolSearch });
+  assert.match(elements.activeReports.innerHTML, /data-symbol="DEF"/);
+  assert.doesNotMatch(elements.activeReports.innerHTML, /data-symbol="ABC"/);
+  await elements.refreshReport.listeners.click();
+  assert.match(elements.activeReports.innerHTML, /data-symbol="DEF"/);
+  assert.equal(elements.filterResultStatus.textContent, "Showing 1 of 2 symbols", "refresh preserves search");
 
   const deepLink = browserHarness(pressureDataset, "?symbol=DEF", "#migration-history");
   // A user can select Pressure before the asynchronous report has arrived.
