@@ -47,13 +47,17 @@ assert.deepEqual(
     mrz_status: "active",
     activation_source: "OPERATOR_PROMOTED",
     operator_promotion: {
+      promoted_at: "2026-09-04T21:43:00Z",
       minimum_required_allowance_pct: "1.02",
       production_threshold_pct: "1",
     },
-  }),
+  }, formatOperatorTimestampUtcMinus4),
   {
     primary: "OPERATOR PROMOTED",
-    secondary: ["1.02% required / 1.00% threshold"],
+    secondary: [
+      "Promoted · 04 Sept 2026 · 17:43 UTC−4",
+      "1.02% required / 1.00% threshold",
+    ],
   },
 );
 assert.deepEqual(

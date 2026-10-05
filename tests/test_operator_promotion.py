@@ -136,13 +136,31 @@ class OperatorPromotionIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(authority["operator_promotion"]["production_threshold_pct"], 1.0)
         self.assertIsNone(authority["operator_promotion"]["operator_identity"])
-        promoted_at = authority["activated_at"]
+        effective_activation_at = candidate["candidate_timestamp"]
+        promoted_at = authority["operator_promotion"]["promoted_at"]
+        self.assertEqual(authority["activated_at"], effective_activation_at)
+        self.assertGreater(
+            datetime.fromisoformat(promoted_at.replace("Z", "+00:00")),
+            datetime.fromisoformat(effective_activation_at.replace("Z", "+00:00")),
+        )
         promotion_key = authority["operator_promotion"]["promotion_key"]
         self.assertEqual(
             self.rows(
-                "SELECT event_type, activation_source FROM mrz_events ORDER BY sequence"
+                "SELECT event_type, activation_source, occurred_at FROM mrz_events "
+                "ORDER BY sequence"
             ),
-            [("MRZ_ACTIVATED", "OPERATOR_PROMOTED")],
+            [(
+                "MRZ_ACTIVATED",
+                "OPERATOR_PROMOTED",
+                datetime.fromisoformat(effective_activation_at.replace("Z", "+00:00")),
+            )],
+        )
+        operation_card = self.client.get(
+            "/api/diagnostics/mrz-robustness"
+        ).json()["active_mrzs"][0]
+        self.assertEqual(
+            operation_card["active_mrz"]["activated_at"],
+            effective_activation_at,
         )
         self.assertEqual(
             self.client.get("/api/diagnostics/activation-feasibility").json()[
@@ -175,7 +193,11 @@ class OperatorPromotionIntegrationTests(unittest.TestCase):
 
         confirmed = self.client.get("/api/symbols/MU").json()
         self.assertEqual(confirmed["activation_source"], "OPERATOR_PROMOTED")
-        self.assertEqual(confirmed["activated_at"], promoted_at)
+        self.assertEqual(confirmed["activated_at"], effective_activation_at)
+        self.assertEqual(
+            confirmed["operator_promotion"]["promoted_at"],
+            promoted_at,
+        )
         self.assertEqual(confirmed["core_mrz_lower"], 941.52)
         self.assertEqual(confirmed["core_mrz_upper"], 949.89)
         confirmation = confirmed["production_confirmation"]
@@ -279,6 +301,86 @@ class OperatorPromotionIntegrationTests(unittest.TestCase):
                         "UPDATE operator_mrz_promotions SET operator_identity = 'changed' "
                         "WHERE symbol = 'MU'"
                     )
+
+    def test_promoted_activation_drives_since_activation_window(self) -> None:
+        candidate = self.seed_near_miss()
+        promoted = self.promote(candidate).json()["state"]
+        activated_at = datetime.fromisoformat(
+            candidate["candidate_timestamp"].replace("Z", "+00:00")
+        )
+        promoted_at = datetime.fromisoformat(
+            promoted["operator_promotion"]["promoted_at"].replace("Z", "+00:00")
+        )
+        self.assertLess(activated_at, promoted_at)
+
+        between = activated_at + timedelta(seconds=30)
+        self.assertLess(between, promoted_at)
+        self.post(self.payload(5, "960", observed_at=between))
+
+        card = self.client.get("/api/diagnostics/mrz-robustness").json()[
+            "active_mrzs"
+        ][0]
+        self.assertEqual(card["active_mrz"]["activated_at"], candidate["candidate_timestamp"])
+        self.assertEqual(
+            card["post_activation_robustness"]["post_activation_observation_count"],
+            1,
+        )
+        self.assertEqual(card["mrz_age"]["activated_at"], candidate["candidate_timestamp"])
+
+    def test_guarded_reconciliation_repairs_legacy_promotion_timestamp(self) -> None:
+        candidate = self.seed_near_miss()
+        promoted = self.promote(candidate).json()["state"]
+        promoted_at = datetime.fromisoformat(
+            promoted["operator_promotion"]["promoted_at"].replace("Z", "+00:00")
+        )
+        effective_activation_at = datetime.fromisoformat(
+            candidate["candidate_timestamp"].replace("Z", "+00:00")
+        )
+        with transaction(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE active_mrz SET activated_at = %s WHERE symbol = 'MU'",
+                    (promoted_at,),
+                )
+                cursor.execute(
+                    "UPDATE mrz_events SET occurred_at = %s "
+                    "WHERE symbol = 'MU' AND event_type = 'MRZ_ACTIVATED'",
+                    (promoted_at,),
+                )
+
+        reconciler = DerivedStateReconciler(self.database_url)
+        dry_run = reconciler.dry_run(["MU"])
+        proposal = dry_run["symbols"][0]
+        self.assertEqual(proposal["result"], "RECONCILIATION REQUIRED")
+        self.assertTrue(proposal["authority_changes"])
+        self.assertEqual(
+            proposal["reconstructed_mrz_path"][0]["occurred_at"],
+            effective_activation_at.isoformat().replace("+00:00", "Z"),
+        )
+
+        applied = reconciler.apply(
+            ["MU"],
+            expected_plan_digest=dry_run["plan_digest"],
+        )
+        self.assertEqual(applied["applied_symbols"], ["MU"])
+        repaired = self.client.get("/api/symbols/MU").json()
+        self.assertEqual(repaired["activated_at"], candidate["candidate_timestamp"])
+        self.assertEqual(
+            repaired["operator_promotion"]["promoted_at"],
+            promoted_at.isoformat().replace("+00:00", "Z"),
+        )
+        self.assertEqual(reconciler.dry_run(["MU"])["result"], "NO CHANGE")
+
+    def test_normal_production_activation_still_uses_confirming_observation(self) -> None:
+        observed_at = []
+        for index, price in enumerate(NEAR_MISS_PRICES, 1):
+            row = self.payload(index, price, low="200", high="1100")
+            observed_at.append(row["observed_at"])
+            self.post(row)
+        authority = self.client.get("/api/symbols/MU").json()
+        self.assertEqual(authority["activation_source"], "PRODUCTION_QUALIFIED")
+        self.assertEqual(authority["activated_at"], observed_at[-1])
+        self.assertIsNone(authority["operator_promotion"])
 
     def test_stale_candidate_and_existing_authority_are_server_side_conflicts(self) -> None:
         stale = self.seed_near_miss()

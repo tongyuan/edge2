@@ -275,7 +275,7 @@ def promoted_active_from_row(row: Mapping[str, Any] | None) -> ActiveMRZ | None:
         structural_location=StructuralLocation(str(row["structural_location"])),
         confirming_observation_count=int(row["supporting_observation_count"]),
         supporting_observation_count=int(row["supporting_observation_count"]),
-        activated_at=row["promoted_at"],
+        activated_at=row["candidate_timestamp"],
         activation_event_id=str(row["trigger_event_id"]),
         formation_started_at=row["formation_started_at"],
         formation_completed_at=row["formation_completed_at"],

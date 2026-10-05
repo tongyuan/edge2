@@ -1702,7 +1702,10 @@ function renderSymbol(state) {
     [formatLatestObservationContext(state, formatOperatorTimestampUtcMinus4)],
   );
   fields.midpoint.textContent = formatPrice(state.core_mrz_midpoint);
-  const activationSource = buildActivationSourcePresentation(state);
+  const activationSource = buildActivationSourcePresentation(
+    state,
+    formatOperatorTimestampUtcMinus4,
+  );
   fields.activationSourceFact.hidden = activationSource === null;
   renderFact(
     fields.activationSource,

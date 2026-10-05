@@ -146,19 +146,22 @@
     return `/diagnostics/mrz-robustness?symbol=${encodeURIComponent(state.symbol)}`;
   }
 
-  function buildActivationSourcePresentation(state) {
+  function buildActivationSourcePresentation(
+    state,
+    timestampFormatter = () => null,
+  ) {
     if (state?.mrz_status !== "active") return null;
     if (state.activation_source === "OPERATOR_PROMOTED") {
       const promotion = state.operator_promotion || {};
+      const promotedAt = timestampFormatter(promotion.promoted_at);
       return {
         primary: "OPERATOR PROMOTED",
-        secondary: (
+        secondary: [
+          promotedAt ? `Promoted · ${promotedAt}` : null,
           promotion.minimum_required_allowance_pct == null
-            ? []
-            : [
-              `${percentageText(promotion.minimum_required_allowance_pct)}% required / ${percentageText(promotion.production_threshold_pct)}% threshold`,
-            ]
-        ),
+            ? null
+            : `${percentageText(promotion.minimum_required_allowance_pct)}% required / ${percentageText(promotion.production_threshold_pct)}% threshold`,
+        ].filter(Boolean),
       };
     }
     return { primary: "PRODUCTION QUALIFIED", secondary: [] };
