@@ -11,9 +11,9 @@ from pydantic import ValidationError
 from app.api import create_app
 from app.config import Settings
 from app.db import connect
-from app.validation import POLRLifecyclePayload
+from app.validation import TradeDeskLifecyclePayload
 from tests.db_support import clean, migrate_and_clean, require_test_database
-from tests.test_polr_lifecycle import lifecycle_payload
+from tests.test_tradedesk_lifecycle import lifecycle_payload
 
 
 def entry_payload(event_type: str = "ENTRY_TOUCHED", **overrides):
@@ -54,9 +54,18 @@ def entry_payload(event_type: str = "ENTRY_TOUCHED", **overrides):
         grade_at_touch="A+",
         entry_touched_at=1790770500000,
     )
-    if event_type in {"ENTRY_CONFIRMED", "ENTRY_STOPPED", "ENTRY_AMBIGUOUS"}:
+    if event_type in {
+        "ENTRY_CONFIRMED",
+        "ENTRY_STOPPED",
+        "ENTRY_TARGET_TAKEN",
+        "ENTRY_AMBIGUOUS",
+    }:
         payload.update(
-            event_at=1790770800000,
+            event_at=(
+                1790770800000
+                if event_type == "ENTRY_CONFIRMED"
+                else 1790771100000
+            ),
             entry_confirmed_at=1790770800000,
             grade_at_confirmation="A+",
             entry_price=1414.31,
@@ -67,35 +76,35 @@ def entry_payload(event_type: str = "ENTRY_TOUCHED", **overrides):
     return payload
 
 
-class POLREntryPayloadValidationTests(unittest.TestCase):
+class TradeDeskEntryPayloadValidationTests(unittest.TestCase):
     def test_grade_policy_is_an_option_and_defaults_can_be_recorded(self) -> None:
         for minimum_grade in ("Off", "A", "A+"):
             with self.subTest(minimum_grade=minimum_grade):
-                parsed = POLRLifecyclePayload.model_validate(
+                parsed = TradeDeskLifecyclePayload.model_validate(
                     entry_payload(minimum_grade=minimum_grade)
                 )
                 self.assertEqual(parsed.minimum_grade, minimum_grade)
 
     def test_entry_requires_schema_1_1_and_strict_fields(self) -> None:
         with self.assertRaises(ValidationError):
-            POLRLifecyclePayload.model_validate(entry_payload(schema_version="1.0"))
+            TradeDeskLifecyclePayload.model_validate(entry_payload(schema_version="1.0"))
         with self.assertRaises(ValidationError):
-            POLRLifecyclePayload.model_validate(entry_payload(unexpected=True))
+            TradeDeskLifecyclePayload.model_validate(entry_payload(unexpected=True))
 
     def test_confirmed_entry_requires_actual_entry_risk_fields(self) -> None:
         payload = entry_payload("ENTRY_CONFIRMED")
         payload.pop("entry_price")
         with self.assertRaises(ValidationError):
-            POLRLifecyclePayload.model_validate(payload)
+            TradeDeskLifecyclePayload.model_validate(payload)
 
     def test_long_confirmation_must_be_in_bottom_third(self) -> None:
         with self.assertRaises(ValidationError):
-            POLRLifecyclePayload.model_validate(
+            TradeDeskLifecyclePayload.model_validate(
                 entry_payload("ENTRY_CONFIRMED", entry_price=1450.00)
             )
 
     def test_short_confirmation_uses_top_third(self) -> None:
-        parsed = POLRLifecyclePayload.model_validate(
+        parsed = TradeDeskLifecyclePayload.model_validate(
             entry_payload(
                 "ENTRY_CONFIRMED",
                 event_id="ZECUSDT-SHORT-1790762700000-E1-ENTRY_CONFIRMED",
@@ -118,7 +127,7 @@ class POLREntryPayloadValidationTests(unittest.TestCase):
         self.assertEqual(parsed.range_third, "TOP")
 
 
-class POLREntryPersistenceTests(unittest.TestCase):
+class TradeDeskEntryPersistenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.database_url = require_test_database(cls)
@@ -143,7 +152,7 @@ class POLREntryPersistenceTests(unittest.TestCase):
 
     def post(self, event_type: str = "ENTRY_TOUCHED", **overrides):
         return self.client.post(
-            "/api/polr/lifecycle",
+            "/api/tradedesk/lifecycle",
             json=entry_payload(event_type, **overrides),
             headers=self.headers,
         )
@@ -161,22 +170,29 @@ class POLREntryPersistenceTests(unittest.TestCase):
         self.assertEqual(self.post().status_code, 200)
         self.assertEqual(self.post("ENTRY_CONFIRMED").status_code, 200)
 
-        setup = self.fetchone("SELECT * FROM polr_setups")
-        attempt = self.fetchone("SELECT * FROM polr_entry_attempts")
+        setup = self.fetchone("SELECT * FROM tradedesk_setups")
+        attempt = self.fetchone("SELECT * FROM tradedesk_entry_attempts")
         self.assertEqual(setup["status"], "LIVE")
         self.assertEqual(str(setup["setup_rr"]), "4.3")
         self.assertEqual(attempt["status"], "CONFIRMED")
         self.assertEqual(str(attempt["entry_rr"]), "4.79")
         self.assertEqual(attempt["minimum_grade"], "A+")
 
-    def test_same_bar_touch_then_confirmation_remain_distinct_events(self) -> None:
+    def test_same_bar_touch_then_confirmation_is_rejected(self) -> None:
         same_bar = 1790770500000
-        self.post(event_at=same_bar)
-        self.post("ENTRY_CONFIRMED", event_at=same_bar, entry_confirmed_at=same_bar)
-        result = self.fetchone(
-            "SELECT count(*) AS count FROM polr_lifecycle_events WHERE entry_id IS NOT NULL"
+        self.assertEqual(self.post(event_at=same_bar).status_code, 200)
+        self.assertEqual(
+            self.post(
+                "ENTRY_CONFIRMED",
+                event_at=same_bar,
+                entry_confirmed_at=same_bar,
+            ).status_code,
+            422,
         )
-        self.assertEqual(result["count"], 2)
+        result = self.fetchone(
+            "SELECT count(*) AS count FROM tradedesk_lifecycle_events WHERE entry_id IS NOT NULL"
+        )
+        self.assertEqual(result["count"], 1)
 
     def test_delayed_touch_and_invalidation_do_not_regress_confirmation(self) -> None:
         self.post("ENTRY_CONFIRMED")
@@ -187,16 +203,16 @@ class POLREntryPersistenceTests(unittest.TestCase):
         self.post(
             "ENTRY_INVALIDATED",
             event_id="ZECUSDT-LONG-1790762700000-E1-ENTRY_INVALIDATED-DELAYED",
-            event_at=1790770600000,
+            event_at=1790770900000,
         )
-        attempt = self.fetchone("SELECT * FROM polr_entry_attempts")
+        attempt = self.fetchone("SELECT * FROM tradedesk_entry_attempts")
         self.assertEqual(attempt["status"], "CONFIRMED")
 
     def test_stopped_entry_does_not_fail_setup(self) -> None:
         self.post("ENTRY_CONFIRMED")
         self.post("ENTRY_STOPPED", event_at=1790771100000)
-        setup = self.fetchone("SELECT * FROM polr_setups")
-        attempt = self.fetchone("SELECT * FROM polr_entry_attempts")
+        setup = self.fetchone("SELECT * FROM tradedesk_setups")
+        attempt = self.fetchone("SELECT * FROM tradedesk_entry_attempts")
         self.assertEqual(setup["status"], "LIVE")
         self.assertEqual(attempt["status"], "STOPPED")
 
@@ -212,15 +228,15 @@ class POLREntryPersistenceTests(unittest.TestCase):
         result = self.fetchone(
             """
             SELECT array_agg(status ORDER BY attempt_no) AS statuses
-            FROM polr_entry_attempts
+            FROM tradedesk_entry_attempts
             """
         )
         self.assertEqual(result["statuses"], ["INVALIDATED", "CONFIRMED"])
 
-    def test_target_taken_derives_confirmed_entry_outcome(self) -> None:
+    def test_setup_target_does_not_derive_entry_outcome(self) -> None:
         self.post("ENTRY_CONFIRMED")
         response = self.client.post(
-            "/api/polr/lifecycle",
+            "/api/tradedesk/lifecycle",
             json=lifecycle_payload(
                 schema_version="1.1",
                 event_id="ZECUSDT-LONG-1790762700000-TARGET_TAKEN",
@@ -238,17 +254,69 @@ class POLREntryPersistenceTests(unittest.TestCase):
             headers=self.headers,
         )
         self.assertEqual(response.status_code, 200)
-        attempt = self.fetchone("SELECT * FROM polr_entry_attempts")
+        attempt = self.fetchone("SELECT * FROM tradedesk_entry_attempts")
+        self.assertEqual(attempt["status"], "CONFIRMED")
+
+    def test_entry_target_taken_derives_entry_outcome(self) -> None:
+        self.assertEqual(self.post("ENTRY_CONFIRMED").status_code, 200)
+        self.assertEqual(self.post("ENTRY_TARGET_TAKEN").status_code, 200)
+        attempt = self.fetchone("SELECT * FROM tradedesk_entry_attempts")
         self.assertEqual(attempt["status"], "TARGET_TAKEN")
+
+    def test_touch_then_same_bar_invalidation_preserves_both_events(self) -> None:
+        touched_at = 1790770500000
+        self.assertEqual(self.post(event_at=touched_at).status_code, 200)
+        self.assertEqual(
+            self.post(
+                "ENTRY_INVALIDATED",
+                event_at=touched_at,
+                event_id="ZECUSDT-LONG-1790762700000-E1-ENTRY_INVALIDATED-SAME-BAR",
+            ).status_code,
+            200,
+        )
+        result = self.fetchone(
+            """
+            SELECT
+                (SELECT count(*) FROM tradedesk_lifecycle_events WHERE entry_id IS NOT NULL) AS event_count,
+                (SELECT status FROM tradedesk_entry_attempts LIMIT 1) AS status
+            """
+        )
+        self.assertEqual(result, {"event_count": 2, "status": "INVALIDATED"})
+
+    def test_ambiguous_wins_regardless_of_terminal_receipt_order(self) -> None:
+        for first, second in (
+            ("ENTRY_TARGET_TAKEN", "ENTRY_AMBIGUOUS"),
+            ("ENTRY_AMBIGUOUS", "ENTRY_TARGET_TAKEN"),
+        ):
+            with self.subTest(first=first):
+                clean(self.database_url)
+                self.assertEqual(self.post("ENTRY_CONFIRMED").status_code, 200)
+                self.assertEqual(self.post(first).status_code, 200)
+                self.assertEqual(self.post(second).status_code, 200)
+                attempt = self.fetchone("SELECT * FROM tradedesk_entry_attempts")
+                self.assertEqual(attempt["status"], "AMBIGUOUS")
+
+    def test_earliest_market_terminal_wins_not_receipt_order(self) -> None:
+        self.assertEqual(self.post("ENTRY_CONFIRMED").status_code, 200)
+        self.assertEqual(
+            self.post("ENTRY_TARGET_TAKEN", event_at=1790771400000).status_code,
+            200,
+        )
+        self.assertEqual(
+            self.post("ENTRY_STOPPED", event_at=1790771100000).status_code,
+            200,
+        )
+        attempt = self.fetchone("SELECT * FROM tradedesk_entry_attempts")
+        self.assertEqual(attempt["status"], "STOPPED")
 
     def test_duplicate_and_concurrent_confirmation_are_idempotent(self) -> None:
         repository = self.client.app.state.repository
-        payload = POLRLifecyclePayload.model_validate(entry_payload("ENTRY_CONFIRMED"))
+        payload = TradeDeskLifecyclePayload.model_validate(entry_payload("ENTRY_CONFIRMED"))
         barrier = Barrier(2)
 
         def ingest():
             barrier.wait()
-            return repository.ingest_polr_lifecycle(payload)
+            return repository.ingest_tradedesk_lifecycle(payload)
 
         with ThreadPoolExecutor(max_workers=2) as executor:
             outcomes = list(executor.map(lambda _index: ingest(), range(2)))
@@ -256,8 +324,8 @@ class POLREntryPersistenceTests(unittest.TestCase):
         counts = self.fetchone(
             """
             SELECT
-                (SELECT count(*) FROM polr_lifecycle_events) AS event_count,
-                (SELECT count(*) FROM polr_entry_attempts) AS attempt_count
+                (SELECT count(*) FROM tradedesk_lifecycle_events) AS event_count,
+                (SELECT count(*) FROM tradedesk_entry_attempts) AS attempt_count
             """
         )
         self.assertEqual(sorted(item.duplicate for item in outcomes), [False, True])

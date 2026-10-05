@@ -5,10 +5,10 @@ from pathlib import Path
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-PINE_SCRIPT = ROOT_DIR / "pine" / "POLR.pine"
+PINE_SCRIPT = ROOT_DIR / "pine" / "TradeDesk.pine"
 
 
-class POLRPineEntryContractTests(unittest.TestCase):
+class TradeDeskPineEntryContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.text = PINE_SCRIPT.read_text(encoding="utf-8")
@@ -24,8 +24,8 @@ class POLRPineEntryContractTests(unittest.TestCase):
     def test_entry_options_have_safe_defaults(self) -> None:
         for expected in (
             "input.bool(true, 'Track entry lifecycle'",
-            "input.string('A+', 'Required grade', options = ['Off', 'A', 'A+']",
-            "input.bool(true, 'OTE required'",
+            "input.string('Off', 'Required grade', options = ['Off', 'A', 'A+']",
+            "input.bool(false, 'OTE required'",
             "input.string('CE_RECLAIM', 'Confirmation', options = ['CE_RECLAIM', 'PROXIMAL_RECLAIM']",
             "input.int(1, 'Maximum confirmed entries'",
             "input.bool(false, 'Allow re-entry after a stopped entry'",
@@ -42,12 +42,14 @@ class POLRPineEntryContractTests(unittest.TestCase):
             "oteLive",
         ):
             self.assertIn(flag, self.text)
-        self.assertIn("not f_entrySourceLive(s)", self.text)
+        self.assertIn("f_entrySourceLive(s,", self.text)
         self.assertIn("entryRequireOte and not s.oteLive", self.text)
 
-    def test_touch_does_not_backdate_and_same_bar_can_confirm(self) -> None:
+    def test_touch_and_confirmation_require_later_bars(self) -> None:
         self.assertIn("time >= s.oteConfirmedAt", self.text)
+        self.assertIn("bar_index > s.mssBi", self.text)
         self.assertIn("s.entryTouchedAt := time", self.text)
+        self.assertIn("time > s.entryTouchedAt", self.text)
         touch = self.text.index("f_queueEntryEvent(events, 'ENTRY_TOUCHED', s)")
         confirm = self.text.index("f_queueEntryEvent(events, 'ENTRY_CONFIRMED', s)")
         self.assertLess(touch, confirm)
@@ -65,6 +67,9 @@ class POLRPineEntryContractTests(unittest.TestCase):
         self.assertIn('"entry_rr":', self.text)
         self.assertIn('"ote_confirmed_at":', self.text)
         self.assertIn("f_lifecycleSetupId(e.dir, e.mssAt) + '-E'", self.text)
+        self.assertIn("'ENTRY_TARGET_TAKEN'", self.text)
+        self.assertIn("/api/tradedesk/lifecycle", self.text)
+        self.assertNotIn("/api/polr/lifecycle", self.text.lower())
 
     def test_script_is_observation_only(self) -> None:
         for forbidden in ("strategy.entry", "strategy.order", "strategy.exit"):

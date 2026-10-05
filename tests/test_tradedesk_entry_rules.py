@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from decimal import Decimal
 
-from app.polr_entry import (
+from app.tradedesk_entry import (
     confirmation_satisfied,
     grade_meets,
     intersect_entry_zone,
@@ -11,7 +11,7 @@ from app.polr_entry import (
 )
 
 
-class POLREntryRuleTests(unittest.TestCase):
+class TradeDeskEntryRuleTests(unittest.TestCase):
     def test_bottom_and_top_thirds_are_directional(self) -> None:
         low = Decimal("1409.42")
         high = Decimal("1494.52")

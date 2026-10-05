@@ -27,10 +27,10 @@ class IngressContractTests(unittest.TestCase):
 
     def test_only_exact_webhook_path_is_proxied(self) -> None:
         self.assertIn("location = /webhook/tradingview", NGINX)
-        self.assertIn("location = /api/polr/lifecycle", NGINX)
+        self.assertIn("location = /api/tradedesk/lifecycle", NGINX)
         self.assertIn("set $edge2_app http://edge2-app:8790;", NGINX)
         self.assertIn("proxy_pass $edge2_app/webhook/tradingview;", NGINX)
-        self.assertIn("proxy_pass $edge2_app/api/polr/lifecycle;", NGINX)
+        self.assertIn("proxy_pass $edge2_app/api/tradedesk/lifecycle;", NGINX)
         self.assertIn("limit_except POST", NGINX)
         self.assertRegex(NGINX, re.compile(r"location / \{\s+return 404;", re.MULTILINE))
 
@@ -57,13 +57,13 @@ class IngressContractTests(unittest.TestCase):
         )
         self.assertIsNotNone(webhook_block)
         self.assertIn("X-EDGE2-Webhook-Secret", webhook_block.group("body"))
-        polr_block = re.search(
-            r"location = /api/polr/lifecycle \{(?P<body>.*?)\n    \}",
+        tradedesk_block = re.search(
+            r"location = /api/tradedesk/lifecycle \{(?P<body>.*?)\n    \}",
             NGINX,
             re.DOTALL,
         )
-        self.assertIsNotNone(polr_block)
-        self.assertIn("X-EDGE2-Webhook-Secret", polr_block.group("body"))
+        self.assertIsNotNone(tradedesk_block)
+        self.assertIn("X-EDGE2-Webhook-Secret", tradedesk_block.group("body"))
 
     def test_ingress_rediscovers_app_after_container_replacement(self) -> None:
         self.assertIn("resolver 127.0.0.11", NGINX)

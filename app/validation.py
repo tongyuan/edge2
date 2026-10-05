@@ -84,16 +84,17 @@ class ObservationPayload(BaseModel):
         return configured_ticks.get(self.symbol, decimal_tick(self.observation_price))
 
 
-POLR_ENTRY_EVENT_TYPES = {
+TRADEDESK_ENTRY_EVENT_TYPES = {
     "ENTRY_TOUCHED",
     "ENTRY_CONFIRMED",
     "ENTRY_INVALIDATED",
     "ENTRY_STOPPED",
+    "ENTRY_TARGET_TAKEN",
     "ENTRY_AMBIGUOUS",
 }
 
 
-class POLRLifecyclePayload(BaseModel):
+class TradeDeskLifecyclePayload(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     schema_version: Literal["1.0", "1.1"]
@@ -111,6 +112,7 @@ class POLRLifecyclePayload(BaseModel):
         "ENTRY_CONFIRMED",
         "ENTRY_INVALIDATED",
         "ENTRY_STOPPED",
+        "ENTRY_TARGET_TAKEN",
         "ENTRY_AMBIGUOUS",
     ]
     symbol: str = Field(min_length=1, max_length=32)
@@ -122,7 +124,7 @@ class POLRLifecyclePayload(BaseModel):
     target_side: Literal["BSL", "SSL"]
     grade: str | None = Field(max_length=32)
     rr_qualified_at: int | None = Field(default=None, gt=0)
-    rr_source: Literal["SB", "BISI", "SIBI", "VI", "IFVG", "OTE"] | None = None
+    rr_source: Literal["SB", "BISI", "SIBI", "VI", "IFVG", "BREAKER", "OTE"] | None = None
     rr_reference_price: Decimal | None = None
     setup_rr: Decimal | None = None
     event_price: Decimal
@@ -187,7 +189,7 @@ class POLRLifecyclePayload(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def validate_entry_contract(self) -> "POLRLifecyclePayload":
+    def validate_entry_contract(self) -> "TradeDeskLifecyclePayload":
         entry_fields = (
             "entry_id",
             "entry_attempt",
@@ -211,7 +213,7 @@ class POLRLifecyclePayload(BaseModel):
             "stop_price",
             "entry_rr",
         )
-        is_entry_event = self.event_type in POLR_ENTRY_EVENT_TYPES
+        is_entry_event = self.event_type in TRADEDESK_ENTRY_EVENT_TYPES
         if not is_entry_event:
             if self.schema_version == "1.0" and any(
                 getattr(self, field) is not None for field in entry_fields
@@ -262,6 +264,10 @@ class POLRLifecyclePayload(BaseModel):
             raise ValueError("entry touch cannot predate OTE confirmation")
         if self.entry_touched_at > self.event_at:
             raise ValueError("entry touch cannot be later than its event")
+        if self.entry_touched_at <= self.mss_at:
+            raise ValueError("entry touch must occur after MSS confirmation")
+        if self.event_type == "ENTRY_TOUCHED" and self.event_at != self.entry_touched_at:
+            raise ValueError("ENTRY_TOUCHED event time must equal entry_touched_at")
 
         expected_third = "BOTTOM" if self.direction == "LONG" else "TOP"
         if self.range_third != expected_third:
@@ -298,6 +304,7 @@ class POLRLifecyclePayload(BaseModel):
         confirmed_event = self.event_type in {
             "ENTRY_CONFIRMED",
             "ENTRY_STOPPED",
+            "ENTRY_TARGET_TAKEN",
             "ENTRY_AMBIGUOUS",
         }
         confirmed_fields = (
@@ -312,10 +319,18 @@ class POLRLifecyclePayload(BaseModel):
                 raise ValueError(
                     f"confirmed entry event is missing required fields: {', '.join(missing)}"
                 )
-            if self.entry_confirmed_at < self.entry_touched_at:
-                raise ValueError("entry confirmation cannot predate entry touch")
+            if self.entry_confirmed_at <= self.entry_touched_at:
+                raise ValueError("entry confirmation must occur after entry touch")
             if self.entry_confirmed_at > self.event_at:
                 raise ValueError("entry confirmation cannot be later than its event")
+            if self.event_type == "ENTRY_CONFIRMED" and self.event_at != self.entry_confirmed_at:
+                raise ValueError("ENTRY_CONFIRMED event time must equal entry_confirmed_at")
+            if self.event_type in {
+                "ENTRY_STOPPED",
+                "ENTRY_TARGET_TAKEN",
+                "ENTRY_AMBIGUOUS",
+            } and self.event_at <= self.entry_confirmed_at:
+                raise ValueError("terminal entry event must occur after entry confirmation")
             if self.entry_rr < 0:
                 raise ValueError("entry_rr must be non-negative")
             confirmation_tolerance = max(

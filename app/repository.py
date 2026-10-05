@@ -39,7 +39,7 @@ from app.structure import (
     classify_structural_location,
     ipda_directional_context,
 )
-from app.validation import ObservationPayload, POLRLifecyclePayload, normalize_symbol
+from app.validation import ObservationPayload, TradeDeskLifecyclePayload, normalize_symbol
 
 
 LOGGER = logging.getLogger("edge2.repository")
@@ -76,7 +76,7 @@ class IngestionOutcome:
 
 
 @dataclass(frozen=True, slots=True)
-class POLRLifecycleIngestionOutcome:
+class TradeDeskLifecycleIngestionOutcome:
     duplicate: bool
     event_id: str
     setup_id: str
@@ -515,10 +515,10 @@ class EdgeRepository:
                     triggered_transitions=triggered,
                 )
 
-    def ingest_polr_lifecycle(
+    def ingest_tradedesk_lifecycle(
         self,
-        payload: POLRLifecyclePayload,
-    ) -> POLRLifecycleIngestionOutcome:
+        payload: TradeDeskLifecyclePayload,
+    ) -> TradeDeskLifecycleIngestionOutcome:
         mss_at = datetime.fromtimestamp(payload.mss_at / 1000, tz=timezone.utc)
         event_at = datetime.fromtimestamp(payload.event_at / 1000, tz=timezone.utc)
         rr_qualified_at = (
@@ -549,7 +549,7 @@ class EdgeRepository:
                 )
                 cursor.execute(
                     """
-                    INSERT INTO polr_lifecycle_events (
+                    INSERT INTO tradedesk_lifecycle_events (
                         schema_version, event_id, setup_id, event_type,
                         symbol, direction, mss_at, event_at,
                         sweep_price, target_price, target_side, grade,
@@ -620,11 +620,11 @@ class EdgeRepository:
                 if inserted is None:
                     cursor.execute(
                         """
-                        UPDATE polr_setups
+                        UPDATE tradedesk_setups
                         SET last_received_at = clock_timestamp()
                         WHERE setup_id = (
                             SELECT setup_id
-                            FROM polr_lifecycle_events
+                            FROM tradedesk_lifecycle_events
                             WHERE event_id = %s
                         )
                         """,
@@ -633,13 +633,13 @@ class EdgeRepository:
                     if payload.entry_id is not None:
                         cursor.execute(
                             """
-                            UPDATE polr_entry_attempts
+                            UPDATE tradedesk_entry_attempts
                             SET last_received_at = clock_timestamp()
                             WHERE entry_id = %s
                             """,
                             (payload.entry_id,),
                         )
-                    return POLRLifecycleIngestionOutcome(
+                    return TradeDeskLifecycleIngestionOutcome(
                         duplicate=True,
                         event_id=payload.event_id,
                         setup_id=payload.setup_id,
@@ -648,7 +648,7 @@ class EdgeRepository:
 
                 received_at = inserted["received_at"]
                 cursor.execute(
-                    "SELECT * FROM polr_setups WHERE setup_id = %s FOR UPDATE",
+                    "SELECT * FROM tradedesk_setups WHERE setup_id = %s FOR UPDATE",
                     (payload.setup_id,),
                 )
                 setup = cursor.fetchone()
@@ -664,7 +664,7 @@ class EdgeRepository:
                 if setup is None:
                     cursor.execute(
                         """
-                        INSERT INTO polr_setups (
+                        INSERT INTO tradedesk_setups (
                             setup_id, symbol, direction, mss_at,
                             sweep_price, target_price, target_side,
                             rr_qualified_at, rr_source, rr_reference_price, setup_rr,
@@ -695,7 +695,7 @@ class EdgeRepository:
                             received_at,
                         ),
                     )
-                    self._ingest_polr_entry_attempt(
+                    self._ingest_tradedesk_entry_attempt(
                         cursor,
                         payload,
                         event_at=event_at,
@@ -704,7 +704,7 @@ class EdgeRepository:
                         entry_confirmed_at=entry_confirmed_at,
                         ote_confirmed_at=ote_confirmed_at,
                     )
-                    return POLRLifecycleIngestionOutcome(
+                    return TradeDeskLifecycleIngestionOutcome(
                         duplicate=False,
                         event_id=payload.event_id,
                         setup_id=payload.setup_id,
@@ -744,7 +744,7 @@ class EdgeRepository:
 
                 cursor.execute(
                     """
-                    UPDATE polr_setups
+                    UPDATE tradedesk_setups
                     SET rr_qualified_at = %s,
                         rr_source = %s,
                         rr_reference_price = %s,
@@ -767,7 +767,7 @@ class EdgeRepository:
                         payload.setup_id,
                     ),
                 )
-                self._ingest_polr_entry_attempt(
+                self._ingest_tradedesk_entry_attempt(
                     cursor,
                     payload,
                     event_at=event_at,
@@ -779,24 +779,24 @@ class EdgeRepository:
                 conflicts = tuple(rr_conflicts)
                 if conflicts:
                     LOGGER.warning(
-                        "POLR frozen RR conflict preserved without overwrite",
+                        "TradeDesk frozen RR conflict preserved without overwrite",
                         extra={
                             "event_id": payload.event_id,
                             "setup_id": payload.setup_id,
                             "conflicting_fields": list(conflicts),
                         },
                     )
-                return POLRLifecycleIngestionOutcome(
+                return TradeDeskLifecycleIngestionOutcome(
                     duplicate=False,
                     event_id=payload.event_id,
                     setup_id=payload.setup_id,
                     rr_conflicts=conflicts,
                 )
 
-    def _ingest_polr_entry_attempt(
+    def _ingest_tradedesk_entry_attempt(
         self,
         cursor: RealDictCursor,
-        payload: POLRLifecyclePayload,
+        payload: TradeDeskLifecyclePayload,
         *,
         event_at: datetime,
         received_at: datetime,
@@ -804,39 +804,25 @@ class EdgeRepository:
         entry_confirmed_at: datetime | None,
         ote_confirmed_at: datetime | None,
     ) -> None:
-        if payload.event_type == "TARGET_TAKEN":
-            cursor.execute(
-                """
-                UPDATE polr_entry_attempts
-                SET status = 'TARGET_TAKEN',
-                    last_event_at = GREATEST(last_event_at, %s),
-                    last_received_at = %s
-                WHERE setup_id = %s
-                  AND status = 'CONFIRMED'
-                """,
-                (event_at, received_at, payload.setup_id),
-            )
-            return
-
-        incoming_status = {
-            "ENTRY_TOUCHED": "CANDIDATE",
-            "ENTRY_CONFIRMED": "CONFIRMED",
-            "ENTRY_INVALIDATED": "INVALIDATED",
-            "ENTRY_STOPPED": "STOPPED",
-            "ENTRY_AMBIGUOUS": "AMBIGUOUS",
-        }.get(payload.event_type)
-        if incoming_status is None:
+        if payload.event_type not in {
+            "ENTRY_TOUCHED",
+            "ENTRY_CONFIRMED",
+            "ENTRY_INVALIDATED",
+            "ENTRY_STOPPED",
+            "ENTRY_TARGET_TAKEN",
+            "ENTRY_AMBIGUOUS",
+        }:
             return
 
         cursor.execute(
-            "SELECT * FROM polr_entry_attempts WHERE entry_id = %s FOR UPDATE",
+            "SELECT * FROM tradedesk_entry_attempts WHERE entry_id = %s FOR UPDATE",
             (payload.entry_id,),
         )
         attempt = cursor.fetchone()
         if attempt is None:
             cursor.execute(
                 """
-                INSERT INTO polr_entry_attempts (
+                INSERT INTO tradedesk_entry_attempts (
                     entry_id, setup_id, attempt_no, status, source,
                     confirmation_method, zone_top, zone_bottom,
                     ote_top, ote_bottom, ote_confirmed_at,
@@ -856,7 +842,7 @@ class EdgeRepository:
                     payload.entry_id,
                     payload.setup_id,
                     payload.entry_attempt,
-                    incoming_status,
+                    "CANDIDATE",
                     payload.entry_source,
                     payload.confirmation_method,
                     payload.entry_zone_top,
@@ -881,50 +867,90 @@ class EdgeRepository:
                     received_at,
                 ),
             )
-            return
-
-        current_status = str(attempt["status"])
-        status = current_status
-        if current_status == "CANDIDATE" and incoming_status in {
-            "CONFIRMED",
-            "INVALIDATED",
-        }:
-            status = incoming_status
-        elif current_status == "CONFIRMED" and incoming_status in {
-            "STOPPED",
-            "AMBIGUOUS",
-        }:
-            status = incoming_status
+        else:
+            cursor.execute(
+                """
+                UPDATE tradedesk_entry_attempts
+                SET minimum_grade = COALESCE(minimum_grade, %s),
+                    grade_at_touch = COALESCE(grade_at_touch, %s),
+                    grade_at_confirmation = COALESCE(grade_at_confirmation, %s),
+                    confirmed_at = COALESCE(confirmed_at, %s),
+                    entry_price = COALESCE(entry_price, %s),
+                    stop_price = COALESCE(stop_price, %s),
+                    entry_rr = COALESCE(entry_rr, %s),
+                    last_event_at = GREATEST(last_event_at, %s),
+                    last_received_at = %s
+                WHERE entry_id = %s
+                """,
+                (
+                    payload.minimum_grade,
+                    payload.grade_at_touch,
+                    payload.grade_at_confirmation,
+                    entry_confirmed_at,
+                    payload.entry_price,
+                    payload.stop_price,
+                    payload.entry_rr,
+                    event_at,
+                    received_at,
+                    payload.entry_id,
+                ),
+            )
 
         cursor.execute(
             """
-            UPDATE polr_entry_attempts
-            SET status = %s,
-                minimum_grade = COALESCE(minimum_grade, %s),
-                grade_at_touch = COALESCE(grade_at_touch, %s),
-                grade_at_confirmation = COALESCE(grade_at_confirmation, %s),
-                confirmed_at = COALESCE(confirmed_at, %s),
-                entry_price = COALESCE(entry_price, %s),
-                stop_price = COALESCE(stop_price, %s),
-                entry_rr = COALESCE(entry_rr, %s),
-                last_event_at = GREATEST(last_event_at, %s),
-                last_received_at = %s
+            SELECT event_type, event_at, entry_confirmed_at
+            FROM tradedesk_lifecycle_events
             WHERE entry_id = %s
+            ORDER BY event_at, id
             """,
-            (
-                status,
-                payload.minimum_grade,
-                payload.grade_at_touch,
-                payload.grade_at_confirmation,
-                entry_confirmed_at,
-                payload.entry_price,
-                payload.stop_price,
-                payload.entry_rr,
-                event_at,
-                received_at,
-                payload.entry_id,
-            ),
+            (payload.entry_id,),
         )
+        status = self._tradedesk_entry_status(cursor.fetchall())
+        cursor.execute(
+            "UPDATE tradedesk_entry_attempts SET status = %s WHERE entry_id = %s",
+            (status, payload.entry_id),
+        )
+
+    @staticmethod
+    def _tradedesk_entry_status(events: Sequence[Mapping[str, Any]]) -> str:
+        """Project one entry from immutable market-time events, independent of receipt order."""
+        confirmed_times = [
+            event["entry_confirmed_at"]
+            for event in events
+            if event["entry_confirmed_at"] is not None
+        ]
+        confirmed_at = min(confirmed_times) if confirmed_times else None
+        invalidated_times = [
+            event["event_at"]
+            for event in events
+            if event["event_type"] == "ENTRY_INVALIDATED"
+        ]
+        invalidated_at = min(invalidated_times) if invalidated_times else None
+        if invalidated_at is not None and (
+            confirmed_at is None or invalidated_at < confirmed_at
+        ):
+            return "INVALIDATED"
+
+        if any(event["event_type"] == "ENTRY_AMBIGUOUS" for event in events):
+            return "AMBIGUOUS"
+
+        terminal = [
+            event
+            for event in events
+            if event["event_type"] in {"ENTRY_STOPPED", "ENTRY_TARGET_TAKEN"}
+        ]
+        if terminal:
+            first_terminal_at = min(event["event_at"] for event in terminal)
+            first_types = {
+                event["event_type"]
+                for event in terminal
+                if event["event_at"] == first_terminal_at
+            }
+            if first_types == {"ENTRY_STOPPED", "ENTRY_TARGET_TAKEN"}:
+                return "AMBIGUOUS"
+            return "STOPPED" if "ENTRY_STOPPED" in first_types else "TARGET_TAKEN"
+
+        return "CONFIRMED" if confirmed_at is not None else "CANDIDATE"
 
     def _replace_derived_state(self, cursor: RealDictCursor, replay: ReplayResult) -> None:
         cursor.execute("DELETE FROM mrz_events WHERE symbol = %s", (replay.symbol,))

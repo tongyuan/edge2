@@ -33,7 +33,7 @@ from app.repository import (
     json_diagnostics,
     sanitize_payload,
 )
-from app.validation import ObservationPayload, POLRLifecyclePayload
+from app.validation import ObservationPayload, TradeDeskLifecyclePayload
 
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -311,9 +311,9 @@ def create_app(
             status_code=201,
         )
 
-    @application.post("/api/polr/lifecycle")
-    def polr_lifecycle(
-        payload: POLRLifecyclePayload,
+    @application.post("/api/tradedesk/lifecycle")
+    def tradedesk_lifecycle(
+        payload: TradeDeskLifecyclePayload,
         request: Request,
     ) -> JSONResponse:
         if not secret_is_valid(resolved, request, {}):
@@ -322,10 +322,10 @@ def create_app(
                 status_code=401,
             )
         try:
-            outcome = repository.ingest_polr_lifecycle(payload)
+            outcome = repository.ingest_tradedesk_lifecycle(payload)
         except Exception:
             LOGGER.exception(
-                "POLR lifecycle persistence failed",
+                "TradeDesk lifecycle persistence failed",
                 extra={
                     "event_id": payload.event_id,
                     "setup_id": payload.setup_id,
@@ -337,7 +337,7 @@ def create_app(
                 status_code=500,
             )
         LOGGER.info(
-            "POLR lifecycle event received",
+            "TradeDesk lifecycle event received",
             extra={
                 "event_id": payload.event_id,
                 "setup_id": payload.setup_id,

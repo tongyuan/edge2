@@ -28,12 +28,12 @@ server {
         proxy_read_timeout 15s;
     }
 
-    location = /api/polr/lifecycle {
+    location = /api/tradedesk/lifecycle {
         limit_except POST {
             deny all;
         }
 
-        proxy_pass $edge2_app/api/polr/lifecycle;
+        proxy_pass $edge2_app/api/tradedesk/lifecycle;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;

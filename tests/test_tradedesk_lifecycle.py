@@ -12,7 +12,7 @@ from psycopg2.extras import RealDictCursor
 from app.api import create_app
 from app.config import Settings
 from app.db import connect
-from app.validation import POLRLifecyclePayload
+from app.validation import TradeDeskLifecyclePayload
 from tests.db_support import clean, migrate_and_clean, require_test_database
 
 
@@ -37,13 +37,13 @@ def lifecycle_payload(**overrides):
         "event_price": 135.10,
         "chart_timeframe": "5",
         "range_timeframe": "60",
-        "message": "POLR · GRADE A · ORCL · LONG · BSL 140.88",
+        "message": "TRADE DESK · GRADE A · ORCL · LONG · BSL 140.88",
     }
     payload.update(overrides)
     return payload
 
 
-class POLRLifecycleTests(unittest.TestCase):
+class TradeDeskLifecycleTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.database_url = require_test_database(cls)
@@ -65,10 +65,18 @@ class POLRLifecycleTests(unittest.TestCase):
 
     def post(self, **overrides):
         return self.client.post(
-            "/api/polr/lifecycle",
+            "/api/tradedesk/lifecycle",
             json=lifecycle_payload(**overrides),
             headers=self.headers,
         )
+
+    def test_legacy_lifecycle_route_is_not_supported(self) -> None:
+        response = self.client.post(
+            "/api/polr/lifecycle",
+            json=lifecycle_payload(),
+            headers=self.headers,
+        )
+        self.assertEqual(response.status_code, 404)
 
     def fetchone(self, query: str, params: tuple = ()):
         connection = connect(self.database_url)
@@ -94,8 +102,8 @@ class POLRLifecycleTests(unittest.TestCase):
             setup_rr=None,
         )
 
-        event = self.fetchone("SELECT * FROM polr_lifecycle_events")
-        setup = self.fetchone("SELECT * FROM polr_setups")
+        event = self.fetchone("SELECT * FROM tradedesk_lifecycle_events")
+        setup = self.fetchone("SELECT * FROM tradedesk_setups")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(event["event_type"], "MSS_CONFIRMED")
         self.assertEqual(setup["status"], "LIVE")
@@ -108,7 +116,7 @@ class POLRLifecycleTests(unittest.TestCase):
             grade=None,
         )
 
-        setup = self.fetchone("SELECT * FROM polr_setups")
+        setup = self.fetchone("SELECT * FROM tradedesk_setups")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(setup["rr_source"], "BISI")
         self.assertEqual(str(setup["rr_reference_price"]), "134.25")
@@ -118,7 +126,7 @@ class POLRLifecycleTests(unittest.TestCase):
     def test_grade_progression_and_delayed_grade_do_not_downgrade(self) -> None:
         self.assertEqual(self.post(event_type="GRADE_A").status_code, 200)
         self.assertEqual(
-            self.fetchone("SELECT highest_grade FROM polr_setups")["highest_grade"],
+            self.fetchone("SELECT highest_grade FROM tradedesk_setups")["highest_grade"],
             "A",
         )
         self.assertEqual(
@@ -140,7 +148,7 @@ class POLRLifecycleTests(unittest.TestCase):
             200,
         )
 
-        setup = self.fetchone("SELECT * FROM polr_setups")
+        setup = self.fetchone("SELECT * FROM tradedesk_setups")
         self.assertEqual(setup["highest_grade"], "A+")
         self.assertEqual(int(setup["last_event_at"].timestamp() * 1000), 1790766900000)
 
@@ -150,7 +158,7 @@ class POLRLifecycleTests(unittest.TestCase):
             200,
         )
         self.assertEqual(
-            self.fetchone("SELECT status FROM polr_setups")["status"],
+            self.fetchone("SELECT status FROM tradedesk_setups")["status"],
             "FAILED",
         )
 
@@ -160,7 +168,7 @@ class POLRLifecycleTests(unittest.TestCase):
             200,
         )
         self.assertEqual(
-            self.fetchone("SELECT status FROM polr_setups")["status"],
+            self.fetchone("SELECT status FROM tradedesk_setups")["status"],
             "RETIRED",
         )
         self.assertEqual(
@@ -172,7 +180,7 @@ class POLRLifecycleTests(unittest.TestCase):
             200,
         )
         self.assertEqual(
-            self.fetchone("SELECT status FROM polr_setups")["status"],
+            self.fetchone("SELECT status FROM tradedesk_setups")["status"],
             "TARGET_TAKEN",
         )
 
@@ -185,7 +193,7 @@ class POLRLifecycleTests(unittest.TestCase):
             grade="A",
         )
 
-        setup = self.fetchone("SELECT * FROM polr_setups")
+        setup = self.fetchone("SELECT * FROM tradedesk_setups")
         self.assertEqual(setup["status"], "TARGET_TAKEN")
         self.assertEqual(setup["highest_grade"], "A+")
         self.assertEqual(int(setup["last_event_at"].timestamp() * 1000), 1790763300000)
@@ -205,7 +213,7 @@ class POLRLifecycleTests(unittest.TestCase):
                     event_at=1790760000000,
                     grade="A",
                 )
-                setup = self.fetchone("SELECT * FROM polr_setups")
+                setup = self.fetchone("SELECT * FROM tradedesk_setups")
                 self.assertEqual(setup["status"], "TARGET_TAKEN")
                 self.assertEqual(setup["highest_grade"], "A+")
                 self.assertEqual(
@@ -219,12 +227,12 @@ class POLRLifecycleTests(unittest.TestCase):
         counts = self.fetchone(
             """
             SELECT
-                (SELECT count(*) FROM polr_lifecycle_events) AS event_count,
-                (SELECT count(*) FROM polr_setups) AS setup_count
+                (SELECT count(*) FROM tradedesk_lifecycle_events) AS event_count,
+                (SELECT count(*) FROM tradedesk_setups) AS setup_count
             """
         )
-        event = self.fetchone("SELECT event_type FROM polr_lifecycle_events")
-        setup = self.fetchone("SELECT * FROM polr_setups")
+        event = self.fetchone("SELECT event_type FROM tradedesk_lifecycle_events")
+        setup = self.fetchone("SELECT * FROM tradedesk_setups")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(counts, {"event_count": 1, "setup_count": 1})
         self.assertEqual(event["event_type"], "GRADE_A")
@@ -240,8 +248,8 @@ class POLRLifecycleTests(unittest.TestCase):
         counts = self.fetchone(
             """
             SELECT
-                (SELECT count(*) FROM polr_lifecycle_events) AS event_count,
-                (SELECT count(*) FROM polr_setups) AS setup_count
+                (SELECT count(*) FROM tradedesk_lifecycle_events) AS event_count,
+                (SELECT count(*) FROM tradedesk_setups) AS setup_count
             """
         )
         self.assertEqual(first.status_code, 200)
@@ -251,12 +259,12 @@ class POLRLifecycleTests(unittest.TestCase):
 
     def test_concurrent_duplicate_event_id_is_race_safe(self) -> None:
         repository = self.client.app.state.repository
-        payload = POLRLifecyclePayload.model_validate(lifecycle_payload())
+        payload = TradeDeskLifecyclePayload.model_validate(lifecycle_payload())
         barrier = Barrier(2)
 
         def ingest():
             barrier.wait()
-            return repository.ingest_polr_lifecycle(payload)
+            return repository.ingest_tradedesk_lifecycle(payload)
 
         with ThreadPoolExecutor(max_workers=2) as executor:
             outcomes = list(executor.map(lambda _index: ingest(), range(2)))
@@ -264,8 +272,8 @@ class POLRLifecycleTests(unittest.TestCase):
         counts = self.fetchone(
             """
             SELECT
-                (SELECT count(*) FROM polr_lifecycle_events) AS event_count,
-                (SELECT count(*) FROM polr_setups) AS setup_count
+                (SELECT count(*) FROM tradedesk_lifecycle_events) AS event_count,
+                (SELECT count(*) FROM tradedesk_setups) AS setup_count
             """
         )
         self.assertEqual(sorted(outcome.duplicate for outcome in outcomes), [False, True])
@@ -274,8 +282,8 @@ class POLRLifecycleTests(unittest.TestCase):
     def test_received_event_truth_rejects_update_and_delete(self) -> None:
         self.post()
         for statement in (
-            "UPDATE polr_lifecycle_events SET message = 'changed'",
-            "DELETE FROM polr_lifecycle_events",
+            "UPDATE tradedesk_lifecycle_events SET message = 'changed'",
+            "DELETE FROM tradedesk_lifecycle_events",
         ):
             with self.subTest(statement=statement):
                 connection = connect(self.database_url)
@@ -310,7 +318,7 @@ class POLRLifecycleTests(unittest.TestCase):
             """
             SELECT count(*) AS event_count,
                    count(DISTINCT event_id) AS distinct_event_count
-            FROM polr_lifecycle_events
+            FROM tradedesk_lifecycle_events
             """
         )
         self.assertEqual(result, {"event_count": 2, "distinct_event_count": 2})
@@ -325,13 +333,13 @@ class POLRLifecycleTests(unittest.TestCase):
             rr_reference_price=None,
             setup_rr=None,
         )
-        before = self.fetchone("SELECT * FROM polr_setups")
+        before = self.fetchone("SELECT * FROM tradedesk_setups")
         self.post(
             event_id="ORCL-LONG-1790759700000-RR_QUALIFIED",
             event_type="RR_QUALIFIED",
             grade=None,
         )
-        after = self.fetchone("SELECT * FROM polr_setups")
+        after = self.fetchone("SELECT * FROM tradedesk_setups")
 
         self.assertIsNone(before["setup_rr"])
         self.assertEqual(after["rr_source"], "BISI")
@@ -348,7 +356,7 @@ class POLRLifecycleTests(unittest.TestCase):
             rr_reference_price=None,
             setup_rr=None,
         )
-        after_null = self.fetchone("SELECT * FROM polr_setups")
+        after_null = self.fetchone("SELECT * FROM tradedesk_setups")
         self.assertEqual(after_null["rr_source"], "BISI")
         self.assertEqual(str(after_null["rr_reference_price"]), "134.25")
         self.assertEqual(str(after_null["setup_rr"]), "2.74")
@@ -360,7 +368,7 @@ class POLRLifecycleTests(unittest.TestCase):
             event_at=1790766900000,
             grade="A+",
         )
-        initial = self.fetchone("SELECT * FROM polr_setups")
+        initial = self.fetchone("SELECT * FROM tradedesk_setups")
 
         time.sleep(0.01)
         self.post(
@@ -369,7 +377,7 @@ class POLRLifecycleTests(unittest.TestCase):
             event_at=1790760000000,
             grade="A",
         )
-        delayed = self.fetchone("SELECT * FROM polr_setups")
+        delayed = self.fetchone("SELECT * FROM tradedesk_setups")
         self.assertEqual(delayed["first_seen_at"], initial["first_seen_at"])
         self.assertGreater(delayed["last_received_at"], initial["last_received_at"])
         self.assertEqual(delayed["last_event_at"], initial["last_event_at"])
@@ -381,7 +389,7 @@ class POLRLifecycleTests(unittest.TestCase):
             event_at=1790760000000,
             grade="A",
         )
-        duplicate = self.fetchone("SELECT * FROM polr_setups")
+        duplicate = self.fetchone("SELECT * FROM tradedesk_setups")
         self.assertEqual(duplicate["first_seen_at"], initial["first_seen_at"])
         self.assertGreater(duplicate["last_received_at"], delayed["last_received_at"])
         self.assertEqual(duplicate["last_event_at"], initial["last_event_at"])
@@ -401,9 +409,9 @@ class POLRLifecycleTests(unittest.TestCase):
             setup_rr=9.99,
         )
 
-        setup = self.fetchone("SELECT * FROM polr_setups")
+        setup = self.fetchone("SELECT * FROM tradedesk_setups")
         event = self.fetchone(
-            "SELECT * FROM polr_lifecycle_events WHERE event_id = %s",
+            "SELECT * FROM tradedesk_lifecycle_events WHERE event_id = %s",
             ("ORCL-LONG-1790759700000-GRADE_A-CONFLICT",),
         )
         self.assertEqual(response.status_code, 200)
@@ -420,29 +428,38 @@ class POLRLifecycleTests(unittest.TestCase):
             SELECT
                 EXISTS (
                     SELECT 1 FROM information_schema.columns
-                    WHERE table_name = 'polr_lifecycle_events'
+                    WHERE table_name = 'tradedesk_lifecycle_events'
                       AND column_name = 'setup_rr'
                 ) AS event_setup_rr,
                 EXISTS (
                     SELECT 1 FROM information_schema.columns
-                    WHERE table_name = 'polr_setups'
+                    WHERE table_name = 'tradedesk_setups'
                       AND column_name = 'setup_rr'
                 ) AS snapshot_setup_rr,
                 EXISTS (
                     SELECT 1 FROM information_schema.columns
-                    WHERE table_name IN ('polr_lifecycle_events', 'polr_setups')
+                    WHERE table_name IN ('tradedesk_lifecycle_events', 'tradedesk_setups')
                       AND column_name = 'rr_to_target'
                 ) AS legacy_rr,
                 EXISTS (
                     SELECT 1 FROM pg_indexes
-                    WHERE tablename = 'polr_lifecycle_events'
+                    WHERE tablename = 'tradedesk_lifecycle_events'
                       AND indexdef LIKE 'CREATE UNIQUE INDEX%event_id%'
                 ) AS event_id_unique,
                 EXISTS (
                     SELECT 1 FROM pg_indexes
-                    WHERE tablename = 'polr_setups'
+                    WHERE tablename = 'tradedesk_setups'
                       AND indexdef LIKE 'CREATE UNIQUE INDEX%setup_id%'
-                ) AS setup_id_unique
+                ) AS setup_id_unique,
+                NOT EXISTS (
+                    SELECT 1 FROM information_schema.tables
+                    WHERE table_schema = 'public'
+                      AND table_name IN (
+                          'polr_lifecycle_events',
+                          'polr_setups',
+                          'polr_entry_attempts'
+                      )
+                ) AS legacy_tables_absent
             """
         )
         self.assertEqual(
@@ -453,12 +470,13 @@ class POLRLifecycleTests(unittest.TestCase):
                 "legacy_rr": False,
                 "event_id_unique": True,
                 "setup_id_unique": True,
+                "legacy_tables_absent": True,
             },
         )
 
     def test_valid_payload_returns_matching_event_id(self) -> None:
         response = self.client.post(
-            "/api/polr/lifecycle",
+            "/api/tradedesk/lifecycle",
             json=lifecycle_payload(),
             headers=self.headers,
         )
@@ -474,7 +492,7 @@ class POLRLifecycleTests(unittest.TestCase):
 
     def test_unsupported_event_type_is_rejected(self) -> None:
         response = self.client.post(
-            "/api/polr/lifecycle",
+            "/api/tradedesk/lifecycle",
             json=lifecycle_payload(event_type="UNKNOWN"),
             headers=self.headers,
         )
@@ -483,12 +501,12 @@ class POLRLifecycleTests(unittest.TestCase):
 
     def test_rr_qualified_payload_is_accepted(self) -> None:
         response = self.client.post(
-            "/api/polr/lifecycle",
+            "/api/tradedesk/lifecycle",
             json=lifecycle_payload(
                 event_id="ORCL-LONG-1790759700000-RR_QUALIFIED",
                 event_type="RR_QUALIFIED",
                 grade=None,
-                message="POLR · RR QUALIFIED · ORCL · LONG · BISI 134.25 · 2.7R · BSL 140.88",
+                message="TRADE DESK · RR QUALIFIED · ORCL · LONG · BISI 134.25 · 2.7R · BSL 140.88",
             ),
             headers=self.headers,
         )
@@ -500,25 +518,27 @@ class POLRLifecycleTests(unittest.TestCase):
         for event_type in ("ENTRY_READY", "SETUP_RR_READY"):
             with self.subTest(event_type=event_type):
                 response = self.client.post(
-                    "/api/polr/lifecycle",
+                    "/api/tradedesk/lifecycle",
                     json=lifecycle_payload(event_type=event_type),
                     headers=self.headers,
                 )
 
                 self.assertEqual(response.status_code, 422)
 
-    def test_invalid_rr_source_is_rejected(self) -> None:
+    def test_breaker_rr_source_is_accepted(self) -> None:
         response = self.client.post(
-            "/api/polr/lifecycle",
+            "/api/tradedesk/lifecycle",
             json=lifecycle_payload(rr_source="BREAKER"),
             headers=self.headers,
         )
 
-        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.status_code, 200)
+        setup = self.fetchone("SELECT rr_source FROM tradedesk_setups")
+        self.assertEqual(setup["rr_source"], "BREAKER")
 
     def test_null_rr_qualification_fields_are_accepted_before_qualification(self) -> None:
         response = self.client.post(
-            "/api/polr/lifecycle",
+            "/api/tradedesk/lifecycle",
             json=lifecycle_payload(
                 event_id="ORCL-LONG-1790759700000-MSS_CONFIRMED",
                 event_type="MSS_CONFIRMED",
@@ -535,7 +555,7 @@ class POLRLifecycleTests(unittest.TestCase):
 
     def test_null_setup_rr_is_accepted(self) -> None:
         response = self.client.post(
-            "/api/polr/lifecycle",
+            "/api/tradedesk/lifecycle",
             json=lifecycle_payload(setup_rr=None),
             headers=self.headers,
         )
@@ -544,7 +564,7 @@ class POLRLifecycleTests(unittest.TestCase):
 
     def test_finite_setup_rr_is_accepted(self) -> None:
         response = self.client.post(
-            "/api/polr/lifecycle",
+            "/api/tradedesk/lifecycle",
             json=lifecycle_payload(setup_rr=3.2),
             headers=self.headers,
         )
@@ -555,7 +575,7 @@ class POLRLifecycleTests(unittest.TestCase):
         for value in ("NaN", "Infinity", "not-a-number"):
             with self.subTest(value=value):
                 response = self.client.post(
-                    "/api/polr/lifecycle",
+                    "/api/tradedesk/lifecycle",
                     json=lifecycle_payload(setup_rr=value),
                     headers=self.headers,
                 )
@@ -564,7 +584,7 @@ class POLRLifecycleTests(unittest.TestCase):
 
     def test_rr_to_target_is_rejected(self) -> None:
         response = self.client.post(
-            "/api/polr/lifecycle",
+            "/api/tradedesk/lifecycle",
             json=lifecycle_payload(rr_to_target=2.74),
             headers=self.headers,
         )
@@ -576,7 +596,7 @@ class POLRLifecycleTests(unittest.TestCase):
             for value in ("NaN", "Infinity", "not-a-number"):
                 with self.subTest(field=field, value=value):
                     response = self.client.post(
-                        "/api/polr/lifecycle",
+                        "/api/tradedesk/lifecycle",
                         json=lifecycle_payload(**{field: value}),
                         headers=self.headers,
                     )
@@ -588,7 +608,7 @@ class POLRLifecycleTests(unittest.TestCase):
         payload.pop("event_price")
 
         response = self.client.post(
-            "/api/polr/lifecycle",
+            "/api/tradedesk/lifecycle",
             json=payload,
             headers=self.headers,
         )
@@ -616,9 +636,9 @@ class POLRLifecycleTests(unittest.TestCase):
                 persisted = self.fetchone(
                     """
                     SELECT
-                        (SELECT count(*) FROM polr_lifecycle_events) AS event_count,
-                        (SELECT count(*) FROM polr_setups) AS setup_count,
-                        (SELECT status FROM polr_setups) AS status
+                        (SELECT count(*) FROM tradedesk_lifecycle_events) AS event_count,
+                        (SELECT count(*) FROM tradedesk_setups) AS setup_count,
+                        (SELECT status FROM tradedesk_setups) AS status
                     """
                 )
 
@@ -636,7 +656,7 @@ class POLRLifecycleTests(unittest.TestCase):
         for field in ("entry_ready_at", "entry_source", "entry_price", "entry_rr"):
             with self.subTest(field=field):
                 response = self.client.post(
-                    "/api/polr/lifecycle",
+                    "/api/tradedesk/lifecycle",
                     json=lifecycle_payload(**{field: 1}),
                     headers=self.headers,
                 )
@@ -645,7 +665,7 @@ class POLRLifecycleTests(unittest.TestCase):
 
     def test_invalid_direction_is_rejected(self) -> None:
         response = self.client.post(
-            "/api/polr/lifecycle",
+            "/api/tradedesk/lifecycle",
             json=lifecycle_payload(direction="FLAT"),
             headers=self.headers,
         )
@@ -657,7 +677,7 @@ class POLRLifecycleTests(unittest.TestCase):
         payload.pop("setup_id")
 
         response = self.client.post(
-            "/api/polr/lifecycle",
+            "/api/tradedesk/lifecycle",
             json=payload,
             headers=self.headers,
         )

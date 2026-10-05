@@ -82,6 +82,13 @@ native automatic Astra wake is not assumed. Gmail, Slack, or another external
 trigger is not documented as a production wake mechanism. Attention events
 request possible reassessment; they do not cause a trade decision.
 
+Lifecycle ingestion uses the single `/api/tradedesk/lifecycle` route. Received
+events are immutable and entry projections follow market event time rather than
+HTTP arrival order. Setup `TARGET_TAKEN` updates the parent setup only;
+`ENTRY_TARGET_TAKEN` resolves a specific confirmed entry. If a confirmed entry's
+frozen stop and target are both touched on the same market bar, its entry result
+remains `AMBIGUOUS` regardless of request order.
+
 The permanent operator command is `[SYMBOL] WAKE`, with no reason or analytical
 suffix. Send it whenever the operator considers the symbol worthy of attention;
 no EQM contact count or prior reassessment condition grants or limits permission.
