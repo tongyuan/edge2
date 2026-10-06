@@ -1044,20 +1044,36 @@ type EntryEvent
     float  stopPrice
     float  entryRR
     float  eventPrice
+    string eventSuffix = ''
+    string evidence = ''
 
-// Fixed eleven-layer state. nextMask groups coincident structural reasons at one price.
+// Entry-keyed frozen result state. The eleven prices never reread mutable MRZ geometry.
 type ExitState
     int dir
     int mssAt = na
+    int attempt = na
     string contextId = ''
+    bool ladderAvailable = false
+    array<float> prices
+    float entryPrice = na
+    float initialRisk = na
+    float mfePrice = na
+    float maePrice = na
+    float bestPrice = na
+    float bestR = na
+    int bestMask = 0
+    int bestAt = na
+    int reachedMask = 0
     float baseline = na
     float target = na
     float nextPrice = na
     int nextMask = 0
-    string reachedHistory = ''
     line displayLine = na
     label displayLabel = na
     bool seen = false
+
+var array<string> exitLevelNames = str.split('C-MID,C-2W,C-1W,C+1W,C+2W,EQM,P-MID,P-2W,P-1W,P+1W,P+2W', ',')
+var array<ExitState> exitStates = array.new<ExitState>()
 
 //@function Freezes the first canonical setup RR geometry that clears the configured threshold.
 //@param ev (Ev) The matching direction's per-bar event object.
@@ -2137,7 +2153,7 @@ f_entryCandidate(Setup s, bool sourceLive) =>
 
 f_queueEntryEvent(array<EntryEvent> events, string eventType, Setup s) =>
     string gradeNow = f_entryGrade(s)
-    events.push(EntryEvent.new(
+    EntryEvent queued = EntryEvent.new(
         eventType = eventType, dir = s.dir, mssAt = s.mssTm, eventAt = time,
         sweepPrice = s.sweepPx, targetPrice = s.tgt, grade = gradeNow,
         rrQualifiedAt = s.rrQualifiedAt, rrSource = s.rrSource,
@@ -2151,8 +2167,149 @@ f_queueEntryEvent(array<EntryEvent> events, string eventType, Setup s) =>
         gradeAtTouch = s.entryGradeTouch, gradeAtConfirmation = s.entryGradeConfirm,
         touchedAt = s.entryTouchedAt, confirmedAt = s.entryConfirmedAt,
         entryPrice = s.entryPrice, stopPrice = s.entryStop, entryRR = s.entryRR,
-        eventPrice = close))
+        eventPrice = close)
+    events.push(queued)
+    queued
+
+f_resultFind(Setup s) =>
+    ExitState found = na
+    for x in exitStates
+        if x.dir == s.dir and x.mssAt == s.mssTm and x.attempt == s.entryAttempt
+            found := x
+    found
+
+f_exitEligible(ExitState x, float p) =>
+    x.dir * (p - x.entryPrice) > 0 and x.dir * (x.target - p) >= 0
+
+f_maskIds(int mask) =>
+    string ids = '['
+    int bit = 1
+    for name in exitLevelNames
+        if mask % (bit * 2) >= bit
+            ids += (ids == '[' ? '' : ',') + '"' + name + '"'
+        bit *= 2
+    ids + ']'
+
+f_groupMask(ExitState x, float p) =>
+    int mask = 0
+    int bit = 1
+    for q in x.prices
+        if math.abs(q - p) <= syminfo.mintick * 0.5
+            mask += bit
+        bit *= 2
+    mask
+
+f_groupFirst(ExitState x, int i) =>
+    bool first = true
+    if i > 0
+        float p = x.prices.get(i)
+        for j = 0 to i - 1
+            if math.abs(x.prices.get(j) - p) <= syminfo.mintick * 0.5
+                first := false
+    first
+
+f_destinationOrder(ExitState x, float p) =>
+    int order = 1
+    if x.prices.size() > 0
+        for i = 0 to x.prices.size() - 1
+            float q = x.prices.get(i)
+            if f_groupFirst(x, i) and f_exitEligible(x, q) and x.dir * (q - p) < 0
+                order += 1
+    order
+
+f_exitRefresh(ExitState x) =>
+    x.nextPrice := na
+    x.nextMask := 0
+    int bit = 1
+    for p in x.prices
+        if x.reachedMask % (bit * 2) < bit and f_exitEligible(x, p) and x.dir * (p - x.baseline) > 0
+            if na(x.nextPrice) or x.dir * (p - x.nextPrice) < 0
+                x.nextPrice := p
+                x.nextMask := bit
+            else if math.abs(p - x.nextPrice) <= syminfo.mintick * 0.5
+                x.nextMask += bit
+        bit *= 2
     true
+
+f_resultOpen(Setup s) =>
+    ExitState x = f_resultFind(s)
+    if na(x)
+        array<float> prices = mrzGeometryAvailable ? array.from(currentMrzMidpoint, math.round_to_mintick(currentMrzLower - 2.0 * currentMrzWidth), math.round_to_mintick(currentMrzLower - currentMrzWidth), math.round_to_mintick(currentMrzUpper + currentMrzWidth), math.round_to_mintick(currentMrzUpper + 2.0 * currentMrzWidth), migrationEqm, previousMrzMidpoint, math.round_to_mintick(previousMrzLower - 2.0 * previousMrzWidth), math.round_to_mintick(previousMrzLower - previousMrzWidth), math.round_to_mintick(previousMrzUpper + previousMrzWidth), math.round_to_mintick(previousMrzUpper + 2.0 * previousMrzWidth)) : array.new<float>()
+        x := ExitState.new(dir = s.dir, mssAt = s.mssTm, attempt = s.entryAttempt,
+            contextId = mrzGeometryAvailable ? mrzContextId : '', ladderAvailable = mrzGeometryAvailable,
+            prices = prices, entryPrice = s.entryPrice, initialRisk = math.abs(s.entryPrice - s.entryStop),
+            mfePrice = s.entryPrice, maePrice = s.entryPrice, baseline = s.entryPrice, target = s.tgt,
+            displayLine = f_level(s.entryConfirmedAt, time, na, C_GRAY, 1, line.style_solid),
+            displayLabel = f_lbl(time, na, '', label.style_label_left))
+        if x.ladderAvailable
+            f_exitRefresh(x)
+        exitStates.push(x)
+    x
+
+f_resultR(ExitState x, float p, bool favorable) =>
+    math.max(0.0, (favorable ? x.dir * (p - x.entryPrice) : -x.dir * (p - x.entryPrice)) / x.initialRisk)
+
+f_ladderJson(ExitState x) =>
+    string json = '['
+    if x.ladderAvailable
+        for i = 0 to x.prices.size() - 1
+            float p = x.prices.get(i)
+            if f_groupFirst(x, i)
+                int mask = f_groupMask(x, p)
+                bool eligible = f_exitEligible(x, p)
+                json += (json == '[' ? '' : ',') + '{"level_ids":' + f_maskIds(mask) + ',"level_price":' + str.tostring(p) + ',"eligible":' + (eligible ? 'true,"destination_order":' + str.tostring(f_destinationOrder(x, p)) : 'false') + '}'
+    json + ']'
+
+f_confirmationEvidence(ExitState x) =>
+    ',"mrz_context_id":' + (x.contextId == '' ? 'null' : '"' + x.contextId + '"') + ',"exit_ladder_available":' + (x.ladderAvailable ? 'true' : 'false') + ',"frozen_exit_ladder":' + f_ladderJson(x) + ',"initial_risk":' + str.tostring(x.initialRisk)
+
+f_terminalLevels(ExitState x) =>
+    string json = '['
+    if x.ladderAvailable
+        for i = 0 to x.prices.size() - 1
+            float p = x.prices.get(i)
+            if f_groupFirst(x, i) and low <= p and high >= p
+                json += (json == '[' ? '' : ',') + '{"level_ids":' + f_maskIds(f_groupMask(x, p)) + ',"level_price":' + str.tostring(p) + '}'
+    json + ']'
+
+f_resultAdvance(Setup s, array<EntryEvent> events) =>
+    ExitState x = f_resultFind(s)
+    if not na(x)
+        x.mfePrice := x.dir > 0 ? math.max(x.mfePrice, high) : math.min(x.mfePrice, low)
+        x.maePrice := x.dir > 0 ? math.min(x.maePrice, low) : math.max(x.maePrice, high)
+        bool scan = not na(x.nextPrice)
+        while scan
+            float p = x.nextPrice
+            bool contact = low <= p and high >= p
+            bool gapCross = not contact and not na(close[1]) and ((close[1] < p and low > p) or (close[1] > p and high < p))
+            if contact or gapCross
+                int mask = x.nextMask
+                float reachedR = f_resultR(x, p, true)
+                EntryEvent reached = f_queueEntryEvent(events, 'ENTRY_EXIT_LEVEL_REACHED', s)
+                reached.eventSuffix := '-L' + str.tostring(mask)
+                reached.evidence := ',"level_ids":' + f_maskIds(mask) + ',"level_price":' + str.tostring(p) + ',"excursion_r":' + str.tostring(reachedR) + ',"contact_mode":"' + (contact ? 'RANGE_TOUCH' : 'GAP_CROSS') + '"'
+                x.reachedMask += mask
+                x.baseline := p
+                if na(x.bestR) or reachedR > x.bestR
+                    x.bestPrice := p
+                    x.bestR := reachedR
+                    x.bestMask := mask
+                    x.bestAt := time
+                f_exitRefresh(x)
+                scan := not na(x.nextPrice)
+            else
+                scan := false
+    true
+
+f_resultTerminal(Setup s) =>
+    ExitState x = f_resultFind(s)
+    string evidence = ''
+    if not na(x)
+        float inclusiveMfe = x.dir > 0 ? math.max(x.mfePrice, high) : math.min(x.mfePrice, low)
+        float inclusiveMae = x.dir > 0 ? math.min(x.maePrice, low) : math.max(x.maePrice, high)
+        string best = na(x.bestPrice) ? 'null' : f_maskIds(x.bestMask)
+        evidence := ',"initial_risk":' + str.tostring(x.initialRisk) + ',"mfe_pre_terminal_price":' + str.tostring(x.mfePrice) + ',"mfe_pre_terminal_r":' + str.tostring(f_resultR(x, x.mfePrice, true)) + ',"mae_pre_terminal_price":' + str.tostring(x.maePrice) + ',"mae_pre_terminal_r":' + str.tostring(f_resultR(x, x.maePrice, false)) + ',"mfe_inclusive_price":' + str.tostring(inclusiveMfe) + ',"mfe_inclusive_r":' + str.tostring(f_resultR(x, inclusiveMfe, true)) + ',"mae_inclusive_price":' + str.tostring(inclusiveMae) + ',"mae_inclusive_r":' + str.tostring(f_resultR(x, inclusiveMae, false)) + ',"best_level_pre_terminal_ids":' + best + ',"best_level_pre_terminal_price":' + (na(x.bestPrice) ? 'null' : str.tostring(x.bestPrice)) + ',"best_level_pre_terminal_r":' + (na(x.bestR) ? 'null' : str.tostring(x.bestR)) + ',"best_level_pre_terminal_at":' + (na(x.bestAt) ? 'null' : str.tostring(x.bestAt)) + ',"terminal_bar_levels_touched":' + f_terminalLevels(x)
+    evidence
 
 f_entryInvalidate(Setup s, array<EntryEvent> events) =>
     if s.entryState == 1
@@ -2175,20 +2332,28 @@ f_entryBeforeSetup(Setup s, array<EntryEvent> events) =>
             bool stopHit = s.dir > 0 ? low <= s.entryStop : high >= s.entryStop
             bool targetHit = f_finalTargetHit(s.dir, s.tgt)
             if stopHit and targetHit
+                string terminalEvidence = f_resultTerminal(s)
                 s.entryState := 6
                 if not na(s.entryMarker)
                     label.set_text(s.entryMarker, 'E' + str.tostring(s.entryAttempt) + ' · AMBIGUOUS')
-                f_queueEntryEvent(events, 'ENTRY_AMBIGUOUS', s)
+                EntryEvent terminal = f_queueEntryEvent(events, 'ENTRY_AMBIGUOUS', s)
+                terminal.evidence := terminalEvidence
             else if stopHit
+                string terminalEvidence = f_resultTerminal(s)
                 s.entryState := 4
                 if not na(s.entryMarker)
                     label.set_text(s.entryMarker, 'E' + str.tostring(s.entryAttempt) + ' · STOPPED')
-                f_queueEntryEvent(events, 'ENTRY_STOPPED', s)
+                EntryEvent terminal = f_queueEntryEvent(events, 'ENTRY_STOPPED', s)
+                terminal.evidence := terminalEvidence
             else if targetHit
+                string terminalEvidence = f_resultTerminal(s)
                 s.entryState := 5
                 if not na(s.entryMarker)
                     label.set_text(s.entryMarker, 'E' + str.tostring(s.entryAttempt) + ' · TARGET TAKEN')
-                f_queueEntryEvent(events, 'ENTRY_TARGET_TAKEN', s)
+                EntryEvent terminal = f_queueEntryEvent(events, 'ENTRY_TARGET_TAKEN', s)
+                terminal.evidence := terminalEvidence
+            else
+                f_resultAdvance(s, events)
     true
 
 //@function Creates, invalidates and confirms attempts after all arrays, OTE and grade have updated.
@@ -2271,7 +2436,9 @@ f_entryAfterSetup(Setup s, array<EntryEvent> events, bool sourceWasLive, bool ot
                 if not na(s.entryLbl)
                     label.delete(s.entryLbl)
                     s.entryLbl := na
-                f_queueEntryEvent(events, 'ENTRY_CONFIRMED', s)
+                ExitState result = f_resultOpen(s)
+                EntryEvent confirmed = f_queueEntryEvent(events, 'ENTRY_CONFIRMED', s)
+                confirmed.evidence := f_confirmationEvidence(result)
     true
 
 // ============================================================================
@@ -3904,14 +4071,14 @@ f_entryId(EntryEvent e) =>
     f_lifecycleSetupId(e.dir, e.mssAt) + '-E' + str.tostring(e.attempt)
 
 f_entryEventId(EntryEvent e) =>
-    f_entryId(e) + '-' + e.eventType
+    f_entryId(e) + '-' + e.eventType + e.eventSuffix
 
-//@function Builds schema 1.1 entry evidence. Setup RR stays the original frozen setup measure;
+//@function Builds schema 1.2 entry evidence. Setup RR stays the original frozen setup measure;
 //          entry_rr is calculated separately from the confirmed close to the same draw.
 f_entryLifecycleJson(EntryEvent e) =>
     string direction = e.dir > 0 ? 'LONG' : 'SHORT'
     string message = 'TRADE DESK · ' + str.replace_all(e.eventType, '_', ' ') + ' · ' + syminfo.ticker + ' · ' + direction + ' · E' + str.tostring(e.attempt)
-    '{"schema_version":"1.1","event_id":"' + f_entryEventId(e) + '","setup_id":"' + f_lifecycleSetupId(e.dir, e.mssAt) + '","event_type":"' + e.eventType + '","symbol":"' + syminfo.ticker + '","direction":"' + direction + '","mss_at":' + str.tostring(e.mssAt) + ',"event_at":' + str.tostring(e.eventAt) + ',"sweep_price":' + str.tostring(e.sweepPrice) + ',"target_price":' + str.tostring(e.targetPrice) + ',"target_side":"' + (e.dir > 0 ? 'BSL' : 'SSL') + '","grade":' + f_jsonString(e.grade) + ',"rr_qualified_at":' + f_jsonTime(e.rrQualifiedAt) + ',"rr_source":' + f_jsonString(e.rrSource) + ',"rr_reference_price":' + f_jsonNumber(e.rrReferencePrice) + ',"setup_rr":' + f_jsonNumber(e.setupRR) + ',"event_price":' + str.tostring(e.eventPrice) + ',"chart_timeframe":"' + timeframe.period + '","range_timeframe":"' + rangeTf + '","message":"' + message + '","entry_id":"' + f_entryId(e) + '","entry_attempt":' + str.tostring(e.attempt) + ',"entry_source":"' + e.source + '","confirmation_method":"' + e.confirmationMethod + '","entry_zone_top":' + str.tostring(e.zoneTop) + ',"entry_zone_bottom":' + str.tostring(e.zoneBottom) + ',"ote_top":' + f_jsonNumber(e.oteTop) + ',"ote_bottom":' + f_jsonNumber(e.oteBottom) + ',"ote_confirmed_at":' + f_jsonTime(e.oteConfirmedAt) + ',"range_low":' + str.tostring(e.rangeLow) + ',"range_high":' + str.tostring(e.rangeHigh) + ',"range_third":"' + e.rangeThird + '","ote_required":' + (entryRequireOte ? 'true' : 'false') + ',"minimum_grade":"' + e.minimumGrade + '","grade_at_touch":' + f_jsonString(e.gradeAtTouch) + ',"grade_at_confirmation":' + f_jsonString(e.gradeAtConfirmation) + ',"entry_touched_at":' + f_jsonTime(e.touchedAt) + ',"entry_confirmed_at":' + f_jsonTime(e.confirmedAt) + ',"entry_price":' + f_jsonNumber(e.entryPrice) + ',"stop_price":' + f_jsonNumber(e.stopPrice) + ',"entry_rr":' + f_jsonNumber(e.entryRR) + '}'
+    '{"schema_version":"1.2","event_id":"' + f_entryEventId(e) + '","setup_id":"' + f_lifecycleSetupId(e.dir, e.mssAt) + '","event_type":"' + e.eventType + '","symbol":"' + syminfo.ticker + '","direction":"' + direction + '","mss_at":' + str.tostring(e.mssAt) + ',"event_at":' + str.tostring(e.eventAt) + ',"sweep_price":' + str.tostring(e.sweepPrice) + ',"target_price":' + str.tostring(e.targetPrice) + ',"target_side":"' + (e.dir > 0 ? 'BSL' : 'SSL') + '","grade":' + f_jsonString(e.grade) + ',"rr_qualified_at":' + f_jsonTime(e.rrQualifiedAt) + ',"rr_source":' + f_jsonString(e.rrSource) + ',"rr_reference_price":' + f_jsonNumber(e.rrReferencePrice) + ',"setup_rr":' + f_jsonNumber(e.setupRR) + ',"event_price":' + str.tostring(e.eventPrice) + ',"chart_timeframe":"' + timeframe.period + '","range_timeframe":"' + rangeTf + '","message":"' + message + '","entry_id":"' + f_entryId(e) + '","entry_attempt":' + str.tostring(e.attempt) + ',"entry_source":"' + e.source + '","confirmation_method":"' + e.confirmationMethod + '","entry_zone_top":' + str.tostring(e.zoneTop) + ',"entry_zone_bottom":' + str.tostring(e.zoneBottom) + ',"ote_top":' + f_jsonNumber(e.oteTop) + ',"ote_bottom":' + f_jsonNumber(e.oteBottom) + ',"ote_confirmed_at":' + f_jsonTime(e.oteConfirmedAt) + ',"range_low":' + str.tostring(e.rangeLow) + ',"range_high":' + str.tostring(e.rangeHigh) + ',"range_third":"' + e.rangeThird + '","ote_required":' + (entryRequireOte ? 'true' : 'false') + ',"minimum_grade":"' + e.minimumGrade + '","grade_at_touch":' + f_jsonString(e.gradeAtTouch) + ',"grade_at_confirmation":' + f_jsonString(e.gradeAtConfirmation) + ',"entry_touched_at":' + f_jsonTime(e.touchedAt) + ',"entry_confirmed_at":' + f_jsonTime(e.confirmedAt) + ',"entry_price":' + f_jsonNumber(e.entryPrice) + ',"stop_price":' + f_jsonNumber(e.stopPrice) + ',"entry_rr":' + f_jsonNumber(e.entryRR) + e.evidence + '}'
 
 f_dispatchEntryLifecycle(array<string> dispatchedEventIds, EntryEvent e) =>
     string eventId = f_entryEventId(e)
@@ -3971,54 +4138,9 @@ alertcondition(evBear.catchUp,  'Bearish catch-up gap',  'ERL x IRL PO3: {{ticke
 
 
 // ============================================================================
-// TRADE DESK EXIT QUALIFICATION — fixed eleven-layer per-trade state, no webhooks
+// TRADE DESK EXIT DISPLAY — reads only the frozen entry-keyed result state
 // ============================================================================
-array<float> exitLevelPrices = array.from(currentMrzMidpoint, math.round_to_mintick(currentMrzLower - 2.0 * currentMrzWidth), math.round_to_mintick(currentMrzLower - currentMrzWidth), math.round_to_mintick(currentMrzUpper + currentMrzWidth), math.round_to_mintick(currentMrzUpper + 2.0 * currentMrzWidth), migrationEqm, previousMrzMidpoint, math.round_to_mintick(previousMrzLower - 2.0 * previousMrzWidth), math.round_to_mintick(previousMrzLower - previousMrzWidth), math.round_to_mintick(previousMrzUpper + previousMrzWidth), math.round_to_mintick(previousMrzUpper + 2.0 * previousMrzWidth))
-var array<string> exitLevelNames = str.split('C-MID,C-2W,C-1W,C+1W,C+2W,EQM,P-MID,P-2W,P-1W,P+1W,P+2W', ',')
-
-f_exitRefresh(ExitState x) =>
-    x.nextPrice := na
-    x.nextMask := 0
-    int bit = 1
-    for p in exitLevelPrices
-        if x.dir * (p - x.baseline) > 0 and x.dir * (x.target - p) >= 0
-            if na(x.nextPrice) or x.dir * (p - x.nextPrice) < 0
-                x.nextPrice := p
-                x.nextMask := bit
-            else if math.abs(p - x.nextPrice) <= syminfo.mintick * 0.5
-                x.nextMask += bit
-        bit *= 2
-    true
-
-f_exitAdvance(ExitState x) =>
-    bool scan = not na(x.nextPrice)
-    while scan
-        float p = x.nextPrice
-        bool contact = low <= p and high >= p
-        bool gapCross = not contact and not na(close[1]) and ((close[1] < p and low > p) or (close[1] > p and high < p))
-        if contact or gapCross
-            x.baseline := p
-            x.reachedHistory += str.format('|{0}:{1}:{2}:{3}', x.contextId, x.nextMask, p, time_close)
-            f_exitRefresh(x)
-            scan := not na(x.nextPrice)
-        else
-            scan := false
-    true
-
 f_exitStep(ExitState x, Setup s) =>
-    if na(x.mssAt)
-        x.mssAt := s.mssTm
-        x.target := s.tgt
-        x.reachedHistory := f_lifecycleSetupId(s.dir, x.mssAt)
-        x.baseline := s.entryPrice
-        x.displayLine := f_level(s.entryConfirmedAt, time, na, C_GRAY, 1, line.style_solid)
-        x.displayLabel := f_lbl(time, na, '', label.style_label_left)
-    if mrzGeometryAvailable
-        if x.contextId != mrzContextId
-            x.contextId := mrzContextId
-            f_exitRefresh(x)
-        else
-            f_exitAdvance(x)
     if not na(x.nextPrice)
         string exitText = ''
         int bit = 1
@@ -4038,8 +4160,6 @@ f_exitStep(ExitState x, Setup s) =>
     x.seen := true
     true
 
-var array<ExitState> exitStates = array.new<ExitState>()
-
 if barstate.isconfirmed
     for x in exitStates
         x.seen := false
@@ -4047,14 +4167,9 @@ if barstate.isconfirmed
         for i = 0 to hist.size() - 1
             Setup s = hist.get(i)
             if s.entryState == 2 and not na(s.entryConfirmedAt) and not na(s.entryPrice)
-                ExitState x = na
-                for candidate in exitStates
-                    if candidate.dir == s.dir and candidate.mssAt == s.mssTm
-                        x := candidate
-                if na(x)
-                    x := ExitState.new(dir = s.dir)
-                    exitStates.push(x)
-                f_exitStep(x, s)
+                ExitState x = f_resultFind(s)
+                if not na(x)
+                    f_exitStep(x, s)
     if exitStates.size() > 0
         for i = exitStates.size() - 1 to 0
             ExitState x = exitStates.get(i)

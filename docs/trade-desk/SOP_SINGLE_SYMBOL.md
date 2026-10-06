@@ -190,6 +190,19 @@ Subsequent Astra wakes manage the same trade lifecycle through HOLD, REDUCE, or
 EXIT decisions. MRZ migration supplies new structural information; it is not an
 automatic exit.
 
+### MRZ updates while an entry is open
+
+Once an entry is `ENTRY_CONFIRMED`, keep its entry-time MRZ context and exit
+ladder frozen until `ENTRY_TARGET_TAKEN`, `ENTRY_STOPPED`, or
+`ENTRY_AMBIGUOUS`. Do not update the TradeDesk MRZ migration slots or recreate
+the TradeDesk lifecycle alert while that entry remains open. A newer
+authoritative MRZ is pending operational context only; it does not alter the
+open trade's ladder, reached levels, MFE, MAE, entry, stop, target, or result.
+
+After the entry reaches a terminal state, apply the latest authoritative MRZ
+migration data and recreate the TradingView alert before allowing the next
+trade to use the new context.
+
 ## Episode completion
 
 Natural structural Episode Run completion is:

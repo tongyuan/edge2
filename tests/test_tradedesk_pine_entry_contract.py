@@ -61,8 +61,8 @@ class TradeDeskPineEntryContractTests(unittest.TestCase):
         self.assertNotIn("entryMarker :=", touched_block)
         self.assertIn("s.entryMarker := f_lbl", self.text)
 
-    def test_schema_1_1_keeps_setup_and_entry_rr_separate(self) -> None:
-        self.assertIn('"schema_version":"1.1"', self.text)
+    def test_schema_1_2_keeps_setup_and_entry_rr_separate(self) -> None:
+        self.assertIn('"schema_version":"1.2"', self.text)
         self.assertIn('"setup_rr":', self.text)
         self.assertIn('"entry_rr":', self.text)
         self.assertIn('"ote_confirmed_at":', self.text)
