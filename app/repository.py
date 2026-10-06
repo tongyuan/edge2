@@ -604,7 +604,7 @@ class EdgeRepository:
                     {
                         **payload.model_dump(exclude={
                             "frozen_exit_ladder", "terminal_bar_levels_touched",
-                            "level_mask", "terminal_level_mask",
+                            "level_mask", "terminal_level_mask", "reached_mask",
                         }),
                         "mss_at": mss_at,
                         "event_at": event_at,
@@ -628,7 +628,9 @@ class EdgeRepository:
                         "best_level_pre_terminal_ids": Json(payload.best_level_pre_terminal_ids)
                         if payload.best_level_pre_terminal_ids is not None else None,
                         "terminal_bar_levels_touched": (
-                            Json({"level_mask": payload.terminal_level_mask})
+                            Json({"reached_mask": payload.reached_mask})
+                            if payload.reached_mask is not None
+                            else Json({"level_mask": payload.terminal_level_mask})
                             if payload.terminal_level_mask is not None
                             else Json([
                                 item.model_dump(mode="json")
@@ -1046,11 +1048,16 @@ class EdgeRepository:
                 status = "LOSS" if terminal["event_type"] == "ENTRY_STOPPED" else "WIN"
 
         closed_at = terminal["event_at"] if terminal is not None else None
+        terminal_evidence = terminal["terminal_bar_levels_touched"] if terminal is not None else None
+        summary_terminal = (
+            isinstance(terminal_evidence, dict) and "reached_mask" in terminal_evidence
+        )
         reach_events = [
             event for event in events
             if event["event_type"] == "ENTRY_EXIT_LEVEL_REACHED"
             and event["event_at"] > opened_at
             and (closed_at is None or event["event_at"] < closed_at)
+            and not summary_terminal
         ]
         frozen_groups = {
             tuple(sorted(group["level_ids"])): Decimal(str(group["level_price"]))
@@ -1082,6 +1089,33 @@ class EdgeRepository:
         initial_risk = confirmation["initial_risk"]
         if initial_risk is None:
             initial_risk = abs(attempt["entry_price"] - attempt["stop_price"])
+        best_summary = None
+        if summary_terminal:
+            reached_mask = int(terminal_evidence["reached_mask"])
+            for group in confirmation["frozen_exit_ladder"] or []:
+                group_mask = sum(
+                    1 << TRADEDESK_EXIT_LEVEL_ORDER.index(level_id)
+                    for level_id in group["level_ids"]
+                )
+                if not group.get("eligible") or not group_mask & reached_mask:
+                    continue
+                level_price = Decimal(str(group["level_price"]))
+                excursion_r = max(
+                    Decimal(0),
+                    Decimal(1 if attempt["direction"] == "LONG" else -1)
+                    * (level_price - attempt["entry_price"]) / initial_risk,
+                )
+                reached_levels.append({
+                    "level_ids": group["level_ids"],
+                    "level_price": str(level_price),
+                    "excursion_r": str(excursion_r),
+                    "contact_mode": None,
+                })
+                if (
+                    best_summary is None
+                    or group["destination_order"] > best_summary["destination_order"]
+                ):
+                    best_summary = {**group, "excursion_r": excursion_r}
         complete = confirmation["schema_version"] == "1.2" and (
             terminal is None or terminal["schema_version"] == "1.2"
         )
@@ -1089,16 +1123,20 @@ class EdgeRepository:
         if status == "AMBIGUOUS" and terminal_type != "ENTRY_AMBIGUOUS":
             terminal_type = "ENTRY_AMBIGUOUS"
 
-        terminal_levels = terminal["terminal_bar_levels_touched"] if terminal is not None else None
+        terminal_levels = terminal_evidence
         compact_terminal = isinstance(terminal_levels, dict) and "level_mask" in terminal_levels
-        core_terminal = compact_terminal and terminal is not None and all(
-            terminal[field] is None for field in (
-                "mae_pre_terminal_price", "mae_pre_terminal_r",
-                "mfe_inclusive_price", "mfe_inclusive_r",
-                "mae_inclusive_price", "mae_inclusive_r",
+        core_terminal = summary_terminal or (
+            compact_terminal and terminal is not None and all(
+                terminal[field] is None for field in (
+                    "mae_pre_terminal_price", "mae_pre_terminal_r",
+                    "mfe_inclusive_price", "mfe_inclusive_r",
+                    "mae_inclusive_price", "mae_inclusive_r",
+                )
             )
         )
-        if compact_terminal:
+        if summary_terminal:
+            terminal_levels = None
+        elif compact_terminal:
             mask = int(terminal_levels["level_mask"])
             terminal_levels = []
             for group in confirmation["frozen_exit_ladder"] or []:
@@ -1113,18 +1151,21 @@ class EdgeRepository:
                     })
 
         derive_best = compact_terminal and best_reach is not None
-        best_ids = best_reach["level_ids"] if derive_best else (
+        best_ids = best_summary["level_ids"] if best_summary is not None else (
+            best_reach["level_ids"] if derive_best else (
             terminal["best_level_pre_terminal_ids"] if terminal is not None else None
-        )
-        best_price = best_reach["level_price"] if derive_best else (
+        ))
+        best_price = best_summary["level_price"] if best_summary is not None else (
+            best_reach["level_price"] if derive_best else (
             terminal["best_level_pre_terminal_price"] if terminal is not None else None
-        )
-        best_r = best_reach["excursion_r"] if derive_best else (
+        ))
+        best_r = best_summary["excursion_r"] if best_summary is not None else (
+            best_reach["excursion_r"] if derive_best else (
             terminal["best_level_pre_terminal_r"] if terminal is not None else None
-        )
-        best_at = best_reach["event_at"] if derive_best else (
+        ))
+        best_at = None if summary_terminal else (best_reach["event_at"] if derive_best else (
             terminal["best_level_pre_terminal_at"] if terminal is not None else None
-        )
+        ))
 
         cursor.execute(
             """

@@ -279,6 +279,9 @@ class TradeDeskLifecyclePayload(BaseModel):
     terminal_level_mask: int | None = Field(
         default=None, ge=0, le=TRADEDESK_EXIT_LEVEL_MASK, exclude=True
     )
+    reached_mask: int | None = Field(
+        default=None, ge=0, le=TRADEDESK_EXIT_LEVEL_MASK, exclude=True
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -288,7 +291,7 @@ class TradeDeskLifecyclePayload(BaseModel):
         data = dict(raw)
         compact_keys = {
             "ladder_prices", "ladder_available", "ladder_mintick",
-            "level_mask", "terminal_level_mask",
+            "level_mask", "terminal_level_mask", "reached_mask",
         }
         uses_compact = bool(compact_keys.intersection(data))
         if data.get("schema_version") != "1.2" and uses_compact:
@@ -330,7 +333,7 @@ class TradeDeskLifecyclePayload(BaseModel):
                     Decimal(str(data["level_price"])) - Decimal(str(data["entry_price"]))
                 ) / Decimal(str(data["initial_risk"])),
             )
-        if data.get("terminal_level_mask") is not None:
+        if data.get("terminal_level_mask") is not None or data.get("reached_mask") is not None:
             if "terminal_bar_levels_touched" in data:
                 raise ValueError("compact and verbose terminal-level evidence cannot be mixed")
             direction = Decimal(1 if data.get("direction") == "LONG" else -1)
@@ -572,7 +575,7 @@ class TradeDeskLifecyclePayload(BaseModel):
             "mae_inclusive_price", "mae_inclusive_r", "best_level_pre_terminal_ids",
             "best_level_pre_terminal_price", "best_level_pre_terminal_r",
             "best_level_pre_terminal_at", "terminal_bar_levels_touched",
-            "terminal_level_mask",
+            "terminal_level_mask", "reached_mask",
         )
         if self.schema_version != "1.2" and any(
             getattr(self, field) is not None for field in evidence_fields
@@ -620,7 +623,7 @@ class TradeDeskLifecyclePayload(BaseModel):
         if self.schema_version == "1.2" and terminal_event:
             terminal_required = (
                 ("initial_risk", "mfe_pre_terminal_price", "mfe_pre_terminal_r")
-                if self.terminal_level_mask is not None
+                if self.terminal_level_mask is not None or self.reached_mask is not None
                 else (
                     "initial_risk", "mfe_pre_terminal_price", "mfe_pre_terminal_r",
                     "mae_pre_terminal_price", "mae_pre_terminal_r", "mfe_inclusive_price",
@@ -630,7 +633,11 @@ class TradeDeskLifecyclePayload(BaseModel):
             missing = [field for field in terminal_required if getattr(self, field) is None]
             if missing:
                 raise ValueError(f"schema 1.2 terminal event is missing: {', '.join(missing)}")
-            if self.terminal_bar_levels_touched is None and self.terminal_level_mask is None:
+            if (
+                self.terminal_bar_levels_touched is None
+                and self.terminal_level_mask is None
+                and self.reached_mask is None
+            ):
                 raise ValueError("schema 1.2 terminal event requires terminal level evidence")
             if self.initial_risk <= 0:
                 raise ValueError("initial_risk must be positive")

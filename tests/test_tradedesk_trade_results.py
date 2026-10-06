@@ -147,6 +147,14 @@ def core_terminal(event_type: str, **overrides) -> dict:
     return payload
 
 
+def summary_terminal(event_type: str, **overrides) -> dict:
+    payload = core_terminal(event_type)
+    payload.pop("terminal_level_mask")
+    payload["reached_mask"] = (1 << 3) | (1 << 5) | (1 << 6)
+    payload.update(overrides)
+    return payload
+
+
 class TradeDeskSchema12ValidationTests(unittest.TestCase):
     def test_schema_10_and_11_remain_accepted(self) -> None:
         self.assertEqual(
@@ -230,6 +238,14 @@ class TradeDeskSchema12ValidationTests(unittest.TestCase):
         self.assertIsNone(parsed.mae_pre_terminal_price)
         self.assertIsNone(parsed.mfe_inclusive_price)
         self.assertIsNone(parsed.mae_inclusive_price)
+
+    def test_summary_terminal_accepts_reached_mask_without_terminal_mask(self) -> None:
+        parsed = TradeDeskLifecyclePayload.model_validate(
+            summary_terminal("ENTRY_STOPPED")
+        )
+        self.assertEqual(parsed.reached_mask, (1 << 3) | (1 << 5) | (1 << 6))
+        self.assertIsNone(parsed.terminal_level_mask)
+        self.assertGreater(parsed.mfe_pre_terminal_r, 0)
 
     def test_schema_11_cannot_smuggle_schema_12_evidence(self) -> None:
         with self.assertRaises(ValidationError):
@@ -523,7 +539,7 @@ class TradeDeskTradeResultPersistenceTests(unittest.TestCase):
             entry_zone_bottom=1480, ote_top=1494.52, ote_bottom=1480,
             entry_price=1490, stop_price=1502, entry_rr=4,
         )
-        terminal = core_terminal(
+        terminal = summary_terminal(
             "ENTRY_TARGET_TAKEN",
             event_id="ZECUSDT-SHORT-1790762700000-E1-ENTRY_TARGET_TAKEN",
             setup_id=confirmation["setup_id"], entry_id=confirmation["entry_id"],
@@ -532,12 +548,72 @@ class TradeDeskTradeResultPersistenceTests(unittest.TestCase):
             entry_zone_bottom=1480, ote_top=1494.52, ote_bottom=1480,
             entry_price=1490, stop_price=1502, entry_rr=4,
             mfe_pre_terminal_price=1466,
+            reached_mask=(1 << 0) | (1 << 2),
         )
         self.assertEqual(self.post(confirmation).status_code, 200)
         self.assertEqual(self.post(terminal).status_code, 200)
         result = self.fetchone("SELECT * FROM tradedesk_trade_results")
         self.assertEqual(result["status"], "WIN")
         self.assertEqual(result["mfe_pre_terminal_r"], Decimal("2"))
+
+    def test_summary_terminal_projects_mask_without_reach_events(self) -> None:
+        self.assertEqual(self.post(compact_confirmation()).status_code, 200)
+        self.assertEqual(
+            self.post(summary_terminal("ENTRY_STOPPED")).status_code, 200
+        )
+        result = self.fetchone("SELECT * FROM tradedesk_trade_results")
+        self.assertEqual(result["evidence_version"], "1.2-core")
+        self.assertEqual(
+            [item["level_ids"] for item in result["reached_levels"]],
+            [["C+1W", "EQM"], ["P-MID"]],
+        )
+        self.assertEqual(result["best_level_pre_terminal_ids"], ["P-MID"])
+        self.assertEqual(str(result["best_level_pre_terminal_price"]), "1440")
+        self.assertIsNone(result["best_level_pre_terminal_at"])
+        self.assertIsNone(result["terminal_bar_levels_touched"])
+
+    def test_summary_terminal_mask_is_idempotent_for_coincident_and_repeated_bits(self) -> None:
+        self.post(compact_confirmation())
+        payload = summary_terminal(
+            "ENTRY_TARGET_TAKEN", reached_mask=(1 << 3) | (1 << 5)
+        )
+        self.assertEqual(self.post(payload).status_code, 200)
+        self.assertEqual(self.post(payload).status_code, 200)
+        result = self.fetchone("SELECT reached_levels FROM tradedesk_trade_results")
+        self.assertEqual(len(result["reached_levels"]), 1)
+        self.assertEqual(result["reached_levels"][0]["level_ids"], ["C+1W", "EQM"])
+
+    def test_summary_terminal_all_outcomes_project(self) -> None:
+        expected = {
+            "ENTRY_STOPPED": "LOSS",
+            "ENTRY_TARGET_TAKEN": "WIN",
+            "ENTRY_AMBIGUOUS": "AMBIGUOUS",
+        }
+        for event_type, status in expected.items():
+            with self.subTest(event_type=event_type):
+                clean(self.database_url)
+                self.post(compact_confirmation())
+                self.assertEqual(self.post(summary_terminal(event_type)).status_code, 200)
+                result = self.fetchone("SELECT * FROM tradedesk_trade_results")
+                self.assertEqual(result["status"], status)
+                self.assertEqual(str(result["mfe_pre_terminal_price"]), "1432")
+                self.assertGreater(result["mfe_pre_terminal_r"], 0)
+
+    def test_summary_terminal_reordered_delivery_and_rebuild_are_exact(self) -> None:
+        self.assertEqual(
+            self.post(summary_terminal("ENTRY_AMBIGUOUS")).status_code, 200
+        )
+        self.assertEqual(self.post(compact_confirmation()).status_code, 200)
+        before = self.fetchone(
+            "SELECT to_jsonb(result) - 'created_at' - 'updated_at' AS value "
+            "FROM tradedesk_trade_results result"
+        )["value"]
+        self.client.app.state.repository.rebuild_tradedesk_trade_results()
+        after = self.fetchone(
+            "SELECT to_jsonb(result) - 'created_at' - 'updated_at' AS value "
+            "FROM tradedesk_trade_results result"
+        )["value"]
+        self.assertEqual(after, before)
 
     def test_core_reordered_delivery_and_rebuild_are_exact(self) -> None:
         for payload in (
