@@ -91,13 +91,57 @@ TRADEDESK_ENTRY_EVENT_TYPES = {
     "ENTRY_STOPPED",
     "ENTRY_TARGET_TAKEN",
     "ENTRY_AMBIGUOUS",
+    "ENTRY_EXIT_LEVEL_REACHED",
 }
+
+TRADEDESK_EXIT_LEVEL_IDS = {
+    "C-MID", "C-2W", "C-1W", "C+1W", "C+2W", "EQM",
+    "P-MID", "P-2W", "P-1W", "P+1W", "P+2W",
+}
+
+
+class FrozenExitLevelGroup(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    level_ids: list[str] = Field(min_length=1)
+    level_price: Decimal
+    eligible: bool
+    destination_order: int | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def validate_group(self) -> "FrozenExitLevelGroup":
+        if len(set(self.level_ids)) != len(self.level_ids):
+            raise ValueError("frozen exit level IDs must be unique within a group")
+        if not set(self.level_ids).issubset(TRADEDESK_EXIT_LEVEL_IDS):
+            raise ValueError("unknown frozen exit level ID")
+        if not self.level_price.is_finite():
+            raise ValueError("frozen exit level price must be finite")
+        if self.eligible != (self.destination_order is not None):
+            raise ValueError("eligible frozen levels require destination_order")
+        return self
+
+
+class TerminalExitLevel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    level_ids: list[str] = Field(min_length=1)
+    level_price: Decimal
+
+    @model_validator(mode="after")
+    def validate_level(self) -> "TerminalExitLevel":
+        if len(set(self.level_ids)) != len(self.level_ids):
+            raise ValueError("terminal exit level IDs must be unique")
+        if not set(self.level_ids).issubset(TRADEDESK_EXIT_LEVEL_IDS):
+            raise ValueError("unknown terminal exit level ID")
+        if not self.level_price.is_finite():
+            raise ValueError("terminal exit level price must be finite")
+        return self
 
 
 class TradeDeskLifecyclePayload(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    schema_version: Literal["1.0", "1.1"]
+    schema_version: Literal["1.0", "1.1", "1.2"]
     event_id: str = Field(min_length=1, max_length=224)
     setup_id: str = Field(min_length=1, max_length=160)
     event_type: Literal[
@@ -114,6 +158,7 @@ class TradeDeskLifecyclePayload(BaseModel):
         "ENTRY_STOPPED",
         "ENTRY_TARGET_TAKEN",
         "ENTRY_AMBIGUOUS",
+        "ENTRY_EXIT_LEVEL_REACHED",
     ]
     symbol: str = Field(min_length=1, max_length=32)
     direction: Literal["LONG", "SHORT"]
@@ -152,6 +197,27 @@ class TradeDeskLifecyclePayload(BaseModel):
     entry_price: Decimal | None = None
     stop_price: Decimal | None = None
     entry_rr: Decimal | None = None
+    mrz_context_id: str | None = Field(default=None, max_length=512)
+    exit_ladder_available: bool | None = None
+    frozen_exit_ladder: list[FrozenExitLevelGroup] | None = None
+    initial_risk: Decimal | None = None
+    level_ids: list[str] | None = None
+    level_price: Decimal | None = None
+    excursion_r: Decimal | None = None
+    contact_mode: Literal["RANGE_TOUCH", "GAP_CROSS"] | None = None
+    mfe_pre_terminal_price: Decimal | None = None
+    mfe_pre_terminal_r: Decimal | None = None
+    mae_pre_terminal_price: Decimal | None = None
+    mae_pre_terminal_r: Decimal | None = None
+    mfe_inclusive_price: Decimal | None = None
+    mfe_inclusive_r: Decimal | None = None
+    mae_inclusive_price: Decimal | None = None
+    mae_inclusive_r: Decimal | None = None
+    best_level_pre_terminal_ids: list[str] | None = None
+    best_level_pre_terminal_price: Decimal | None = None
+    best_level_pre_terminal_r: Decimal | None = None
+    best_level_pre_terminal_at: int | None = Field(default=None, gt=0)
+    terminal_bar_levels_touched: list[TerminalExitLevel] | None = None
 
     @field_validator("event_id", "setup_id", "entry_id")
     @classmethod
@@ -181,6 +247,19 @@ class TradeDeskLifecyclePayload(BaseModel):
         "entry_price",
         "stop_price",
         "entry_rr",
+        "initial_risk",
+        "level_price",
+        "excursion_r",
+        "mfe_pre_terminal_price",
+        "mfe_pre_terminal_r",
+        "mae_pre_terminal_price",
+        "mae_pre_terminal_r",
+        "mfe_inclusive_price",
+        "mfe_inclusive_r",
+        "mae_inclusive_price",
+        "mae_inclusive_r",
+        "best_level_pre_terminal_price",
+        "best_level_pre_terminal_r",
     )
     @classmethod
     def validate_finite_rr(cls, value: Decimal | None) -> Decimal | None:
@@ -221,8 +300,8 @@ class TradeDeskLifecyclePayload(BaseModel):
                 raise ValueError("schema 1.0 events cannot contain entry fields")
             return self
 
-        if self.schema_version != "1.1":
-            raise ValueError("entry events require schema_version=1.1")
+        if self.schema_version not in {"1.1", "1.2"}:
+            raise ValueError("entry events require schema_version=1.1 or 1.2")
 
         required = (
             "entry_id",
@@ -303,6 +382,7 @@ class TradeDeskLifecyclePayload(BaseModel):
 
         confirmed_event = self.event_type in {
             "ENTRY_CONFIRMED",
+            "ENTRY_EXIT_LEVEL_REACHED",
             "ENTRY_STOPPED",
             "ENTRY_TARGET_TAKEN",
             "ENTRY_AMBIGUOUS",
@@ -351,6 +431,96 @@ class TradeDeskLifecyclePayload(BaseModel):
                     raise ValueError("SHORT entry price must be in the top third")
         elif any(getattr(self, field) is not None for field in confirmed_fields):
             raise ValueError("unconfirmed entry events cannot contain confirmation fields")
+
+        evidence_fields = (
+            "mrz_context_id", "exit_ladder_available", "frozen_exit_ladder",
+            "initial_risk", "level_ids", "level_price", "excursion_r", "contact_mode",
+            "mfe_pre_terminal_price", "mfe_pre_terminal_r", "mae_pre_terminal_price",
+            "mae_pre_terminal_r", "mfe_inclusive_price", "mfe_inclusive_r",
+            "mae_inclusive_price", "mae_inclusive_r", "best_level_pre_terminal_ids",
+            "best_level_pre_terminal_price", "best_level_pre_terminal_r",
+            "best_level_pre_terminal_at", "terminal_bar_levels_touched",
+        )
+        if self.schema_version != "1.2" and any(
+            getattr(self, field) is not None for field in evidence_fields
+        ):
+            raise ValueError("schema 1.2 evidence requires schema_version=1.2")
+
+        if self.schema_version == "1.2" and self.event_type == "ENTRY_CONFIRMED":
+            if self.initial_risk is None or self.initial_risk <= 0:
+                raise ValueError("schema 1.2 confirmation requires positive initial_risk")
+            if self.exit_ladder_available is None or self.frozen_exit_ladder is None:
+                raise ValueError("schema 1.2 confirmation requires frozen ladder evidence")
+            if self.exit_ladder_available:
+                if not self.mrz_context_id or not self.frozen_exit_ladder:
+                    raise ValueError("available frozen ladder requires MRZ context and levels")
+                all_ids = [level_id for group in self.frozen_exit_ladder for level_id in group.level_ids]
+                if len(all_ids) != 11 or set(all_ids) != TRADEDESK_EXIT_LEVEL_IDS:
+                    raise ValueError("frozen ladder must contain all 11 canonical identities")
+                orders = sorted(
+                    group.destination_order
+                    for group in self.frozen_exit_ladder
+                    if group.destination_order is not None
+                )
+                if orders != list(range(1, len(orders) + 1)):
+                    raise ValueError("eligible frozen ladder order must be contiguous")
+            elif self.mrz_context_id is not None or self.frozen_exit_ladder:
+                raise ValueError("unavailable frozen ladder must not contain MRZ geometry")
+
+        if self.event_type == "ENTRY_EXIT_LEVEL_REACHED":
+            if self.schema_version != "1.2":
+                raise ValueError("exit-level reaches require schema_version=1.2")
+            if not self.level_ids or self.level_price is None or self.excursion_r is None or self.contact_mode is None:
+                raise ValueError("exit-level reach is missing level evidence")
+            if not set(self.level_ids).issubset(TRADEDESK_EXIT_LEVEL_IDS):
+                raise ValueError("exit-level reach contains unknown level ID")
+            if len(self.level_ids) != len(set(self.level_ids)):
+                raise ValueError("exit-level reach IDs must be unique")
+            if self.excursion_r < 0:
+                raise ValueError("excursion_r must be non-negative")
+
+        terminal_event = self.event_type in {
+            "ENTRY_STOPPED", "ENTRY_TARGET_TAKEN", "ENTRY_AMBIGUOUS"
+        }
+        if self.schema_version == "1.2" and terminal_event:
+            terminal_required = (
+                "initial_risk", "mfe_pre_terminal_price", "mfe_pre_terminal_r",
+                "mae_pre_terminal_price", "mae_pre_terminal_r", "mfe_inclusive_price",
+                "mfe_inclusive_r", "mae_inclusive_price", "mae_inclusive_r",
+                "terminal_bar_levels_touched",
+            )
+            missing = [field for field in terminal_required if getattr(self, field) is None]
+            if missing:
+                raise ValueError(f"schema 1.2 terminal event is missing: {', '.join(missing)}")
+            if self.initial_risk <= 0:
+                raise ValueError("initial_risk must be positive")
+            for field in (
+                "mfe_pre_terminal_r", "mae_pre_terminal_r",
+                "mfe_inclusive_r", "mae_inclusive_r",
+            ):
+                if getattr(self, field) < 0:
+                    raise ValueError(f"{field} must be non-negative")
+            best = (
+                self.best_level_pre_terminal_ids,
+                self.best_level_pre_terminal_price,
+                self.best_level_pre_terminal_r,
+                self.best_level_pre_terminal_at,
+            )
+            if any(value is not None for value in best) and not all(value is not None for value in best):
+                raise ValueError("best pre-terminal level fields must be all present or all absent")
+            if self.best_level_pre_terminal_ids is not None:
+                if not set(self.best_level_pre_terminal_ids).issubset(TRADEDESK_EXIT_LEVEL_IDS):
+                    raise ValueError("best pre-terminal level contains unknown ID")
+                if len(self.best_level_pre_terminal_ids) != len(set(self.best_level_pre_terminal_ids)):
+                    raise ValueError("best pre-terminal level IDs must be unique")
+                if self.best_level_pre_terminal_r < 0:
+                    raise ValueError("best_level_pre_terminal_r must be non-negative")
+                if not (
+                    self.entry_confirmed_at
+                    < self.best_level_pre_terminal_at
+                    < self.event_at
+                ):
+                    raise ValueError("best pre-terminal time must be strictly before terminal")
 
         grade_rank = {None: 0, "A": 1, "A+": 2}
         required_rank = {None: 0, "Off": 0, "A": 1, "A+": 2}[self.minimum_grade]

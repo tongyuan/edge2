@@ -26,6 +26,7 @@ def clean(database_url: str) -> None:
             cursor.execute(
                 """
                 TRUNCATE TABLE
+                    tradedesk_trade_results,
                     tradedesk_entry_attempts,
                     tradedesk_lifecycle_events,
                     tradedesk_setups,

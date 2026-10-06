@@ -560,61 +560,72 @@ class EdgeRepository:
                         range_low, range_high, range_third, ote_required, minimum_grade,
                         grade_at_touch, grade_at_confirmation,
                         entry_touched_at, entry_confirmed_at,
-                        entry_price, stop_price, entry_rr
+                        entry_price, stop_price, entry_rr,
+                        mrz_context_id, exit_ladder_available, frozen_exit_ladder,
+                        initial_risk, level_ids, level_price, excursion_r, contact_mode,
+                        mfe_pre_terminal_price, mfe_pre_terminal_r,
+                        mae_pre_terminal_price, mae_pre_terminal_r,
+                        mfe_inclusive_price, mfe_inclusive_r,
+                        mae_inclusive_price, mae_inclusive_r,
+                        best_level_pre_terminal_ids, best_level_pre_terminal_price,
+                        best_level_pre_terminal_r, best_level_pre_terminal_at,
+                        terminal_bar_levels_touched
                     )
                     VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s
+                        %(schema_version)s, %(event_id)s, %(setup_id)s, %(event_type)s,
+                        %(symbol)s, %(direction)s, %(mss_at)s, %(event_at)s,
+                        %(sweep_price)s, %(target_price)s, %(target_side)s, %(grade)s,
+                        %(rr_qualified_at)s, %(rr_source)s, %(rr_reference_price)s, %(setup_rr)s,
+                        %(event_price)s, %(chart_timeframe)s, %(range_timeframe)s, %(message)s,
+                        %(entry_id)s, %(entry_attempt)s, %(entry_source)s, %(confirmation_method)s,
+                        %(entry_zone_top)s, %(entry_zone_bottom)s, %(ote_top)s, %(ote_bottom)s,
+                        %(ote_confirmed_at)s, %(range_low)s, %(range_high)s, %(range_third)s,
+                        %(ote_required)s, %(minimum_grade)s, %(grade_at_touch)s,
+                        %(grade_at_confirmation)s, %(entry_touched_at)s, %(entry_confirmed_at)s,
+                        %(entry_price)s, %(stop_price)s, %(entry_rr)s,
+                        %(mrz_context_id)s, %(exit_ladder_available)s, %(frozen_exit_ladder)s,
+                        %(initial_risk)s, %(level_ids)s, %(level_price)s, %(excursion_r)s,
+                        %(contact_mode)s, %(mfe_pre_terminal_price)s, %(mfe_pre_terminal_r)s,
+                        %(mae_pre_terminal_price)s, %(mae_pre_terminal_r)s,
+                        %(mfe_inclusive_price)s, %(mfe_inclusive_r)s,
+                        %(mae_inclusive_price)s, %(mae_inclusive_r)s,
+                        %(best_level_pre_terminal_ids)s, %(best_level_pre_terminal_price)s,
+                        %(best_level_pre_terminal_r)s, %(best_level_pre_terminal_at)s,
+                        %(terminal_bar_levels_touched)s
                     )
                     ON CONFLICT (event_id) DO NOTHING
                     RETURNING received_at
                     """,
-                    (
-                        payload.schema_version,
-                        payload.event_id,
-                        payload.setup_id,
-                        payload.event_type,
-                        payload.symbol,
-                        payload.direction,
-                        mss_at,
-                        event_at,
-                        payload.sweep_price,
-                        payload.target_price,
-                        payload.target_side,
-                        payload.grade,
-                        rr_qualified_at,
-                        payload.rr_source,
-                        payload.rr_reference_price,
-                        payload.setup_rr,
-                        payload.event_price,
-                        payload.chart_timeframe,
-                        payload.range_timeframe,
-                        payload.message,
-                        payload.entry_id,
-                        payload.entry_attempt,
-                        payload.entry_source,
-                        payload.confirmation_method,
-                        payload.entry_zone_top,
-                        payload.entry_zone_bottom,
-                        payload.ote_top,
-                        payload.ote_bottom,
-                        ote_confirmed_at,
-                        payload.range_low,
-                        payload.range_high,
-                        payload.range_third,
-                        payload.ote_required,
-                        payload.minimum_grade,
-                        payload.grade_at_touch,
-                        payload.grade_at_confirmation,
-                        entry_touched_at,
-                        entry_confirmed_at,
-                        payload.entry_price,
-                        payload.stop_price,
-                        payload.entry_rr,
-                    ),
+                    {
+                        **payload.model_dump(exclude={
+                            "frozen_exit_ladder", "terminal_bar_levels_touched"
+                        }),
+                        "mss_at": mss_at,
+                        "event_at": event_at,
+                        "rr_qualified_at": rr_qualified_at,
+                        "entry_touched_at": entry_touched_at,
+                        "entry_confirmed_at": entry_confirmed_at,
+                        "ote_confirmed_at": ote_confirmed_at,
+                        "best_level_pre_terminal_at": (
+                            datetime.fromtimestamp(
+                                payload.best_level_pre_terminal_at / 1000,
+                                tz=timezone.utc,
+                            )
+                            if payload.best_level_pre_terminal_at is not None
+                            else None
+                        ),
+                        "frozen_exit_ladder": Json([
+                            item.model_dump(mode="json")
+                            for item in payload.frozen_exit_ladder
+                        ]) if payload.frozen_exit_ladder is not None else None,
+                        "level_ids": Json(payload.level_ids) if payload.level_ids is not None else None,
+                        "best_level_pre_terminal_ids": Json(payload.best_level_pre_terminal_ids)
+                        if payload.best_level_pre_terminal_ids is not None else None,
+                        "terminal_bar_levels_touched": Json([
+                            item.model_dump(mode="json")
+                            for item in payload.terminal_bar_levels_touched
+                        ]) if payload.terminal_bar_levels_touched is not None else None,
+                    },
                 )
                 inserted = cursor.fetchone()
                 if inserted is None:
@@ -811,6 +822,7 @@ class EdgeRepository:
             "ENTRY_STOPPED",
             "ENTRY_TARGET_TAKEN",
             "ENTRY_AMBIGUOUS",
+            "ENTRY_EXIT_LEVEL_REACHED",
         }:
             return
 
@@ -901,7 +913,7 @@ class EdgeRepository:
             SELECT event_type, event_at, entry_confirmed_at
             FROM tradedesk_lifecycle_events
             WHERE entry_id = %s
-            ORDER BY event_at, id
+            ORDER BY event_at, event_id
             """,
             (payload.entry_id,),
         )
@@ -910,6 +922,7 @@ class EdgeRepository:
             "UPDATE tradedesk_entry_attempts SET status = %s WHERE entry_id = %s",
             (status, payload.entry_id),
         )
+        self._rebuild_tradedesk_trade_result(cursor, str(payload.entry_id))
 
     @staticmethod
     def _tradedesk_entry_status(events: Sequence[Mapping[str, Any]]) -> str:
@@ -951,6 +964,251 @@ class EdgeRepository:
             return "STOPPED" if "ENTRY_STOPPED" in first_types else "TARGET_TAKEN"
 
         return "CONFIRMED" if confirmed_at is not None else "CANDIDATE"
+
+    def _rebuild_tradedesk_trade_result(
+        self,
+        cursor: RealDictCursor,
+        entry_id: str,
+    ) -> None:
+        """Rebuild one trade result only from immutable lifecycle and MRZ authority."""
+        cursor.execute(
+            """
+            SELECT *
+            FROM tradedesk_lifecycle_events
+            WHERE entry_id = %s
+            ORDER BY event_at, event_id
+            """,
+            (entry_id,),
+        )
+        events = list(cursor.fetchall())
+        confirmations = [
+            event for event in events if event["event_type"] == "ENTRY_CONFIRMED"
+        ]
+        if not confirmations:
+            cursor.execute(
+                "DELETE FROM tradedesk_trade_results WHERE entry_id = %s",
+                (entry_id,),
+            )
+            return
+
+        confirmation = confirmations[0]
+        cursor.execute(
+            """
+            SELECT attempt.*, setup.symbol, setup.direction
+            FROM tradedesk_entry_attempts attempt
+            JOIN tradedesk_setups setup USING (setup_id)
+            WHERE attempt.entry_id = %s
+            """,
+            (entry_id,),
+        )
+        attempt = cursor.fetchone()
+        if attempt is None:
+            raise ValueError(f"Missing TradeDesk entry projection for {entry_id}")
+
+        opened_at = confirmation["entry_confirmed_at"] or confirmation["event_at"]
+        ambiguous = [
+            event for event in events
+            if event["event_type"] == "ENTRY_AMBIGUOUS"
+            and event["event_at"] > opened_at
+        ]
+        terminal_candidates = [
+            event for event in events
+            if event["event_type"] in {"ENTRY_STOPPED", "ENTRY_TARGET_TAKEN"}
+            and event["event_at"] > opened_at
+        ]
+        terminal = None
+        status = "OPEN"
+        if ambiguous:
+            terminal = min(
+                ambiguous,
+                key=lambda event: (event["event_at"], event["event_id"]),
+            )
+            status = "AMBIGUOUS"
+        elif terminal_candidates:
+            first_at = min(event["event_at"] for event in terminal_candidates)
+            first = [event for event in terminal_candidates if event["event_at"] == first_at]
+            types = {event["event_type"] for event in first}
+            if types == {"ENTRY_STOPPED", "ENTRY_TARGET_TAKEN"}:
+                status = "AMBIGUOUS"
+                terminal = min(first, key=lambda event: event["event_id"])
+            else:
+                terminal = min(first, key=lambda event: event["event_id"])
+                status = "LOSS" if terminal["event_type"] == "ENTRY_STOPPED" else "WIN"
+
+        closed_at = terminal["event_at"] if terminal is not None else None
+        reach_events = [
+            event for event in events
+            if event["event_type"] == "ENTRY_EXIT_LEVEL_REACHED"
+            and event["event_at"] > opened_at
+            and (closed_at is None or event["event_at"] < closed_at)
+        ]
+        frozen_groups = {
+            tuple(sorted(group["level_ids"])): Decimal(str(group["level_price"]))
+            for group in (confirmation["frozen_exit_ladder"] or [])
+            if group.get("eligible")
+        }
+        reached_levels = []
+        reached_groups: set[tuple[str, ...]] = set()
+        for event in reach_events:
+            group_id = tuple(sorted(event["level_ids"] or []))
+            if (
+                group_id in reached_groups
+                or frozen_groups.get(group_id) != event["level_price"]
+            ):
+                continue
+            reached_groups.add(group_id)
+            reached_levels.append({
+                "event_id": event["event_id"],
+                "event_at": event["event_at"].isoformat(),
+                "level_ids": event["level_ids"],
+                "level_price": str(event["level_price"]),
+                "excursion_r": str(event["excursion_r"]),
+                "contact_mode": event["contact_mode"],
+            })
+
+        initial_risk = confirmation["initial_risk"]
+        if initial_risk is None:
+            initial_risk = abs(attempt["entry_price"] - attempt["stop_price"])
+        complete = confirmation["schema_version"] == "1.2" and (
+            terminal is None or terminal["schema_version"] == "1.2"
+        )
+        terminal_type = terminal["event_type"] if terminal is not None else None
+        if status == "AMBIGUOUS" and terminal_type != "ENTRY_AMBIGUOUS":
+            terminal_type = "ENTRY_AMBIGUOUS"
+
+        cursor.execute(
+            """
+            SELECT min(occurred_at) AS first_at,
+                   max(occurred_at) AS latest_at,
+                   count(*) AS migration_count
+            FROM mrz_events
+            WHERE symbol = %s
+              AND event_type = 'MRZ_MIGRATED'
+              AND occurred_at > %s
+              AND (%s::timestamptz IS NULL OR occurred_at < %s)
+            """,
+            (attempt["symbol"], opened_at, closed_at, closed_at),
+        )
+        migrations = cursor.fetchone()
+
+        cursor.execute(
+            """
+            INSERT INTO tradedesk_trade_results (
+                entry_id, status, opened_at, closed_at,
+                terminal_event_id, terminal_event_type, initial_risk,
+                mrz_context_id, frozen_exit_ladder, reached_levels,
+                best_level_pre_terminal_ids, best_level_pre_terminal_price,
+                best_level_pre_terminal_r, best_level_pre_terminal_at,
+                mfe_pre_terminal_price, mfe_pre_terminal_r,
+                mae_pre_terminal_price, mae_pre_terminal_r,
+                mfe_inclusive_price, mfe_inclusive_r,
+                mae_inclusive_price, mae_inclusive_r,
+                terminal_bar_levels_touched,
+                mrz_migrated_while_open, first_pending_migration_at,
+                latest_pending_migration_at, pending_migration_count,
+                evidence_version, evidence_complete, updated_at
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s, clock_timestamp()
+            )
+            ON CONFLICT (entry_id) DO UPDATE SET
+                status = EXCLUDED.status,
+                opened_at = EXCLUDED.opened_at,
+                closed_at = EXCLUDED.closed_at,
+                terminal_event_id = EXCLUDED.terminal_event_id,
+                terminal_event_type = EXCLUDED.terminal_event_type,
+                initial_risk = EXCLUDED.initial_risk,
+                mrz_context_id = EXCLUDED.mrz_context_id,
+                frozen_exit_ladder = EXCLUDED.frozen_exit_ladder,
+                reached_levels = EXCLUDED.reached_levels,
+                best_level_pre_terminal_ids = EXCLUDED.best_level_pre_terminal_ids,
+                best_level_pre_terminal_price = EXCLUDED.best_level_pre_terminal_price,
+                best_level_pre_terminal_r = EXCLUDED.best_level_pre_terminal_r,
+                best_level_pre_terminal_at = EXCLUDED.best_level_pre_terminal_at,
+                mfe_pre_terminal_price = EXCLUDED.mfe_pre_terminal_price,
+                mfe_pre_terminal_r = EXCLUDED.mfe_pre_terminal_r,
+                mae_pre_terminal_price = EXCLUDED.mae_pre_terminal_price,
+                mae_pre_terminal_r = EXCLUDED.mae_pre_terminal_r,
+                mfe_inclusive_price = EXCLUDED.mfe_inclusive_price,
+                mfe_inclusive_r = EXCLUDED.mfe_inclusive_r,
+                mae_inclusive_price = EXCLUDED.mae_inclusive_price,
+                mae_inclusive_r = EXCLUDED.mae_inclusive_r,
+                terminal_bar_levels_touched = EXCLUDED.terminal_bar_levels_touched,
+                mrz_migrated_while_open = EXCLUDED.mrz_migrated_while_open,
+                first_pending_migration_at = EXCLUDED.first_pending_migration_at,
+                latest_pending_migration_at = EXCLUDED.latest_pending_migration_at,
+                pending_migration_count = EXCLUDED.pending_migration_count,
+                evidence_version = EXCLUDED.evidence_version,
+                evidence_complete = EXCLUDED.evidence_complete,
+                updated_at = EXCLUDED.updated_at
+            """,
+            (
+                entry_id, status, opened_at, closed_at,
+                terminal["event_id"] if terminal is not None and status != "AMBIGUOUS" else (
+                    terminal["event_id"] if terminal is not None and terminal["event_type"] == "ENTRY_AMBIGUOUS" else None
+                ),
+                terminal_type, initial_risk,
+                confirmation["mrz_context_id"],
+                Json(confirmation["frozen_exit_ladder"])
+                if confirmation["frozen_exit_ladder"] is not None else None,
+                Json(reached_levels),
+                Json(terminal["best_level_pre_terminal_ids"])
+                if terminal is not None and terminal["best_level_pre_terminal_ids"] is not None else None,
+                terminal["best_level_pre_terminal_price"] if terminal is not None else None,
+                terminal["best_level_pre_terminal_r"] if terminal is not None else None,
+                terminal["best_level_pre_terminal_at"] if terminal is not None else None,
+                terminal["mfe_pre_terminal_price"] if terminal is not None else None,
+                terminal["mfe_pre_terminal_r"] if terminal is not None else None,
+                terminal["mae_pre_terminal_price"] if terminal is not None else None,
+                terminal["mae_pre_terminal_r"] if terminal is not None else None,
+                terminal["mfe_inclusive_price"] if terminal is not None else None,
+                terminal["mfe_inclusive_r"] if terminal is not None else None,
+                terminal["mae_inclusive_price"] if terminal is not None else None,
+                terminal["mae_inclusive_r"] if terminal is not None else None,
+                Json(terminal["terminal_bar_levels_touched"])
+                if terminal is not None and terminal["terminal_bar_levels_touched"] is not None else None,
+                migrations["migration_count"] > 0,
+                migrations["first_at"], migrations["latest_at"], migrations["migration_count"],
+                "1.2" if complete else "1.1-legacy", complete,
+            ),
+        )
+
+    def rebuild_tradedesk_trade_results(self) -> None:
+        """Deterministically reconstruct the result projection from immutable evidence."""
+        with transaction(self.database_url) as connection:
+            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute("DELETE FROM tradedesk_trade_results")
+                cursor.execute(
+                    """
+                    SELECT DISTINCT entry_id
+                    FROM tradedesk_lifecycle_events
+                    WHERE entry_id IS NOT NULL
+                    ORDER BY entry_id
+                    """
+                )
+                for row in cursor.fetchall():
+                    self._rebuild_tradedesk_trade_result(cursor, str(row["entry_id"]))
+
+    def _refresh_tradedesk_migration_context(
+        self,
+        cursor: RealDictCursor,
+        symbol: str,
+    ) -> None:
+        cursor.execute(
+            """
+            SELECT result.entry_id
+            FROM tradedesk_trade_results result
+            JOIN tradedesk_entry_attempts attempt USING (entry_id)
+            JOIN tradedesk_setups setup USING (setup_id)
+            WHERE setup.symbol = %s
+            ORDER BY result.entry_id
+            """,
+            (symbol,),
+        )
+        for row in cursor.fetchall():
+            self._rebuild_tradedesk_trade_result(cursor, str(row["entry_id"]))
 
     def _replace_derived_state(self, cursor: RealDictCursor, replay: ReplayResult) -> None:
         cursor.execute("DELETE FROM mrz_events WHERE symbol = %s", (replay.symbol,))
@@ -1011,6 +1269,7 @@ class EdgeRepository:
         active = replay.active_mrz
         if active is None:
             cursor.execute("DELETE FROM active_mrz WHERE symbol = %s", (replay.symbol,))
+            self._refresh_tradedesk_migration_context(cursor, replay.symbol)
             return
         cursor.execute(
             """
@@ -1075,6 +1334,7 @@ class EdgeRepository:
             ),
         )
         self._replace_production_confirmation(cursor, replay)
+        self._refresh_tradedesk_migration_context(cursor, replay.symbol)
 
     def promote_current_near_miss(
         self,
