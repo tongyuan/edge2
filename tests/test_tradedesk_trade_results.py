@@ -107,6 +107,14 @@ def compact_confirmation(**overrides) -> dict:
     return payload
 
 
+def bounds_confirmation(**overrides) -> dict:
+    payload = compact_confirmation()
+    payload.pop("ladder_prices")
+    payload["ladder_bounds"] = [1420, 1400, 1400, 1380]
+    payload.update(overrides)
+    return payload
+
+
 def compact_reach(**overrides) -> dict:
     payload = schema12_reach()
     payload.pop("level_ids")
@@ -207,6 +215,13 @@ class TradeDeskSchema12ValidationTests(unittest.TestCase):
             sorted(group.destination_order for group in eligible),
             list(range(1, len(eligible) + 1)),
         )
+
+    def test_bound_confirmation_normalizes_to_same_frozen_ladder(self) -> None:
+        bounds = TradeDeskLifecyclePayload.model_validate(bounds_confirmation())
+        prices = TradeDeskLifecyclePayload.model_validate(compact_confirmation(
+            ladder_prices=[1410, 1360, 1380, 1440, 1460, 1400, 1390, 1340, 1360, 1420, 1440],
+        ))
+        self.assertEqual(bounds.frozen_exit_ladder, prices.frozen_exit_ladder)
 
     def test_compact_reach_decodes_multibit_identity(self) -> None:
         parsed = TradeDeskLifecyclePayload.model_validate(compact_reach())

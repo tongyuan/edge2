@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -155,6 +155,45 @@ def normalize_compact_ladder(
     ]
 
 
+def ladder_prices_from_bounds(bounds: list[Any], mintick: Any) -> list[Decimal]:
+    if len(bounds) != 4:
+        raise ValueError("ladder_bounds must contain current and previous upper/lower")
+    current_upper, current_lower, previous_upper, previous_lower = (
+        Decimal(str(value)) for value in bounds
+    )
+    tick = Decimal(str(mintick))
+    if tick <= 0 or not tick.is_finite():
+        raise ValueError("ladder_mintick must be positive and finite")
+    if not all(
+        value.is_finite()
+        for value in (current_upper, current_lower, previous_upper, previous_lower)
+    ):
+        raise ValueError("ladder bounds must be finite")
+    if current_upper <= current_lower or previous_upper <= previous_lower:
+        raise ValueError("ladder upper bounds must exceed lower bounds")
+
+    def rounded(value: Decimal) -> Decimal:
+        return (value / tick).quantize(Decimal(1), rounding=ROUND_HALF_UP) * tick
+
+    current_width = current_upper - current_lower
+    previous_width = previous_upper - previous_lower
+    current_midpoint = rounded((current_upper + current_lower) / 2)
+    previous_midpoint = rounded((previous_upper + previous_lower) / 2)
+    return [
+        current_midpoint,
+        rounded(current_lower - 2 * current_width),
+        rounded(current_lower - current_width),
+        rounded(current_upper + current_width),
+        rounded(current_upper + 2 * current_width),
+        rounded((current_midpoint + previous_midpoint) / 2),
+        previous_midpoint,
+        rounded(previous_lower - 2 * previous_width),
+        rounded(previous_lower - previous_width),
+        rounded(previous_upper + previous_width),
+        rounded(previous_upper + 2 * previous_width),
+    ]
+
+
 class FrozenExitLevelGroup(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -290,29 +329,34 @@ class TradeDeskLifecyclePayload(BaseModel):
             return raw
         data = dict(raw)
         compact_keys = {
-            "ladder_prices", "ladder_available", "ladder_mintick",
+            "ladder_prices", "ladder_bounds", "ladder_available", "ladder_mintick",
             "level_mask", "terminal_level_mask", "reached_mask",
         }
         uses_compact = bool(compact_keys.intersection(data))
         if data.get("schema_version") != "1.2" and uses_compact:
             raise ValueError("compact evidence requires schema_version=1.2")
-        if "ladder_prices" in data:
+        if "ladder_prices" in data or "ladder_bounds" in data:
             if "frozen_exit_ladder" in data or "exit_ladder_available" in data:
                 raise ValueError("compact and verbose frozen ladder evidence cannot be mixed")
-            prices = data.pop("ladder_prices")
+            if "ladder_prices" in data and "ladder_bounds" in data:
+                raise ValueError("compact ladder prices and bounds cannot be mixed")
+            bounds = data.pop("ladder_bounds", None)
+            prices = data.pop("ladder_prices", None)
             available = data.pop("ladder_available", bool(prices))
             mintick = data.pop("ladder_mintick", None)
             data["exit_ladder_available"] = available
             if available:
                 if mintick is None:
                     raise ValueError("available compact ladder requires ladder_mintick")
+                if bounds is not None:
+                    prices = ladder_prices_from_bounds(bounds, mintick)
                 data["frozen_exit_ladder"] = normalize_compact_ladder(
                     prices, direction=data.get("direction"),
                     entry_price=data.get("entry_price"), target_price=data.get("target_price"),
                     mintick=mintick,
                 )
             else:
-                if prices or data.get("mrz_context_id") is not None:
+                if prices or bounds or data.get("mrz_context_id") is not None:
                     raise ValueError("unavailable compact ladder must not contain MRZ geometry")
                 data["frozen_exit_ladder"] = []
         elif "ladder_available" in data or "ladder_mintick" in data:
