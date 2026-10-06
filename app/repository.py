@@ -39,7 +39,12 @@ from app.structure import (
     classify_structural_location,
     ipda_directional_context,
 )
-from app.validation import ObservationPayload, TradeDeskLifecyclePayload, normalize_symbol
+from app.validation import (
+    TRADEDESK_EXIT_LEVEL_ORDER,
+    ObservationPayload,
+    TradeDeskLifecyclePayload,
+    normalize_symbol,
+)
 
 
 LOGGER = logging.getLogger("edge2.repository")
@@ -598,7 +603,8 @@ class EdgeRepository:
                     """,
                     {
                         **payload.model_dump(exclude={
-                            "frozen_exit_ladder", "terminal_bar_levels_touched"
+                            "frozen_exit_ladder", "terminal_bar_levels_touched",
+                            "terminal_level_mask",
                         }),
                         "mss_at": mss_at,
                         "event_at": event_at,
@@ -621,10 +627,14 @@ class EdgeRepository:
                         "level_ids": Json(payload.level_ids) if payload.level_ids is not None else None,
                         "best_level_pre_terminal_ids": Json(payload.best_level_pre_terminal_ids)
                         if payload.best_level_pre_terminal_ids is not None else None,
-                        "terminal_bar_levels_touched": Json([
-                            item.model_dump(mode="json")
-                            for item in payload.terminal_bar_levels_touched
-                        ]) if payload.terminal_bar_levels_touched is not None else None,
+                        "terminal_bar_levels_touched": (
+                            Json({"level_mask": payload.terminal_level_mask})
+                            if payload.terminal_level_mask is not None
+                            else Json([
+                                item.model_dump(mode="json")
+                                for item in payload.terminal_bar_levels_touched
+                            ]) if payload.terminal_bar_levels_touched is not None else None
+                        ),
                     },
                 )
                 inserted = cursor.fetchone()
@@ -1049,6 +1059,7 @@ class EdgeRepository:
         }
         reached_levels = []
         reached_groups: set[tuple[str, ...]] = set()
+        best_reach = None
         for event in reach_events:
             group_id = tuple(sorted(event["level_ids"] or []))
             if (
@@ -1065,6 +1076,8 @@ class EdgeRepository:
                 "excursion_r": str(event["excursion_r"]),
                 "contact_mode": event["contact_mode"],
             })
+            if best_reach is None or event["excursion_r"] > best_reach["excursion_r"]:
+                best_reach = event
 
         initial_risk = confirmation["initial_risk"]
         if initial_risk is None:
@@ -1075,6 +1088,36 @@ class EdgeRepository:
         terminal_type = terminal["event_type"] if terminal is not None else None
         if status == "AMBIGUOUS" and terminal_type != "ENTRY_AMBIGUOUS":
             terminal_type = "ENTRY_AMBIGUOUS"
+
+        terminal_levels = terminal["terminal_bar_levels_touched"] if terminal is not None else None
+        compact_terminal = isinstance(terminal_levels, dict) and "level_mask" in terminal_levels
+        if compact_terminal:
+            mask = int(terminal_levels["level_mask"])
+            terminal_levels = []
+            for group in confirmation["frozen_exit_ladder"] or []:
+                group_mask = sum(
+                    1 << TRADEDESK_EXIT_LEVEL_ORDER.index(level_id)
+                    for level_id in group["level_ids"]
+                )
+                if group_mask & mask:
+                    terminal_levels.append({
+                        "level_ids": group["level_ids"],
+                        "level_price": group["level_price"],
+                    })
+
+        derive_best = compact_terminal and best_reach is not None
+        best_ids = best_reach["level_ids"] if derive_best else (
+            terminal["best_level_pre_terminal_ids"] if terminal is not None else None
+        )
+        best_price = best_reach["level_price"] if derive_best else (
+            terminal["best_level_pre_terminal_price"] if terminal is not None else None
+        )
+        best_r = best_reach["excursion_r"] if derive_best else (
+            terminal["best_level_pre_terminal_r"] if terminal is not None else None
+        )
+        best_at = best_reach["event_at"] if derive_best else (
+            terminal["best_level_pre_terminal_at"] if terminal is not None else None
+        )
 
         cursor.execute(
             """
@@ -1154,11 +1197,8 @@ class EdgeRepository:
                 Json(confirmation["frozen_exit_ladder"])
                 if confirmation["frozen_exit_ladder"] is not None else None,
                 Json(reached_levels),
-                Json(terminal["best_level_pre_terminal_ids"])
-                if terminal is not None and terminal["best_level_pre_terminal_ids"] is not None else None,
-                terminal["best_level_pre_terminal_price"] if terminal is not None else None,
-                terminal["best_level_pre_terminal_r"] if terminal is not None else None,
-                terminal["best_level_pre_terminal_at"] if terminal is not None else None,
+                Json(best_ids) if best_ids is not None else None,
+                best_price, best_r, best_at,
                 terminal["mfe_pre_terminal_price"] if terminal is not None else None,
                 terminal["mfe_pre_terminal_r"] if terminal is not None else None,
                 terminal["mae_pre_terminal_price"] if terminal is not None else None,
@@ -1167,8 +1207,7 @@ class EdgeRepository:
                 terminal["mfe_inclusive_r"] if terminal is not None else None,
                 terminal["mae_inclusive_price"] if terminal is not None else None,
                 terminal["mae_inclusive_r"] if terminal is not None else None,
-                Json(terminal["terminal_bar_levels_touched"])
-                if terminal is not None and terminal["terminal_bar_levels_touched"] is not None else None,
+                Json(terminal_levels) if terminal_levels is not None else None,
                 migrations["migration_count"] > 0,
                 migrations["first_at"], migrations["latest_at"], migrations["migration_count"],
                 "1.2" if complete else "1.1-legacy", complete,

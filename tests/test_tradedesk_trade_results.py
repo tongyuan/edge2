@@ -21,8 +21,8 @@ def frozen_ladder() -> list[dict]:
         {"level_ids": ["C-2W"], "level_price": 1300, "eligible": False},
         {"level_ids": ["C-1W"], "level_price": 1350, "eligible": False},
         {"level_ids": ["C+1W", "EQM"], "level_price": 1430, "eligible": True, "destination_order": 1},
-        {"level_ids": ["P-MID"], "level_price": 1440, "eligible": True, "destination_order": 2},
         {"level_ids": ["C+2W"], "level_price": 1480, "eligible": True, "destination_order": 3},
+        {"level_ids": ["P-MID"], "level_price": 1440, "eligible": True, "destination_order": 2},
         {"level_ids": ["P-2W"], "level_price": 1290, "eligible": False},
         {"level_ids": ["P-1W"], "level_price": 1380, "eligible": False},
         {"level_ids": ["P+1W"], "level_price": 1490, "eligible": True, "destination_order": 4},
@@ -89,6 +89,42 @@ def schema12_terminal(event_type: str, **overrides) -> dict:
     return payload
 
 
+def compact_confirmation(**overrides) -> dict:
+    payload = entry_payload(
+        "ENTRY_CONFIRMED",
+        schema_version="1.2",
+        mrz_context_id="ZECUSDT|S|A|C|1|1400|1420|P|0|1380|1400",
+        ladder_available=True,
+        ladder_mintick=0.01,
+        ladder_prices=[1410, 1300, 1350, 1430, 1480, 1430, 1440, 1290, 1380, 1490, 1510],
+    )
+    payload.update(overrides)
+    return payload
+
+
+def compact_reach(**overrides) -> dict:
+    payload = schema12_reach()
+    payload.pop("level_ids")
+    payload.pop("excursion_r")
+    payload["level_mask"] = (1 << 3) | (1 << 5)
+    payload.update(overrides)
+    return payload
+
+
+def compact_terminal(event_type: str, **overrides) -> dict:
+    payload = schema12_terminal(event_type)
+    for field in (
+        "initial_risk", "mfe_pre_terminal_r", "mae_pre_terminal_r",
+        "mfe_inclusive_r", "mae_inclusive_r", "best_level_pre_terminal_ids",
+        "best_level_pre_terminal_price", "best_level_pre_terminal_r",
+        "best_level_pre_terminal_at", "terminal_bar_levels_touched",
+    ):
+        payload.pop(field)
+    payload["terminal_level_mask"] = 1 << 6
+    payload.update(overrides)
+    return payload
+
+
 class TradeDeskSchema12ValidationTests(unittest.TestCase):
     def test_schema_10_and_11_remain_accepted(self) -> None:
         self.assertEqual(
@@ -114,6 +150,44 @@ class TradeDeskSchema12ValidationTests(unittest.TestCase):
             )
         )
         self.assertFalse(parsed.exit_ladder_available)
+
+    def test_compact_confirmation_normalizes_to_verbose_ladder(self) -> None:
+        compact = TradeDeskLifecyclePayload.model_validate(compact_confirmation())
+        verbose = TradeDeskLifecyclePayload.model_validate(schema12_confirmation())
+        self.assertEqual(compact.initial_risk, verbose.initial_risk)
+        by_ids = lambda ladder: {
+            tuple(sorted(group.level_ids)): (
+                group.level_price, group.eligible, group.destination_order
+            ) for group in ladder
+        }
+        self.assertEqual(by_ids(compact.frozen_exit_ladder), by_ids(verbose.frozen_exit_ladder))
+
+    def test_compact_short_confirmation_orders_destinations_directionally(self) -> None:
+        parsed = TradeDeskLifecyclePayload.model_validate(compact_confirmation(
+            event_id="ZECUSDT-SHORT-1790762700000-E1-ENTRY_CONFIRMED",
+            setup_id="ZECUSDT-SHORT-1790762700000",
+            entry_id="ZECUSDT-SHORT-1790762700000-E1",
+            direction="SHORT", sweep_price=1502, target_price=1290, target_side="SSL",
+            range_third="TOP", entry_zone_top=1494.52, entry_zone_bottom=1480,
+            ote_top=1494.52, ote_bottom=1480, entry_price=1490, stop_price=1502,
+            entry_rr=4,
+        ))
+        eligible = [group for group in parsed.frozen_exit_ladder if group.eligible]
+        self.assertEqual(
+            sorted(group.destination_order for group in eligible),
+            list(range(1, len(eligible) + 1)),
+        )
+
+    def test_compact_reach_decodes_multibit_identity(self) -> None:
+        parsed = TradeDeskLifecyclePayload.model_validate(compact_reach())
+        self.assertEqual(parsed.level_ids, ["C+1W", "EQM"])
+        self.assertGreater(parsed.excursion_r, 0)
+
+    def test_compact_terminal_derives_excursion_r(self) -> None:
+        parsed = TradeDeskLifecyclePayload.model_validate(compact_terminal("ENTRY_STOPPED"))
+        self.assertEqual(parsed.terminal_level_mask, 1 << 6)
+        self.assertGreater(parsed.mfe_pre_terminal_r, 0)
+        self.assertEqual(parsed.mae_inclusive_r, 1)
 
     def test_schema_11_cannot_smuggle_schema_12_evidence(self) -> None:
         with self.assertRaises(ValidationError):
@@ -295,6 +369,55 @@ class TradeDeskTradeResultPersistenceTests(unittest.TestCase):
         self.client.app.state.repository.rebuild_tradedesk_trade_results()
         after = self.fetchone(
             "SELECT to_jsonb(result) - 'created_at' - 'updated_at' AS value FROM tradedesk_trade_results result"
+        )["value"]
+        self.assertEqual(after, before)
+
+    def test_compact_and_verbose_project_identically(self) -> None:
+        from decimal import Decimal
+
+        risk = Decimal("16.42")
+        verbose_reach = schema12_reach(
+            excursion_r=str((Decimal("1430") - Decimal("1414.31")) / risk)
+        )
+        verbose_terminal = schema12_terminal(
+            "ENTRY_STOPPED",
+            mfe_pre_terminal_r=str((Decimal("1432") - Decimal("1414.31")) / risk),
+            mae_pre_terminal_r=str((Decimal("1414.31") - Decimal("1408")) / risk),
+            mfe_inclusive_r=str((Decimal("1440") - Decimal("1414.31")) / risk),
+            mae_inclusive_r=1,
+            best_level_pre_terminal_r=str(
+                (Decimal("1430") - Decimal("1414.31")) / risk
+            ),
+        )
+        for payload in (schema12_confirmation(), verbose_reach, verbose_terminal):
+            self.assertEqual(self.post(payload).status_code, 200)
+        verbose = self.fetchone(
+            "SELECT to_jsonb(result) - 'created_at' - 'updated_at' AS value "
+            "FROM tradedesk_trade_results result"
+        )["value"]
+
+        clean(self.database_url)
+        for payload in (compact_confirmation(), compact_reach(), compact_terminal("ENTRY_STOPPED")):
+            self.assertEqual(self.post(payload).status_code, 200)
+        compact = self.fetchone(
+            "SELECT to_jsonb(result) - 'created_at' - 'updated_at' AS value "
+            "FROM tradedesk_trade_results result"
+        )["value"]
+        self.assertEqual(compact, verbose)
+
+    def test_compact_reordered_delivery_and_rebuild_are_exact(self) -> None:
+        for payload in (
+            compact_terminal("ENTRY_AMBIGUOUS"), compact_reach(), compact_confirmation()
+        ):
+            self.assertEqual(self.post(payload).status_code, 200)
+        before = self.fetchone(
+            "SELECT to_jsonb(result) - 'created_at' - 'updated_at' AS value "
+            "FROM tradedesk_trade_results result"
+        )["value"]
+        self.client.app.state.repository.rebuild_tradedesk_trade_results()
+        after = self.fetchone(
+            "SELECT to_jsonb(result) - 'created_at' - 'updated_at' AS value "
+            "FROM tradedesk_trade_results result"
         )["value"]
         self.assertEqual(after, before)
 

@@ -94,10 +94,65 @@ TRADEDESK_ENTRY_EVENT_TYPES = {
     "ENTRY_EXIT_LEVEL_REACHED",
 }
 
-TRADEDESK_EXIT_LEVEL_IDS = {
+TRADEDESK_EXIT_LEVEL_ORDER = (
     "C-MID", "C-2W", "C-1W", "C+1W", "C+2W", "EQM",
     "P-MID", "P-2W", "P-1W", "P+1W", "P+2W",
-}
+)
+TRADEDESK_EXIT_LEVEL_IDS = set(TRADEDESK_EXIT_LEVEL_ORDER)
+TRADEDESK_EXIT_LEVEL_MASK = (1 << len(TRADEDESK_EXIT_LEVEL_ORDER)) - 1
+
+
+def decode_tradedesk_level_mask(mask: int) -> list[str]:
+    if mask < 0 or mask > TRADEDESK_EXIT_LEVEL_MASK:
+        raise ValueError("level mask contains unknown canonical identities")
+    return [
+        level_id
+        for index, level_id in enumerate(TRADEDESK_EXIT_LEVEL_ORDER)
+        if mask & (1 << index)
+    ]
+
+
+def normalize_compact_ladder(
+    prices: list[Any], *, direction: str, entry_price: Any, target_price: Any,
+    mintick: Any,
+) -> list[dict[str, Any]]:
+    if len(prices) != len(TRADEDESK_EXIT_LEVEL_ORDER):
+        raise ValueError("ladder_prices must contain exactly 11 canonical prices")
+    normalized = [Decimal(str(price)) for price in prices]
+    tick = Decimal(str(mintick))
+    entry = Decimal(str(entry_price))
+    target = Decimal(str(target_price))
+    if tick <= 0 or not tick.is_finite():
+        raise ValueError("ladder_mintick must be positive and finite")
+    if any(not price.is_finite() for price in normalized):
+        raise ValueError("ladder prices must be finite")
+    tolerance = tick / 2
+    multiplier = Decimal(1 if direction == "LONG" else -1)
+    groups: list[dict[str, Any]] = []
+    for index, price in enumerate(normalized):
+        existing = next(
+            (group for group in groups if abs(group["level_price"] - price) <= tolerance),
+            None,
+        )
+        if existing is None:
+            groups.append({"level_ids": [], "level_price": price})
+            existing = groups[-1]
+        existing["level_ids"].append(TRADEDESK_EXIT_LEVEL_ORDER[index])
+    eligible_groups = [
+        group for group in groups
+        if multiplier * (group["level_price"] - entry) > 0
+        and multiplier * (target - group["level_price"]) >= 0
+    ]
+    eligible_groups.sort(key=lambda group: multiplier * (group["level_price"] - entry))
+    orders = {id(group): index + 1 for index, group in enumerate(eligible_groups)}
+    return [
+        {
+            **group,
+            "eligible": id(group) in orders,
+            "destination_order": orders.get(id(group)),
+        }
+        for group in groups
+    ]
 
 
 class FrozenExitLevelGroup(BaseModel):
@@ -218,6 +273,78 @@ class TradeDeskLifecyclePayload(BaseModel):
     best_level_pre_terminal_r: Decimal | None = None
     best_level_pre_terminal_at: int | None = Field(default=None, gt=0)
     terminal_bar_levels_touched: list[TerminalExitLevel] | None = None
+    terminal_level_mask: int | None = Field(
+        default=None, ge=0, le=TRADEDESK_EXIT_LEVEL_MASK, exclude=True
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_compact_schema_12(cls, raw: Any) -> Any:
+        if not isinstance(raw, dict):
+            return raw
+        data = dict(raw)
+        compact_keys = {
+            "ladder_prices", "ladder_available", "ladder_mintick",
+            "level_mask", "terminal_level_mask",
+        }
+        uses_compact = bool(compact_keys.intersection(data))
+        if data.get("schema_version") != "1.2" and uses_compact:
+            raise ValueError("compact evidence requires schema_version=1.2")
+        if "ladder_prices" in data:
+            if "frozen_exit_ladder" in data or "exit_ladder_available" in data:
+                raise ValueError("compact and verbose frozen ladder evidence cannot be mixed")
+            prices = data.pop("ladder_prices")
+            available = data.pop("ladder_available", bool(prices))
+            mintick = data.pop("ladder_mintick", None)
+            data["exit_ladder_available"] = available
+            if available:
+                if mintick is None:
+                    raise ValueError("available compact ladder requires ladder_mintick")
+                data["frozen_exit_ladder"] = normalize_compact_ladder(
+                    prices, direction=data.get("direction"),
+                    entry_price=data.get("entry_price"), target_price=data.get("target_price"),
+                    mintick=mintick,
+                )
+            else:
+                if prices or data.get("mrz_context_id") is not None:
+                    raise ValueError("unavailable compact ladder must not contain MRZ geometry")
+                data["frozen_exit_ladder"] = []
+        elif "ladder_available" in data or "ladder_mintick" in data:
+            raise ValueError("compact ladder metadata requires ladder_prices")
+        if "level_mask" in data:
+            if "level_ids" in data:
+                raise ValueError("compact and verbose reached-level evidence cannot be mixed")
+            data["level_ids"] = decode_tradedesk_level_mask(int(data.pop("level_mask")))
+        confirmed = data.get("entry_price") is not None and data.get("stop_price") is not None
+        if uses_compact and confirmed and data.get("initial_risk") is None:
+            data["initial_risk"] = abs(
+                Decimal(str(data["entry_price"])) - Decimal(str(data["stop_price"]))
+            )
+        if data.get("event_type") == "ENTRY_EXIT_LEVEL_REACHED" and data.get("excursion_r") is None:
+            direction = Decimal(1 if data.get("direction") == "LONG" else -1)
+            data["excursion_r"] = max(
+                Decimal(0), direction * (
+                    Decimal(str(data["level_price"])) - Decimal(str(data["entry_price"]))
+                ) / Decimal(str(data["initial_risk"])),
+            )
+        if data.get("terminal_level_mask") is not None:
+            if "terminal_bar_levels_touched" in data:
+                raise ValueError("compact and verbose terminal-level evidence cannot be mixed")
+            direction = Decimal(1 if data.get("direction") == "LONG" else -1)
+            entry = Decimal(str(data["entry_price"]))
+            risk = Decimal(str(data["initial_risk"]))
+            pairs = (
+                ("mfe_pre_terminal_price", "mfe_pre_terminal_r", True),
+                ("mae_pre_terminal_price", "mae_pre_terminal_r", False),
+                ("mfe_inclusive_price", "mfe_inclusive_r", True),
+                ("mae_inclusive_price", "mae_inclusive_r", False),
+            )
+            for price_field, r_field, favorable in pairs:
+                if data.get(price_field) is None:
+                    raise ValueError(f"compact terminal event requires {price_field}")
+                move = direction * (Decimal(str(data[price_field])) - entry)
+                data[r_field] = max(Decimal(0), move if favorable else -move) / risk
+        return data
 
     @field_validator("event_id", "setup_id", "entry_id")
     @classmethod
@@ -440,6 +567,7 @@ class TradeDeskLifecyclePayload(BaseModel):
             "mae_inclusive_price", "mae_inclusive_r", "best_level_pre_terminal_ids",
             "best_level_pre_terminal_price", "best_level_pre_terminal_r",
             "best_level_pre_terminal_at", "terminal_bar_levels_touched",
+            "terminal_level_mask",
         )
         if self.schema_version != "1.2" and any(
             getattr(self, field) is not None for field in evidence_fields
@@ -487,11 +615,12 @@ class TradeDeskLifecyclePayload(BaseModel):
                 "initial_risk", "mfe_pre_terminal_price", "mfe_pre_terminal_r",
                 "mae_pre_terminal_price", "mae_pre_terminal_r", "mfe_inclusive_price",
                 "mfe_inclusive_r", "mae_inclusive_price", "mae_inclusive_r",
-                "terminal_bar_levels_touched",
             )
             missing = [field for field in terminal_required if getattr(self, field) is None]
             if missing:
                 raise ValueError(f"schema 1.2 terminal event is missing: {', '.join(missing)}")
+            if self.terminal_bar_levels_touched is None and self.terminal_level_mask is None:
+                raise ValueError("schema 1.2 terminal event requires terminal level evidence")
             if self.initial_risk <= 0:
                 raise ValueError("initial_risk must be positive")
             for field in (
