@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from decimal import Decimal
 
 from fastapi.testclient import TestClient
 from psycopg2.extras import RealDictCursor
@@ -9,7 +10,11 @@ from pydantic import ValidationError
 from app.api import create_app
 from app.config import Settings
 from app.db import connect
-from app.validation import TradeDeskLifecyclePayload
+from app.validation import (
+    TRADEDESK_EXIT_LEVEL_ORDER,
+    TradeDeskLifecyclePayload,
+    decode_tradedesk_level_mask,
+)
 from tests.db_support import clean, migrate_and_clean, require_test_database
 from tests.test_tradedesk_entry_lifecycle import entry_payload
 from tests.test_tradedesk_lifecycle import lifecycle_payload
@@ -125,6 +130,23 @@ def compact_terminal(event_type: str, **overrides) -> dict:
     return payload
 
 
+def core_reach(**overrides) -> dict:
+    payload = compact_reach()
+    payload.pop("contact_mode")
+    payload.update(overrides)
+    return payload
+
+
+def core_terminal(event_type: str, **overrides) -> dict:
+    payload = compact_terminal(event_type)
+    for field in (
+        "mae_pre_terminal_price", "mfe_inclusive_price", "mae_inclusive_price",
+    ):
+        payload.pop(field)
+    payload.update(overrides)
+    return payload
+
+
 class TradeDeskSchema12ValidationTests(unittest.TestCase):
     def test_schema_10_and_11_remain_accepted(self) -> None:
         self.assertEqual(
@@ -183,11 +205,31 @@ class TradeDeskSchema12ValidationTests(unittest.TestCase):
         self.assertEqual(parsed.level_ids, ["C+1W", "EQM"])
         self.assertGreater(parsed.excursion_r, 0)
 
+    def test_every_canonical_mask_bit_decodes_by_fixed_identity_order(self) -> None:
+        for index, identity in enumerate(TRADEDESK_EXIT_LEVEL_ORDER):
+            with self.subTest(identity=identity):
+                self.assertEqual(decode_tradedesk_level_mask(1 << index), [identity])
+
     def test_compact_terminal_derives_excursion_r(self) -> None:
         parsed = TradeDeskLifecyclePayload.model_validate(compact_terminal("ENTRY_STOPPED"))
         self.assertEqual(parsed.terminal_level_mask, 1 << 6)
         self.assertGreater(parsed.mfe_pre_terminal_r, 0)
         self.assertEqual(parsed.mae_inclusive_r, 1)
+
+    def test_core_reach_derives_excursion_without_contact_mode(self) -> None:
+        parsed = TradeDeskLifecyclePayload.model_validate(core_reach())
+        self.assertEqual(parsed.level_ids, ["C+1W", "EQM"])
+        self.assertIsNone(parsed.contact_mode)
+        self.assertGreater(parsed.excursion_r, 0)
+
+    def test_core_terminal_requires_only_preterminal_mfe_and_mask(self) -> None:
+        parsed = TradeDeskLifecyclePayload.model_validate(
+            core_terminal("ENTRY_STOPPED")
+        )
+        self.assertGreater(parsed.mfe_pre_terminal_r, 0)
+        self.assertIsNone(parsed.mae_pre_terminal_price)
+        self.assertIsNone(parsed.mfe_inclusive_price)
+        self.assertIsNone(parsed.mae_inclusive_price)
 
     def test_schema_11_cannot_smuggle_schema_12_evidence(self) -> None:
         with self.assertRaises(ValidationError):
@@ -372,42 +414,134 @@ class TradeDeskTradeResultPersistenceTests(unittest.TestCase):
         )["value"]
         self.assertEqual(after, before)
 
-    def test_compact_and_verbose_project_identically(self) -> None:
+    def test_compact_and_verbose_terminal_results_project_identically(self) -> None:
         from decimal import Decimal
 
         risk = Decimal("16.42")
         verbose_reach = schema12_reach(
             excursion_r=str((Decimal("1430") - Decimal("1414.31")) / risk)
         )
-        verbose_terminal = schema12_terminal(
-            "ENTRY_STOPPED",
-            mfe_pre_terminal_r=str((Decimal("1432") - Decimal("1414.31")) / risk),
-            mae_pre_terminal_r=str((Decimal("1414.31") - Decimal("1408")) / risk),
-            mfe_inclusive_r=str((Decimal("1440") - Decimal("1414.31")) / risk),
-            mae_inclusive_r=1,
-            best_level_pre_terminal_r=str(
-                (Decimal("1430") - Decimal("1414.31")) / risk
-            ),
-        )
-        for payload in (schema12_confirmation(), verbose_reach, verbose_terminal):
-            self.assertEqual(self.post(payload).status_code, 200)
-        verbose = self.fetchone(
-            "SELECT to_jsonb(result) - 'created_at' - 'updated_at' AS value "
-            "FROM tradedesk_trade_results result"
-        )["value"]
+        for event_type in ("ENTRY_STOPPED", "ENTRY_TARGET_TAKEN", "ENTRY_AMBIGUOUS"):
+            with self.subTest(event_type=event_type):
+                clean(self.database_url)
+                verbose_terminal = schema12_terminal(
+                    event_type,
+                    mfe_pre_terminal_r=str((Decimal("1432") - Decimal("1414.31")) / risk),
+                    mae_pre_terminal_r=str((Decimal("1414.31") - Decimal("1408")) / risk),
+                    mfe_inclusive_r=str((Decimal("1440") - Decimal("1414.31")) / risk),
+                    mae_inclusive_r=1,
+                    best_level_pre_terminal_r=str(
+                        (Decimal("1430") - Decimal("1414.31")) / risk
+                    ),
+                )
+                for payload in (schema12_confirmation(), verbose_reach, verbose_terminal):
+                    self.assertEqual(self.post(payload).status_code, 200)
+                verbose = self.fetchone(
+                    "SELECT to_jsonb(result) - 'created_at' - 'updated_at' AS value "
+                    "FROM tradedesk_trade_results result"
+                )["value"]
 
+                clean(self.database_url)
+                for payload in (compact_confirmation(), compact_reach(), compact_terminal(event_type)):
+                    self.assertEqual(self.post(payload).status_code, 200)
+                compact = self.fetchone(
+                    "SELECT to_jsonb(result) - 'created_at' - 'updated_at' AS value "
+                    "FROM tradedesk_trade_results result"
+                )["value"]
+                self.assertEqual(compact, verbose)
+
+    def test_compact_and_verbose_gap_cross_project_identically(self) -> None:
+        verbose_reach = schema12_reach(
+            event_id="ZECUSDT-LONG-1790762700000-E1-EXIT-P-MID",
+            level_ids=["P-MID"], level_price=1440,
+            excursion_r="1.564555420219244823386114495",
+            contact_mode="GAP_CROSS",
+        )
+        self.post(schema12_confirmation())
+        self.post(verbose_reach)
+        verbose = self.fetchone("SELECT reached_levels FROM tradedesk_trade_results")
         clean(self.database_url)
-        for payload in (compact_confirmation(), compact_reach(), compact_terminal("ENTRY_STOPPED")):
-            self.assertEqual(self.post(payload).status_code, 200)
-        compact = self.fetchone(
-            "SELECT to_jsonb(result) - 'created_at' - 'updated_at' AS value "
-            "FROM tradedesk_trade_results result"
-        )["value"]
-        self.assertEqual(compact, verbose)
+        compact = dict(verbose_reach)
+        compact.pop("level_ids")
+        compact.pop("excursion_r")
+        compact["level_mask"] = 1 << 6
+        self.post(compact_confirmation())
+        self.post(compact)
+        self.assertEqual(
+            self.fetchone("SELECT reached_levels FROM tradedesk_trade_results"),
+            verbose,
+        )
 
     def test_compact_reordered_delivery_and_rebuild_are_exact(self) -> None:
         for payload in (
             compact_terminal("ENTRY_AMBIGUOUS"), compact_reach(), compact_confirmation()
+        ):
+            self.assertEqual(self.post(payload).status_code, 200)
+        before = self.fetchone(
+            "SELECT to_jsonb(result) - 'created_at' - 'updated_at' AS value "
+            "FROM tradedesk_trade_results result"
+        )["value"]
+        self.client.app.state.repository.rebuild_tradedesk_trade_results()
+        after = self.fetchone(
+            "SELECT to_jsonb(result) - 'created_at' - 'updated_at' AS value "
+            "FROM tradedesk_trade_results result"
+        )["value"]
+        self.assertEqual(after, before)
+
+    def test_core_result_projects_conservative_mfe_and_nullable_removed_evidence(self) -> None:
+        for payload in (
+            core_terminal("ENTRY_STOPPED"), core_reach(), compact_confirmation()
+        ):
+            self.assertEqual(self.post(payload).status_code, 200)
+        result = self.fetchone("SELECT * FROM tradedesk_trade_results")
+        self.assertEqual(result["status"], "LOSS")
+        self.assertEqual(result["evidence_version"], "1.2-core")
+        self.assertTrue(result["evidence_complete"])
+        self.assertEqual(str(result["mfe_pre_terminal_price"]), "1432")
+        self.assertEqual(
+            result["mfe_pre_terminal_r"],
+            (result["mfe_pre_terminal_price"] - Decimal("1414.31"))
+            / Decimal("16.42"),
+        )
+        for field in (
+            "mae_pre_terminal_price", "mae_pre_terminal_r",
+            "mfe_inclusive_price", "mfe_inclusive_r",
+            "mae_inclusive_price", "mae_inclusive_r",
+        ):
+            self.assertIsNone(result[field])
+        self.assertIsNone(result["reached_levels"][0]["contact_mode"])
+        self.assertEqual(result["best_level_pre_terminal_ids"], ["C+1W", "EQM"])
+        self.assertEqual(result["terminal_bar_levels_touched"][0]["level_ids"], ["P-MID"])
+
+    def test_core_short_mfe_r_uses_directional_formula(self) -> None:
+        confirmation = compact_confirmation(
+            event_id="ZECUSDT-SHORT-1790762700000-E1-ENTRY_CONFIRMED",
+            setup_id="ZECUSDT-SHORT-1790762700000",
+            entry_id="ZECUSDT-SHORT-1790762700000-E1",
+            direction="SHORT", sweep_price=1502, target_price=1290,
+            target_side="SSL", range_third="TOP", entry_zone_top=1494.52,
+            entry_zone_bottom=1480, ote_top=1494.52, ote_bottom=1480,
+            entry_price=1490, stop_price=1502, entry_rr=4,
+        )
+        terminal = core_terminal(
+            "ENTRY_TARGET_TAKEN",
+            event_id="ZECUSDT-SHORT-1790762700000-E1-ENTRY_TARGET_TAKEN",
+            setup_id=confirmation["setup_id"], entry_id=confirmation["entry_id"],
+            direction="SHORT", sweep_price=1502, target_price=1290,
+            target_side="SSL", range_third="TOP", entry_zone_top=1494.52,
+            entry_zone_bottom=1480, ote_top=1494.52, ote_bottom=1480,
+            entry_price=1490, stop_price=1502, entry_rr=4,
+            mfe_pre_terminal_price=1466,
+        )
+        self.assertEqual(self.post(confirmation).status_code, 200)
+        self.assertEqual(self.post(terminal).status_code, 200)
+        result = self.fetchone("SELECT * FROM tradedesk_trade_results")
+        self.assertEqual(result["status"], "WIN")
+        self.assertEqual(result["mfe_pre_terminal_r"], Decimal("2"))
+
+    def test_core_reordered_delivery_and_rebuild_are_exact(self) -> None:
+        for payload in (
+            core_terminal("ENTRY_AMBIGUOUS"), core_reach(), compact_confirmation()
         ):
             self.assertEqual(self.post(payload).status_code, 200)
         before = self.fetchone(

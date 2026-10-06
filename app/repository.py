@@ -604,7 +604,7 @@ class EdgeRepository:
                     {
                         **payload.model_dump(exclude={
                             "frozen_exit_ladder", "terminal_bar_levels_touched",
-                            "terminal_level_mask",
+                            "level_mask", "terminal_level_mask",
                         }),
                         "mss_at": mss_at,
                         "event_at": event_at,
@@ -1091,6 +1091,13 @@ class EdgeRepository:
 
         terminal_levels = terminal["terminal_bar_levels_touched"] if terminal is not None else None
         compact_terminal = isinstance(terminal_levels, dict) and "level_mask" in terminal_levels
+        core_terminal = compact_terminal and terminal is not None and all(
+            terminal[field] is None for field in (
+                "mae_pre_terminal_price", "mae_pre_terminal_r",
+                "mfe_inclusive_price", "mfe_inclusive_r",
+                "mae_inclusive_price", "mae_inclusive_r",
+            )
+        )
         if compact_terminal:
             mask = int(terminal_levels["level_mask"])
             terminal_levels = []
@@ -1210,7 +1217,10 @@ class EdgeRepository:
                 Json(terminal_levels) if terminal_levels is not None else None,
                 migrations["migration_count"] > 0,
                 migrations["first_at"], migrations["latest_at"], migrations["migration_count"],
-                "1.2" if complete else "1.1-legacy", complete,
+                "1.2-core" if complete and core_terminal else (
+                    "1.2" if complete else "1.1-legacy"
+                ),
+                complete,
             ),
         )
 
