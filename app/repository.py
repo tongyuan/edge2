@@ -2721,6 +2721,7 @@ class EdgeRepository:
                         a.route_owner, a.core_mrz_lower, a.core_mrz_upper,
                         a.core_mrz_midpoint, a.structural_location,
                         a.confirming_observation_count, a.activation_source,
+                        a.activated_at, a.activation_event_id,
                         EXISTS (
                             SELECT 1
                             FROM mrz_events e
@@ -2733,6 +2734,18 @@ class EdgeRepository:
                               AND e.new_core_mrz_upper = a.core_mrz_upper
                               AND e.new_core_mrz_midpoint = a.core_mrz_midpoint
                         ) AS has_migrated,
+                        migration.occurred_at AS latest_migrated_at,
+                        migration.old_core_mrz_lower AS previous_core_mrz_lower,
+                        migration.old_core_mrz_upper AS previous_core_mrz_upper,
+                        CASE
+                            WHEN migration.new_core_mrz_midpoint >
+                                 (migration.old_core_mrz_lower + migration.old_core_mrz_upper) / 2
+                                THEN 'UP'
+                            WHEN migration.new_core_mrz_midpoint <
+                                 (migration.old_core_mrz_lower + migration.old_core_mrz_upper) / 2
+                                THEN 'DOWN'
+                            ELSE NULL
+                        END AS latest_migration_direction,
                         w.id, w.event_id, w.schema_version,
                         w.route, w.observation_type,
                         w.observation_price, w.observation_price_tick,
@@ -2740,6 +2753,17 @@ class EdgeRepository:
                         w.observed_at, w.received_at
                     FROM latest_observations o
                     LEFT JOIN active_mrz a ON a.symbol = o.symbol
+                    LEFT JOIN LATERAL (
+                        SELECT e.occurred_at, e.old_core_mrz_lower,
+                               e.old_core_mrz_upper, e.new_core_mrz_midpoint
+                        FROM mrz_events e
+                        WHERE e.symbol = a.symbol
+                          AND e.event_type = 'MRZ_MIGRATED'
+                          AND e.trigger_event_id = a.activation_event_id
+                          AND e.occurred_at = a.activated_at
+                        ORDER BY e.sequence DESC
+                        LIMIT 1
+                    ) migration ON TRUE
                     LEFT JOIN LATERAL (
                         (
                             SELECT
@@ -2799,7 +2823,20 @@ class EdgeRepository:
                             "core_mrz_midpoint": number(anchor["core_mrz_midpoint"]),
                             "structural_location": anchor["structural_location"],
                             "activation_source": anchor["activation_source"],
+                            "activated_at": iso(anchor["activated_at"]),
+                            "activation_event_id": anchor["activation_event_id"],
                             "has_migrated": bool(anchor["has_migrated"]),
+                            "migration": {
+                                "has_migrated": bool(anchor["has_migrated"]),
+                                "direction": anchor["latest_migration_direction"],
+                                "migrated_at": iso(anchor["latest_migrated_at"]),
+                                "previous_lower": number(
+                                    anchor["previous_core_mrz_lower"]
+                                ),
+                                "previous_upper": number(
+                                    anchor["previous_core_mrz_upper"]
+                                ),
+                            },
                             "confirming_observation_count": anchor[
                                 "confirming_observation_count"
                             ],

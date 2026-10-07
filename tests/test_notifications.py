@@ -80,15 +80,15 @@ class PushDestinationTests(unittest.TestCase):
         candidate_identity = "a" * 64
         self.assertEqual(
             build_push_destination("MRZ_ACTIVATED", "BTCUSDT"),
-            "/diagnostics/mrz-robustness?symbol=BTCUSDT#active-mrz",
+            "/mrz/symbols?symbol=BTCUSDT",
         )
         self.assertEqual(
             build_push_destination("MRZ_MIGRATED", "BTCUSDT"),
-            "/diagnostics/mrz-robustness?symbol=BTCUSDT#migration-history",
+            "/mrz/symbols?symbol=BTCUSDT",
         )
         self.assertEqual(
             build_push_destination(PRESSURE_EVENT_TYPE, "ZECUSDT"),
-            "/diagnostics/mrz-robustness?symbol=ZECUSDT#post-activation",
+            "/mrz/symbols?symbol=ZECUSDT",
         )
         self.assertEqual(
             build_push_destination(
@@ -311,7 +311,7 @@ class NotificationIntegrationTests(unittest.TestCase):
         self.assertEqual(event["successor_label"], "No qualifying successor")
         self.assertEqual(
             event["destination"],
-            "/diagnostics/mrz-robustness?symbol=SPXUSDT#post-activation",
+            "/mrz/symbols?symbol=SPXUSDT",
         )
         self.assertEqual(event["url"], event["destination"])
         self.assertIn("above-envelope", event["body"])
@@ -331,7 +331,7 @@ class NotificationIntegrationTests(unittest.TestCase):
         self.assertEqual(event["current_state"], "DOWN")
         self.assertEqual(
             event["destination"],
-            "/diagnostics/mrz-robustness?symbol=SPXUSDT#post-activation",
+            "/mrz/symbols?symbol=SPXUSDT",
         )
         self.assertIn("below-envelope", event["body"])
 
@@ -444,7 +444,7 @@ class NotificationIntegrationTests(unittest.TestCase):
         self.assertTrue(
             all(
                 item["destination"]
-                == "/diagnostics/mrz-robustness?symbol=SPXUSDT#post-activation"
+                == "/mrz/symbols?symbol=SPXUSDT"
                 for item in payloads
             )
         )
@@ -584,7 +584,7 @@ class NotificationIntegrationTests(unittest.TestCase):
         self.assertEqual(item["title"], "SPXUSDT MRZ Activated")
         self.assertEqual(
             item["destination"],
-            "/diagnostics/mrz-robustness?symbol=SPXUSDT#active-mrz",
+            "/mrz/symbols?symbol=SPXUSDT",
         )
 
         duplicate = self.client.post(
@@ -733,7 +733,7 @@ class NotificationIntegrationTests(unittest.TestCase):
         payload = self.sender.calls[0]["data"]
         self.assertIn('"event_type":"MRZ_ACTIVATED"', payload)
         self.assertIn(
-            '"destination":"/diagnostics/mrz-robustness?symbol=SPXUSDT#active-mrz"',
+            '"destination":"/mrz/symbols?symbol=SPXUSDT"',
             payload,
         )
         self.assertNotIn(PRIVATE_KEY, payload)
@@ -748,7 +748,7 @@ class NotificationIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(
             site_events.json()["events"][0]["destination"],
-            "/diagnostics/mrz-robustness?symbol=SPXUSDT#active-mrz",
+            "/mrz/symbols?symbol=SPXUSDT",
         )
         self.assertEqual(
             site_events.json()["events"][0]["url"],
@@ -1016,11 +1016,11 @@ class NotificationIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(
             activated_payload["destination"],
-            "/diagnostics/mrz-robustness?symbol=BTCUSDT#active-mrz",
+            "/mrz/symbols?symbol=BTCUSDT",
         )
         self.assertEqual(
             migrated_payload["destination"],
-            "/diagnostics/mrz-robustness?symbol=BTCUSDT#migration-history",
+            "/mrz/symbols?symbol=BTCUSDT",
         )
 
         # Notification provenance is copied from the persisted migration event,
@@ -1281,6 +1281,85 @@ class NotificationIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 422)
         self.assertEqual(self.scalar("SELECT COUNT(*) FROM web_push_subscriptions"), 0)
+
+    def test_tracked_scope_filters_pushes_without_removing_global_events(self) -> None:
+        self.client.post("/api/notifications/subscriptions", json=SUBSCRIPTION)
+        self.client.post("/api/groups", json={"name": "Large Cap", "members": ["NVDA"]})
+        preferences = self.client.put(
+            "/api/notifications/preferences",
+            json={
+                "alert_scope": "TRACKED_GROUPS_ONLY",
+                "activation_enabled": True,
+                "migration_enabled": True,
+                "pressure_enabled": True,
+                "near_miss_enabled": True,
+            },
+        )
+        self.assertEqual(preferences.status_code, 200)
+
+        self.activate()
+        self.assertEqual(len(self.sender.calls), 0)
+        self.assertEqual(
+            self.scalar(
+                "SELECT COUNT(*) FROM web_push_notifications "
+                "WHERE symbol = 'SPXUSDT' AND event_type = 'MRZ_ACTIVATED'"
+            ),
+            1,
+        )
+        global_events = self.client.get("/api/mrz/events").json()["events"]
+        self.assertTrue(any(item["symbol"] == "SPXUSDT" for item in global_events))
+
+    def test_near_miss_toggle_and_multi_group_membership_deliver_once(self) -> None:
+        self.client.post("/api/notifications/subscriptions", json=SUBSCRIPTION)
+        self.client.post("/api/groups", json={"name": "Large Cap", "members": ["NVDA"]})
+        self.client.post("/api/groups", json={"name": "Momentum", "members": ["NVDA"]})
+        disabled = {
+            "alert_scope": "TRACKED_GROUPS_ONLY",
+            "activation_enabled": True,
+            "migration_enabled": True,
+            "pressure_enabled": True,
+            "near_miss_enabled": False,
+        }
+        self.client.put("/api/notifications/preferences", json=disabled)
+        with transaction(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO web_push_notifications (
+                        source_event_key, source_trigger_event_id, event_type,
+                        symbol, route_owner, structural_location,
+                        core_mrz_lower, core_mrz_upper, activated_at, occurred_at,
+                        candidate_identity, evaluator_identity,
+                        minimum_required_allowance_pct, production_threshold_pct,
+                        shortfall_percentage_points, supporting_observation_count,
+                        candidate_timestamp, deliverable
+                    ) VALUES (
+                        'near-miss:NVDA:test', 'near-trigger', 'MRZ_NEAR_MISS',
+                        'NVDA', 'STR', 'deep_premium_core_mrz',
+                        198.4, 201.1, clock_timestamp(), clock_timestamp(),
+                        %s, 'test-evaluator', 1.02, 1.00, 0.02, 4,
+                        clock_timestamp(), TRUE
+                    ) RETURNING id
+                    """,
+                    ("a" * 64,),
+                )
+                notification_id = int(cursor.fetchone()[0])
+        self.client.app.state.notification_service.dispatch_pending([notification_id])
+        self.assertEqual(len(self.sender.calls), 0)
+
+        self.client.put(
+            "/api/notifications/preferences",
+            json={**disabled, "near_miss_enabled": True},
+        )
+        self.client.app.state.notification_service.dispatch_pending([notification_id])
+        self.assertEqual(len(self.sender.calls), 1)
+        self.assertEqual(
+            self.scalar(
+                "SELECT COUNT(*) FROM web_push_delivery_attempts "
+                "WHERE notification_id = " + str(notification_id)
+            ),
+            1,
+        )
 
 
 if __name__ == "__main__":

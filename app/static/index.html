@@ -3,488 +3,81 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="EDGE 2.0 operational MRZ Monitor" />
+    <meta name="description" content="EDGE 2.0 MRZ operator workspace" />
     <meta name="theme-color" content="#080b10" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>EDGE 2.0 · MRZ Monitor</title>
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/static/edge-mrz-icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/static/edge-mrz-icon-180.png" />
-    <link rel="stylesheet" href="/static/styles.css?v=operator-promotion-effective-activation-20261006" />
-    <link rel="stylesheet" href="/static/diagnostics-nav.css?v=views-menu-20260907" />
+    <link rel="stylesheet" href="/static/workspace.css?v=mrz-workspace-20261007" />
   </head>
   <body>
-    <main class="shell">
-      <header class="masthead">
-        <div>
-          <p class="eyebrow">EDGE 2.0</p>
-          <h1>MRZ Monitor</h1>
-          <p class="masthead-descriptor">Route authority · Structural location</p>
-        </div>
-        <div class="masthead-actions">
-          <nav class="page-nav operator-navigation" aria-label="Operator navigation" data-diagnostics-nav>
-            <div class="diagnostics-menu">
-              <button class="diagnostics-trigger" type="button" aria-expanded="false" aria-haspopup="menu" aria-controls="monitor-diagnostics-menu" data-diagnostics-trigger>
-                Views <span class="diagnostics-chevron" aria-hidden="true">▾</span>
-              </button>
-              <div class="diagnostics-dropdown" id="monitor-diagnostics-menu" role="menu" data-diagnostics-menu hidden>
-                <a href="/diagnostics/mrz-robustness" role="menuitem">Operator Card</a>
-                <a href="/diagnostics/activation-feasibility" role="menuitem">Formation Diagnostics</a>
-              </div>
-            </div>
-          </nav>
-          <div class="notification-inbox-control">
-            <button type="button" id="notificationInboxButton" aria-haspopup="dialog" aria-controls="notificationInboxDialog">
-              <span aria-hidden="true">🔔</span>
-              <span>Inbox</span>
-              <span class="notification-unread-badge" id="notificationUnreadBadge" hidden>0</span>
-            </button>
-          </div>
-          <div class="notification-control">
-            <button type="button" id="notificationButton" disabled>Checking notifications…</button>
-            <span id="notificationStatus" role="status">Checking browser support…</span>
-          </div>
-          <span class="status-dot" id="healthState">Checking system</span>
-        </div>
-      </header>
+    <div class="workspace-shell">
+      <aside class="workspace-sidebar" aria-label="MRZ Monitor navigation">
+        <a class="workspace-brand" href="/mrz/overview"><span class="brand-mark">E</span><span><strong>EDGE 2.0</strong><small>MRZ Monitor</small></span></a>
+        <nav class="workspace-navigation">
+          <p>OVERVIEW</p><a href="/mrz/overview" data-route="overview"><span>Overview</span></a>
+          <p>TRADING</p><a href="/mrz/watchlists" data-route="watchlists"><span>Watchlists</span><b id="navAttentionCount" hidden>0</b></a><a href="/mrz/attention" data-route="attention"><span>Attention</span></a><a href="/mrz/symbols" data-route="symbols"><span>Symbols</span></a><a href="/mrz/pressure" data-route="pressure"><span>Pressure</span></a>
+          <p>MRZ RESEARCH</p><a href="/mrz/formation-diagnostics"><span>Formation Diagnostics</span></a><a href="/mrz/events" data-route="events"><span>Events</span></a>
+        </nav>
+        <div class="sidebar-foot"><span class="health-dot" id="healthState">Checking system</span><small>Canonical universe monitoring</small></div>
+      </aside>
 
-      <section class="location-distribution-panel" aria-labelledby="location-distribution-title">
-        <div class="section-heading">
-          <p class="eyebrow" id="location-distribution-title">LOCATION DISTRIBUTION</p>
-          <p class="section-support">Current classified symbol population inside IPDA 20W</p>
-        </div>
-        <div class="location-distribution-grid" id="locationDistribution" aria-live="polite">
-          <article class="location-distribution-cell">
-            <h3>Deep Discount</h3>
-            <div class="location-distribution-current">
-              <span>Current</span>
-              <p><strong id="distributionDeepDiscountCount">0</strong><span aria-hidden="true"> · </span><span id="distributionDeepDiscountPercentage">0.0%</span></p>
-            </div>
-            <details class="location-migration-history">
-              <summary>Historical migration outcomes</summary>
-              <div class="location-migration-directions" id="distributionDeepDiscountHistory" hidden>
-                <button type="button" id="distributionDeepDiscountHigherButton" disabled><span class="migration-direction-label"><span aria-hidden="true">↑</span> Higher</span><strong id="distributionDeepDiscountHigher">—</strong><span class="migration-direction-count" id="distributionDeepDiscountHigherCount">0</span></button>
-                <button type="button" id="distributionDeepDiscountLowerButton" disabled><span class="migration-direction-label"><span aria-hidden="true">↓</span> Lower</span><strong id="distributionDeepDiscountLower">—</strong><span class="migration-direction-count" id="distributionDeepDiscountLowerCount">0</span></button>
-              </div>
-              <p class="location-migration-empty" id="distributionDeepDiscountHistoryEmpty">No migration history</p>
-              <p class="location-migration-sample" id="distributionDeepDiscountSamples">n = 0</p>
-            </details>
-          </article>
-          <article class="location-distribution-cell">
-            <h3>Shallow Discount</h3>
-            <div class="location-distribution-current">
-              <span>Current</span>
-              <p><strong id="distributionShallowDiscountCount">0</strong><span aria-hidden="true"> · </span><span id="distributionShallowDiscountPercentage">0.0%</span></p>
-            </div>
-            <details class="location-migration-history">
-              <summary>Historical migration outcomes</summary>
-              <div class="location-migration-directions" id="distributionShallowDiscountHistory" hidden>
-                <button type="button" id="distributionShallowDiscountHigherButton" disabled><span class="migration-direction-label"><span aria-hidden="true">↑</span> Higher</span><strong id="distributionShallowDiscountHigher">—</strong><span class="migration-direction-count" id="distributionShallowDiscountHigherCount">0</span></button>
-                <button type="button" id="distributionShallowDiscountLowerButton" disabled><span class="migration-direction-label"><span aria-hidden="true">↓</span> Lower</span><strong id="distributionShallowDiscountLower">—</strong><span class="migration-direction-count" id="distributionShallowDiscountLowerCount">0</span></button>
-              </div>
-              <p class="location-migration-empty" id="distributionShallowDiscountHistoryEmpty">No migration history</p>
-              <p class="location-migration-sample" id="distributionShallowDiscountSamples">n = 0</p>
-            </details>
-          </article>
-          <article class="location-distribution-cell location-distribution-boundary">
-            <h3>At EQM</h3>
-            <div class="location-distribution-current">
-              <span>Current</span>
-              <p><strong id="distributionAtEqmCount">0</strong></p>
-            </div>
-            <p class="location-boundary-note">Exact canonical IPDA 20W midpoint</p>
-          </article>
-          <article class="location-distribution-cell">
-            <h3>Shallow Premium</h3>
-            <div class="location-distribution-current">
-              <span>Current</span>
-              <p><strong id="distributionShallowPremiumCount">0</strong><span aria-hidden="true"> · </span><span id="distributionShallowPremiumPercentage">0.0%</span></p>
-            </div>
-            <details class="location-migration-history">
-              <summary>Historical migration outcomes</summary>
-              <div class="location-migration-directions" id="distributionShallowPremiumHistory" hidden>
-                <button type="button" id="distributionShallowPremiumHigherButton" disabled><span class="migration-direction-label"><span aria-hidden="true">↑</span> Higher</span><strong id="distributionShallowPremiumHigher">—</strong><span class="migration-direction-count" id="distributionShallowPremiumHigherCount">0</span></button>
-                <button type="button" id="distributionShallowPremiumLowerButton" disabled><span class="migration-direction-label"><span aria-hidden="true">↓</span> Lower</span><strong id="distributionShallowPremiumLower">—</strong><span class="migration-direction-count" id="distributionShallowPremiumLowerCount">0</span></button>
-              </div>
-              <p class="location-migration-empty" id="distributionShallowPremiumHistoryEmpty">No migration history</p>
-              <p class="location-migration-sample" id="distributionShallowPremiumSamples">n = 0</p>
-            </details>
-          </article>
-          <article class="location-distribution-cell">
-            <h3>Deep Premium</h3>
-            <div class="location-distribution-current">
-              <span>Current</span>
-              <p><strong id="distributionDeepPremiumCount">0</strong><span aria-hidden="true"> · </span><span id="distributionDeepPremiumPercentage">0.0%</span></p>
-            </div>
-            <details class="location-migration-history">
-              <summary>Historical migration outcomes</summary>
-              <div class="location-migration-directions" id="distributionDeepPremiumHistory" hidden>
-                <button type="button" id="distributionDeepPremiumHigherButton" disabled><span class="migration-direction-label"><span aria-hidden="true">↑</span> Higher</span><strong id="distributionDeepPremiumHigher">—</strong><span class="migration-direction-count" id="distributionDeepPremiumHigherCount">0</span></button>
-                <button type="button" id="distributionDeepPremiumLowerButton" disabled><span class="migration-direction-label"><span aria-hidden="true">↓</span> Lower</span><strong id="distributionDeepPremiumLower">—</strong><span class="migration-direction-count" id="distributionDeepPremiumLowerCount">0</span></button>
-              </div>
-              <p class="location-migration-empty" id="distributionDeepPremiumHistoryEmpty">No migration history</p>
-              <p class="location-migration-sample" id="distributionDeepPremiumSamples">n = 0</p>
-            </details>
-          </article>
-        </div>
-        <div class="location-distribution-totals" aria-label="Discount, At EQM, Premium, and unavailable totals">
-          <p><span>Discount</span><strong id="distributionDiscountTotal">0 · 0.0%</strong></p>
-          <p><span>At EQM</span><strong id="distributionAtEqmTotal">0 · 0.0%</strong></p>
-          <p><span>Premium</span><strong id="distributionPremiumTotal">0 · 0.0%</strong></p>
-          <p><span>Unavailable</span><strong id="distributionUnavailableTotal">0</strong></p>
-        </div>
-      </section>
-
-      <section class="pressure-breadth-panel" aria-labelledby="pressure-breadth-title">
-        <div class="section-heading pressure-section-heading">
-          <div>
-            <p class="eyebrow" id="pressure-breadth-title">PRESSURE BREADTH</p>
-            <h2 id="universePressureHeadline">—</h2>
-            <p class="section-support">Current canonical pressure across the classified monitored universe</p>
-          </div>
-          <p class="peer-pressure-participation">Participation <strong id="universePressureParticipation">0 / 0</strong></p>
-        </div>
-        <div class="peer-pressure-counts universe-pressure-counts" role="group" aria-label="Universe pressure categories">
-          <button type="button" data-universe-pressure-direction="higher" aria-pressed="false">
-            <span><span aria-hidden="true">↑</span> Higher</span>
-            <strong id="universePressureHigherCount">0</strong>
-          </button>
-          <button type="button" data-universe-pressure-direction="neutral" aria-pressed="false">
-            <span><span aria-hidden="true">↔</span> Neutral</span>
-            <strong id="universePressureNeutralCount">0</strong>
-          </button>
-          <button type="button" data-universe-pressure-direction="lower" aria-pressed="false">
-            <span><span aria-hidden="true">↓</span> Lower</span>
-            <strong id="universePressureLowerCount">0</strong>
-          </button>
-        </div>
-      </section>
-
-      <section class="pressure-map-panel" aria-labelledby="pressure-map-title">
-        <div class="section-heading">
-          <p class="eyebrow" id="pressure-map-title">PRESSURE MAP</p>
-          <p class="section-support">Current structural location × canonical pressure direction</p>
-        </div>
-        <div class="pressure-map-grid" id="pressureMap" aria-live="polite"></div>
-        <section class="peer-pressure-drilldown pressure-map-drilldown" id="pressureMapDrilldown" aria-live="polite" hidden>
-          <header>
-            <h3 id="pressureMapDrilldownTitle">—</h3>
-            <p id="pressureMapDrilldownSummary">—</p>
-          </header>
-          <ul id="pressureMapMembers"></ul>
-        </section>
-      </section>
-
-      <section class="heatmap-panel" aria-labelledby="location-heatmap-title">
-        <div class="section-heading">
-          <div class="heatmap-title-row">
-            <div>
-              <p class="eyebrow" id="location-heatmap-title">LOCATION HEATMAP</p>
-              <p class="section-support">Latest TradingView observation within the current IPDA 20W range</p>
-            </div>
-            <div class="heatmap-view-controls">
-              <div class="pressure-filter" role="group" aria-label="Filter Location Heatmap by pressure">
-                <button type="button" data-heatmap-pressure-filter="all" aria-pressed="true">All</button>
-                <button type="button" data-heatmap-pressure-filter="higher" aria-pressed="false"><span aria-hidden="true">↑</span> Higher</button>
-                <button type="button" data-heatmap-pressure-filter="lower" aria-pressed="false"><span aria-hidden="true">↓</span> Lower</button>
-                <button type="button" data-heatmap-pressure-filter="neutral" aria-pressed="false"><span aria-hidden="true">↔</span> Neutral</button>
-              </div>
-              <label class="group-tracking-toggle" for="groupTrackingToggle">
-                <span>Group Tracking</span>
-                <span class="toggle-state" id="groupTrackingStateLabel">Off</span>
-                <input type="checkbox" id="groupTrackingToggle" aria-describedby="groupTrackingStateLabel" />
-                <span class="toggle-switch" aria-hidden="true"></span>
-              </label>
-            </div>
-          </div>
-          <div class="heatmap-legends" aria-label="Location Heatmap legend">
-            <span class="heatmap-legend"><span class="active-mrz-dot" aria-hidden="true"></span>Active MRZ</span>
-            <span class="heatmap-legend"><span class="activity-legend-swatch" aria-hidden="true"></span>Chip intensity · Observation activity</span>
-            <span class="heatmap-legend"><span class="evidence-ready-legend-swatch" aria-hidden="true"></span>Bright outline · Concentration-check eligible</span>
-            <span class="heatmap-legend"><span class="pressure-chip-legend" aria-hidden="true">↑</span>Current pressure</span>
-          </div>
-        </div>
-        <div id="locationHeatmap" hidden>
-          <div class="heatmap-grid" id="primaryLocationGroups"></div>
-          <div class="heatmap-secondary" id="secondaryLocationGroups"></div>
-        </div>
-        <p class="heatmap-empty" id="heatmapEmpty">Loading locations…</p>
-        <section class="group-tracking-workspace" id="groupTrackingWorkspace" aria-labelledby="tracked-groups-title" aria-live="polite" hidden>
-          <header class="tracked-groups-toolbar">
-            <label for="savedGroupSelect" id="tracked-groups-title">Tracked Groups</label>
-            <select id="savedGroupSelect" disabled>
-              <option value="">No saved groups</option>
-            </select>
-            <button class="group-action-button" id="newSavedGroup" type="button">+ New Group</button>
-          </header>
-
-          <form class="group-editor" id="groupEditor" hidden>
-            <header class="group-editor-header">
-              <div>
-                <p class="eyebrow" id="groupEditorTitle">NEW GROUP</p>
-                <p class="section-support">Select members from the Location Heatmap below.</p>
-              </div>
-              <label class="show-selected-control" for="showSelectedOnly">
-                <input type="checkbox" id="showSelectedOnly" />
-                <span>Show selected only</span>
-              </label>
-            </header>
-            <label class="group-name-field" for="groupName">
-              <span>Group name</span>
-              <input id="groupName" name="groupName" type="text" maxlength="80" autocomplete="off" placeholder="MAG7" required />
-            </label>
-            <p class="group-selection-title">Selected members · <strong id="selectedGroupCount">0</strong></p>
-            <ul class="selected-group-symbols" id="selectedGroupSymbols" aria-label="Selected symbols"></ul>
-            <p class="group-form-error" id="groupFormError" role="alert" hidden></p>
-            <div class="selected-group-actions">
-              <button class="clear-group-button" id="clearSelectedGroup" type="button">Clear</button>
-              <button class="clear-group-button" id="cancelGroupEdit" type="button">Cancel</button>
-              <button class="group-action-button" id="saveSelectedGroup" type="submit">Save Group</button>
-            </div>
-          </form>
-
-          <section class="saved-group-view" id="savedGroupView" hidden>
-            <header class="saved-group-header">
-              <div>
-                <h2 id="savedGroupHeading">—</h2>
-                <p class="saved-group-updated" id="savedGroupUpdated">—</p>
-              </div>
-              <div class="selected-group-actions">
-                <button class="clear-group-button" id="editSavedGroup" type="button">Edit Group</button>
-                <button class="clear-group-button danger" id="deleteSavedGroup" type="button">Delete</button>
-              </div>
-            </header>
-            <ul class="selected-group-symbols saved-members" id="savedGroupMembers" aria-label="Group members"></ul>
-            <div class="group-view-tabs" role="tablist" aria-label="Saved group view">
-              <button id="currentStateTab" type="button" role="tab" aria-selected="true" aria-controls="currentStatePanel">Current State</button>
-              <button id="peerPressureTab" type="button" role="tab" aria-selected="false" aria-controls="peerPressurePanel">Peer Pressure</button>
-            </div>
-
-            <section class="group-tab-panel current-state-panel" id="currentStatePanel" role="tabpanel" aria-labelledby="currentStateTab">
-              <article class="group-current-card group-location-card">
-                <h3>Location</h3>
-                <dl>
-                  <div><dt>Deep Discount</dt><dd id="groupDeepDiscountCount">0</dd></div>
-                  <div><dt>Shallow Discount</dt><dd id="groupShallowDiscountCount">0</dd></div>
-                  <div><dt>At EQM</dt><dd id="groupAtEqmCount">0</dd></div>
-                  <div><dt>Shallow Premium</dt><dd id="groupShallowPremiumCount">0</dd></div>
-                  <div><dt>Deep Premium</dt><dd id="groupDeepPremiumCount">0</dd></div>
-                </dl>
-              </article>
-              <article class="group-current-card group-active-card">
-                <h3>Active MRZ</h3>
-                <p id="groupActiveMrzCount">0 / 0</p>
-              </article>
-              <p class="group-route-summary">Route · BTD <strong id="groupBtdCount">0</strong> · STR <strong id="groupStrCount">0</strong></p>
-            </section>
-
-            <section class="group-tab-panel peer-pressure-panel" id="peerPressurePanel" role="tabpanel" aria-labelledby="peerPressureTab" hidden>
-              <header class="peer-pressure-header">
-                <div>
-                  <p class="eyebrow">PEER PRESSURE</p>
-                  <h3 id="peerPressureHeadline">—</h3>
-                  <p class="section-support" id="peerPressureSummary">Select Peer Pressure to load canonical cohort evidence.</p>
-                </div>
-                <p class="peer-pressure-participation">Participation <strong id="peerPressureParticipation">0 / 0</strong></p>
-              </header>
-              <div class="peer-pressure-counts" role="group" aria-label="Peer Pressure categories">
-                <button type="button" id="peerPressureHigher" data-pressure-direction="higher" aria-pressed="false">
-                  <span><span aria-hidden="true">↑</span> Higher</span>
-                  <strong id="peerPressureHigherCount">0</strong>
-                </button>
-                <button type="button" id="peerPressureLower" data-pressure-direction="lower" aria-pressed="false">
-                  <span><span aria-hidden="true">↓</span> Lower</span>
-                  <strong id="peerPressureLowerCount">0</strong>
-                </button>
-                <button type="button" id="peerPressureNeutral" data-pressure-direction="neutral" aria-pressed="false">
-                  <span><span aria-hidden="true">↔</span> Neutral</span>
-                  <strong id="peerPressureNeutralCount">0</strong>
-                </button>
-              </div>
-              <section class="peer-pressure-drilldown" id="peerPressureDrilldown" aria-live="polite" hidden>
-                <header>
-                  <h4 id="peerPressureDrilldownTitle">—</h4>
-                  <p id="peerPressureDrilldownSummary">—</p>
-                </header>
-                <ul id="peerPressureMembers"></ul>
-              </section>
-
-              <section class="migration-momentum-panel" id="migrationMomentumPanel" aria-labelledby="migrationMomentumTitle">
-                <header class="migration-momentum-header">
-                  <div>
-                    <p class="eyebrow">MIGRATION MOMENTUM</p>
-                    <h3 id="migrationMomentumTitle">Authoritative structural movement</h3>
-                    <p class="section-support">Authoritative MRZ migration across tracked group members.</p>
-                  </div>
-                  <p class="migration-momentum-method">Latest 3 migrations per symbol</p>
-                </header>
-                <div class="migration-momentum-summary" aria-live="polite">
-                  <article>
-                    <span>Migration State</span>
-                    <strong id="groupMigrationState">—</strong>
-                  </article>
-                  <article>
-                    <span>Recent Migration Direction</span>
-                    <strong id="recentMigrationDirection">—</strong>
-                  </article>
-                  <article>
-                    <span>Migration Participation</span>
-                    <strong id="migrationParticipation">0 / 0 symbols</strong>
-                  </article>
-                  <article>
-                    <span>Pressure / Migration Alignment</span>
-                    <strong id="pressureMigrationAlignment">—</strong>
-                  </article>
-                </div>
-                <section class="migration-momentum-visual" aria-labelledby="migrationHistogramTitle">
-                  <header>
-                    <div>
-                      <h4 id="migrationHistogramTitle">Recent authoritative migrations</h4>
-                      <p>Each bar is one MRZ midpoint move, normalized by the previous MRZ width.</p>
-                    </div>
-                    <div class="migration-momentum-legend" aria-label="Migration direction legend">
-                      <span><i class="higher" aria-hidden="true"></i>Upward</span>
-                      <span><i class="lower" aria-hidden="true"></i>Downward</span>
-                      <span>Magnitude <strong id="migrationMomentumMagnitude">—</strong></span>
-                    </div>
-                  </header>
-                  <div class="migration-momentum-histogram" id="migrationMomentumHistogram" role="group" aria-label="Recent authoritative migration events"></div>
-                  <section class="migration-momentum-detail" id="migrationMomentumDetail" aria-live="polite" hidden></section>
-                </section>
-                <ul class="symbol-migration-states" id="symbolMigrationStates" aria-label="Migration state by tracked symbol"></ul>
-              </section>
-
-              <details class="migration-history-disclosure" id="migrationHistoryDisclosure">
-                <summary>Migration Evidence</summary>
-                <p class="section-support"><strong>MRZ Midpoint Path</strong> · Authoritative MRZ midpoint movement across shared chronological time.</p>
-                <div class="migration-path-scroller" id="migrationPathScroller" tabindex="0" aria-label="Authoritative MRZ price migration trajectory"></div>
-              </details>
-            </section>
-          </section>
-        </section>
-      </section>
-
-      <section class="selected-detail" aria-labelledby="selected-symbol-title">
-        <p class="eyebrow" id="selected-symbol-title">SELECTED SYMBOL DETAIL</p>
-
-        <div class="selector">
-          <label for="symbolSelect">Symbol</label>
-          <select id="symbolSelect" disabled>
-            <option value="">Loading symbols…</option>
-          </select>
-        </div>
-
-        <section class="empty-state" id="emptyState">
-          <p>Select a symbol to view its current MRZ authority.</p>
-        </section>
-
-        <section class="state-card" id="stateCard" hidden aria-live="polite">
-          <div class="symbol-row">
-            <h2 id="symbolName">—</h2>
-            <div class="symbol-header-actions">
-              <span class="pill" id="mrzStatus">—</span>
-              <a class="operator-card-link" id="operatorCardLink" hidden>Operator Card</a>
-            </div>
-          </div>
-
-          <div class="answer-grid">
-            <article>
-              <p class="label">SOURCE</p>
-              <p class="answer route unestablished" id="routeOwner">—</p>
-              <p class="support">Route owner of the active MRZ</p>
-            </article>
-            <article>
-              <p class="label">ACTIVE MRZ</p>
-              <p class="answer" id="mrzBounds">—</p>
-              <p class="support">Authoritative frozen price zone</p>
-              <div class="mrz-activation" id="mrzActivation" hidden>
-                <span>Activated</span>
-                <strong id="mrzActivatedAt">—</strong>
-              </div>
-              <div class="mrz-migration" id="mrzMigration" hidden>
-                <strong class="mrz-migration-title" id="mrzMigrationTitle">↑ MIGRATED</strong>
-                <span class="mrz-migration-time" id="mrzMigratedAt">—</span>
-                <span class="mrz-migration-from">from <strong id="mrzPreviousRange">—</strong></span>
-              </div>
-            </article>
-          </div>
-
-          <div class="context-grid">
-            <article>
-              <p class="label">MRZ LOCATION</p>
-              <p class="context-answer" id="structuralLocation">—</p>
-              <p class="support">Active MRZ midpoint inside IPDA 20W</p>
-            </article>
-            <article>
-              <p class="label">CURRENT PRICE LOCATION</p>
-              <p class="context-answer" id="currentPriceLocation">—</p>
-              <p class="support" id="currentLocationContext">—</p>
-            </article>
-          </div>
-
-          <dl class="facts">
-            <div id="activationSourceFact" hidden>
-              <dt>ACTIVATION SOURCE</dt>
-              <dd id="activationSource"><span class="fact-primary">—</span></dd>
-            </div>
-            <div id="productionConfirmationFact" hidden>
-              <dt>PRODUCTION CONFIRMATION</dt>
-              <dd id="productionConfirmation"><span class="fact-primary">—</span></dd>
-            </div>
-            <div>
-              <dt>EVIDENCE</dt>
-              <dd id="evidence"><span class="fact-primary">—</span></dd>
-            </div>
-            <div>
-              <dt>LATEST OBSERVATION</dt>
-              <dd id="latestObservation"><span class="fact-primary">—</span></dd>
-            </div>
-            <div>
-              <dt>MRZ MIDPOINT</dt>
-              <dd id="mrzMidpoint">—</dd>
-            </div>
-          </dl>
-        </section>
-      </section>
-    </main>
-    <dialog class="migration-evidence-dialog" id="migrationEvidenceDialog" aria-labelledby="migrationEvidenceTitle">
-      <div class="migration-evidence-dialog-shell">
-        <header class="migration-evidence-header">
-          <div>
-            <p class="eyebrow">MIGRATION EVIDENCE</p>
-            <h2 id="migrationEvidenceTitle">—</h2>
-            <p class="migration-evidence-summary" id="migrationEvidenceSummary">—</p>
-          </div>
-          <button type="button" class="migration-evidence-close" id="migrationEvidenceClose" aria-label="Close migration evidence">Close</button>
+      <main class="workspace-main">
+        <header class="workspace-header">
+          <button class="mobile-nav-button" id="mobileNavButton" type="button" aria-label="Open MRZ navigation">☰</button>
+          <div class="compact-identity"><strong>MRZ Monitor</strong><span>Operator workspace</span></div>
+          <div class="workspace-header-actions"><span class="header-health" id="headerHealth">● Checking system</span><button class="quiet-button" id="alertSettingsButton" type="button" aria-haspopup="dialog" aria-controls="alertSettingsDialog">🔔 <span id="alertScopeLabel">Alerts</span></button><button class="quiet-button" id="notificationInboxButton" type="button" aria-haspopup="dialog" aria-controls="notificationInboxDialog">Inbox <span class="notification-unread-badge" id="notificationUnreadBadge" hidden>0</span></button></div>
         </header>
-        <div class="migration-evidence-list" id="migrationEvidenceList"></div>
-      </div>
-    </dialog>
-    <div class="activity-tooltip" id="heatmapActivityTooltip" role="tooltip" hidden></div>
-    <dialog class="notification-inbox-dialog" id="notificationInboxDialog" aria-labelledby="notificationInboxTitle">
-      <section>
-        <header>
-          <div>
-            <p class="eyebrow">OPERATOR ACTIVITY</p>
-            <h2 id="notificationInboxTitle">Notification Inbox</h2>
-            <p id="notificationInboxSummary">No unread notifications</p>
-          </div>
-          <button type="button" id="notificationInboxClose" aria-label="Close Notification Inbox">Close</button>
-        </header>
-        <p class="notification-inbox-empty" id="notificationInboxEmpty">No active notifications.</p>
-        <ul class="notification-inbox-list" id="notificationInboxList" aria-live="polite"></ul>
-        <footer>
-          <button type="button" id="notificationClearRead" disabled>Clear all read</button>
-        </footer>
-      </section>
-    </dialog>
+        <div class="route-status" id="workspaceStatus" role="status">Loading canonical EDGE state…</div>
+
+        <section class="route-panel" data-route-panel="overview" hidden>
+          <header class="route-heading"><p>OVERVIEW</p><h1>What requires attention now?</h1><span>Tracked trading authority, recent events, and meaningful pressure.</span></header>
+          <div class="metric-strip"><article><span>WATCHLISTS</span><strong id="overviewGroupCount">0</strong></article><article><span>TRACKED SYMBOLS</span><strong id="overviewSymbolCount">0</strong></article><article><span>ACTIVE MRZ</span><strong id="overviewActiveCount">0</strong></article><article class="accent-metric"><span>CURRENT ATTENTION</span><strong id="overviewAttentionCount">0</strong></article></div>
+          <div class="overview-grid"><section class="panel"><div class="panel-heading"><div><p>ATTENTION NOW</p><h2>Trading universe</h2></div><a href="/mrz/attention">View queue</a></div><div id="overviewAttention"></div></section><section class="panel"><div class="panel-heading"><div><p>WATCHLIST STATUS</p><h2>Current authority</h2></div><a href="/mrz/watchlists">Open watchlists</a></div><div id="overviewGroups"></div></section></div>
+          <div class="route-links"><a href="/mrz/watchlists"><strong>Watchlists</strong><span>Scan tradable symbols</span></a><a href="/mrz/symbols"><strong>Symbols</strong><span>Inspect authority</span></a><a href="/mrz/pressure"><strong>Pressure</strong><span>Investigate structure</span></a><a href="/mrz/events"><strong>Events</strong><span>Review global history</span></a></div>
+        </section>
+
+        <section class="route-panel" data-route-panel="watchlists" hidden>
+          <header class="route-heading action-heading"><div><p>WATCHLISTS</p><h1>Trading watchlists and current MRZ authority</h1><span>Groups define what you are willing to trade—not what EDGE monitors.</span></div><button class="primary-button" id="newWatchlistButton" type="button">+ New watchlist</button></header>
+          <div class="watchlist-tabs" id="watchlistTabs" role="tablist" aria-label="Trading watchlists"></div>
+          <section class="compact-summary" id="watchlistSummary"></section>
+          <section class="panel attention-panel"><div class="panel-heading"><div><p>ATTENTION NOW</p><h2 id="watchlistAttentionHeading">Current attention</h2></div><span>Last 24 hours</span></div><div id="watchlistAttention"></div></section>
+          <section class="panel board-panel"><div class="panel-heading"><div><p>SYMBOL BOARD</p><h2>Current canonical state</h2></div><button class="quiet-button" id="editWatchlistButton" type="button" hidden>Edit watchlist</button></div><div class="table-scroll"><table class="symbol-board"><thead><tr><th>Symbol</th><th>MRZ status</th><th>Current authority</th><th>Route</th><th>Activated</th><th>Structural location</th><th>Pressure</th><th>Latest meaningful event</th></tr></thead><tbody id="watchlistBoard"></tbody></table></div></section>
+        </section>
+
+        <section class="route-panel" data-route-panel="attention" hidden>
+          <header class="route-heading"><p>ATTENTION</p><h1>Cross-watchlist operational queue</h1><span>Tracked symbols only. Global canonical history remains available in Events.</span></header>
+          <section class="panel"><div class="panel-heading"><div><p>TRADING ATTENTION</p><h2>Latest relevant events</h2></div><span>Last 24 hours</span></div><div id="attentionQueue"></div></section>
+        </section>
+
+        <section class="route-panel" data-route-panel="symbols" hidden>
+          <header class="route-heading symbol-route-heading"><div><p>SYMBOLS</p><h1>Canonical symbol inspection</h1><span>MRZ authority identifies context; Trade Desk remains responsible for entries and exits.</span></div><label class="symbol-picker">SELECT SYMBOL<select id="symbolSelect"><option value="">Select a symbol</option></select></label></header>
+          <section class="symbol-empty panel" id="symbolEmpty">Select a symbol from this page, a watchlist, or Attention.</section>
+          <div class="symbol-detail-grid" id="symbolDetail" hidden><section class="panel current-authority-panel"><div class="panel-heading"><div><p>SELECTED SYMBOL</p><h2 id="detailSymbol">—</h2></div><span class="status-pill" id="detailStatus">—</span></div><div class="authority-range" id="detailRange">—</div><div class="authority-meta" id="detailMeta"></div></section><section class="panel"><p class="panel-kicker">PREVIOUS MRZ</p><div id="detailPrevious" class="detail-block">—</div></section><section class="panel"><p class="panel-kicker">LATEST EVENT</p><div id="detailLatestEvent" class="detail-block">—</div></section><section class="panel"><p class="panel-kicker">PRESSURE</p><div id="detailPressure" class="detail-block">—</div></section></div>
+        </section>
+
+        <section class="route-panel" data-route-panel="pressure" hidden>
+          <header class="route-heading"><p>PRESSURE</p><h1>Structural location × canonical pressure</h1><span>Current pressure uses the existing post-activation evidence model.</span></header>
+          <div class="pressure-summary" id="pressureSummary"></div>
+          <section class="panel"><div class="panel-heading"><div><p>PRESSURE MAP</p><h2>Monitored universe</h2></div><span>Global canonical scope</span></div><div class="pressure-map" id="pressureMap"></div></section>
+          <section class="panel"><div class="panel-heading"><div><p>LOCATION HEATMAP</p><h2>Symbols by current structural location</h2></div><span>Click a symbol to inspect</span></div><div class="location-heatmap" id="locationHeatmap"></div></section>
+          <section class="panel"><div class="panel-heading"><div><p>PEER PRESSURE</p><h2>Watchlist context</h2></div><select id="pressureGroupSelect"><option value="">Select watchlist</option></select></div><div id="peerPressureDetail" class="empty-inline">Choose a watchlist to load canonical peer pressure.</div></section>
+        </section>
+
+        <section class="route-panel" data-route-panel="events" hidden>
+          <header class="route-heading"><p>EVENTS</p><h1>Global canonical event history</h1><span>All monitored symbols, independent of watchlists and alert interruption scope.</span></header>
+          <section class="panel"><div class="panel-heading"><div><p>MRZ HISTORY</p><h2>Recent events</h2></div><label class="event-filter">TYPE<select id="eventTypeFilter"><option value="all">All events</option><option value="MRZ_ACTIVATED">Activation</option><option value="MRZ_MIGRATED">Migration</option><option value="POST_ACTIVATION_PRESSURE_CHANGED">Pressure</option><option value="MRZ_NEAR_MISS">Near-Miss</option></select></label></div><div id="eventsList"></div></section>
+        </section>
+      </main>
+    </div>
+
+    <dialog class="workspace-dialog" id="watchlistDialog"><form method="dialog" id="watchlistForm"><header><div><p>TRADING WATCHLIST</p><h2 id="watchlistDialogTitle">New watchlist</h2></div><button class="icon-button" value="cancel" aria-label="Close">×</button></header><label>NAME<input id="watchlistName" maxlength="80" required placeholder="Large Cap" /></label><fieldset><legend>SYMBOLS</legend><div class="symbol-check-grid" id="watchlistSymbolChoices"></div></fieldset><p class="form-error" id="watchlistFormError" hidden></p><footer><button class="danger-button" id="deleteWatchlistButton" type="button" hidden>Delete</button><span></span><button class="quiet-button" value="cancel">Cancel</button><button class="primary-button" id="saveWatchlistButton" type="submit">Save watchlist</button></footer></form></dialog>
+
+    <dialog class="workspace-dialog alert-dialog" id="alertSettingsDialog"><form method="dialog" id="alertPreferencesForm"><header><div><p>MRZ ALERTS</p><h2>Interruption preferences</h2><span>EDGE continues to monitor and record the full universe.</span></div><button class="icon-button" value="cancel" aria-label="Close">×</button></header><fieldset><legend>ALERT SCOPE</legend><label class="choice"><input type="radio" name="alertScope" value="TRACKED_GROUPS_ONLY" /><span><strong>Tracked Groups Only</strong><small>Only symbols in a trading watchlist may interrupt you.</small></span></label><label class="choice"><input type="radio" name="alertScope" value="ALL_SYMBOLS" /><span><strong>All Symbols</strong><small>Preserves the previous global alert behavior.</small></span></label></fieldset><fieldset><legend>EVENT TYPES</legend><label class="choice"><input id="prefActivation" type="checkbox" /><span><strong>MRZ Activation</strong></span></label><label class="choice"><input id="prefMigration" type="checkbox" /><span><strong>MRZ Migration</strong></span></label><label class="choice"><input id="prefPressure" type="checkbox" /><span><strong>Pressure</strong></span></label><label class="choice"><input id="prefNearMiss" type="checkbox" /><span><strong>Near-Miss</strong></span></label></fieldset><section class="device-alert-control"><div><strong>THIS DEVICE</strong><span id="notificationStatus" role="status">Checking browser support…</span></div><button class="quiet-button" type="button" id="notificationButton" disabled>Checking notifications…</button></section><p class="form-error" id="alertPreferencesError" hidden></p><footer><span></span><button class="quiet-button" value="cancel">Cancel</button><button class="primary-button" id="saveAlertPreferences" type="submit">Save preferences</button></footer></form></dialog>
+
+    <dialog class="workspace-dialog inbox-dialog" id="notificationInboxDialog" aria-labelledby="notificationInboxTitle"><section><header><div><p>DELIVERY HISTORY</p><h2 id="notificationInboxTitle">Notification Inbox</h2><span id="notificationInboxSummary">No unread notifications</span></div><button class="icon-button" id="notificationInboxClose" type="button" aria-label="Close">×</button></header><p class="notification-inbox-empty" id="notificationInboxEmpty">No active notifications.</p><ul class="notification-inbox-list" id="notificationInboxList" aria-live="polite"></ul><footer><button class="quiet-button" type="button" id="notificationClearRead" disabled>Clear all read</button></footer></section></dialog>
     <div class="notification-toast-host" id="notificationToastHost" aria-live="polite"></div>
-    <script src="/static/diagnostics-nav.js?v=views-menu-20260907" defer></script>
-    <script src="/static/heatmap-state.js?v=operator-promotion-effective-activation-20261006" defer></script>
-    <script src="/static/operator-time.js?v=operator-promotion-effective-activation-20261006" defer></script>
-    <script src="/static/monitor-presentation.js?v=operator-promotion-effective-activation-20261006" defer></script>
-    <script src="/static/notifications.js?v=operator-promotion-effective-activation-20261006" defer></script>
-    <script src="/static/app.js?v=operator-promotion-effective-activation-20261006" defer></script>
+    <script src="/static/operator-time.js?v=mrz-workspace-20261007" defer></script><script src="/static/workspace-derivations.js?v=mrz-workspace-20261007" defer></script><script src="/static/notifications.js?v=mrz-workspace-20261007" defer></script><script src="/static/workspace.js?v=mrz-workspace-20261007" defer></script>
   </body>
 </html>

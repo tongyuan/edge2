@@ -6,7 +6,7 @@
     <meta name="description" content="EDGE 2.0 MRZ formation diagnostics" />
     <title>EDGE 2.0 · MRZ Formation Diagnostics</title>
     <link rel="stylesheet" href="/static/activation-feasibility.css?v=qualification-history-20260916" />
-    <link rel="stylesheet" href="/static/diagnostics-nav.css?v=views-menu-20260907" />
+    <link rel="stylesheet" href="/static/mrz-subnav.css?v=mrz-workspace-20261007" />
   </head>
   <body>
     <main class="report-shell">
@@ -17,17 +17,8 @@
           <p class="subtitle" id="pageSubtitle">Current production formation evidence from stored route observations</p>
         </div>
         <div class="header-actions">
-          <nav class="page-nav operator-navigation" aria-label="Operator navigation" data-diagnostics-nav>
-            <a href="/">MRZ Monitor</a>
-            <div class="diagnostics-menu has-current-page">
-              <button class="diagnostics-trigger" type="button" aria-expanded="false" aria-haspopup="menu" aria-controls="activation-diagnostics-menu" data-diagnostics-trigger>
-                Views <span class="diagnostics-chevron" aria-hidden="true">▾</span>
-              </button>
-              <div class="diagnostics-dropdown" id="activation-diagnostics-menu" role="menu" data-diagnostics-menu hidden>
-                <a href="/diagnostics/mrz-robustness" role="menuitem">Operator Card</a>
-                <a href="/diagnostics/activation-feasibility" role="menuitem" aria-current="page">Formation Diagnostics</a>
-              </div>
-            </div>
+          <nav class="mrz-subnav" aria-label="MRZ Monitor navigation">
+            <a href="/mrz/overview">Overview</a><a href="/mrz/watchlists">Watchlists</a><a href="/mrz/attention">Attention</a><a href="/mrz/symbols">Symbols</a><a href="/mrz/pressure">Pressure</a><a href="/mrz/formation-diagnostics" aria-current="page">Formation Diagnostics</a><a href="/mrz/events">Events</a>
           </nav>
           <button type="button" id="refreshReport">Refresh report</button>
         </div>
@@ -123,7 +114,6 @@
         </div>
       </form>
     </dialog>
-    <script src="/static/diagnostics-nav.js?v=views-menu-20260907" defer></script>
     <script src="/static/operator-time.js?v=operator-clarity-20260824" defer></script>
     <script src="/static/activation-feasibility.js?v=qualification-history-20260916" defer></script>
   </body>

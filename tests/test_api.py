@@ -266,26 +266,26 @@ class APIIntegrationTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(self.client.get(path).status_code, 404)
 
-    def test_operator_page_navigation_is_reciprocal(self) -> None:
+    def test_operator_page_navigation_is_persistent(self) -> None:
         monitor = self.client.get("/").text
         feasibility = self.client.get("/diagnostics/activation-feasibility").text
         robustness = self.client.get("/diagnostics/mrz-robustness").text
 
         pages = (monitor, feasibility, robustness)
         for page in pages:
-            self.assertIn("Views", page)
-            self.assertNotIn(">Diagnostics <", page)
-            self.assertIn('data-diagnostics-trigger', page)
-            self.assertIn('href="/diagnostics/activation-feasibility"', page)
-            self.assertIn('href="/diagnostics/mrz-robustness"', page)
-            self.assertIn(">Formation Diagnostics</a>", page)
-            self.assertIn(">Operator Card</a>", page)
+            self.assertNotIn('data-diagnostics-trigger', page)
+            self.assertNotIn(">Views <", page)
+            self.assertIn('href="/mrz/formation-diagnostics"', page)
+            self.assertIn('href="/mrz/watchlists"', page)
+            self.assertIn('href="/mrz/attention"', page)
+            self.assertIn('href="/mrz/symbols"', page)
+            self.assertIn('href="/mrz/pressure"', page)
+            self.assertIn('href="/mrz/events"', page)
+            self.assertIn("Formation Diagnostics", page)
             self.assertNotIn(">Activation Feasibility<", page)
             self.assertNotIn('href="/diagnostics/mrz-robustness-report"', page)
             self.assertNotIn('href="/diagnostics/trading-window-feasibility"', page)
             self.assertNotIn("Trading Window Feasibility", page)
-        for page in (feasibility, robustness):
-            self.assertIn('href="/">MRZ Monitor</a>', page)
 
     def test_mrz_robustness_report_api_is_hidden(self) -> None:
         response = self.client.get("/api/diagnostics/mrz-robustness-report")

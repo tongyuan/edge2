@@ -1,0 +1,28 @@
+.mrz-subnav {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 5px;
+  max-width: 720px;
+}
+.mrz-subnav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: .68rem;
+  font-weight: 680;
+  text-decoration: none;
+}
+.mrz-subnav a:hover,
+.mrz-subnav a[aria-current="page"] {
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--accent);
+}
+@media (max-width: 760px) {
+  .mrz-subnav { justify-content: flex-start; }
+}

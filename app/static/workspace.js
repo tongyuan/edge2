@@ -1,0 +1,429 @@
+(function initializeMrzWorkspace(globalObject) {
+  "use strict";
+
+  const derive = globalObject.edgeWorkspaceDerivations;
+  const state = {
+    symbols: [],
+    symbolPayload: null,
+    groups: [],
+    events: [],
+    preferences: null,
+    selectedGroupId: "all",
+    editingGroupId: null,
+  };
+  const locationLabels = {
+    deep_discount: "Deep Discount",
+    shallow_discount: "Shallow Discount",
+    at_eqm: "At EQM",
+    shallow_premium: "Shallow Premium",
+    deep_premium: "Deep Premium",
+    deep_discount_core_mrz: "Deep Discount",
+    shallow_discount_core_mrz: "Shallow Discount",
+    shallow_premium_core_mrz: "Shallow Premium",
+    deep_premium_core_mrz: "Deep Premium",
+    below_ipda_range: "Below IPDA Range",
+    above_ipda_range: "Above IPDA Range",
+  };
+  const pressureLabels = {
+    higher: "↑ Higher",
+    lower: "↓ Lower",
+    neutral: "↔ Neutral",
+  };
+
+  const $ = (selector) => document.querySelector(selector);
+  function element(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+  function routeName() {
+    const path = globalObject.location.pathname.replace(/\/$/, "");
+    if (path === "" || path === "/") return "overview";
+    return path.split("/").pop() || "overview";
+  }
+  function activateRoute() {
+    const route = routeName();
+    document.querySelectorAll("[data-route-panel]").forEach((panel) => {
+      panel.hidden = panel.dataset.routePanel !== route;
+    });
+    document.querySelectorAll("[data-route]").forEach((link) => {
+      if (link.dataset.route === route) link.setAttribute("aria-current", "page");
+      else link.removeAttribute("aria-current");
+    });
+  }
+  function formatPrice(value) {
+    if (value === null || value === undefined) return "—";
+    return new Intl.NumberFormat("en-US", { maximumFractionDigits: 12 }).format(Number(value));
+  }
+  function exactTime(value) {
+    if (!value) return "—";
+    return globalObject.formatOperatorTimestampUtcMinus4?.(value)
+      || new Date(value).toLocaleString();
+  }
+  function relativeTime(value) {
+    const timestamp = new Date(value);
+    if (!value || Number.isNaN(timestamp.getTime())) return "—";
+    const seconds = Math.max(0, Math.round((Date.now() - timestamp.getTime()) / 1000));
+    if (seconds < 60) return "now";
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    return `${Math.floor(seconds / 86400)}d ago`;
+  }
+  function pressureBySymbol() {
+    const result = new Map();
+    const categories = state.symbolPayload?.pressure?.categories || {};
+    Object.entries(categories).forEach(([direction, members]) => {
+      (members || []).forEach((member) => result.set(member.symbol, { ...member, direction }));
+    });
+    return result;
+  }
+  function latestEvents() { return derive.latestEventsBySymbol(state.events); }
+  function selectedGroup() {
+    return state.groups.find((group) => String(group.id) === String(state.selectedGroupId)) || null;
+  }
+  function groupNamesForSymbol(symbol) {
+    return (derive.groupMembership(state.groups).get(symbol) || []).map((group) => group.name);
+  }
+  function symbolLink(symbol, label = "Open") {
+    const link = element("a", "event-open", label);
+    link.href = `/mrz/symbols?symbol=${encodeURIComponent(symbol)}`;
+    return link;
+  }
+  function empty(message) { return element("div", "empty-inline", message); }
+
+  function eventList(events, { showGroups = true, limit = null } = {}) {
+    const visible = limit ? events.slice(0, limit) : events;
+    if (visible.length === 0) return empty("No current attention events in this window.");
+    const list = element("ul", "event-list");
+    visible.forEach((event) => {
+      const row = element("li", "event-row");
+      const time = element("time", "", relativeTime(event.occurred_at));
+      time.dateTime = event.occurred_at || "";
+      time.title = exactTime(event.occurred_at);
+      row.append(
+        time,
+        element("strong", "event-symbol", event.symbol),
+        element("span", "event-name", derive.eventLabel(event)),
+        element("span", "event-context", showGroups ? groupNamesForSymbol(event.symbol).join(" · ") || event.body : event.body),
+        symbolLink(event.symbol),
+      );
+      list.append(row);
+    });
+    return list;
+  }
+
+  function renderOverview(attention) {
+    const tracked = derive.uniqueTrackedSymbols(state.groups);
+    const trackedStates = state.symbols.filter((item) => tracked.has(item.symbol));
+    $("#overviewGroupCount").textContent = String(state.groups.length);
+    $("#overviewSymbolCount").textContent = String(tracked.size);
+    $("#overviewActiveCount").textContent = String(trackedStates.filter((item) => item.mrz_status === "active").length);
+    $("#overviewAttentionCount").textContent = String(attention.length);
+    $("#overviewAttention").replaceChildren(eventList(attention, { limit: 6 }));
+
+    const list = element("ul", "group-status-list");
+    if (state.groups.length === 0) list.append(empty("Create a trading watchlist to elevate symbols into the operator workflow."));
+    state.groups.forEach((group) => {
+      const members = new Set(group.members || []);
+      const active = state.symbols.filter((item) => members.has(item.symbol) && item.mrz_status === "active").length;
+      const count = attention.filter((event) => members.has(event.symbol)).length;
+      const row = element("li", "group-status-row");
+      row.append(element("strong", "", group.name), element("span", "", `${active}/${group.member_count} active MRZ`), element("span", "", `${count} current attention`));
+      list.append(row);
+    });
+    $("#overviewGroups").replaceChildren(list);
+  }
+
+  function scopedAttention() {
+    const attention = derive.deriveAttention(state.events, state.groups);
+    if (state.selectedGroupId === "all") return attention;
+    const members = new Set(selectedGroup()?.members || []);
+    return attention.filter((event) => members.has(event.symbol));
+  }
+  function renderWatchlistTabs(attention) {
+    const tabs = $("#watchlistTabs");
+    tabs.replaceChildren();
+    if (state.groups.length > 1) {
+      tabs.append(watchlistTab("all", "ALL GROUPS", attention.length));
+    } else if (state.groups.length === 1 && state.selectedGroupId === "all") {
+      state.selectedGroupId = String(state.groups[0].id);
+    }
+    state.groups.forEach((group) => {
+      const members = new Set(group.members || []);
+      tabs.append(watchlistTab(group.id, group.name.toUpperCase(), attention.filter((event) => members.has(event.symbol)).length));
+    });
+    if (state.groups.length === 0) tabs.append(empty("No trading watchlists yet."));
+  }
+  function watchlistTab(id, label, count) {
+    const button = element("button", "");
+    button.type = "button";
+    button.setAttribute("role", "tab");
+    button.setAttribute("aria-selected", String(String(state.selectedGroupId) === String(id)));
+    button.append(document.createTextNode(label), element("b", "", String(count)));
+    button.addEventListener("click", () => {
+      state.selectedGroupId = String(id);
+      renderWatchlists(derive.deriveAttention(state.events, state.groups));
+    });
+    return button;
+  }
+  function renderWatchlists(attention) {
+    renderWatchlistTabs(attention);
+    const symbols = derive.symbolsForWatchlist(state.symbols, state.groups, state.selectedGroupId);
+    const currentAttention = scopedAttention();
+    const group = selectedGroup();
+    const title = group ? group.name.toUpperCase() : "ALL GROUPS";
+    const eventCounts = (type) => currentAttention.filter((event) => event.event_type === type).length;
+    const pressureCount = symbols.filter((symbol) => (pressureBySymbol().get(symbol.symbol)?.direction || "neutral") !== "neutral").length;
+    $("#watchlistSummary").replaceChildren(
+      summaryCell(title, `${symbols.length} symbols`, group ? "Trading watchlist" : `${state.groups.length} watchlists`),
+      summaryCell("ACTIVE MRZ", symbols.filter((item) => item.mrz_status === "active").length, "Current authority"),
+      summaryCell("NEW MRZ", eventCounts("MRZ_ACTIVATED"), "Last 24 hours"),
+      summaryCell("MIGRATION", eventCounts("MRZ_MIGRATED"), "Last 24 hours"),
+      summaryCell("PRESSURE WATCHES", pressureCount, "Canonical direction"),
+    );
+    $("#watchlistAttentionHeading").textContent = title;
+    $("#watchlistAttention").replaceChildren(eventList(currentAttention, { limit: 8 }));
+    renderSymbolBoard(symbols);
+    $("#editWatchlistButton").hidden = !group;
+  }
+  function summaryCell(label, value, support) {
+    const cell = element("div", "");
+    cell.append(element("span", "", label), element("strong", "", String(value)), element("small", "", support));
+    return cell;
+  }
+  function renderSymbolBoard(symbols) {
+    const pressure = pressureBySymbol();
+    const latest = latestEvents();
+    const body = $("#watchlistBoard");
+    body.replaceChildren();
+    if (symbols.length === 0) {
+      const row = element("tr", "");
+      const cell = element("td", "", "No symbols in this watchlist scope.");
+      cell.colSpan = 8;
+      row.append(cell); body.append(row); return;
+    }
+    symbols
+      .map((symbol) => derive.currentAuthorityRow(symbol, pressure.get(symbol.symbol), latest.get(symbol.symbol)))
+      .sort((left, right) => Number(right.latestEvent !== null) - Number(left.latestEvent !== null) || Number(right.active) - Number(left.active) || left.symbol.localeCompare(right.symbol))
+      .forEach((item) => {
+        const row = element("tr", item.latestEvent || item.pressure !== "neutral" ? "" : "quiet");
+        const symbolCell = element("td", "");
+        const button = element("button", "symbol-button", item.symbol);
+        button.type = "button";
+        button.addEventListener("click", () => { globalObject.location.href = `/mrz/symbols?symbol=${encodeURIComponent(item.symbol)}`; });
+        symbolCell.append(button);
+        const activated = element("td", "", relativeTime(item.activatedAt));
+        activated.title = exactTime(item.activatedAt);
+        const event = item.latestEvent ? `${derive.eventLabel(item.latestEvent)} · ${relativeTime(item.latestEvent.occurred_at)}` : "—";
+        row.append(
+          symbolCell,
+          element("td", item.active ? "active-state" : "inactive-state", item.active ? "● ACTIVE" : "—"),
+          element("td", "", item.active ? `${formatPrice(item.lower)}–${formatPrice(item.upper)}` : "—"),
+          element("td", "", item.route || "—"), activated,
+          element("td", "", locationLabels[item.location] || "—"),
+          element("td", `pressure-${item.pressure}`, pressureLabels[item.pressure] || pressureLabels.neutral),
+          element("td", "", event),
+        );
+        body.append(row);
+      });
+  }
+
+  function renderAttention(attention) {
+    $("#attentionQueue").replaceChildren(eventList(attention));
+    const badge = $("#navAttentionCount");
+    badge.textContent = String(attention.length);
+    badge.hidden = attention.length === 0;
+  }
+
+  function renderSymbolOptions() {
+    const select = $("#symbolSelect");
+    select.replaceChildren(new Option("Select a symbol", ""), ...state.symbols.map((item) => new Option(item.symbol, item.symbol)));
+    const symbol = new URLSearchParams(globalObject.location.search).get("symbol") || "";
+    if (symbol && state.symbols.some((item) => item.symbol === symbol)) {
+      select.value = symbol;
+      loadSymbolDetail(symbol);
+    }
+  }
+  async function loadSymbolDetail(symbol) {
+    if (!symbol) { $("#symbolEmpty").hidden = false; $("#symbolDetail").hidden = true; return; }
+    const response = await fetch(`/api/symbols/${encodeURIComponent(symbol)}`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`Unable to load ${symbol}.`);
+    const detail = await response.json();
+    const event = latestEvents().get(symbol);
+    const pressure = pressureBySymbol().get(symbol);
+    $("#symbolEmpty").hidden = true; $("#symbolDetail").hidden = false;
+    $("#detailSymbol").textContent = symbol;
+    $("#detailStatus").textContent = detail.mrz_status === "active" ? "● ACTIVE" : "NO ACTIVE MRZ";
+    $("#detailRange").textContent = detail.mrz_status === "active" ? `${formatPrice(detail.core_mrz_lower)}–${formatPrice(detail.core_mrz_upper)}` : "No current authority";
+    $("#detailMeta").replaceChildren(
+      element("span", "", `Route · ${detail.route_owner || "—"}`),
+      element("span", "", `Activated · ${exactTime(detail.activated_at)}`),
+      element("span", "", `Location · ${locationLabels[detail.structural_location] || "—"}`),
+    );
+    if (detail.migration?.has_migrated) {
+      $("#detailPrevious").replaceChildren(element("strong", "", `${formatPrice(detail.migration.previous_lower)}–${formatPrice(detail.migration.previous_upper)}`), element("span", "", `Previous authority · ${detail.migration.direction === "UP" ? "migrated upward" : "migrated downward"}`), element("span", "", exactTime(detail.migration.previous_activated_at)));
+    } else $("#detailPrevious").textContent = "No previous migrated authority for the current lifecycle.";
+    if (event) $("#detailLatestEvent").replaceChildren(element("strong", "", derive.eventLabel(event)), element("span", "", exactTime(event.occurred_at)), element("span", "", event.body || ""));
+    else $("#detailLatestEvent").textContent = "No recent canonical event.";
+    const direction = pressure?.direction || "neutral";
+    $("#detailPressure").replaceChildren(element("strong", `pressure-${direction}`, pressureLabels[direction]), element("span", "", pressure?.evidence?.label || "Canonical current pressure"), element("span", "", pressure?.evidence?.latest_pressure_observed_at ? `Latest pressure · ${exactTime(pressure.evidence.latest_pressure_observed_at)}` : "No qualifying directional pressure"));
+  }
+
+  function renderPressure() {
+    const report = state.symbolPayload?.pressure || {};
+    const counts = report.counts || { higher: 0, lower: 0, neutral: 0 };
+    $("#pressureSummary").replaceChildren(
+      summaryArticle("STATE", report.headline?.label || "—"), summaryArticle("↑ HIGHER", counts.higher || 0), summaryArticle("↓ LOWER", counts.lower || 0), summaryArticle("↔ NEUTRAL", counts.neutral || 0),
+    );
+    const map = $("#pressureMap"); map.replaceChildren();
+    const locations = report.pressure_map?.locations || {};
+    ["deep_discount", "shallow_discount", "at_eqm", "shallow_premium", "deep_premium"].forEach((key) => {
+      const card = element("article", ""); card.append(element("h3", "", locationLabels[key]));
+      const dl = element("dl", "");
+      ["higher", "neutral", "lower"].forEach((direction) => { const row = element("div", ""); row.append(element("dt", `pressure-${direction}`, pressureLabels[direction]), element("dd", "", String(locations[key]?.counts?.[direction] || 0))); dl.append(row); });
+      card.append(dl); map.append(card);
+    });
+    const columns = new Map();
+    ["deep_discount", "shallow_discount", "at_eqm", "shallow_premium", "deep_premium"].forEach((key) => columns.set(key, []));
+    state.symbols.forEach((symbol) => { if (columns.has(symbol.current_price_location)) columns.get(symbol.current_price_location).push(symbol.symbol); });
+    const heatmap = $("#locationHeatmap"); heatmap.replaceChildren();
+    columns.forEach((symbols, key) => {
+      const column = element("section", "location-column"); column.append(element("h3", "", `${locationLabels[key]} · ${symbols.length}`));
+      symbols.forEach((symbol) => { const button = element("button", "", symbol); button.type = "button"; button.addEventListener("click", () => { globalObject.location.href = `/mrz/symbols?symbol=${encodeURIComponent(symbol)}`; }); column.append(button); });
+      heatmap.append(column);
+    });
+    $("#pressureGroupSelect").replaceChildren(new Option("Select watchlist", ""), ...state.groups.map((group) => new Option(group.name, String(group.id))));
+  }
+  function summaryArticle(label, value) { const node = element("article", ""); node.append(element("span", "", label), element("strong", "", String(value))); return node; }
+  async function loadPeerPressure(groupId) {
+    const target = $("#peerPressureDetail");
+    if (!groupId) { target.className = "empty-inline"; target.textContent = "Choose a watchlist to load canonical peer pressure."; return; }
+    target.className = "empty-inline"; target.textContent = "Loading peer pressure…";
+    const response = await fetch(`/api/groups/${encodeURIComponent(groupId)}/peer-pressure`, { cache: "no-store" });
+    if (!response.ok) throw new Error("Unable to load peer pressure.");
+    const payload = await response.json();
+    const grid = element("div", "peer-pressure-grid");
+    ["higher", "neutral", "lower"].forEach((direction) => {
+      const section = element("section", ""); section.append(element("h3", `pressure-${direction}`, `${pressureLabels[direction]} · ${payload.counts?.[direction] || 0}`));
+      const list = element("ul", ""); (payload.categories?.[direction] || []).forEach((member) => list.append(element("li", "", `${member.symbol} · ${member.active_mrz?.route_owner || "—"} · ${member.current_location_label}`))); section.append(list); grid.append(section);
+    });
+    target.className = ""; target.replaceChildren(grid);
+  }
+
+  function renderEvents() {
+    const filter = $("#eventTypeFilter").value;
+    const events = filter === "all" ? state.events : state.events.filter((event) => event.event_type === filter);
+    $("#eventsList").replaceChildren(eventList(events, { showGroups: false }));
+  }
+
+  function openWatchlistDialog(group = null) {
+    state.editingGroupId = group?.id || null;
+    $("#watchlistDialogTitle").textContent = group ? `Edit ${group.name}` : "New watchlist";
+    $("#watchlistName").value = group?.name || "";
+    $("#deleteWatchlistButton").hidden = !group;
+    $("#watchlistFormError").hidden = true;
+    const selected = new Set(group?.members || []);
+    const choices = $("#watchlistSymbolChoices"); choices.replaceChildren();
+    state.symbols.forEach((symbol) => {
+      const label = element("label", ""); const input = document.createElement("input"); input.type = "checkbox"; input.value = symbol.symbol; input.checked = selected.has(symbol.symbol); label.append(input, document.createTextNode(symbol.symbol)); choices.append(label);
+    });
+    $("#watchlistDialog").showModal();
+  }
+  async function saveWatchlist(event) {
+    event.preventDefault();
+    if (event.submitter?.value === "cancel") { $("#watchlistDialog").close(); return; }
+    const members = [...document.querySelectorAll("#watchlistSymbolChoices input:checked")].map((input) => input.value);
+    const payload = { name: $("#watchlistName").value.trim(), members };
+    if (!payload.name || members.length === 0) { $("#watchlistFormError").textContent = "Add a name and at least one symbol."; $("#watchlistFormError").hidden = false; return; }
+    const editing = state.editingGroupId !== null;
+    const url = editing ? `/api/groups/${state.editingGroupId}` : "/api/groups";
+    const response = await fetch(url, { method: editing ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    if (!response.ok) { const body = await response.json().catch(() => ({})); $("#watchlistFormError").textContent = body.detail || "Unable to save watchlist."; $("#watchlistFormError").hidden = false; return; }
+    const saved = await response.json();
+    state.selectedGroupId = String(saved.id);
+    $("#watchlistDialog").close();
+    await refreshGroups();
+  }
+  async function deleteWatchlist() {
+    const group = selectedGroup();
+    if (!group || !globalObject.confirm(`Delete ${group.name}? Canonical EDGE events and symbol monitoring are unaffected.`)) return;
+    const response = await fetch(`/api/groups/${group.id}`, { method: "DELETE" });
+    if (!response.ok) throw new Error("Unable to delete watchlist.");
+    $("#watchlistDialog").close(); state.selectedGroupId = "all"; await refreshGroups();
+  }
+  async function refreshGroups() {
+    const response = await fetch("/api/groups", { cache: "no-store" });
+    if (!response.ok) throw new Error("Unable to load watchlists.");
+    state.groups = (await response.json()).groups || [];
+    if (state.groups.length === 1 && state.selectedGroupId === "all") state.selectedGroupId = String(state.groups[0].id);
+    renderAll();
+  }
+
+  function renderPreferences() {
+    const prefs = state.preferences;
+    if (!prefs) return;
+    const scope = document.querySelector(`input[name="alertScope"][value="${prefs.alert_scope}"]`);
+    if (scope) scope.checked = true;
+    $("#prefActivation").checked = prefs.activation_enabled;
+    $("#prefMigration").checked = prefs.migration_enabled;
+    $("#prefPressure").checked = prefs.pressure_enabled;
+    $("#prefNearMiss").checked = prefs.near_miss_enabled;
+    $("#alertScopeLabel").textContent = prefs.alert_scope === "TRACKED_GROUPS_ONLY" ? "Alerts: Tracked Groups" : "Alerts: All Symbols";
+  }
+  async function savePreferences(event) {
+    event.preventDefault();
+    if (event.submitter?.value === "cancel") { $("#alertSettingsDialog").close(); return; }
+    const selectedScope = document.querySelector('input[name="alertScope"]:checked');
+    const payload = { alert_scope: selectedScope?.value || "ALL_SYMBOLS", activation_enabled: $("#prefActivation").checked, migration_enabled: $("#prefMigration").checked, pressure_enabled: $("#prefPressure").checked, near_miss_enabled: $("#prefNearMiss").checked };
+    const response = await fetch("/api/notifications/preferences", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    if (!response.ok) { $("#alertPreferencesError").textContent = "Unable to save alert preferences."; $("#alertPreferencesError").hidden = false; return; }
+    state.preferences = await response.json(); renderPreferences(); $("#alertSettingsDialog").close();
+  }
+
+  function renderAll() {
+    const attention = derive.deriveAttention(state.events, state.groups);
+    renderOverview(attention); renderWatchlists(attention); renderAttention(attention); renderSymbolOptions(); renderPressure(); renderEvents(); renderPreferences();
+  }
+  async function loadHealth() {
+    try {
+      const response = await fetch("/health", { cache: "no-store" });
+      const healthy = response.ok;
+      $("#healthState").textContent = healthy ? "System healthy" : "System degraded";
+      $("#healthState").className = `health-dot ${healthy ? "healthy" : "unhealthy"}`;
+      $("#headerHealth").textContent = healthy ? "● System healthy" : "● System degraded";
+      $("#headerHealth").style.color = healthy ? "var(--accent)" : "var(--red)";
+    } catch { $("#healthState").textContent = "System unavailable"; $("#healthState").className = "health-dot unhealthy"; $("#headerHealth").textContent = "● System unavailable"; }
+  }
+  async function initialize() {
+    activateRoute(); loadHealth();
+    try {
+      const [symbolsResponse, groupsResponse, eventsResponse, preferencesResponse] = await Promise.all([
+        fetch("/api/symbols", { cache: "no-store" }), fetch("/api/groups", { cache: "no-store" }), fetch("/api/mrz/events?limit=500", { cache: "no-store" }), fetch("/api/notifications/preferences", { cache: "no-store" }),
+      ]);
+      if (![symbolsResponse, groupsResponse, eventsResponse, preferencesResponse].every((response) => response.ok)) throw new Error("One or more MRZ workspace sources are unavailable.");
+      state.symbolPayload = await symbolsResponse.json(); state.symbols = state.symbolPayload.symbols || [];
+      state.groups = (await groupsResponse.json()).groups || [];
+      state.events = (await eventsResponse.json()).events || [];
+      state.preferences = await preferencesResponse.json();
+      if (state.groups.length === 1) state.selectedGroupId = String(state.groups[0].id);
+      renderAll(); $("#workspaceStatus").hidden = true;
+    } catch (error) { $("#workspaceStatus").textContent = error.message || "Unable to load MRZ workspace."; $("#workspaceStatus").classList.add("error"); }
+  }
+
+  $("#mobileNavButton")?.addEventListener("click", () => document.body.classList.toggle("nav-open"));
+  $("#newWatchlistButton")?.addEventListener("click", () => openWatchlistDialog());
+  $("#editWatchlistButton")?.addEventListener("click", () => openWatchlistDialog(selectedGroup()));
+  $("#watchlistForm")?.addEventListener("submit", (event) => saveWatchlist(event).catch(showError));
+  $("#deleteWatchlistButton")?.addEventListener("click", () => deleteWatchlist().catch(showError));
+  $("#symbolSelect")?.addEventListener("change", (event) => {
+    const symbol = event.target.value;
+    const url = new URL(globalObject.location.href); if (symbol) url.searchParams.set("symbol", symbol); else url.searchParams.delete("symbol"); globalObject.history.replaceState({}, "", url); loadSymbolDetail(symbol).catch(showError);
+  });
+  $("#pressureGroupSelect")?.addEventListener("change", (event) => loadPeerPressure(event.target.value).catch(showError));
+  $("#eventTypeFilter")?.addEventListener("change", renderEvents);
+  $("#alertSettingsButton")?.addEventListener("click", () => { renderPreferences(); $("#alertSettingsDialog").showModal(); });
+  $("#alertPreferencesForm")?.addEventListener("submit", (event) => savePreferences(event).catch(showError));
+  function showError(error) { $("#workspaceStatus").hidden = false; $("#workspaceStatus").textContent = error.message || "The request could not be completed."; $("#workspaceStatus").classList.add("error"); }
+  document.addEventListener("DOMContentLoaded", initialize, { once: true });
+}(globalThis));

@@ -22,6 +22,7 @@ from app.mrz_robustness import MRZRobustnessService
 from app.notifications import (
     NotificationRepository,
     NotificationService,
+    NotificationPreferencesPayload,
     NotificationSourceEventRead,
     PushSubscriptionDelete,
     PushSubscriptionPayload,
@@ -139,7 +140,13 @@ def create_app(
         )
 
     @application.get("/", include_in_schema=False)
-    def symbol_lab() -> FileResponse:
+    @application.get("/mrz/overview", include_in_schema=False)
+    @application.get("/mrz/watchlists", include_in_schema=False)
+    @application.get("/mrz/attention", include_in_schema=False)
+    @application.get("/mrz/symbols", include_in_schema=False)
+    @application.get("/mrz/pressure", include_in_schema=False)
+    @application.get("/mrz/events", include_in_schema=False)
+    def mrz_workspace() -> FileResponse:
         return FileResponse(
             STATIC_DIR / "index.html",
             headers={
@@ -150,6 +157,7 @@ def create_app(
         )
 
     @application.get("/diagnostics/activation-feasibility", include_in_schema=False)
+    @application.get("/mrz/formation-diagnostics", include_in_schema=False)
     def activation_feasibility_page() -> FileResponse:
         return FileResponse(
             STATIC_DIR / "activation-feasibility.html",
@@ -455,7 +463,33 @@ def create_app(
                     else None
                 ),
                 "latest_notification_id": notification_repository.latest_notification_id(),
+                "preferences": notification_repository.notification_preferences(),
             },
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
+    @application.get("/api/notifications/preferences")
+    def notification_preferences() -> JSONResponse:
+        return JSONResponse(
+            notification_repository.notification_preferences(),
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
+    @application.put("/api/notifications/preferences")
+    def update_notification_preferences(
+        preferences: NotificationPreferencesPayload,
+    ) -> JSONResponse:
+        return JSONResponse(
+            notification_repository.update_notification_preferences(preferences),
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
+    @application.get("/api/mrz/events")
+    def mrz_event_history(
+        limit: int = Query(default=200, ge=1, le=500),
+    ) -> JSONResponse:
+        return JSONResponse(
+            {"events": notification_repository.event_history(limit)},
             headers={"Cache-Control": "no-store, max-age=0"},
         )
 

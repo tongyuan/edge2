@@ -173,10 +173,20 @@ GET  /api/diagnostics/activation-feasibility
 POST /api/diagnostics/activation-feasibility/near-misses/{symbol}/promote
 GET  /api/diagnostics/mrz-robustness
 GET  /api/notifications/config
+GET  /api/notifications/preferences
+PUT  /api/notifications/preferences
 POST /api/notifications/subscriptions
 DELETE /api/notifications/subscriptions
 GET  /api/notifications/events
+GET  /api/mrz/events
 GET  /
+GET  /mrz/overview
+GET  /mrz/watchlists
+GET  /mrz/attention
+GET  /mrz/symbols
+GET  /mrz/pressure
+GET  /mrz/events
+GET  /mrz/formation-diagnostics
 GET  /diagnostics/activation-feasibility
 GET  /diagnostics/mrz-robustness
 ```

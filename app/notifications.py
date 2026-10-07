@@ -6,7 +6,7 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import quote, urlsplit
 
 from psycopg2.extras import RealDictCursor
@@ -24,15 +24,8 @@ MAX_DELIVERY_ATTEMPTS = 3
 RETRYABLE_PROVIDER_FAILURES = {408, 425, 429}
 PRESSURE_EVENT_TYPE = "POST_ACTIVATION_PRESSURE_CHANGED"
 PRESSURE_DIRECTIONS = {"UP", "DOWN"}
-PUSH_OPERATOR_CARD_SECTIONS = {
-    "MRZ_ACTIVATED": "active-mrz",
-    "MRZ_MIGRATED": "migration-history",
-    PRESSURE_EVENT_TYPE: "post-activation",
-}
 PUSH_SYMBOL_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9:._-]{0,39}$")
 PUSH_CANDIDATE_PATTERN = re.compile(r"^[a-f0-9]{64}$")
-
-
 def should_notify_pressure_transition(previous_state: str, current_state: str) -> bool:
     """Return whether a persisted state change enters directional pressure."""
     return previous_state != current_state and current_state in PRESSURE_DIRECTIONS
@@ -47,12 +40,8 @@ def build_push_destination(
     if not PUSH_SYMBOL_PATTERN.fullmatch(symbol):
         return "/"
     encoded_symbol = quote(symbol, safe="")
-    section = PUSH_OPERATOR_CARD_SECTIONS.get(event_type)
-    if section is not None:
-        return (
-            f"/diagnostics/mrz-robustness?symbol={encoded_symbol}"
-            f"#{section}"
-        )
+    if event_type in {"MRZ_ACTIVATED", "MRZ_MIGRATED", PRESSURE_EVENT_TYPE}:
+        return f"/mrz/symbols?symbol={encoded_symbol}"
     if event_type == "MRZ_NEAR_MISS":
         candidate_identity = str(
             (event_context or {}).get("candidate_identity") or ""
@@ -106,6 +95,16 @@ class NotificationSourceEventRead(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     source_event_key: str = Field(min_length=1, max_length=512)
+
+
+class NotificationPreferencesPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    alert_scope: Literal["TRACKED_GROUPS_ONLY", "ALL_SYMBOLS"]
+    activation_enabled: bool
+    migration_enabled: bool
+    pressure_enabled: bool
+    near_miss_enabled: bool
 
 
 class NotificationRepository:
@@ -173,6 +172,69 @@ class NotificationRepository:
                     (endpoint,),
                 )
                 return cursor.rowcount > 0
+
+    def notification_preferences(self) -> dict[str, Any]:
+        connection = connect(self.database_url)
+        try:
+            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    """
+                    SELECT alert_scope, activation_enabled, migration_enabled,
+                           pressure_enabled, near_miss_enabled, updated_at
+                    FROM notification_preferences
+                    WHERE singleton = TRUE
+                    """
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    return {
+                        "alert_scope": "ALL_SYMBOLS",
+                        "activation_enabled": True,
+                        "migration_enabled": True,
+                        "pressure_enabled": True,
+                        "near_miss_enabled": True,
+                        "updated_at": None,
+                    }
+                return {
+                    "alert_scope": str(row["alert_scope"]),
+                    "activation_enabled": bool(row["activation_enabled"]),
+                    "migration_enabled": bool(row["migration_enabled"]),
+                    "pressure_enabled": bool(row["pressure_enabled"]),
+                    "near_miss_enabled": bool(row["near_miss_enabled"]),
+                    "updated_at": iso(row["updated_at"]),
+                }
+        finally:
+            connection.close()
+
+    def update_notification_preferences(
+        self,
+        preferences: NotificationPreferencesPayload,
+    ) -> dict[str, Any]:
+        with transaction(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO notification_preferences (
+                        singleton, alert_scope, activation_enabled,
+                        migration_enabled, pressure_enabled, near_miss_enabled
+                    ) VALUES (TRUE, %s, %s, %s, %s, %s)
+                    ON CONFLICT (singleton) DO UPDATE SET
+                        alert_scope = EXCLUDED.alert_scope,
+                        activation_enabled = EXCLUDED.activation_enabled,
+                        migration_enabled = EXCLUDED.migration_enabled,
+                        pressure_enabled = EXCLUDED.pressure_enabled,
+                        near_miss_enabled = EXCLUDED.near_miss_enabled,
+                        updated_at = clock_timestamp()
+                    """,
+                    (
+                        preferences.alert_scope,
+                        preferences.activation_enabled,
+                        preferences.migration_enabled,
+                        preferences.pressure_enabled,
+                        preferences.near_miss_enabled,
+                    ),
+                )
+        return self.notification_preferences()
 
     def reconcile_pressure_state(
         self,
@@ -562,6 +624,51 @@ class NotificationRepository:
             with connection.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute(
                     """
+                    SELECT n.*
+                    FROM web_push_notifications n
+                    CROSS JOIN notification_preferences p
+                    WHERE n.deliverable = TRUE
+                      AND n.event_type IN (
+                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
+                          'POST_ACTIVATION_PRESSURE_CHANGED'
+                      )
+                      AND n.id > %s
+                      AND (
+                          (n.event_type = 'MRZ_ACTIVATED' AND p.activation_enabled)
+                          OR (n.event_type = 'MRZ_MIGRATED' AND p.migration_enabled)
+                          OR (n.event_type = 'MRZ_NEAR_MISS' AND p.near_miss_enabled)
+                          OR (
+                              n.event_type = 'POST_ACTIVATION_PRESSURE_CHANGED'
+                              AND p.pressure_enabled
+                          )
+                      )
+                      AND (
+                          p.alert_scope = 'ALL_SYMBOLS'
+                          OR EXISTS (
+                              SELECT 1
+                              FROM saved_symbol_groups g
+                              WHERE n.symbol = ANY(g.member_symbols)
+                          )
+                      )
+                    ORDER BY n.id ASC
+                    LIMIT %s
+                    """,
+                    (after_id, limit),
+                )
+                return [
+                    {"id": int(row["id"]), **notification_payload(row)}
+                    for row in cursor.fetchall()
+                ]
+        finally:
+            connection.close()
+
+    def event_history(self, limit: int = 200) -> list[dict[str, Any]]:
+        """Return global canonical alert events independent of interruption policy."""
+        connection = connect(self.database_url)
+        try:
+            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    """
                     SELECT *
                     FROM web_push_notifications
                     WHERE deliverable = TRUE
@@ -569,14 +676,13 @@ class NotificationRepository:
                           'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
                           'POST_ACTIVATION_PRESSURE_CHANGED'
                       )
-                      AND id > %s
-                    ORDER BY id ASC
+                    ORDER BY occurred_at DESC, id DESC
                     LIMIT %s
                     """,
-                    (after_id, limit),
+                    (limit,),
                 )
                 return [
-                    {"id": int(row["id"]), **notification_payload(row)}
+                    notification_inbox_item(row)
                     for row in cursor.fetchall()
                 ]
         finally:
@@ -714,6 +820,7 @@ class NotificationRepository:
                         s.auth
                     FROM web_push_notifications n
                     CROSS JOIN web_push_subscriptions s
+                    CROSS JOIN notification_preferences p
                     LEFT JOIN LATERAL (
                         SELECT
                             COUNT(*) AS attempt_count,
@@ -734,6 +841,23 @@ class NotificationRepository:
                       AND n.event_type IN (
                           'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
                           'POST_ACTIVATION_PRESSURE_CHANGED'
+                      )
+                      AND (
+                          (n.event_type = 'MRZ_ACTIVATED' AND p.activation_enabled)
+                          OR (n.event_type = 'MRZ_MIGRATED' AND p.migration_enabled)
+                          OR (n.event_type = 'MRZ_NEAR_MISS' AND p.near_miss_enabled)
+                          OR (
+                              n.event_type = 'POST_ACTIVATION_PRESSURE_CHANGED'
+                              AND p.pressure_enabled
+                          )
+                      )
+                      AND (
+                          p.alert_scope = 'ALL_SYMBOLS'
+                          OR EXISTS (
+                              SELECT 1
+                              FROM saved_symbol_groups g
+                              WHERE n.symbol = ANY(g.member_symbols)
+                          )
                       )
                       AND s.enabled = TRUE
                       AND s.enabled_at <= n.created_at

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 import unittest
 from pathlib import Path
 
@@ -12,116 +11,35 @@ PAGES = {
     "operation_card": (STATIC / "mrz-robustness.html").read_text(encoding="utf-8"),
     "activation": (STATIC / "activation-feasibility.html").read_text(encoding="utf-8"),
 }
-JAVASCRIPT = (STATIC / "diagnostics-nav.js").read_text(encoding="utf-8")
-CSS = (STATIC / "diagnostics-nav.css").read_text(encoding="utf-8")
-
-IMPLEMENTED_ITEMS = [
-    ("/diagnostics/mrz-robustness", "Operator Card"),
-    ("/diagnostics/activation-feasibility", "Formation Diagnostics"),
-]
-
-
-def navigation_fragment(html: str) -> str:
-    match = re.search(
-        r'<nav[^>]*data-diagnostics-nav[^>]*>(.*?)</nav>',
-        html,
-        flags=re.DOTALL,
-    )
-    if not match:
-        raise AssertionError("Diagnostics navigation is missing")
-    return match.group(1)
-
-
-def menu_fragment(html: str) -> str:
-    navigation = navigation_fragment(html)
-    match = re.search(
-        r'<div class="diagnostics-dropdown"[^>]*>(.*?)</div>',
-        navigation,
-        flags=re.DOTALL,
-    )
-    if not match:
-        raise AssertionError("Diagnostics dropdown is missing")
-    return match.group(1)
 
 
 class DiagnosticsNavigationContractTests(unittest.TestCase):
-    def test_all_pages_use_the_shared_accessible_click_menu(self) -> None:
+    def test_views_dropdown_is_removed_everywhere(self) -> None:
         for name, html in PAGES.items():
             with self.subTest(page=name):
-                self.assertIn("Views", html)
-                self.assertNotIn(">Diagnostics <", html)
-                self.assertIn('data-diagnostics-trigger', html)
-                self.assertIn('type="button"', navigation_fragment(html))
-                self.assertIn('aria-expanded="false"', navigation_fragment(html))
-                self.assertIn('aria-haspopup="menu"', navigation_fragment(html))
-                self.assertIn('role="menu"', navigation_fragment(html))
-                self.assertIn('/static/diagnostics-nav.css?v=views-menu-20260907', html)
-                self.assertIn('/static/diagnostics-nav.js?v=views-menu-20260907', html)
+                self.assertNotIn("data-diagnostics-trigger", html)
+                self.assertNotIn(">Views <", html)
 
-    def test_diagnostic_links_are_nested_and_keep_their_existing_routes(self) -> None:
+    def test_persistent_workspace_destinations_are_available(self) -> None:
+        expected = (
+            "/mrz/overview",
+            "/mrz/watchlists",
+            "/mrz/attention",
+            "/mrz/symbols",
+            "/mrz/pressure",
+            "/mrz/formation-diagnostics",
+            "/mrz/events",
+        )
         for name, html in PAGES.items():
-            navigation = navigation_fragment(html)
-            top_level = navigation.split('<div class="diagnostics-menu', 1)[0]
-            menu = menu_fragment(html)
             with self.subTest(page=name):
-                self.assertNotIn("/diagnostics/", top_level)
-                links = re.findall(
-                    r'<a href="([^"]+)" role="menuitem"[^>]*>([^<]+)</a>',
-                    menu,
-                )
-                self.assertEqual(links, IMPLEMENTED_ITEMS)
+                for path in expected:
+                    self.assertIn(f'href="{path}"', html)
 
-    def test_menu_order_excludes_hidden_robustness_report(self) -> None:
-        expected = [
-            "Operator Card",
-            "Formation Diagnostics",
-        ]
-        for name, html in PAGES.items():
-            menu = menu_fragment(html)
-            with self.subTest(page=name):
-                positions = [menu.index(label) for label in expected]
-                self.assertEqual(positions, sorted(positions))
-                self.assertNotIn("diagnostics-disabled-item", menu)
-                self.assertNotIn("UNAVAILABLE", menu)
-                self.assertNotIn("Migration Path", menu)
-                self.assertNotIn("MRZ Robustness", menu)
-                self.assertNotIn("/diagnostics/mrz-robustness-report", menu)
-                self.assertNotIn("Trading Window Feasibility", menu)
-                self.assertNotIn("/diagnostics/trading-window-feasibility", menu)
-
-    def test_each_existing_diagnostic_page_marks_its_current_child(self) -> None:
-        expected_active_label = {
-            "operation_card": "Operator Card",
-            "activation": "Formation Diagnostics",
-        }
-        self.assertNotIn('aria-current="page"', menu_fragment(PAGES["monitor"]))
-        for name, label in expected_active_label.items():
-            menu = menu_fragment(PAGES[name])
-            with self.subTest(page=name):
-                active = re.findall(
-                    r'<a [^>]*aria-current="page"[^>]*>([^<]+)</a>',
-                    menu,
-                )
-                self.assertEqual(active, [label])
-                self.assertIn("has-current-page", navigation_fragment(PAGES[name]))
-
-    def test_shared_behavior_covers_click_outside_escape_and_keyboard_navigation(self) -> None:
-        self.assertIn('trigger.addEventListener("click", onTriggerClick)', JAVASCRIPT)
-        self.assertIn('!navigation.contains(event.target)', JAVASCRIPT)
-        self.assertIn('event.key === "Escape"', JAVASCRIPT)
-        self.assertIn('event.key === "ArrowDown"', JAVASCRIPT)
-        self.assertIn('event.key === "ArrowUp"', JAVASCRIPT)
-        self.assertIn('event.key === "Home"', JAVASCRIPT)
-        self.assertIn('event.key === "End"', JAVASCRIPT)
-
-    def test_narrow_layout_is_bounded_and_touch_targets_remain_usable(self) -> None:
-        self.assertIn("min-height: 44px;", CSS)
-        self.assertIn("max-width: calc(100vw - 32px);", CSS)
-        self.assertIn("@media (max-width: 680px)", CSS)
-        responsive = CSS.split("@media (max-width: 680px)", 1)[1]
-        self.assertIn("align-items: flex-start;", responsive)
-        self.assertIn("position: static;", responsive)
-        self.assertIn("margin-top: 8px;", responsive)
+    def test_formation_diagnostics_marks_its_current_destination(self) -> None:
+        self.assertIn(
+            'href="/mrz/formation-diagnostics" aria-current="page"',
+            PAGES["activation"],
+        )
 
 
 if __name__ == "__main__":
