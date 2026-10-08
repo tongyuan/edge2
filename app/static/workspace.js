@@ -2,6 +2,7 @@
   "use strict";
 
   const derive = globalObject.edgeWorkspaceDerivations;
+  const { migrationTendencyPresentation } = globalObject.edgeHeatmapState;
   const state = {
     symbols: [],
     symbolPayload: null,
@@ -308,10 +309,37 @@
     const columns = new Map();
     ["deep_discount", "shallow_discount", "at_eqm", "shallow_premium", "deep_premium"].forEach((key) => columns.set(key, []));
     state.symbols.forEach((symbol) => { if (columns.has(symbol.current_price_location)) columns.get(symbol.current_price_location).push(symbol.symbol); });
+    const classifiedTotal = [...columns.values()].reduce((total, symbols) => total + symbols.length, 0);
+    const migrationTendency = state.symbolPayload?.location_migration_tendency || {};
     const heatmap = $("#locationHeatmap"); heatmap.replaceChildren();
     columns.forEach((symbols, key) => {
-      const column = element("section", "location-column"); column.append(element("h3", "", `${locationLabels[key]} · ${symbols.length}`));
-      symbols.forEach((symbol) => { const button = element("button", "", symbol); button.type = "button"; if (symbol === selectedSymbol) button.setAttribute("aria-current", "true"); button.addEventListener("click", () => { globalObject.location.href = `/mrz/symbols?symbol=${encodeURIComponent(symbol)}`; }); column.append(button); });
+      const column = element("section", `location-column${key === "at_eqm" ? " location-column-boundary" : ""}`);
+      column.append(element("h3", "", locationLabels[key]));
+      const current = element("div", "location-distribution-current");
+      const percentage = classifiedTotal ? ((symbols.length / classifiedTotal) * 100).toFixed(1) : "0.0";
+      current.append(element("span", "", "Current"), element("strong", "", `${symbols.length} · ${percentage}%`));
+      column.append(current);
+      if (key === "at_eqm") {
+        column.append(element("p", "location-boundary-note", "Exact canonical IPDA 20W midpoint"));
+      } else {
+        const migration = migrationTendencyPresentation(migrationTendency[key]);
+        const history = element("details", "location-migration-history");
+        history.append(element("summary", "", "Historical migration outcomes"));
+        if (migration.hasHistory) {
+          const directions = element("div", "location-migration-directions");
+          [["↑ Higher", migration.higherPercentageLabel, migration.higherCountLabel], ["↓ Lower", migration.lowerPercentageLabel, migration.lowerCountLabel]].forEach(([label, outcome, count]) => {
+            const direction = element("div", "location-migration-direction");
+            direction.append(element("span", "migration-direction-label", label), element("strong", "", outcome), element("span", "migration-direction-count", `${count} migration${count === "1" ? "" : "s"}`));
+            directions.append(direction);
+          });
+          history.append(directions);
+        } else history.append(element("p", "location-migration-empty", "No migration history"));
+        history.append(element("p", "location-migration-sample", migration.sampleLabel));
+        column.append(history);
+      }
+      const symbolList = element("div", "location-symbol-list");
+      symbols.forEach((symbol) => { const button = element("button", "", symbol); button.type = "button"; if (symbol === selectedSymbol) button.setAttribute("aria-current", "true"); button.addEventListener("click", () => { globalObject.location.href = `/mrz/symbols?symbol=${encodeURIComponent(symbol)}`; }); symbolList.append(button); });
+      column.append(symbolList);
       heatmap.append(column);
     });
   }

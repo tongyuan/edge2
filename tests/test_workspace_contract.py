@@ -109,6 +109,18 @@ class WorkspaceContractTests(unittest.TestCase):
                 self.assertIn(f'"{key}"', JS)
                 self.assertIn(f'{key}: "{label}"', JS)
 
+    def test_location_distribution_restores_historical_migration_outcomes(self) -> None:
+        self.assertIn('/static/heatmap-state.js', HTML)
+        self.assertIn("migrationTendencyPresentation", JS)
+        self.assertIn("state.symbolPayload?.location_migration_tendency", JS)
+        self.assertIn("Historical migration outcomes", JS)
+        self.assertIn("migration.higherPercentageLabel", JS)
+        self.assertIn("migration.lowerPercentageLabel", JS)
+        self.assertIn("migration.higherCountLabel", JS)
+        self.assertIn("migration.lowerCountLabel", JS)
+        self.assertIn("migration.sampleLabel", JS)
+        self.assertIn("No migration history", JS)
+
 
 if __name__ == "__main__":
     unittest.main()
