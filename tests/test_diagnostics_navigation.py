@@ -11,6 +11,7 @@ PAGES = {
     "operation_card": (STATIC / "mrz-robustness.html").read_text(encoding="utf-8"),
     "activation": (STATIC / "activation-feasibility.html").read_text(encoding="utf-8"),
 }
+SHELL = (STATIC / "mrz-shell.js").read_text(encoding="utf-8")
 
 
 class DiagnosticsNavigationContractTests(unittest.TestCase):
@@ -20,7 +21,7 @@ class DiagnosticsNavigationContractTests(unittest.TestCase):
                 self.assertNotIn("data-diagnostics-trigger", html)
                 self.assertNotIn(">Views <", html)
 
-    def test_persistent_workspace_destinations_are_available(self) -> None:
+    def test_shared_workspace_destinations_are_available(self) -> None:
         expected = (
             "/mrz/overview",
             "/mrz/watchlists",
@@ -31,16 +32,21 @@ class DiagnosticsNavigationContractTests(unittest.TestCase):
             "/mrz/formation-diagnostics",
             "/mrz/events",
         )
-        for name, html in PAGES.items():
+        for path in expected:
+            self.assertIn(f'href: "{path}"', SHELL)
+        for name in ("monitor", "activation"):
             with self.subTest(page=name):
-                for path in expected:
-                    self.assertIn(f'href="{path}"', html)
+                self.assertIn("data-mrz-sidebar", PAGES[name])
+                self.assertIn("/static/mrz-shell.js", PAGES[name])
 
-    def test_formation_diagnostics_marks_its_current_destination(self) -> None:
-        self.assertIn(
-            'href="/mrz/formation-diagnostics" aria-current="page"',
-            PAGES["activation"],
-        )
+    def test_formation_diagnostics_uses_shared_shell_without_duplicate_nav(self) -> None:
+        activation = PAGES["activation"]
+        self.assertIn('class="workspace-shell"', activation)
+        self.assertIn('class="workspace-main diagnostics-workspace-main"', activation)
+        self.assertNotIn('class="mrz-subnav"', activation)
+        self.assertNotIn('/static/mrz-subnav.css', activation)
+        self.assertIn('normalized === "/mrz/formation-diagnostics"', SHELL)
+        self.assertIn('normalized === "/diagnostics/activation-feasibility"', SHELL)
 
 
 if __name__ == "__main__":

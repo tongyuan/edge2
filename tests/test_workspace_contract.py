@@ -7,6 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 HTML = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
 JS = (ROOT / "app/static/workspace.js").read_text(encoding="utf-8")
+SHELL = (ROOT / "app/static/mrz-shell.js").read_text(encoding="utf-8")
 CSS = (ROOT / "app/static/workspace.css").read_text(encoding="utf-8")
 API = (ROOT / "app/api.py").read_text(encoding="utf-8")
 
@@ -24,9 +25,11 @@ class WorkspaceContractTests(unittest.TestCase):
             ("/mrz/events", "Events"),
         ):
             with self.subTest(route=route):
-                self.assertIn(f'href="{route}"', HTML)
+                self.assertIn(f'href: "{route}"', SHELL)
                 self.assertIn(f'@application.get("{route}"', API)
-                self.assertIn(label, HTML)
+                self.assertIn(f'label: "{label}"', SHELL)
+        self.assertIn('data-mrz-sidebar', HTML)
+        self.assertIn('/static/mrz-shell.js', HTML)
         self.assertNotIn(">Views <", HTML)
         self.assertNotIn("data-diagnostics-trigger", HTML)
 
@@ -51,9 +54,8 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertIn("/api/mrz/events?limit=500", JS)
 
     def test_notification_controls_cover_scope_and_all_event_types(self) -> None:
-        trading_navigation = HTML.split("<p>TRADING</p>", 1)[1].split("<p>MRZ RESEARCH</p>", 1)[0]
-        self.assertIn('href="/mrz/alert-settings"', trading_navigation)
-        self.assertIn('data-route="alert-settings"', trading_navigation)
+        self.assertIn('href: "/mrz/alert-settings"', SHELL)
+        self.assertIn('name: "alert-settings"', SHELL)
         self.assertIn('data-route-panel="alert-settings"', HTML)
         self.assertNotIn('id="alertSettingsDialog"', HTML)
         self.assertEqual(HTML.count('id="alertPreferencesForm"'), 1)
@@ -66,6 +68,19 @@ class WorkspaceContractTests(unittest.TestCase):
         for control in ("prefActivation", "prefMigration", "prefPressure", "prefNearMiss"):
             self.assertIn(f'id="{control}"', HTML)
         self.assertIn("/api/notifications/preferences", JS)
+
+    def test_shared_sidebar_is_collapsible_persistent_and_mobile_safe(self) -> None:
+        self.assertIn('id="sidebarToggle"', SHELL)
+        self.assertIn('aria-controls="mrzWorkspaceMain"', SHELL)
+        self.assertIn('aria-expanded', SHELL)
+        self.assertIn('edge2.mrz.sidebar.collapsed', SHELL)
+        self.assertIn('localStorage', SHELL)
+        self.assertIn('body.classList.toggle("sidebar-collapsed", collapsed)', SHELL)
+        self.assertIn('body.classList.toggle("nav-open")', SHELL)
+        self.assertIn('body.sidebar-collapsed .workspace-shell', CSS)
+        mobile_rules = CSS.split("@media (max-width: 820px)", 1)[1]
+        self.assertIn(".sidebar-toggle { display: none; }", mobile_rules)
+        self.assertIn("body.sidebar-collapsed .workspace-sidebar", mobile_rules)
 
     def test_pressure_deep_link_preserves_selected_symbol_context(self) -> None:
         self.assertIn('id="pressureSelectedContext"', HTML)

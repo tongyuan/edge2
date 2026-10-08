@@ -295,6 +295,10 @@ const pageHtml = fs.readFileSync(
   "utf8",
 );
 assert.match(pageHtml, /<h1 id="pageTitle">MRZ Formation Diagnostics<\/h1>/);
+assert.match(pageHtml, /class="workspace-shell"/);
+assert.match(pageHtml, /data-mrz-sidebar/);
+assert.match(pageHtml, /\/static\/mrz-shell\.js/);
+assert.doesNotMatch(pageHtml, /class="mrz-subnav"|\/static\/mrz-subnav\.css/);
 assert.match(pageHtml, /id="pageSubtitle"/);
 assert.match(pageHtml, /id="interpretationNotice"/);
 assert.match(pageHtml, /Observed MRZ formation frequency is descriptive, not a predictive probability/);

@@ -5,21 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="EDGE 2.0 MRZ formation diagnostics" />
     <title>EDGE 2.0 · MRZ Formation Diagnostics</title>
-    <link rel="stylesheet" href="/static/activation-feasibility.css?v=qualification-history-20260916" />
-    <link rel="stylesheet" href="/static/mrz-subnav.css?v=mrz-workspace-20261007" />
+    <link rel="stylesheet" href="/static/workspace.css?v=mrz-collapsible-shell-20261008" />
+    <link rel="stylesheet" href="/static/activation-feasibility.css?v=mrz-shared-shell-20261008" />
   </head>
   <body>
-    <main class="report-shell">
-      <header class="report-header">
+    <div class="workspace-shell">
+      <aside class="workspace-sidebar" data-mrz-sidebar aria-label="MRZ Monitor navigation"></aside>
+      <main class="workspace-main diagnostics-workspace-main" id="mrzWorkspaceMain">
+        <header class="workspace-header">
+          <button class="mobile-nav-button" id="mobileNavButton" type="button" aria-label="Open MRZ navigation">☰</button>
+          <div class="compact-identity"><strong>MRZ Monitor</strong><span>Operator workspace</span></div>
+          <div class="workspace-header-actions"><span class="header-health" id="headerHealth">● Checking system</span></div>
+        </header>
+        <div class="report-shell">
+          <header class="report-header">
         <div>
           <p class="eyebrow">EDGE 2.0 · DIAGNOSTIC</p>
           <h1 id="pageTitle">MRZ Formation Diagnostics</h1>
           <p class="subtitle" id="pageSubtitle">Current production formation evidence from stored route observations</p>
         </div>
         <div class="header-actions">
-          <nav class="mrz-subnav" aria-label="MRZ Monitor navigation">
-            <a href="/mrz/overview">Overview</a><a href="/mrz/watchlists">Watchlists</a><a href="/mrz/attention">Attention</a><a href="/mrz/symbols">Symbols</a><a href="/mrz/pressure">Pressure</a><a href="/mrz/alert-settings">Alert Settings</a><a href="/mrz/formation-diagnostics" aria-current="page">Formation Diagnostics</a><a href="/mrz/events">Events</a>
-          </nav>
           <button type="button" id="refreshReport">Refresh report</button>
         </div>
       </header>
@@ -101,7 +106,9 @@
         <p id="qualificationHistoryCount" class="qualification-history-count" aria-live="polite">0 historical formations</p>
         <div id="qualificationHistoryContent"></div>
       </section>
-    </main>
+        </div>
+      </main>
+    </div>
     <dialog class="promotion-dialog" id="promotionDialog" aria-labelledby="promotionTitle">
       <form method="dialog">
         <p class="eyebrow">OPERATOR AUTHORITY</p>
@@ -114,6 +121,7 @@
         </div>
       </form>
     </dialog>
+    <script src="/static/mrz-shell.js?v=mrz-collapsible-shell-20261008" defer></script>
     <script src="/static/operator-time.js?v=operator-clarity-20260824" defer></script>
     <script src="/static/activation-feasibility.js?v=qualification-history-20260916" defer></script>
   </body>

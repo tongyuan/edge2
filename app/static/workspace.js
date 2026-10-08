@@ -402,18 +402,8 @@
     const attention = derive.deriveAttention(state.events, state.groups);
     renderOverview(attention); renderWatchlists(attention); renderAttention(attention); renderSymbolOptions(); renderPressure(); renderEvents(); renderPreferences();
   }
-  async function loadHealth() {
-    try {
-      const response = await fetch("/health", { cache: "no-store" });
-      const healthy = response.ok;
-      $("#healthState").textContent = healthy ? "System healthy" : "System degraded";
-      $("#healthState").className = `health-dot ${healthy ? "healthy" : "unhealthy"}`;
-      $("#headerHealth").textContent = healthy ? "● System healthy" : "● System degraded";
-      $("#headerHealth").style.color = healthy ? "var(--accent)" : "var(--red)";
-    } catch { $("#healthState").textContent = "System unavailable"; $("#healthState").className = "health-dot unhealthy"; $("#headerHealth").textContent = "● System unavailable"; }
-  }
   async function initialize() {
-    activateRoute(); loadHealth();
+    activateRoute();
     try {
       const [symbolsResponse, groupsResponse, eventsResponse, preferencesResponse] = await Promise.all([
         fetch("/api/symbols", { cache: "no-store" }), fetch("/api/groups", { cache: "no-store" }), fetch("/api/mrz/events?limit=500", { cache: "no-store" }), fetch("/api/notifications/preferences", { cache: "no-store" }),
@@ -428,7 +418,6 @@
     } catch (error) { $("#workspaceStatus").textContent = error.message || "Unable to load MRZ workspace."; $("#workspaceStatus").classList.add("error"); }
   }
 
-  $("#mobileNavButton")?.addEventListener("click", () => document.body.classList.toggle("nav-open"));
   $("#newWatchlistButton")?.addEventListener("click", () => openWatchlistDialog());
   $("#editWatchlistButton")?.addEventListener("click", () => openWatchlistDialog(selectedGroup()));
   $("#watchlistForm")?.addEventListener("submit", (event) => saveWatchlist(event).catch(showError));

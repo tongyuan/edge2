@@ -9,21 +9,13 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/static/edge-mrz-icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/static/edge-mrz-icon-180.png" />
-    <link rel="stylesheet" href="/static/workspace.css?v=mrz-alert-settings-20261008" />
+    <link rel="stylesheet" href="/static/workspace.css?v=mrz-collapsible-shell-20261008" />
   </head>
   <body>
     <div class="workspace-shell">
-      <aside class="workspace-sidebar" aria-label="MRZ Monitor navigation">
-        <a class="workspace-brand" href="/mrz/overview"><span class="brand-mark">E</span><span><strong>EDGE 2.0</strong><small>MRZ Monitor</small></span></a>
-        <nav class="workspace-navigation">
-          <p>OVERVIEW</p><a href="/mrz/overview" data-route="overview"><span>Overview</span></a>
-          <p>TRADING</p><a href="/mrz/watchlists" data-route="watchlists"><span>Watchlists</span><b id="navAttentionCount" hidden>0</b></a><a href="/mrz/attention" data-route="attention"><span>Attention</span></a><a href="/mrz/symbols" data-route="symbols"><span>Symbols</span></a><a href="/mrz/pressure" data-route="pressure"><span>Pressure</span></a><a href="/mrz/alert-settings" data-route="alert-settings"><span>Alert Settings</span></a>
-          <p>MRZ RESEARCH</p><a href="/mrz/formation-diagnostics"><span>Formation Diagnostics</span></a><a href="/mrz/events" data-route="events"><span>Events</span></a>
-        </nav>
-        <div class="sidebar-foot"><span class="health-dot" id="healthState">Checking system</span><small>Canonical universe monitoring</small></div>
-      </aside>
+      <aside class="workspace-sidebar" data-mrz-sidebar aria-label="MRZ Monitor navigation"></aside>
 
-      <main class="workspace-main">
+      <main class="workspace-main" id="mrzWorkspaceMain">
         <header class="workspace-header">
           <button class="mobile-nav-button" id="mobileNavButton" type="button" aria-label="Open MRZ navigation">☰</button>
           <div class="compact-identity"><strong>MRZ Monitor</strong><span>Operator workspace</span></div>
@@ -87,6 +79,6 @@
 
     <dialog class="workspace-dialog inbox-dialog" id="notificationInboxDialog" aria-labelledby="notificationInboxTitle"><section><header><div><p>DELIVERY HISTORY</p><h2 id="notificationInboxTitle">Notification Inbox</h2><span id="notificationInboxSummary">No unread notifications</span></div><button class="icon-button" id="notificationInboxClose" type="button" aria-label="Close">×</button></header><p class="notification-inbox-empty" id="notificationInboxEmpty">No active notifications.</p><ul class="notification-inbox-list" id="notificationInboxList" aria-live="polite"></ul><footer><button class="quiet-button" type="button" id="notificationMarkAllRead" disabled>Mark all read</button><button class="danger-button" type="button" id="notificationClearInbox" disabled>Clear inbox</button></footer></section></dialog>
     <div class="notification-toast-host" id="notificationToastHost" aria-live="polite"></div>
-    <script src="/static/operator-time.js?v=mrz-workspace-20261007" defer></script><script src="/static/workspace-derivations.js?v=mrz-workspace-20261007" defer></script><script src="/static/notifications.js?v=mrz-inbox-actions-20261008" defer></script><script src="/static/workspace.js?v=mrz-context-links-20261008" defer></script>
+    <script src="/static/mrz-shell.js?v=mrz-collapsible-shell-20261008" defer></script><script src="/static/operator-time.js?v=mrz-workspace-20261007" defer></script><script src="/static/workspace-derivations.js?v=mrz-workspace-20261007" defer></script><script src="/static/notifications.js?v=mrz-inbox-actions-20261008" defer></script><script src="/static/workspace.js?v=mrz-context-links-20261008" defer></script>
   </body>
 </html>

@@ -271,22 +271,17 @@ class APIIntegrationTests(unittest.TestCase):
         feasibility = self.client.get("/diagnostics/activation-feasibility").text
         robustness = self.client.get("/diagnostics/mrz-robustness").text
 
-        pages = (monitor, feasibility, robustness)
-        for page in pages:
+        for page in (monitor, feasibility, robustness):
             self.assertNotIn('data-diagnostics-trigger', page)
             self.assertNotIn(">Views <", page)
-            self.assertIn('href="/mrz/formation-diagnostics"', page)
-            self.assertIn('href="/mrz/watchlists"', page)
-            self.assertIn('href="/mrz/attention"', page)
-            self.assertIn('href="/mrz/symbols"', page)
-            self.assertIn('href="/mrz/pressure"', page)
-            self.assertIn('href="/mrz/alert-settings"', page)
-            self.assertIn('href="/mrz/events"', page)
-            self.assertIn("Formation Diagnostics", page)
             self.assertNotIn(">Activation Feasibility<", page)
             self.assertNotIn('href="/diagnostics/mrz-robustness-report"', page)
             self.assertNotIn('href="/diagnostics/trading-window-feasibility"', page)
             self.assertNotIn("Trading Window Feasibility", page)
+        for workspace_page in (monitor, feasibility):
+            self.assertIn("data-mrz-sidebar", workspace_page)
+            self.assertIn('/static/mrz-shell.js', workspace_page)
+        self.assertNotIn('class="mrz-subnav"', feasibility)
 
     def test_mrz_robustness_report_api_is_hidden(self) -> None:
         response = self.client.get("/api/diagnostics/mrz-robustness-report")
