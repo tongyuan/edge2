@@ -202,13 +202,13 @@ async function testServiceWorkerPushAndClick() {
     title: "BTCUSDT MRZ Activated",
     body: "BTD · 77,309.19–77,436.91",
     symbol: "BTCUSDT",
-    destination: "/diagnostics/mrz-robustness?symbol=BTCUSDT#active-mrz",
-    url: "/diagnostics/mrz-robustness?symbol=BTCUSDT#active-mrz",
+    destination: "/mrz/symbols?symbol=BTCUSDT",
+    url: "/mrz/symbols?symbol=BTCUSDT",
   });
   assert.equal(activation.options.data.event_type, "MRZ_ACTIVATED");
   assert.equal(
     activation.options.data.destination,
-    "/diagnostics/mrz-robustness?symbol=BTCUSDT#active-mrz",
+    "/mrz/symbols?symbol=BTCUSDT",
   );
 
   const migration = await push({
@@ -218,12 +218,12 @@ async function testServiceWorkerPushAndClick() {
     title: "BTCUSDT MRZ Migrated",
     body: "BTD · 77,309.19–77,436.91 → 78,919.34–79,030",
     symbol: "BTCUSDT",
-    destination: "/diagnostics/mrz-robustness?symbol=BTCUSDT#migration-history",
+    destination: "/mrz/symbols?symbol=BTCUSDT",
   });
   assert.equal(migration.options.data.event_type, "MRZ_MIGRATED");
   assert.equal(
     migration.options.data.destination,
-    "/diagnostics/mrz-robustness?symbol=BTCUSDT#migration-history",
+    "/mrz/symbols?symbol=BTCUSDT",
   );
 
   const candidateIdentity = "a".repeat(64);
@@ -248,7 +248,7 @@ async function testServiceWorkerPushAndClick() {
     title: "ZECUSDT · Downward Pressure",
     body: "Post-activation activity materially favors below-envelope observations",
     symbol: "ZECUSDT",
-    destination: "/diagnostics/mrz-robustness?symbol=ZECUSDT#post-activation",
+    destination: "/mrz/pressure?symbol=ZECUSDT",
   });
   assert.equal(shown.length, 4);
   assert.equal(
@@ -257,7 +257,7 @@ async function testServiceWorkerPushAndClick() {
   );
   assert.equal(
     pressure.options.data.destination,
-    "/diagnostics/mrz-robustness?symbol=ZECUSDT#post-activation",
+    "/mrz/pressure?symbol=ZECUSDT",
   );
 
   await click(activation);
@@ -265,9 +265,9 @@ async function testServiceWorkerPushAndClick() {
   await click(pressure);
   await click(nearMiss);
   assert.deepEqual(navigated, [
-    "https://edge.example.test/diagnostics/mrz-robustness?symbol=BTCUSDT#active-mrz",
-    "https://edge.example.test/diagnostics/mrz-robustness?symbol=BTCUSDT#migration-history",
-    "https://edge.example.test/diagnostics/mrz-robustness?symbol=ZECUSDT#post-activation",
+    "https://edge.example.test/mrz/symbols?symbol=BTCUSDT",
+    "https://edge.example.test/mrz/symbols?symbol=BTCUSDT",
+    "https://edge.example.test/mrz/pressure?symbol=ZECUSDT",
     `https://edge.example.test${nearMissDestination}`,
   ]);
   assert.equal(focusCount, 4, "the existing EDGE client is focused after navigation");
@@ -289,7 +289,7 @@ async function testServiceWorkerPushAndClick() {
   await click(pressure);
   assert.equal(
     opened[0],
-    "https://edge.example.test/diagnostics/mrz-robustness?symbol=ZECUSDT#post-activation",
+    "https://edge.example.test/mrz/pressure?symbol=ZECUSDT",
     "a cold launch opens the exact destination",
   );
 
@@ -324,6 +324,27 @@ async function main() {
     Notification: function Notification() {},
   }), true);
   assert.equal(supportsWebPush({ navigator: {} }), false);
+  assert.equal(
+    safeNotificationPath(
+      "/mrz/symbols?symbol=WLDUSDT",
+      "https://edge.example.test",
+    ),
+    "/mrz/symbols?symbol=WLDUSDT",
+  );
+  assert.equal(
+    safeNotificationPath(
+      "/mrz/symbols?symbol=WLDUSDT&unsafe=ignored#unexpected",
+      "https://edge.example.test",
+    ),
+    "/mrz/symbols?symbol=WLDUSDT",
+  );
+  assert.equal(
+    safeNotificationPath(
+      "/mrz/pressure?symbol=WLDUSDT",
+      "https://edge.example.test",
+    ),
+    "/mrz/pressure?symbol=WLDUSDT",
+  );
   assert.equal(
     safeNotificationPath("/?symbol=WLDUSDT", "https://edge.example.test"),
     "/?symbol=WLDUSDT",

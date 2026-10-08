@@ -88,7 +88,7 @@ class PushDestinationTests(unittest.TestCase):
         )
         self.assertEqual(
             build_push_destination(PRESSURE_EVENT_TYPE, "ZECUSDT"),
-            "/mrz/symbols?symbol=ZECUSDT",
+            "/mrz/pressure?symbol=ZECUSDT",
         )
         self.assertEqual(
             build_push_destination(
@@ -311,7 +311,7 @@ class NotificationIntegrationTests(unittest.TestCase):
         self.assertEqual(event["successor_label"], "No qualifying successor")
         self.assertEqual(
             event["destination"],
-            "/mrz/symbols?symbol=SPXUSDT",
+            "/mrz/pressure?symbol=SPXUSDT",
         )
         self.assertEqual(event["url"], event["destination"])
         self.assertIn("above-envelope", event["body"])
@@ -331,7 +331,7 @@ class NotificationIntegrationTests(unittest.TestCase):
         self.assertEqual(event["current_state"], "DOWN")
         self.assertEqual(
             event["destination"],
-            "/mrz/symbols?symbol=SPXUSDT",
+            "/mrz/pressure?symbol=SPXUSDT",
         )
         self.assertIn("below-envelope", event["body"])
 
@@ -444,7 +444,7 @@ class NotificationIntegrationTests(unittest.TestCase):
         self.assertTrue(
             all(
                 item["destination"]
-                == "/mrz/symbols?symbol=SPXUSDT"
+                == "/mrz/pressure?symbol=SPXUSDT"
                 for item in payloads
             )
         )

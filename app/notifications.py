@@ -40,8 +40,10 @@ def build_push_destination(
     if not PUSH_SYMBOL_PATTERN.fullmatch(symbol):
         return "/"
     encoded_symbol = quote(symbol, safe="")
-    if event_type in {"MRZ_ACTIVATED", "MRZ_MIGRATED", PRESSURE_EVENT_TYPE}:
+    if event_type in {"MRZ_ACTIVATED", "MRZ_MIGRATED"}:
         return f"/mrz/symbols?symbol={encoded_symbol}"
+    if event_type == PRESSURE_EVENT_TYPE:
+        return f"/mrz/pressure?symbol={encoded_symbol}"
     if event_type == "MRZ_NEAR_MISS":
         candidate_identity = str(
             (event_context or {}).get("candidate_identity") or ""

@@ -148,6 +148,7 @@ input { padding: 0 11px; }
 .detail-block span { color: var(--muted); font-size: .72rem; }
 
 .pressure-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 18px; }
+.pressure-selected-context { margin-bottom: 18px; }
 .pressure-summary article { padding: 14px 16px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
 .pressure-summary span { color: var(--muted); font-size: .64rem; }
 .pressure-summary strong { display: block; margin-top: 5px; font-size: 1.25rem; }
@@ -161,6 +162,7 @@ input { padding: 0 11px; }
 .location-column { min-height: 126px; padding: 12px; border: 1px solid var(--line-soft); border-radius: 8px; background: rgba(19,26,36,.6); }
 .location-column h3 { margin: 0 0 10px; color: var(--muted); font-size: .68rem; }
 .location-column button { margin: 0 4px 5px 0; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); cursor: pointer; font-size: .67rem; }
+.location-column button[aria-current="true"] { border-color: var(--accent); color: var(--accent); }
 .peer-pressure-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 18px; }
 .peer-pressure-grid section { padding: 12px; border: 1px solid var(--line-soft); border-radius: 8px; }
 .peer-pressure-grid h3 { margin: 0 0 10px; font-size: .72rem; }

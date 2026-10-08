@@ -67,6 +67,11 @@ class WorkspaceContractTests(unittest.TestCase):
             self.assertIn(f'id="{control}"', HTML)
         self.assertIn("/api/notifications/preferences", JS)
 
+    def test_pressure_deep_link_preserves_selected_symbol_context(self) -> None:
+        self.assertIn('id="pressureSelectedContext"', HTML)
+        self.assertIn('get("symbol")', JS)
+        self.assertIn('$("#pressureSelectedSymbol").textContent = selectedSymbol', JS)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -14,6 +14,12 @@ function safeNotificationPath(candidate) {
     const symbol = parsed.searchParams.get("symbol");
     if (!symbol || !SYMBOL_PATTERN.test(symbol)) return "/";
     if (parsed.pathname === "/") return `/?symbol=${encodeURIComponent(symbol)}`;
+    if (parsed.pathname === "/mrz/symbols") {
+      return `/mrz/symbols?symbol=${encodeURIComponent(symbol)}`;
+    }
+    if (parsed.pathname === "/mrz/pressure") {
+      return `/mrz/pressure?symbol=${encodeURIComponent(symbol)}`;
+    }
     if (parsed.pathname === "/diagnostics/mrz-robustness") {
       const section = parsed.hash.startsWith("#") ? parsed.hash.slice(1) : "";
       if (!OPERATOR_CARD_SECTIONS.has(section)) return "/";

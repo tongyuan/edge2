@@ -273,6 +273,22 @@
   function renderPressure() {
     const report = state.symbolPayload?.pressure || {};
     const counts = report.counts || { higher: 0, lower: 0, neutral: 0 };
+    const selectedSymbol = new URLSearchParams(globalObject.location.search).get("symbol") || "";
+    const selectedState = state.symbols.find((item) => item.symbol === selectedSymbol);
+    const selectedPressure = pressureBySymbol().get(selectedSymbol);
+    const selectedContext = $("#pressureSelectedContext");
+    selectedContext.hidden = !selectedState;
+    if (selectedState) {
+      const direction = selectedPressure?.direction || "neutral";
+      $("#pressureSelectedSymbol").textContent = selectedSymbol;
+      $("#pressureSelectedDetails").href = `/mrz/symbols?symbol=${encodeURIComponent(selectedSymbol)}`;
+      $("#pressureSelectedBody").replaceChildren(
+        element("strong", `pressure-${direction}`, pressureLabels[direction] || pressureLabels.neutral),
+        element("span", "", `Location · ${locationLabels[selectedState.current_price_location] || "—"}`),
+        element("span", "", `Route · ${selectedState.route_owner || "—"}`),
+        element("span", "", selectedPressure?.evidence?.latest_pressure_observed_at ? `Latest pressure · ${exactTime(selectedPressure.evidence.latest_pressure_observed_at)}` : "No qualifying directional pressure"),
+      );
+    }
     $("#pressureSummary").replaceChildren(
       summaryArticle("STATE", report.headline?.label || "—"), summaryArticle("↑ HIGHER", counts.higher || 0), summaryArticle("↓ LOWER", counts.lower || 0), summaryArticle("↔ NEUTRAL", counts.neutral || 0),
     );
@@ -290,7 +306,7 @@
     const heatmap = $("#locationHeatmap"); heatmap.replaceChildren();
     columns.forEach((symbols, key) => {
       const column = element("section", "location-column"); column.append(element("h3", "", `${locationLabels[key]} · ${symbols.length}`));
-      symbols.forEach((symbol) => { const button = element("button", "", symbol); button.type = "button"; button.addEventListener("click", () => { globalObject.location.href = `/mrz/symbols?symbol=${encodeURIComponent(symbol)}`; }); column.append(button); });
+      symbols.forEach((symbol) => { const button = element("button", "", symbol); button.type = "button"; if (symbol === selectedSymbol) button.setAttribute("aria-current", "true"); button.addEventListener("click", () => { globalObject.location.href = `/mrz/symbols?symbol=${encodeURIComponent(symbol)}`; }); column.append(button); });
       heatmap.append(column);
     });
     $("#pressureGroupSelect").replaceChildren(new Option("Select watchlist", ""), ...state.groups.map((group) => new Option(group.name, String(group.id))));
