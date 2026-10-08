@@ -394,7 +394,7 @@
     const flowSummary = $("#locationFlowSummary"); flowSummary.replaceChildren(
       flowMetric("MOVED HIGHER", flow.moved_higher || 0, `${flow.comparable_symbols || 0} comparable symbols`),
       flowMetric("MOVED LOWER", flow.moved_lower || 0, `${flow.comparable_symbols || 0} comparable symbols`),
-      flowMetric("UNCHANGED", flow.unchanged || 0, `Net ${formatSigned(flow.net_higher)} higher`),
+      flowMetric("UNCHANGED", flow.unchanged || 0, `Net ${formatSigned(netFlow)} ${netFlow > 0 ? "higher" : netFlow < 0 ? "lower" : "balanced"}`),
     );
     const transitions = $("#locationDominantTransitions"); transitions.replaceChildren();
     if (!(history.dominant_transitions || []).length) {

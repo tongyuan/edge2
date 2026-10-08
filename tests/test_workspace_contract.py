@@ -141,6 +141,8 @@ class WorkspaceContractTests(unittest.TestCase):
         for label in ("DISCOUNT SHARE", "PREMIUM SHARE", "EXTREME SHARE", "NET LOCATION FLOW"):
             self.assertIn(label, JS)
         self.assertIn("Start/end bucket per comparable symbol", HTML)
+        self.assertIn('netFlow < 0 ? "lower" : "balanced"', JS)
+        self.assertNotIn('formatSigned(flow.net_higher)} higher', JS)
 
 
 if __name__ == "__main__":
