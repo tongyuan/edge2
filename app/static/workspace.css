@@ -205,6 +205,7 @@ input { padding: 0 11px; }
 .notification-inbox-item-actions a, .notification-inbox-item-actions button { border: 0; background: transparent; color: var(--accent); cursor: pointer; font-size: .69rem; }
 .notification-inbox-item.unread { box-shadow: inset 2px 0 0 var(--accent); padding-left: 10px; }
 .notification-inbox-empty { color: var(--muted); }
+.inbox-dialog footer { display: flex; justify-content: flex-end; }
 .notification-toast-host { position: fixed; z-index: 80; right: 18px; bottom: 18px; display: grid; gap: 8px; width: min(360px, calc(100vw - 36px)); }
 .notification-toast { display: flex; justify-content: space-between; gap: 12px; padding: 13px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-2); box-shadow: 0 15px 45px rgba(0,0,0,.5); }
 .notification-toast p { margin: 4px 0 0; color: var(--muted); font-size: .7rem; }

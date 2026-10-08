@@ -562,11 +562,18 @@ def create_app(
             raise HTTPException(status_code=404, detail="notification_not_found")
         return JSONResponse({"ok": True, "notification_id": notification_id})
 
-    @application.post("/api/notifications/inbox/clear-read")
-    def clear_read_notifications() -> JSONResponse:
+    @application.post("/api/notifications/inbox/mark-all-read")
+    def mark_all_notifications_read() -> JSONResponse:
         return JSONResponse({
             "ok": True,
-            "dismissed_count": notification_repository.clear_read(),
+            "updated_count": notification_repository.mark_all_read(),
+        })
+
+    @application.post("/api/notifications/inbox/clear")
+    def clear_notification_inbox() -> JSONResponse:
+        return JSONResponse({
+            "ok": True,
+            "dismissed_count": notification_repository.clear_inbox(),
         })
 
     @application.get("/api/diagnostics/activation-feasibility")

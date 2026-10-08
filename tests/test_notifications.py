@@ -216,6 +216,26 @@ class NotificationIntegrationTests(unittest.TestCase):
         finally:
             connection.close()
 
+    def canonical_operator_state(self) -> dict[str, str]:
+        tables = {
+            "observations": "id",
+            "active_mrz": "symbol",
+            "mrz_events": "id",
+            "operator_mrz_promotions": "id",
+            "mrz_production_confirmations": "id",
+            "current_production_near_miss_episodes": "id",
+            "post_activation_pressure_states": "id",
+            "saved_symbol_groups": "id",
+            "notification_preferences": "singleton",
+        }
+        return {
+            table: self.scalar(
+                "SELECT COALESCE(json_agg(row_to_json(snapshot)), '[]')::text "
+                f"FROM (SELECT * FROM {table} ORDER BY {order_by}) snapshot"
+            )
+            for table, order_by in tables.items()
+        }
+
     def active_mrz_signature(self) -> str:
         return self.scalar(
             """
@@ -643,17 +663,39 @@ class NotificationIntegrationTests(unittest.TestCase):
             self.scalar("SELECT dismissed_at FROM web_push_notifications")
         )
 
-    def test_clear_all_read_preserves_unread_and_orders_newest_first(self) -> None:
+    def test_mark_all_read_preserves_every_inbox_record(self) -> None:
         self.activate()
         self.post_spx(5, "120")
         self.post_spx(6, "150")
 
         inbox = self.inbox()
         self.assertEqual(inbox["unread_count"], 2)
+        original_ids = [item["id"] for item in inbox["items"]]
+        canonical_state = self.canonical_operator_state()
+
+        marked = self.client.post("/api/notifications/inbox/mark-all-read")
+        self.assertEqual(marked.status_code, 200, marked.text)
+        self.assertEqual(marked.json()["updated_count"], 2)
+        updated = self.inbox()
+        self.assertEqual(updated["unread_count"], 0)
+        self.assertEqual(updated["read_count"], 2)
+        self.assertEqual([item["id"] for item in updated["items"]], original_ids)
+        self.assertTrue(all(item["is_read"] for item in updated["items"]))
         self.assertEqual(
-            [item["event_type"] for item in inbox["items"]],
-            [PRESSURE_EVENT_TYPE, "MRZ_ACTIVATED"],
+            self.scalar("SELECT COUNT(*) FROM web_push_notifications"),
+            2,
         )
+        self.assertEqual(self.canonical_operator_state(), canonical_state)
+        self.assertEqual(
+            self.client.post("/api/notifications/inbox/clear-read").status_code,
+            404,
+        )
+
+    def test_clear_inbox_dismisses_read_and_unread_but_preserves_history(self) -> None:
+        self.activate()
+        self.post_spx(5, "120")
+        self.post_spx(6, "150")
+        inbox = self.inbox()
         activation = next(
             item for item in inbox["items"] if item["event_type"] == "MRZ_ACTIVATED"
         )
@@ -663,20 +705,20 @@ class NotificationIntegrationTests(unittest.TestCase):
             ).status_code,
             200,
         )
+        canonical_state = self.canonical_operator_state()
 
-        cleared = self.client.post("/api/notifications/inbox/clear-read")
+        cleared = self.client.post("/api/notifications/inbox/clear")
         self.assertEqual(cleared.status_code, 200, cleared.text)
-        self.assertEqual(cleared.json()["dismissed_count"], 1)
-        remaining = self.inbox()
-        self.assertEqual(remaining["unread_count"], 1)
-        self.assertEqual(remaining["read_count"], 0)
-        self.assertEqual(len(remaining["items"]), 1)
-        self.assertEqual(remaining["items"][0]["event_type"], PRESSURE_EVENT_TYPE)
-        self.assertEqual(remaining["items"][0]["event_name"], "Upward Pressure")
+        self.assertEqual(cleared.json()["dismissed_count"], 2)
+        empty = self.inbox()
+        self.assertEqual(empty["items"], [])
+        self.assertEqual(empty["unread_count"], 0)
+        self.assertEqual(empty["read_count"], 0)
         self.assertEqual(
             self.scalar("SELECT COUNT(*) FROM web_push_notifications"),
             2,
         )
+        self.assertEqual(self.canonical_operator_state(), canonical_state)
 
     def test_inbox_supports_every_current_push_type_with_canonical_payload(self) -> None:
         self.activate()

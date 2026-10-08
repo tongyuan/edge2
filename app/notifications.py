@@ -778,7 +778,26 @@ class NotificationRepository:
                 )
                 return cursor.fetchone() is not None
 
-    def clear_read(self) -> int:
+    def mark_all_read(self) -> int:
+        with transaction(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE web_push_notifications
+                    SET read_at = clock_timestamp()
+                    WHERE deliverable = TRUE
+                      AND read_at IS NULL
+                      AND dismissed_at IS NULL
+                      AND event_type IN (
+                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
+                          'POST_ACTIVATION_PRESSURE_CHANGED'
+                      )
+                    RETURNING id
+                    """
+                )
+                return len(cursor.fetchall())
+
+    def clear_inbox(self) -> int:
         with transaction(self.database_url) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
@@ -786,7 +805,6 @@ class NotificationRepository:
                     UPDATE web_push_notifications
                     SET dismissed_at = clock_timestamp()
                     WHERE deliverable = TRUE
-                      AND read_at IS NOT NULL
                       AND dismissed_at IS NULL
                       AND event_type IN (
                           'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',

@@ -144,7 +144,8 @@
       this.inboxSummary = document.querySelector("#notificationInboxSummary");
       this.inboxEmpty = document.querySelector("#notificationInboxEmpty");
       this.inboxList = document.querySelector("#notificationInboxList");
-      this.clearReadButton = document.querySelector("#notificationClearRead");
+      this.markAllReadButton = document.querySelector("#notificationMarkAllRead");
+      this.clearInboxButton = document.querySelector("#notificationClearInbox");
       this.config = null;
       this.subscription = null;
       this.cursor = 0;
@@ -199,8 +200,11 @@
         this.openInbox().catch(() => this.showInboxError());
       });
       this.inboxClose.addEventListener("click", () => this.inboxDialog.close());
-      this.clearReadButton.addEventListener("click", () => {
-        this.clearRead().catch(() => this.showInboxError());
+      this.markAllReadButton.addEventListener("click", () => {
+        this.markAllRead().catch(() => this.showInboxError());
+      });
+      this.clearInboxButton.addEventListener("click", () => {
+        this.clearInbox().catch(() => this.showInboxError());
       });
       try {
         await this.refreshInbox();
@@ -350,7 +354,6 @@
     renderInbox(payload) {
       const items = Array.isArray(payload.items) ? payload.items : [];
       const unreadCount = Number(payload.unread_count) || 0;
-      const readCount = Number(payload.read_count) || 0;
       this.unreadBadge.textContent = unreadCount > 99 ? "99+" : String(unreadCount);
       this.unreadBadge.hidden = unreadCount === 0;
       this.inboxButton.setAttribute(
@@ -363,7 +366,8 @@
         ? "1 unread notification"
         : `${unreadCount} unread notifications`;
       this.inboxEmpty.hidden = items.length > 0;
-      this.clearReadButton.disabled = readCount === 0;
+      this.markAllReadButton.disabled = unreadCount === 0;
+      this.clearInboxButton.disabled = items.length === 0;
       this.inboxList.replaceChildren(...items.map((item) => this.inboxItem(item)));
     }
 
@@ -428,8 +432,19 @@
       await this.refreshInbox();
     }
 
-    async clearRead() {
-      await this.mutateInbox("/api/notifications/inbox/clear-read");
+    async markAllRead() {
+      await this.mutateInbox("/api/notifications/inbox/mark-all-read");
+      await this.refreshInbox();
+    }
+
+    async clearInbox() {
+      const confirmed = globalObject.confirm(
+        "Clear Notification Inbox?\n\n"
+        + "This removes all delivery-history entries from the inbox.\n"
+        + "Canonical EDGE events and history are retained.",
+      );
+      if (!confirmed) return;
+      await this.mutateInbox("/api/notifications/inbox/clear");
       await this.refreshInbox();
     }
 

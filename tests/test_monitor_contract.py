@@ -29,6 +29,13 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn('/api/notifications/inbox?limit=50', NOTIFICATIONS)
         self.assertIn('/api/notifications/inbox/${notificationId}/read', NOTIFICATIONS)
         self.assertIn('/api/notifications/inbox/${notificationId}/dismiss', NOTIFICATIONS)
+        self.assertIn('/api/notifications/inbox/mark-all-read', NOTIFICATIONS)
+        self.assertIn('/api/notifications/inbox/clear', NOTIFICATIONS)
+        self.assertIn('id="notificationMarkAllRead"', HTML)
+        self.assertIn('id="notificationClearInbox"', HTML)
+        self.assertNotIn("Clear all read", HTML)
+        self.assertIn("Clear Notification Inbox?", NOTIFICATIONS)
+        self.assertIn("Canonical EDGE events and history are retained.", NOTIFICATIONS)
         self.assertIn('item.is_read ? "" : " unread"', NOTIFICATIONS)
 
     def test_system_push_click_marks_canonical_inbox_identity_read(self) -> None:

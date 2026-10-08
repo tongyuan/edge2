@@ -4,11 +4,52 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const {
+  NotificationController,
   enableWebPush,
   formatNotificationTimestamp,
   safeNotificationPath,
   supportsWebPush,
 } = require("../app/static/notifications.js");
+
+async function testInboxBulkActionsUseDistinctConfirmedEndpoints() {
+  const controller = Object.create(NotificationController.prototype);
+  const mutations = [];
+  let refreshCount = 0;
+  controller.mutateInbox = async (url) => { mutations.push(url); };
+  controller.refreshInbox = async () => { refreshCount += 1; };
+
+  await controller.markAllRead();
+  assert.deepEqual(mutations, ["/api/notifications/inbox/mark-all-read"]);
+  assert.equal(refreshCount, 1);
+
+  const originalConfirm = global.confirm;
+  const confirmations = [];
+  try {
+    global.confirm = (message) => {
+      confirmations.push(message);
+      return false;
+    };
+    await controller.clearInbox();
+    assert.equal(mutations.length, 1, "cancelling must not clear the inbox");
+    assert.equal(refreshCount, 1);
+    assert.equal(
+      confirmations[0],
+      "Clear Notification Inbox?\n\n"
+        + "This removes all delivery-history entries from the inbox.\n"
+        + "Canonical EDGE events and history are retained.",
+    );
+
+    global.confirm = () => true;
+    await controller.clearInbox();
+    assert.deepEqual(mutations, [
+      "/api/notifications/inbox/mark-all-read",
+      "/api/notifications/inbox/clear",
+    ]);
+    assert.equal(refreshCount, 2);
+  } finally {
+    global.confirm = originalConfirm;
+  }
+}
 
 function fakeSubscription(endpoint = "https://push.example.test/device") {
   return {
@@ -412,6 +453,7 @@ async function main() {
   await testDeniedPermissionPath();
   await testExpiredSubscriptionIsRenewed();
   await testServiceWorkerPushAndClick();
+  await testInboxBulkActionsUseDistinctConfirmedEndpoints();
 }
 
 main().catch((error) => {
