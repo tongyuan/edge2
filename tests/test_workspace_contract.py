@@ -21,6 +21,7 @@ class WorkspaceContractTests(unittest.TestCase):
             ("/mrz/symbols", "Symbols"),
             ("/mrz/pressure", "Pressure"),
             ("/mrz/alert-settings", "Alert Settings"),
+            ("/mrz/location-distribution", "Location Distribution"),
             ("/mrz/formation-diagnostics", "Formation Diagnostics"),
             ("/mrz/events", "Events"),
         ):
@@ -86,6 +87,27 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertIn('id="pressureSelectedContext"', HTML)
         self.assertIn('get("symbol")', JS)
         self.assertIn('$("#pressureSelectedSymbol").textContent = selectedSymbol', JS)
+
+    def test_location_distribution_reuses_canonical_buckets_on_its_own_route(self) -> None:
+        pressure = HTML.split('data-route-panel="pressure"', 1)[1].split(
+            'data-route-panel="alert-settings"', 1
+        )[0]
+        distribution = HTML.split('data-route-panel="location-distribution"', 1)[1].split(
+            'data-route-panel="events"', 1
+        )[0]
+        self.assertNotIn('id="locationHeatmap"', pressure)
+        self.assertIn('id="locationHeatmap"', distribution)
+        self.assertIn("function renderLocationDistribution()", JS)
+        for key, label in (
+            ("deep_discount", "Deep Discount"),
+            ("shallow_discount", "Shallow Discount"),
+            ("at_eqm", "At EQM"),
+            ("shallow_premium", "Shallow Premium"),
+            ("deep_premium", "Deep Premium"),
+        ):
+            with self.subTest(bucket=key):
+                self.assertIn(f'"{key}"', JS)
+                self.assertIn(f'{key}: "{label}"', JS)
 
 
 if __name__ == "__main__":

@@ -300,6 +300,11 @@
       ["higher", "neutral", "lower"].forEach((direction) => { const row = element("div", ""); row.append(element("dt", `pressure-${direction}`, pressureLabels[direction]), element("dd", "", String(locations[key]?.counts?.[direction] || 0))); dl.append(row); });
       card.append(dl); map.append(card);
     });
+    $("#pressureGroupSelect").replaceChildren(new Option("Select watchlist", ""), ...state.groups.map((group) => new Option(group.name, String(group.id))));
+  }
+
+  function renderLocationDistribution() {
+    const selectedSymbol = new URLSearchParams(globalObject.location.search).get("symbol") || "";
     const columns = new Map();
     ["deep_discount", "shallow_discount", "at_eqm", "shallow_premium", "deep_premium"].forEach((key) => columns.set(key, []));
     state.symbols.forEach((symbol) => { if (columns.has(symbol.current_price_location)) columns.get(symbol.current_price_location).push(symbol.symbol); });
@@ -309,7 +314,6 @@
       symbols.forEach((symbol) => { const button = element("button", "", symbol); button.type = "button"; if (symbol === selectedSymbol) button.setAttribute("aria-current", "true"); button.addEventListener("click", () => { globalObject.location.href = `/mrz/symbols?symbol=${encodeURIComponent(symbol)}`; }); column.append(button); });
       heatmap.append(column);
     });
-    $("#pressureGroupSelect").replaceChildren(new Option("Select watchlist", ""), ...state.groups.map((group) => new Option(group.name, String(group.id))));
   }
   function summaryArticle(label, value) { const node = element("article", ""); node.append(element("span", "", label), element("strong", "", String(value))); return node; }
   async function loadPeerPressure(groupId) {
@@ -400,7 +404,7 @@
 
   function renderAll() {
     const attention = derive.deriveAttention(state.events, state.groups);
-    renderOverview(attention); renderWatchlists(attention); renderAttention(attention); renderSymbolOptions(); renderPressure(); renderEvents(); renderPreferences();
+    renderOverview(attention); renderWatchlists(attention); renderAttention(attention); renderSymbolOptions(); renderPressure(); renderLocationDistribution(); renderEvents(); renderPreferences();
   }
   async function initialize() {
     activateRoute();

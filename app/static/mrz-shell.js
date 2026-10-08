@@ -22,6 +22,7 @@
     {
       section: "MRZ RESEARCH",
       routes: [
+        { name: "location-distribution", label: "Location Distribution", abbreviation: "LD", href: "/mrz/location-distribution" },
         { name: "formation-diagnostics", label: "Formation Diagnostics", abbreviation: "FD", href: "/mrz/formation-diagnostics" },
         { name: "events", label: "Events", abbreviation: "EV", href: "/mrz/events" },
       ],

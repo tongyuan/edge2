@@ -147,7 +147,7 @@ console.log("diagnostics navigation tests passed");
   const routes = MRZ_NAVIGATION.flatMap((group) => group.routes);
   assert.deepEqual(
     routes.map((route) => route.name),
-    ["overview", "watchlists", "attention", "symbols", "pressure", "alert-settings", "formation-diagnostics", "events"],
+    ["overview", "watchlists", "attention", "symbols", "pressure", "alert-settings", "location-distribution", "formation-diagnostics", "events"],
   );
   const formationNavigation = navigationMarkup("formation-diagnostics");
   assert.match(formationNavigation, /href="\/mrz\/formation-diagnostics"[^>]+aria-current="page"/);
@@ -156,6 +156,7 @@ console.log("diagnostics navigation tests passed");
   assert.match(sidebarMarkup("events"), /id="sidebarToggle"/);
   assert.equal(routeNameForPath("/mrz/formation-diagnostics"), "formation-diagnostics");
   assert.equal(routeNameForPath("/diagnostics/activation-feasibility"), "formation-diagnostics");
+  assert.equal(routeNameForPath("/mrz/location-distribution"), "location-distribution");
   assert.equal(routeNameForPath("/mrz/events"), "events");
 }
 
@@ -231,7 +232,7 @@ console.log("shared MRZ shell tests passed");
         : null
   );
   const mobile = new FakeEventTarget();
-  const routeLinks = Array.from({ length: 8 }, () => new FakeEventTarget());
+  const routeLinks = Array.from({ length: 9 }, () => new FakeEventTarget());
   const sidebar = {
     innerHTML: "",
     querySelectorAll(selector) {
@@ -270,6 +271,6 @@ console.log("shared MRZ shell tests passed");
   assert.equal(storageValues.get(SIDEBAR_STORAGE_KEY), "true");
   mobile.dispatch("click");
   assert.equal(classes.has("nav-open"), true);
-  routeLinks[7].dispatch("click");
+  routeLinks[8].dispatch("click");
   assert.equal(classes.has("nav-open"), false, "mobile route navigation closes the drawer");
 }

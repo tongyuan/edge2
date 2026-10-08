@@ -63,17 +63,23 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn("detail.migration?.has_migrated", WORKSPACE)
         self.assertIn("/api/symbols/${encodeURIComponent(symbol)}", WORKSPACE)
 
-    def test_pressure_tools_moved_below_pressure_route(self) -> None:
+    def test_pressure_and_location_distribution_have_separate_routes(self) -> None:
         pressure = HTML.split('data-route-panel="pressure"', 1)[1].split(
-            'data-route-panel="events"', 1
+            'data-route-panel="alert-settings"', 1
         )[0]
         self.assertIn("PRESSURE MAP", pressure)
-        self.assertIn("LOCATION HEATMAP", pressure)
         self.assertIn("PEER PRESSURE", pressure)
+        self.assertNotIn("LOCATION DISTRIBUTION", pressure)
+        self.assertNotIn('id="locationHeatmap"', pressure)
+        distribution = HTML.split('data-route-panel="location-distribution"', 1)[1].split(
+            'data-route-panel="events"', 1
+        )[0]
+        self.assertIn("LOCATION DISTRIBUTION", distribution)
+        self.assertIn('id="locationHeatmap"', distribution)
         watchlists = HTML.split('data-route-panel="watchlists"', 1)[1].split(
             'data-route-panel="attention"', 1
         )[0]
-        self.assertNotIn("LOCATION HEATMAP", watchlists)
+        self.assertNotIn("LOCATION DISTRIBUTION", watchlists)
 
 
 if __name__ == "__main__":

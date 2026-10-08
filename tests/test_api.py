@@ -283,6 +283,13 @@ class APIIntegrationTests(unittest.TestCase):
             self.assertIn('/static/mrz-shell.js', workspace_page)
         self.assertNotIn('class="mrz-subnav"', feasibility)
 
+    def test_location_distribution_supports_direct_navigation(self) -> None:
+        response = self.client.get("/mrz/location-distribution")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('data-route-panel="location-distribution"', response.text)
+        self.assertIn('id="locationHeatmap"', response.text)
+
     def test_mrz_robustness_report_api_is_hidden(self) -> None:
         response = self.client.get("/api/diagnostics/mrz-robustness-report")
 
