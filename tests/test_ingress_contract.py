@@ -41,6 +41,7 @@ class IngressContractTests(unittest.TestCase):
             "location = /service-worker.js {",
             "location /static/ {",
             "location /api/ {",
+            "location /mrz/ {",
         ):
             self.assertIn(location, NGINX)
         self.assertIn("proxy_pass $edge2_app/manifest.webmanifest;", NGINX)
