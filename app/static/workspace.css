@@ -54,6 +54,7 @@ a { color: inherit; text-decoration: none; }
 .header-health { color: var(--accent); font-size: .72rem; }
 .quiet-button, .primary-button, .danger-button, .icon-button { min-height: 36px; border-radius: 8px; cursor: pointer; }
 .quiet-button { padding: 0 12px; border: 1px solid var(--line); background: var(--surface); color: #c6d0dc; }
+.header-alert-status { display: inline-flex; align-items: center; }
 .quiet-button:hover { border-color: #3c4d63; color: var(--text); }
 .primary-button { padding: 0 14px; border: 1px solid #3c8d73; background: #15392f; color: #9af0d0; font-weight: 700; }
 .danger-button { padding: 0 12px; border: 1px solid rgba(236, 127, 129, .4); background: rgba(236, 127, 129, .08); color: var(--red); }
@@ -186,6 +187,11 @@ input { padding: 0 11px; }
 .device-alert-control strong { color: var(--muted); font-size: .62rem; letter-spacing: .08em; }
 .device-alert-control span { margin-top: 3px; color: var(--muted); font-size: .68rem; }
 .form-error { color: var(--red); }
+.alert-preferences-form { max-width: 680px; padding: 20px; }
+.alert-preferences-form fieldset { margin: 0 0 16px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; }
+.alert-preferences-form legend { padding: 0 6px; color: var(--muted); font-size: .62rem; font-weight: 800; letter-spacing: .09em; }
+.alert-preferences-form footer { display: flex; align-items: center; justify-content: flex-end; gap: 14px; margin-top: 18px; }
+.form-success { color: var(--accent); font-size: .72rem; }
 
 .notification-inbox-list { margin: 0; padding: 0; list-style: none; }
 .notification-inbox-item { padding: 13px 0; border-bottom: 1px solid var(--line-soft); }
@@ -212,6 +218,7 @@ input { padding: 0 11px; }
   .workspace-sidebar { position: fixed; z-index: 60; left: 0; width: 226px; transform: translateX(-100%); transition: transform 160ms ease; }
   body.nav-open .workspace-sidebar { transform: translateX(0); }
   .mobile-nav-button { display: block; }
+  .header-alert-status { display: none; }
   .header-health { display: none; }
   .route-panel { padding: 24px 16px 45px; }
   .workspace-header { padding: 0 15px; }
@@ -221,7 +228,7 @@ input { padding: 0 11px; }
   .action-heading, .symbol-route-heading { align-items: flex-start; flex-direction: column; }
 }
 @media (max-width: 560px) {
-  .compact-identity span, .workspace-header-actions .quiet-button:first-of-type { display: none; }
+  .compact-identity span { display: none; }
   .metric-strip, .compact-summary, .symbol-detail-grid, .pressure-summary, .pressure-map, .location-heatmap, .peer-pressure-grid { grid-template-columns: 1fr; }
   .route-links { grid-template-columns: 1fr 1fr; }
   .event-row { grid-template-columns: 58px 1fr auto; gap: 8px; }

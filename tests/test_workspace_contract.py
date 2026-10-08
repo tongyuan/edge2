@@ -7,6 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 HTML = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
 JS = (ROOT / "app/static/workspace.js").read_text(encoding="utf-8")
+CSS = (ROOT / "app/static/workspace.css").read_text(encoding="utf-8")
 API = (ROOT / "app/api.py").read_text(encoding="utf-8")
 
 
@@ -18,6 +19,7 @@ class WorkspaceContractTests(unittest.TestCase):
             ("/mrz/attention", "Attention"),
             ("/mrz/symbols", "Symbols"),
             ("/mrz/pressure", "Pressure"),
+            ("/mrz/alert-settings", "Alert Settings"),
             ("/mrz/formation-diagnostics", "Formation Diagnostics"),
             ("/mrz/events", "Events"),
         ):
@@ -49,6 +51,16 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertIn("/api/mrz/events?limit=500", JS)
 
     def test_notification_controls_cover_scope_and_all_event_types(self) -> None:
+        trading_navigation = HTML.split("<p>TRADING</p>", 1)[1].split("<p>MRZ RESEARCH</p>", 1)[0]
+        self.assertIn('href="/mrz/alert-settings"', trading_navigation)
+        self.assertIn('data-route="alert-settings"', trading_navigation)
+        self.assertIn('data-route-panel="alert-settings"', HTML)
+        self.assertNotIn('id="alertSettingsDialog"', HTML)
+        self.assertEqual(HTML.count('id="alertPreferencesForm"'), 1)
+        self.assertIn("ALERTS ON/OFF", HTML)
+        mobile_rules = CSS.split("@media (max-width: 820px)", 1)[1]
+        self.assertIn(".header-alert-status { display: none; }", mobile_rules)
+        self.assertNotIn(".workspace-navigation a { display: none; }", mobile_rules)
         self.assertIn('value="TRACKED_GROUPS_ONLY"', HTML)
         self.assertIn('value="ALL_SYMBOLS"', HTML)
         for control in ("prefActivation", "prefMigration", "prefPressure", "prefNearMiss"):

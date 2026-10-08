@@ -373,12 +373,13 @@
   }
   async function savePreferences(event) {
     event.preventDefault();
-    if (event.submitter?.value === "cancel") { $("#alertSettingsDialog").close(); return; }
+    $("#alertPreferencesError").hidden = true;
+    $("#alertPreferencesSaved").textContent = "";
     const selectedScope = document.querySelector('input[name="alertScope"]:checked');
     const payload = { alert_scope: selectedScope?.value || "ALL_SYMBOLS", activation_enabled: $("#prefActivation").checked, migration_enabled: $("#prefMigration").checked, pressure_enabled: $("#prefPressure").checked, near_miss_enabled: $("#prefNearMiss").checked };
     const response = await fetch("/api/notifications/preferences", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     if (!response.ok) { $("#alertPreferencesError").textContent = "Unable to save alert preferences."; $("#alertPreferencesError").hidden = false; return; }
-    state.preferences = await response.json(); renderPreferences(); $("#alertSettingsDialog").close();
+    state.preferences = await response.json(); renderPreferences(); $("#alertPreferencesSaved").textContent = "Preferences saved.";
   }
 
   function renderAll() {
@@ -422,7 +423,6 @@
   });
   $("#pressureGroupSelect")?.addEventListener("change", (event) => loadPeerPressure(event.target.value).catch(showError));
   $("#eventTypeFilter")?.addEventListener("change", renderEvents);
-  $("#alertSettingsButton")?.addEventListener("click", () => { renderPreferences(); $("#alertSettingsDialog").showModal(); });
   $("#alertPreferencesForm")?.addEventListener("submit", (event) => savePreferences(event).catch(showError));
   function showError(error) { $("#workspaceStatus").hidden = false; $("#workspaceStatus").textContent = error.message || "The request could not be completed."; $("#workspaceStatus").classList.add("error"); }
   document.addEventListener("DOMContentLoaded", initialize, { once: true });

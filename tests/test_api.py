@@ -280,6 +280,7 @@ class APIIntegrationTests(unittest.TestCase):
             self.assertIn('href="/mrz/attention"', page)
             self.assertIn('href="/mrz/symbols"', page)
             self.assertIn('href="/mrz/pressure"', page)
+            self.assertIn('href="/mrz/alert-settings"', page)
             self.assertIn('href="/mrz/events"', page)
             self.assertIn("Formation Diagnostics", page)
             self.assertNotIn(">Activation Feasibility<", page)

@@ -9,7 +9,7 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/static/edge-mrz-icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/static/edge-mrz-icon-180.png" />
-    <link rel="stylesheet" href="/static/workspace.css?v=mrz-workspace-20261007" />
+    <link rel="stylesheet" href="/static/workspace.css?v=mrz-alert-settings-20261008" />
   </head>
   <body>
     <div class="workspace-shell">
@@ -17,7 +17,7 @@
         <a class="workspace-brand" href="/mrz/overview"><span class="brand-mark">E</span><span><strong>EDGE 2.0</strong><small>MRZ Monitor</small></span></a>
         <nav class="workspace-navigation">
           <p>OVERVIEW</p><a href="/mrz/overview" data-route="overview"><span>Overview</span></a>
-          <p>TRADING</p><a href="/mrz/watchlists" data-route="watchlists"><span>Watchlists</span><b id="navAttentionCount" hidden>0</b></a><a href="/mrz/attention" data-route="attention"><span>Attention</span></a><a href="/mrz/symbols" data-route="symbols"><span>Symbols</span></a><a href="/mrz/pressure" data-route="pressure"><span>Pressure</span></a>
+          <p>TRADING</p><a href="/mrz/watchlists" data-route="watchlists"><span>Watchlists</span><b id="navAttentionCount" hidden>0</b></a><a href="/mrz/attention" data-route="attention"><span>Attention</span></a><a href="/mrz/symbols" data-route="symbols"><span>Symbols</span></a><a href="/mrz/pressure" data-route="pressure"><span>Pressure</span></a><a href="/mrz/alert-settings" data-route="alert-settings"><span>Alert Settings</span></a>
           <p>MRZ RESEARCH</p><a href="/mrz/formation-diagnostics"><span>Formation Diagnostics</span></a><a href="/mrz/events" data-route="events"><span>Events</span></a>
         </nav>
         <div class="sidebar-foot"><span class="health-dot" id="healthState">Checking system</span><small>Canonical universe monitoring</small></div>
@@ -27,7 +27,7 @@
         <header class="workspace-header">
           <button class="mobile-nav-button" id="mobileNavButton" type="button" aria-label="Open MRZ navigation">☰</button>
           <div class="compact-identity"><strong>MRZ Monitor</strong><span>Operator workspace</span></div>
-          <div class="workspace-header-actions"><span class="header-health" id="headerHealth">● Checking system</span><button class="quiet-button" id="alertSettingsButton" type="button" aria-haspopup="dialog" aria-controls="alertSettingsDialog">🔔 <span id="alertScopeLabel">Alerts</span></button><button class="quiet-button" id="notificationInboxButton" type="button" aria-haspopup="dialog" aria-controls="notificationInboxDialog">Inbox <span class="notification-unread-badge" id="notificationUnreadBadge" hidden>0</span></button></div>
+          <div class="workspace-header-actions"><span class="header-health" id="headerHealth">● Checking system</span><a class="quiet-button header-alert-status" id="alertSettingsButton" href="/mrz/alert-settings">🔔 <span id="alertScopeLabel">Alerts</span></a><button class="quiet-button" id="notificationInboxButton" type="button" aria-haspopup="dialog" aria-controls="notificationInboxDialog">Inbox <span class="notification-unread-badge" id="notificationUnreadBadge" hidden>0</span></button></div>
         </header>
         <div class="route-status" id="workspaceStatus" role="status">Loading canonical EDGE state…</div>
 
@@ -65,6 +65,16 @@
           <section class="panel"><div class="panel-heading"><div><p>PEER PRESSURE</p><h2>Watchlist context</h2></div><select id="pressureGroupSelect"><option value="">Select watchlist</option></select></div><div id="peerPressureDetail" class="empty-inline">Choose a watchlist to load canonical peer pressure.</div></section>
         </section>
 
+        <section class="route-panel" data-route-panel="alert-settings" hidden>
+          <header class="route-heading"><p>ALERT SETTINGS</p><h1>Choose when MRZ should interrupt you</h1><span>These controls use the existing notification preferences. EDGE continues to monitor and record the full universe.</span></header>
+          <form class="panel alert-preferences-form" id="alertPreferencesForm">
+            <fieldset><legend>ALERTS ON/OFF</legend><section class="device-alert-control"><div><strong>THIS DEVICE</strong><span id="notificationStatus" role="status">Checking browser support…</span></div><button class="quiet-button" type="button" id="notificationButton" disabled>Checking notifications…</button></section></fieldset>
+            <fieldset><legend>ALERT SCOPE</legend><label class="choice"><input type="radio" name="alertScope" value="TRACKED_GROUPS_ONLY" /><span><strong>Tracked Groups Only</strong><small>Only symbols in a trading watchlist may interrupt you.</small></span></label><label class="choice"><input type="radio" name="alertScope" value="ALL_SYMBOLS" /><span><strong>All Symbols</strong><small>Preserves the previous global alert behavior.</small></span></label></fieldset>
+            <fieldset><legend>EVENT TYPES</legend><label class="choice"><input id="prefActivation" type="checkbox" /><span><strong>MRZ Activation</strong></span></label><label class="choice"><input id="prefMigration" type="checkbox" /><span><strong>MRZ Migration</strong></span></label><label class="choice"><input id="prefPressure" type="checkbox" /><span><strong>Pressure</strong></span></label><label class="choice"><input id="prefNearMiss" type="checkbox" /><span><strong>Near-Miss</strong></span></label></fieldset>
+            <p class="form-error" id="alertPreferencesError" hidden></p><footer><span class="form-success" id="alertPreferencesSaved" role="status"></span><button class="primary-button" id="saveAlertPreferences" type="submit">Save preferences</button></footer>
+          </form>
+        </section>
+
         <section class="route-panel" data-route-panel="events" hidden>
           <header class="route-heading"><p>EVENTS</p><h1>Global canonical event history</h1><span>All monitored symbols, independent of watchlists and alert interruption scope.</span></header>
           <section class="panel"><div class="panel-heading"><div><p>MRZ HISTORY</p><h2>Recent events</h2></div><label class="event-filter">TYPE<select id="eventTypeFilter"><option value="all">All events</option><option value="MRZ_ACTIVATED">Activation</option><option value="MRZ_MIGRATED">Migration</option><option value="POST_ACTIVATION_PRESSURE_CHANGED">Pressure</option><option value="MRZ_NEAR_MISS">Near-Miss</option></select></label></div><div id="eventsList"></div></section>
@@ -74,10 +84,8 @@
 
     <dialog class="workspace-dialog" id="watchlistDialog"><form method="dialog" id="watchlistForm"><header><div><p>TRADING WATCHLIST</p><h2 id="watchlistDialogTitle">New watchlist</h2></div><button class="icon-button" value="cancel" aria-label="Close">×</button></header><label>NAME<input id="watchlistName" maxlength="80" required placeholder="Large Cap" /></label><fieldset><legend>SYMBOLS</legend><div class="symbol-check-grid" id="watchlistSymbolChoices"></div></fieldset><p class="form-error" id="watchlistFormError" hidden></p><footer><button class="danger-button" id="deleteWatchlistButton" type="button" hidden>Delete</button><span></span><button class="quiet-button" value="cancel">Cancel</button><button class="primary-button" id="saveWatchlistButton" type="submit">Save watchlist</button></footer></form></dialog>
 
-    <dialog class="workspace-dialog alert-dialog" id="alertSettingsDialog"><form method="dialog" id="alertPreferencesForm"><header><div><p>MRZ ALERTS</p><h2>Interruption preferences</h2><span>EDGE continues to monitor and record the full universe.</span></div><button class="icon-button" value="cancel" aria-label="Close">×</button></header><fieldset><legend>ALERT SCOPE</legend><label class="choice"><input type="radio" name="alertScope" value="TRACKED_GROUPS_ONLY" /><span><strong>Tracked Groups Only</strong><small>Only symbols in a trading watchlist may interrupt you.</small></span></label><label class="choice"><input type="radio" name="alertScope" value="ALL_SYMBOLS" /><span><strong>All Symbols</strong><small>Preserves the previous global alert behavior.</small></span></label></fieldset><fieldset><legend>EVENT TYPES</legend><label class="choice"><input id="prefActivation" type="checkbox" /><span><strong>MRZ Activation</strong></span></label><label class="choice"><input id="prefMigration" type="checkbox" /><span><strong>MRZ Migration</strong></span></label><label class="choice"><input id="prefPressure" type="checkbox" /><span><strong>Pressure</strong></span></label><label class="choice"><input id="prefNearMiss" type="checkbox" /><span><strong>Near-Miss</strong></span></label></fieldset><section class="device-alert-control"><div><strong>THIS DEVICE</strong><span id="notificationStatus" role="status">Checking browser support…</span></div><button class="quiet-button" type="button" id="notificationButton" disabled>Checking notifications…</button></section><p class="form-error" id="alertPreferencesError" hidden></p><footer><span></span><button class="quiet-button" value="cancel">Cancel</button><button class="primary-button" id="saveAlertPreferences" type="submit">Save preferences</button></footer></form></dialog>
-
     <dialog class="workspace-dialog inbox-dialog" id="notificationInboxDialog" aria-labelledby="notificationInboxTitle"><section><header><div><p>DELIVERY HISTORY</p><h2 id="notificationInboxTitle">Notification Inbox</h2><span id="notificationInboxSummary">No unread notifications</span></div><button class="icon-button" id="notificationInboxClose" type="button" aria-label="Close">×</button></header><p class="notification-inbox-empty" id="notificationInboxEmpty">No active notifications.</p><ul class="notification-inbox-list" id="notificationInboxList" aria-live="polite"></ul><footer><button class="quiet-button" type="button" id="notificationClearRead" disabled>Clear all read</button></footer></section></dialog>
     <div class="notification-toast-host" id="notificationToastHost" aria-live="polite"></div>
-    <script src="/static/operator-time.js?v=mrz-workspace-20261007" defer></script><script src="/static/workspace-derivations.js?v=mrz-workspace-20261007" defer></script><script src="/static/notifications.js?v=mrz-workspace-20261007" defer></script><script src="/static/workspace.js?v=mrz-workspace-20261007" defer></script>
+    <script src="/static/operator-time.js?v=mrz-workspace-20261007" defer></script><script src="/static/workspace-derivations.js?v=mrz-workspace-20261007" defer></script><script src="/static/notifications.js?v=mrz-workspace-20261007" defer></script><script src="/static/workspace.js?v=mrz-alert-settings-20261008" defer></script>
   </body>
 </html>
