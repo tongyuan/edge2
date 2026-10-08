@@ -5,7 +5,7 @@ import json
 import logging
 from collections import deque
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Mapping, Sequence
 
@@ -62,6 +62,18 @@ GROUP_LOCATION_KEYS = (
     "shallow_premium",
     "deep_premium",
 )
+GROUP_LOCATION_LABELS = {
+    "deep_discount": "Deep Discount",
+    "shallow_discount": "Shallow Discount",
+    "at_eqm": "At EQM",
+    "shallow_premium": "Shallow Premium",
+    "deep_premium": "Deep Premium",
+}
+LOCATION_HISTORY_WINDOWS = {
+    "24H": timedelta(hours=24),
+    "5D": timedelta(days=5),
+    "20D": timedelta(days=20),
+}
 STRUCTURAL_LOCATION_PRESENTATION = {
     StructuralLocation.DEEP_DISCOUNT.value: ("DD", "Deep Discount"),
     StructuralLocation.SHALLOW_DISCOUNT.value: ("SD", "Shallow Discount"),
@@ -217,6 +229,138 @@ def location_migration_evidence_payload(row: Mapping[str, Any]) -> dict[str, Any
 
 def migration_evidence_order_key(record: Mapping[str, Any]) -> tuple[str, str]:
     return (str(record["migrated_at"]), str(record["migration_event_key"]))
+
+
+def location_distribution_history_payload(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    window: str,
+    current_at: datetime,
+    comparison_at: datetime,
+) -> dict[str, Any]:
+    """Derive endpoint distribution and per-symbol flow from canonical observations."""
+    if window not in LOCATION_HISTORY_WINDOWS:
+        raise ValueError(f"Unsupported location-history window: {window}")
+
+    rank = {key: index for index, key in enumerate(GROUP_LOCATION_KEYS)}
+    then_counts = {key: 0 for key in GROUP_LOCATION_KEYS}
+    now_counts = {key: 0 for key in GROUP_LOCATION_KEYS}
+    moved_higher = 0
+    moved_lower = 0
+    unchanged = 0
+    added_or_became_eligible = 0
+    removed_or_became_ineligible = 0
+    transition_counts: dict[tuple[str, str], int] = {}
+
+    def location(row: Mapping[str, Any], prefix: str) -> str | None:
+        price = row.get(f"{prefix}_observation_price")
+        high = row.get(f"{prefix}_ipda_20w_high")
+        low = row.get(f"{prefix}_ipda_20w_low")
+        if price is None or high is None or low is None:
+            return None
+        classified = classify_ipda_location(Decimal(price), Decimal(high), Decimal(low))
+        return classified.value if classified and classified.value in rank else None
+
+    for row in rows:
+        now_location = location(row, "current")
+        then_location = location(row, "comparison")
+        if now_location is not None:
+            now_counts[now_location] += 1
+        if then_location is not None:
+            then_counts[then_location] += 1
+
+        if now_location is not None and then_location is not None:
+            if rank[now_location] > rank[then_location]:
+                moved_higher += 1
+            elif rank[now_location] < rank[then_location]:
+                moved_lower += 1
+            else:
+                unchanged += 1
+            if now_location != then_location:
+                key = (then_location, now_location)
+                transition_counts[key] = transition_counts.get(key, 0) + 1
+        elif now_location is not None:
+            added_or_became_eligible += 1
+        elif then_location is not None:
+            removed_or_became_ineligible += 1
+
+    now_total = sum(now_counts.values())
+    then_total = sum(then_counts.values())
+    comparable = moved_higher + moved_lower + unchanged
+
+    def percentage(count: int, total: int) -> float:
+        return round((count / total) * 100, 1) if total else 0.0
+
+    locations = []
+    for key in GROUP_LOCATION_KEYS:
+        then_pct = percentage(then_counts[key], then_total)
+        now_pct = percentage(now_counts[key], now_total)
+        locations.append(
+            {
+                "key": key,
+                "label": GROUP_LOCATION_LABELS[key],
+                "then_count": then_counts[key],
+                "now_count": now_counts[key],
+                "change_count": now_counts[key] - then_counts[key],
+                "then_pct": then_pct,
+                "now_pct": now_pct,
+                "change_pp": round(now_pct - then_pct, 1),
+            }
+        )
+
+    def combined_share(keys: tuple[str, ...], counts: Mapping[str, int], total: int) -> float:
+        return percentage(sum(counts[key] for key in keys), total)
+
+    structural_read = {}
+    for key, members in (
+        ("discount_share", ("deep_discount", "shallow_discount")),
+        ("premium_share", ("shallow_premium", "deep_premium")),
+        ("extreme_share", ("deep_discount", "deep_premium")),
+    ):
+        then_pct = combined_share(members, then_counts, then_total)
+        now_pct = combined_share(members, now_counts, now_total)
+        structural_read[key] = {
+            "then_pct": then_pct,
+            "now_pct": now_pct,
+            "change_pp": round(now_pct - then_pct, 1),
+        }
+
+    dominant_transitions = [
+        {
+            "from_key": source,
+            "from_label": GROUP_LOCATION_LABELS[source],
+            "to_key": destination,
+            "to_label": GROUP_LOCATION_LABELS[destination],
+            "count": count,
+        }
+        for (source, destination), count in sorted(
+            transition_counts.items(),
+            key=lambda item: (-item[1], item[0][0], item[0][1]),
+        )[:5]
+    ]
+    return {
+        "window": window,
+        "window_semantics": "elapsed_calendar_time",
+        "current_at": iso(current_at),
+        "comparison_at": iso(comparison_at),
+        "locations": locations,
+        "structural_read": structural_read,
+        "universe": {
+            "now_eligible": now_total,
+            "then_eligible": then_total,
+            "common_eligible": comparable,
+            "added_or_became_eligible": added_or_became_eligible,
+            "removed_or_became_ineligible": removed_or_became_ineligible,
+        },
+        "flow": {
+            "moved_higher": moved_higher,
+            "moved_lower": moved_lower,
+            "unchanged": unchanged,
+            "net_higher": moved_higher - moved_lower,
+            "comparable_symbols": comparable,
+        },
+        "dominant_transitions": dominant_transitions,
+    }
 
 
 def observation_from_row(row: Mapping[str, Any]) -> Observation:
@@ -2692,6 +2836,70 @@ class EdgeRepository:
                         for symbol in group["members"]
                     ],
                 }
+        finally:
+            connection.close()
+
+    def location_distribution_history(
+        self,
+        window: str,
+        *,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Compare canonical structural-location endpoints without persisting derived state."""
+        duration = LOCATION_HISTORY_WINDOWS.get(window)
+        if duration is None:
+            raise ValueError(f"Unsupported location-history window: {window}")
+        current_at = now or datetime.now(timezone.utc)
+        comparison_at = current_at - duration
+        connection = connect(self.database_url)
+        try:
+            connection.set_session(readonly=True, isolation_level="REPEATABLE READ")
+            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    """
+                    WITH current_observations AS (
+                        SELECT DISTINCT ON (symbol)
+                            symbol, observation_price, ipda_20w_high,
+                            ipda_20w_low, observed_at
+                        FROM observations
+                        WHERE schema_version = '4.3'
+                          AND observed_at <= %s
+                        ORDER BY symbol ASC, observed_at DESC,
+                                 received_at DESC, id DESC
+                    ),
+                    comparison_observations AS (
+                        SELECT DISTINCT ON (symbol)
+                            symbol, observation_price, ipda_20w_high,
+                            ipda_20w_low, observed_at
+                        FROM observations
+                        WHERE schema_version = '4.3'
+                          AND observed_at <= %s
+                        ORDER BY symbol ASC, observed_at DESC,
+                                 received_at DESC, id DESC
+                    )
+                    SELECT
+                        COALESCE(current.symbol, comparison.symbol) AS symbol,
+                        current.observation_price AS current_observation_price,
+                        current.ipda_20w_high AS current_ipda_20w_high,
+                        current.ipda_20w_low AS current_ipda_20w_low,
+                        current.observed_at AS current_observed_at,
+                        comparison.observation_price AS comparison_observation_price,
+                        comparison.ipda_20w_high AS comparison_ipda_20w_high,
+                        comparison.ipda_20w_low AS comparison_ipda_20w_low,
+                        comparison.observed_at AS comparison_observed_at
+                    FROM current_observations current
+                    FULL OUTER JOIN comparison_observations comparison
+                      ON comparison.symbol = current.symbol
+                    ORDER BY COALESCE(current.symbol, comparison.symbol) ASC
+                    """,
+                    (current_at, comparison_at),
+                )
+                return location_distribution_history_payload(
+                    cursor.fetchall(),
+                    window=window,
+                    current_at=current_at,
+                    comparison_at=comparison_at,
+                )
         finally:
             connection.close()
 

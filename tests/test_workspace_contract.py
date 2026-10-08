@@ -121,6 +121,27 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertIn("migration.sampleLabel", JS)
         self.assertIn("No migration history", JS)
 
+    def test_location_distribution_exposes_canonical_history_and_flow_windows(self) -> None:
+        for window in ("24H", "5D", "20D"):
+            self.assertIn(f'data-location-window="{window}"', HTML)
+        for target in (
+            "locationTrendRows",
+            "locationUniverseDisclosure",
+            "locationStructuralRead",
+            "locationFlowSummary",
+            "locationDominantTransitions",
+        ):
+            self.assertIn(f'id="{target}"', HTML)
+        self.assertIn("/api/location-distribution/history?window=", JS)
+        self.assertIn("% of universe", JS)
+        self.assertIn("added/became eligible", JS)
+        self.assertIn("removed/became ineligible", JS)
+        self.assertIn("elapsed calendar time", JS)
+        self.assertIn("Dominant transitions", HTML)
+        for label in ("DISCOUNT SHARE", "PREMIUM SHARE", "EXTREME SHARE", "NET LOCATION FLOW"):
+            self.assertIn(label, JS)
+        self.assertIn("Start/end bucket per comparable symbol", HTML)
+
 
 if __name__ == "__main__":
     unittest.main()

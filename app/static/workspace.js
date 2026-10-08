@@ -9,6 +9,8 @@
     groups: [],
     events: [],
     preferences: null,
+    locationHistory: null,
+    locationWindow: "24H",
     selectedGroupId: "all",
     editingGroupId: null,
   };
@@ -311,13 +313,21 @@
     state.symbols.forEach((symbol) => { if (columns.has(symbol.current_price_location)) columns.get(symbol.current_price_location).push(symbol.symbol); });
     const classifiedTotal = [...columns.values()].reduce((total, symbols) => total + symbols.length, 0);
     const migrationTendency = state.symbolPayload?.location_migration_tendency || {};
+    const historyLocations = new Map((state.locationHistory?.locations || []).map((item) => [item.key, item]));
     const heatmap = $("#locationHeatmap"); heatmap.replaceChildren();
     columns.forEach((symbols, key) => {
       const column = element("section", `location-column${key === "at_eqm" ? " location-column-boundary" : ""}`);
       column.append(element("h3", "", locationLabels[key]));
       const current = element("div", "location-distribution-current");
       const percentage = classifiedTotal ? ((symbols.length / classifiedTotal) * 100).toFixed(1) : "0.0";
-      current.append(element("span", "", "Current"), element("strong", "", `${symbols.length} · ${percentage}%`));
+      current.append(element("span", "", "Current"), element("strong", "", `${symbols.length} symbol${symbols.length === 1 ? "" : "s"} · ${percentage}% of universe`));
+      const historical = historyLocations.get(key);
+      if (historical) {
+        const delta = Number(historical.change_count || 0);
+        const arrow = delta > 0 ? "↑" : delta < 0 ? "↓" : "↔";
+        const deltaLabel = delta === 0 ? "0" : `${Math.abs(delta)}`;
+        current.append(element("span", `location-distribution-change${delta > 0 ? " location-change-higher" : delta < 0 ? " location-change-lower" : ""}`, `${arrow} ${deltaLabel} vs ${state.locationWindow}`));
+      }
       column.append(current);
       if (key === "at_eqm") {
         column.append(element("p", "location-boundary-note", "Exact canonical IPDA 20W midpoint"));
@@ -342,6 +352,90 @@
       column.append(symbolList);
       heatmap.append(column);
     });
+    renderLocationHistory();
+  }
+
+  function formatSigned(value, suffix = "") {
+    const numeric = Number(value || 0);
+    return `${numeric > 0 ? "+" : ""}${numeric.toFixed(suffix ? 1 : 0)}${suffix}`;
+  }
+  function renderLocationHistory() {
+    document.querySelectorAll("[data-location-window]").forEach((button) => {
+      button.setAttribute("aria-pressed", String(button.dataset.locationWindow === state.locationWindow));
+    });
+    const history = state.locationHistory;
+    if (!history) return;
+    $("#locationTrendHeading").textContent = `${history.window} comparison · then → now`;
+    $("#locationFlowHeading").textContent = `Location flow · last ${history.window}`;
+    $("#locationStructuralReadHeading").textContent = `Structural breadth · last ${history.window}`;
+    $("#locationHistoryStatus").textContent = `Comparison point ${exactTime(history.comparison_at)}`;
+    const universe = history.universe || {};
+    $("#locationUniverseDisclosure").textContent = `${universe.now_eligible || 0} eligible now · ${universe.then_eligible || 0} eligible then · ${universe.common_eligible || 0} comparable · ${universe.added_or_became_eligible || 0} added/became eligible · ${universe.removed_or_became_ineligible || 0} removed/became ineligible. Windows are elapsed calendar time.`;
+
+    const rows = $("#locationTrendRows"); rows.replaceChildren();
+    (history.locations || []).forEach((item) => {
+      const row = element("tr", "");
+      const thenCell = element("td", ""); thenCell.append(document.createTextNode(String(item.then_count)), element("small", "", `${Number(item.then_pct).toFixed(1)}% of then universe`));
+      const nowCell = element("td", ""); nowCell.append(document.createTextNode(String(item.now_count)), element("small", "", `${Number(item.now_pct).toFixed(1)}% of now universe`));
+      const changeClass = item.change_count > 0 ? "location-change-higher" : item.change_count < 0 ? "location-change-lower" : "";
+      const changeCell = element("td", changeClass); changeCell.append(document.createTextNode(formatSigned(item.change_count)), element("small", "", `${formatSigned(item.change_pp, " pp")}`));
+      row.append(element("td", "", item.label), thenCell, nowCell, changeCell); rows.append(row);
+    });
+
+    const flow = history.flow || {};
+    const read = history.structural_read || {};
+    const netFlow = Number(flow.net_higher || 0);
+    $("#locationStructuralRead").replaceChildren(
+      structuralReadMetric("DISCOUNT SHARE", read.discount_share),
+      structuralReadMetric("PREMIUM SHARE", read.premium_share),
+      structuralReadMetric("EXTREME SHARE", read.extreme_share),
+      flowMetric("NET LOCATION FLOW", formatSigned(netFlow), `${netFlow > 0 ? "higher" : netFlow < 0 ? "lower" : "balanced"} · ${flow.comparable_symbols || 0} comparable`),
+    );
+    const flowSummary = $("#locationFlowSummary"); flowSummary.replaceChildren(
+      flowMetric("MOVED HIGHER", flow.moved_higher || 0, `${flow.comparable_symbols || 0} comparable symbols`),
+      flowMetric("MOVED LOWER", flow.moved_lower || 0, `${flow.comparable_symbols || 0} comparable symbols`),
+      flowMetric("UNCHANGED", flow.unchanged || 0, `Net ${formatSigned(flow.net_higher)} higher`),
+    );
+    const transitions = $("#locationDominantTransitions"); transitions.replaceChildren();
+    if (!(history.dominant_transitions || []).length) {
+      transitions.append(element("li", "", "No cross-bucket transitions in this window."));
+    } else {
+      history.dominant_transitions.forEach((transition) => {
+        const item = element("li", "");
+        item.append(document.createTextNode(`${transition.from_label} → ${transition.to_label} · `), element("strong", "", String(transition.count)));
+        transitions.append(item);
+      });
+    }
+  }
+  function flowMetric(label, value, support) {
+    const node = element("article", "");
+    node.append(element("span", "", label), element("strong", "", String(value)), element("small", "", support));
+    return node;
+  }
+  function structuralReadMetric(label, measure = {}) {
+    const delta = Number(measure.change_pp || 0);
+    const node = flowMetric(label, `${Number(measure.now_pct || 0).toFixed(1)}%`, `${formatSigned(delta, " pp")} vs ${state.locationWindow}`);
+    if (delta > 0) node.classList.add("location-change-higher");
+    if (delta < 0) node.classList.add("location-change-lower");
+    return node;
+  }
+  async function loadLocationHistory(window) {
+    state.locationWindow = window;
+    $("#locationHistoryStatus").textContent = "Loading canonical history…";
+    document.querySelectorAll("[data-location-window]").forEach((button) => {
+      button.disabled = true;
+      button.setAttribute("aria-pressed", String(button.dataset.locationWindow === window));
+    });
+    try {
+      const response = await fetch(`/api/location-distribution/history?window=${encodeURIComponent(window)}`, { cache: "no-store" });
+      if (!response.ok) throw new Error("Unable to load canonical location history.");
+      state.locationHistory = await response.json();
+      renderLocationDistribution();
+    } catch (error) {
+      $("#locationHistoryStatus").textContent = error.message || "Unable to load canonical location history.";
+    } finally {
+      document.querySelectorAll("[data-location-window]").forEach((button) => { button.disabled = false; });
+    }
   }
   function summaryArticle(label, value) { const node = element("article", ""); node.append(element("span", "", label), element("strong", "", String(value))); return node; }
   async function loadPeerPressure(groupId) {
@@ -437,14 +531,16 @@
   async function initialize() {
     activateRoute();
     try {
-      const [symbolsResponse, groupsResponse, eventsResponse, preferencesResponse] = await Promise.all([
-        fetch("/api/symbols", { cache: "no-store" }), fetch("/api/groups", { cache: "no-store" }), fetch("/api/mrz/events?limit=500", { cache: "no-store" }), fetch("/api/notifications/preferences", { cache: "no-store" }),
+      const needsLocationHistory = routeName() === "location-distribution";
+      const [symbolsResponse, groupsResponse, eventsResponse, preferencesResponse, locationHistoryResponse] = await Promise.all([
+        fetch("/api/symbols", { cache: "no-store" }), fetch("/api/groups", { cache: "no-store" }), fetch("/api/mrz/events?limit=500", { cache: "no-store" }), fetch("/api/notifications/preferences", { cache: "no-store" }), needsLocationHistory ? fetch(`/api/location-distribution/history?window=${state.locationWindow}`, { cache: "no-store" }) : Promise.resolve(null),
       ]);
-      if (![symbolsResponse, groupsResponse, eventsResponse, preferencesResponse].every((response) => response.ok)) throw new Error("One or more MRZ workspace sources are unavailable.");
+      if (![symbolsResponse, groupsResponse, eventsResponse, preferencesResponse, locationHistoryResponse].filter(Boolean).every((response) => response.ok)) throw new Error("One or more MRZ workspace sources are unavailable.");
       state.symbolPayload = await symbolsResponse.json(); state.symbols = state.symbolPayload.symbols || [];
       state.groups = (await groupsResponse.json()).groups || [];
       state.events = (await eventsResponse.json()).events || [];
       state.preferences = await preferencesResponse.json();
+      state.locationHistory = locationHistoryResponse ? await locationHistoryResponse.json() : null;
       if (state.groups.length === 1) state.selectedGroupId = String(state.groups[0].id);
       renderAll(); $("#workspaceStatus").hidden = true;
     } catch (error) { $("#workspaceStatus").textContent = error.message || "Unable to load MRZ workspace."; $("#workspaceStatus").classList.add("error"); }
@@ -459,6 +555,7 @@
     const url = new URL(globalObject.location.href); if (symbol) url.searchParams.set("symbol", symbol); else url.searchParams.delete("symbol"); globalObject.history.replaceState({}, "", url); loadSymbolDetail(symbol).catch(showError);
   });
   $("#pressureGroupSelect")?.addEventListener("change", (event) => loadPeerPressure(event.target.value).catch(showError));
+  document.querySelectorAll("[data-location-window]").forEach((button) => button.addEventListener("click", () => loadLocationHistory(button.dataset.locationWindow)));
   $("#eventTypeFilter")?.addEventListener("change", renderEvents);
   $("#alertPreferencesForm")?.addEventListener("submit", (event) => savePreferences(event).catch(showError));
   function showError(error) { $("#workspaceStatus").hidden = false; $("#workspaceStatus").textContent = error.message || "The request could not be completed."; $("#workspaceStatus").classList.add("error"); }

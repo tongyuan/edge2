@@ -377,6 +377,15 @@ def create_app(
             "symbols": symbol_states,
         }
 
+    @application.get("/api/location-distribution/history")
+    def location_distribution_history(
+        window: str = Query("24H", pattern=r"^(24H|5D|20D)$"),
+    ) -> JSONResponse:
+        return JSONResponse(
+            repository.location_distribution_history(window),
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
     @application.get("/api/groups")
     def saved_groups() -> JSONResponse:
         return JSONResponse(

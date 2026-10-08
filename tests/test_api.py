@@ -81,6 +81,19 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(pressure["pressure_map"]["totals"], pressure["counts"])
         self.assertEqual(pressure["headline"]["label"], "Insufficient Participation")
 
+    def test_location_distribution_history_defaults_to_24h_and_rejects_unknown_windows(self) -> None:
+        response = self.client.get("/api/location-distribution/history")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["cache-control"], "no-store, max-age=0")
+        self.assertEqual(response.json()["window"], "24H")
+        self.assertEqual(response.json()["window_semantics"], "elapsed_calendar_time")
+        self.assertEqual(response.json()["universe"]["now_eligible"], 0)
+        self.assertEqual(
+            self.client.get("/api/location-distribution/history?window=30D").status_code,
+            422,
+        )
+
     def test_saved_group_crud_is_persistent_read_only_and_canonical(self) -> None:
         response = self.client.post(
             "/api/groups",
