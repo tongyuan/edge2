@@ -49,6 +49,25 @@ class DiagnosticsNavigationContractTests(unittest.TestCase):
         self.assertIn('normalized === "/mrz/formation-diagnostics"', SHELL)
         self.assertIn('normalized === "/diagnostics/activation-feasibility"', SHELL)
 
+    def test_formation_diagnostics_uses_shared_header_actions(self) -> None:
+        activation = PAGES["activation"]
+        for element_id in (
+            "headerHealth",
+            "alertSettingsButton",
+            "alertScopeLabel",
+            "notificationInboxButton",
+            "notificationUnreadBadge",
+            "notificationInboxDialog",
+            "notificationInboxSummary",
+            "notificationInboxList",
+            "notificationMarkAllRead",
+            "notificationClearInbox",
+        ):
+            with self.subTest(element_id=element_id):
+                self.assertIn(f'id="{element_id}"', activation)
+        self.assertIn('href="/mrz/alert-settings"', activation)
+        self.assertIn('/static/notifications.js', activation)
+
 
 if __name__ == "__main__":
     unittest.main()

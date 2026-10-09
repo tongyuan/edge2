@@ -136,6 +136,7 @@
     constructor() {
       this.button = document.querySelector("#notificationButton");
       this.status = document.querySelector("#notificationStatus");
+      this.alertScopeLabel = document.querySelector("#alertScopeLabel");
       this.toastHost = document.querySelector("#notificationToastHost");
       this.inboxButton = document.querySelector("#notificationInboxButton");
       this.unreadBadge = document.querySelector("#notificationUnreadBadge");
@@ -194,22 +195,42 @@
       this.cursor = Number(this.config.latest_notification_id) || 0;
     }
 
+    async loadAlertScope() {
+      if (!this.alertScopeLabel) return;
+      const response = await fetch("/api/notifications/preferences", { cache: "no-store" });
+      if (!response.ok) throw new Error("Notification preferences are unavailable.");
+      const preferences = await response.json();
+      this.alertScopeLabel.textContent = preferences.alert_scope === "TRACKED_GROUPS_ONLY"
+        ? "Alerts: Tracked Groups"
+        : "Alerts: All Symbols";
+    }
+
     async initialize() {
-      this.button.addEventListener("click", () => this.toggle());
-      this.inboxButton.addEventListener("click", () => {
-        this.openInbox().catch(() => this.showInboxError());
-      });
-      this.inboxClose.addEventListener("click", () => this.inboxDialog.close());
-      this.markAllReadButton.addEventListener("click", () => {
-        this.markAllRead().catch(() => this.showInboxError());
-      });
-      this.clearInboxButton.addEventListener("click", () => {
-        this.clearInbox().catch(() => this.showInboxError());
-      });
-      try {
-        await this.refreshInbox();
-      } catch {
-        this.showInboxError();
+      if (this.button) this.button.addEventListener("click", () => this.toggle());
+      if (this.inboxButton) {
+        this.inboxButton.addEventListener("click", () => {
+          this.openInbox().catch(() => this.showInboxError());
+        });
+        this.inboxClose?.addEventListener("click", () => this.inboxDialog.close());
+        this.markAllReadButton?.addEventListener("click", () => {
+          this.markAllRead().catch(() => this.showInboxError());
+        });
+        this.clearInboxButton?.addEventListener("click", () => {
+          this.clearInbox().catch(() => this.showInboxError());
+        });
+        try {
+          await this.refreshInbox();
+        } catch {
+          this.showInboxError();
+        }
+      }
+      if (!this.button) {
+        try {
+          await this.loadAlertScope();
+        } catch {
+          // The link remains usable with its neutral "Alerts" label.
+        }
+        return;
       }
       try {
         await this.loadConfig();
@@ -474,7 +495,8 @@
   if (typeof document !== "undefined") {
     document.addEventListener("DOMContentLoaded", () => {
       const button = document.querySelector("#notificationButton");
-      if (button) new NotificationController().initialize();
+      const inboxButton = document.querySelector("#notificationInboxButton");
+      if (button || inboxButton) new NotificationController().initialize();
     });
   }
 

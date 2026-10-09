@@ -15,7 +15,7 @@
         <header class="workspace-header">
           <button class="mobile-nav-button" id="mobileNavButton" type="button" aria-label="Open MRZ navigation">☰</button>
           <div class="compact-identity"><strong>MRZ Monitor</strong><span>Operator workspace</span></div>
-          <div class="workspace-header-actions"><span class="header-health" id="headerHealth">● Checking system</span></div>
+          <div class="workspace-header-actions"><span class="header-health" id="headerHealth">● Checking system</span><a class="quiet-button header-alert-status" id="alertSettingsButton" href="/mrz/alert-settings">🔔 <span id="alertScopeLabel">Alerts</span></a><button class="quiet-button" id="notificationInboxButton" type="button" aria-haspopup="dialog" aria-controls="notificationInboxDialog">Inbox <span class="notification-unread-badge" id="notificationUnreadBadge" hidden>0</span></button></div>
         </header>
         <div class="report-shell">
           <header class="report-header">
@@ -121,8 +121,10 @@
         </div>
       </form>
     </dialog>
+    <dialog class="workspace-dialog inbox-dialog" id="notificationInboxDialog" aria-labelledby="notificationInboxTitle"><section><header><div><p>DELIVERY HISTORY</p><h2 id="notificationInboxTitle">Notification Inbox</h2><span id="notificationInboxSummary">No unread notifications</span></div><button class="icon-button" id="notificationInboxClose" type="button" aria-label="Close">×</button></header><p class="notification-inbox-empty" id="notificationInboxEmpty">No active notifications.</p><ul class="notification-inbox-list" id="notificationInboxList" aria-live="polite"></ul><footer><button class="quiet-button" type="button" id="notificationMarkAllRead" disabled>Mark all read</button><button class="danger-button" type="button" id="notificationClearInbox" disabled>Clear inbox</button></footer></section></dialog>
     <script src="/static/mrz-shell.js?v=mrz-collapsible-shell-20261008" defer></script>
     <script src="/static/operator-time.js?v=operator-clarity-20260824" defer></script>
+    <script src="/static/notifications.js?v=mrz-diagnostics-header-20261009" defer></script>
     <script src="/static/activation-feasibility.js?v=qualification-history-20260916" defer></script>
   </body>
 </html>

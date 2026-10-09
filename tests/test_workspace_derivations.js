@@ -31,7 +31,11 @@ const attention = deriveAttention(events, groups, { now: "2026-10-07T12:00:00Z" 
 assert.deepEqual(attention.map((event) => event.symbol), ["NVDA", "META"]);
 assert.equal(eventLabel(events[2]), "MIGRATED ↑");
 
-const rows = allGroupsRows(events, groups);
+const recentEvents = events.map((event) => ({
+  ...event,
+  occurred_at: new Date().toISOString(),
+}));
+const rows = allGroupsRows(recentEvents, groups);
 assert.equal(rows.filter((row) => row.event.symbol === "NVDA").length, 2, "one canonical event may surface in both group contexts");
 assert.equal(new Set(rows.filter((row) => row.event.symbol === "NVDA").map((row) => row.event.id)).size, 1, "group membership does not duplicate the canonical event identity");
 

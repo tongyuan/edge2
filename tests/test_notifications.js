@@ -51,6 +51,35 @@ async function testInboxBulkActionsUseDistinctConfirmedEndpoints() {
   }
 }
 
+async function testHeaderOnlyControllerLoadsSharedActionsWithoutPushSetup() {
+  const controller = Object.create(NotificationController.prototype);
+  const listeners = new Map();
+  const element = (name) => ({
+    addEventListener(type, listener) { listeners.set(`${name}:${type}`, listener); },
+  });
+  controller.button = null;
+  controller.inboxButton = element("inbox");
+  controller.inboxClose = element("close");
+  controller.markAllReadButton = element("mark-all");
+  controller.clearInboxButton = element("clear");
+  controller.inboxDialog = { close() {} };
+  let inboxRefreshes = 0;
+  let scopeLoads = 0;
+  let configLoads = 0;
+  controller.refreshInbox = async () => { inboxRefreshes += 1; };
+  controller.loadAlertScope = async () => { scopeLoads += 1; };
+  controller.loadConfig = async () => { configLoads += 1; };
+
+  await controller.initialize();
+
+  assert.equal(inboxRefreshes, 1);
+  assert.equal(scopeLoads, 1);
+  assert.equal(configLoads, 0, "header-only pages must not start Web Push setup");
+  for (const binding of ["inbox:click", "close:click", "mark-all:click", "clear:click"]) {
+    assert.equal(typeof listeners.get(binding), "function", `${binding} should be bound`);
+  }
+}
+
 function fakeSubscription(endpoint = "https://push.example.test/device") {
   return {
     endpoint,
@@ -454,6 +483,7 @@ async function main() {
   await testExpiredSubscriptionIsRenewed();
   await testServiceWorkerPushAndClick();
   await testInboxBulkActionsUseDistinctConfirmedEndpoints();
+  await testHeaderOnlyControllerLoadsSharedActionsWithoutPushSetup();
 }
 
 main().catch((error) => {
