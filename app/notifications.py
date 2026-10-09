@@ -696,15 +696,24 @@ class NotificationRepository:
             with connection.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute(
                     """
-                    SELECT *
-                    FROM web_push_notifications
-                    WHERE deliverable = TRUE
-                      AND dismissed_at IS NULL
-                      AND event_type IN (
+                    SELECT n.*
+                    FROM web_push_notifications n
+                    CROSS JOIN notification_preferences p
+                    WHERE n.deliverable = TRUE
+                      AND n.dismissed_at IS NULL
+                      AND n.event_type IN (
                           'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
                           'POST_ACTIVATION_PRESSURE_CHANGED'
                       )
-                    ORDER BY occurred_at DESC, id DESC
+                      AND (
+                          p.alert_scope = 'ALL_SYMBOLS'
+                          OR EXISTS (
+                              SELECT 1
+                              FROM saved_symbol_groups g
+                              WHERE n.symbol = ANY(g.member_symbols)
+                          )
+                      )
+                    ORDER BY n.occurred_at DESC, n.id DESC
                     LIMIT %s
                     """,
                     (limit,),
@@ -713,14 +722,23 @@ class NotificationRepository:
                 cursor.execute(
                     """
                     SELECT
-                        COUNT(*) FILTER (WHERE read_at IS NULL) AS unread_count,
-                        COUNT(*) FILTER (WHERE read_at IS NOT NULL) AS read_count
-                    FROM web_push_notifications
-                    WHERE deliverable = TRUE
-                      AND dismissed_at IS NULL
-                      AND event_type IN (
+                        COUNT(*) FILTER (WHERE n.read_at IS NULL) AS unread_count,
+                        COUNT(*) FILTER (WHERE n.read_at IS NOT NULL) AS read_count
+                    FROM web_push_notifications n
+                    CROSS JOIN notification_preferences p
+                    WHERE n.deliverable = TRUE
+                      AND n.dismissed_at IS NULL
+                      AND n.event_type IN (
                           'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
                           'POST_ACTIVATION_PRESSURE_CHANGED'
+                      )
+                      AND (
+                          p.alert_scope = 'ALL_SYMBOLS'
+                          OR EXISTS (
+                              SELECT 1
+                              FROM saved_symbol_groups g
+                              WHERE n.symbol = ANY(g.member_symbols)
+                          )
                       )
                     """
                 )
@@ -783,16 +801,25 @@ class NotificationRepository:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    UPDATE web_push_notifications
+                    UPDATE web_push_notifications n
                     SET read_at = clock_timestamp()
-                    WHERE deliverable = TRUE
-                      AND read_at IS NULL
-                      AND dismissed_at IS NULL
-                      AND event_type IN (
+                    FROM notification_preferences p
+                    WHERE n.deliverable = TRUE
+                      AND n.read_at IS NULL
+                      AND n.dismissed_at IS NULL
+                      AND n.event_type IN (
                           'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
                           'POST_ACTIVATION_PRESSURE_CHANGED'
                       )
-                    RETURNING id
+                      AND (
+                          p.alert_scope = 'ALL_SYMBOLS'
+                          OR EXISTS (
+                              SELECT 1
+                              FROM saved_symbol_groups g
+                              WHERE n.symbol = ANY(g.member_symbols)
+                          )
+                      )
+                    RETURNING n.id
                     """
                 )
                 return len(cursor.fetchall())

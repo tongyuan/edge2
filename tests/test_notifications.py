@@ -663,6 +663,70 @@ class NotificationIntegrationTests(unittest.TestCase):
             self.scalar("SELECT dismissed_at FROM web_push_notifications")
         )
 
+    def test_tracked_scope_filters_inbox_items_counts_and_mark_all_read(self) -> None:
+        self.activate()
+        self.activate_btc()
+        self.assertEqual(
+            {item["symbol"] for item in self.inbox()["items"]},
+            {"SPXUSDT", "BTCUSDT"},
+        )
+        self.client.post(
+            "/api/groups",
+            json={"name": "Index Focus", "members": ["SPXUSDT"]},
+        )
+        preferences = self.client.put(
+            "/api/notifications/preferences",
+            json={
+                "alert_scope": "TRACKED_GROUPS_ONLY",
+                "activation_enabled": True,
+                "migration_enabled": True,
+                "pressure_enabled": True,
+                "near_miss_enabled": True,
+            },
+        )
+        self.assertEqual(preferences.status_code, 200, preferences.text)
+
+        tracked = self.inbox()
+        self.assertEqual([item["symbol"] for item in tracked["items"]], ["SPXUSDT"])
+        self.assertEqual(tracked["unread_count"], 1)
+        self.assertEqual(tracked["read_count"], 0)
+        self.assertEqual(
+            self.scalar("SELECT COUNT(*) FROM web_push_notifications"),
+            2,
+            "scope filtering must preserve canonical notification history",
+        )
+
+        marked = self.client.post("/api/notifications/inbox/mark-all-read")
+        self.assertEqual(marked.status_code, 200, marked.text)
+        self.assertEqual(marked.json()["updated_count"], 1)
+        self.assertEqual(self.inbox()["unread_count"], 0)
+        self.assertIsNone(
+            self.scalar(
+                "SELECT read_at FROM web_push_notifications "
+                "WHERE symbol = 'BTCUSDT'"
+            ),
+            "hidden out-of-scope history must not be mutated by Mark all read",
+        )
+
+        all_symbols = self.client.put(
+            "/api/notifications/preferences",
+            json={
+                "alert_scope": "ALL_SYMBOLS",
+                "activation_enabled": True,
+                "migration_enabled": True,
+                "pressure_enabled": True,
+                "near_miss_enabled": True,
+            },
+        )
+        self.assertEqual(all_symbols.status_code, 200, all_symbols.text)
+        expanded = self.inbox()
+        self.assertEqual(
+            {item["symbol"] for item in expanded["items"]},
+            {"SPXUSDT", "BTCUSDT"},
+        )
+        self.assertEqual(expanded["unread_count"], 1)
+        self.assertEqual(expanded["read_count"], 1)
+
     def test_mark_all_read_preserves_every_inbox_record(self) -> None:
         self.activate()
         self.post_spx(5, "120")
