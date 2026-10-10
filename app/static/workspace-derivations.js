@@ -274,7 +274,7 @@
       .filter((group) => group.rows.length > 0);
   }
 
-  function deriveBreadthLeadership(history = {}, pressureReport = {}) {
+  function contextualizeLocationMovements(history = {}, pressureReport = {}) {
     const pressureBySymbol = new Map();
     Object.entries(pressureReport.categories || {}).forEach(([direction, members]) => {
       (members || []).forEach((member) => pressureBySymbol.set(member.symbol, direction));
@@ -310,6 +310,36 @@
         latestRelevantAt: migration.latestAt || movement.current_observed_at || null,
       };
     });
+    return { movements, migrationBySymbol, migrationState };
+  }
+
+  function deriveLocationFlowDetails(history = {}, pressureReport = {}) {
+    const { movements } = contextualizeLocationMovements(history, pressureReport);
+    function sorted(direction) {
+      const confirmingPressure = direction === "higher" ? "higher" : direction === "lower" ? "lower" : null;
+      return movements
+        .filter((movement) => movement.direction === direction)
+        .sort((left, right) => (
+          Number(right.magnitude || 0) - Number(left.magnitude || 0)
+          || (confirmingPressure
+            ? Number(right.pressure === confirmingPressure) - Number(left.pressure === confirmingPressure)
+            : 0)
+          || (confirmingPressure
+            ? Number(right.migrationEvents.some((event) => event.direction === direction))
+              - Number(left.migrationEvents.some((event) => event.direction === direction))
+            : 0)
+          || compareSymbol(left, right)
+        ));
+    }
+    return {
+      higher: sorted("higher"),
+      lower: sorted("lower"),
+      unchanged: sorted("unchanged"),
+    };
+  }
+
+  function deriveBreadthLeadership(history = {}, pressureReport = {}) {
+    const { movements, migrationBySymbol, migrationState } = contextualizeLocationMovements(history, pressureReport);
     const confirmation = {
       higher: { higher: 0, neutral: 0, lower: 0 },
       lower: { higher: 0, neutral: 0, lower: 0 },
@@ -382,6 +412,7 @@
     SYMBOL_BOARD_SORT_STORAGE_KEY,
     allGroupsRows,
     currentAuthorityRow,
+    deriveLocationFlowDetails,
     deriveAttention,
     deriveBreadthLeadership,
     eventDirection,

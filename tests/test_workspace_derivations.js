@@ -4,6 +4,7 @@ const {
   currentAuthorityRow,
   deriveAttention,
   deriveBreadthLeadership,
+  deriveLocationFlowDetails,
   eventLabel,
   groupSymbolBoardRows,
   normalizeSymbolBoardSort,
@@ -186,6 +187,26 @@ assert.deepEqual(breadthReport.migrationBreadth, { up_only: 1, down_only: 1, mix
 assert.equal(breadthReport.currentLocationPressure.deep_discount.counts.lower, 3);
 assert.equal(breadthReport.historicalPressureAvailable, false);
 
+const flowDetails = deriveLocationFlowDetails(breadthHistory, breadthPressure);
+assert.deepEqual(flowDetails.higher.map((item) => item.symbol), ["UP_CONFIRMED", "UP_DIVERGENT", "UP_NEUTRAL"]);
+assert.deepEqual(flowDetails.lower.map((item) => item.symbol), ["DOWN_CONFIRMED", "DOWN_DIVERGENT", "DOWN_NEUTRAL"]);
+assert.deepEqual(flowDetails.unchanged.map((item) => item.symbol), ["UNCHANGED"]);
+assert.equal(flowDetails.higher[0].start_location_label, "Deep Discount");
+assert.equal(flowDetails.higher[0].current_location_label, "Shallow Premium");
+assert.equal(flowDetails.higher[0].magnitude, 3);
+assert.equal(flowDetails.higher[0].pressure, "higher");
+assert.deepEqual(flowDetails.higher[0].migrationEvents.map((event) => event.direction), ["higher"]);
+assert.equal(flowDetails.higher.length, breadthHistory.flow.moved_higher, "aggregate higher count remains unchanged");
+assert.equal(flowDetails.lower.length, breadthHistory.flow.moved_lower, "aggregate lower count remains unchanged");
+assert.equal(flowDetails.unchanged.length, breadthHistory.flow.unchanged, "aggregate unchanged count remains unchanged");
+
+const refreshedFlow = deriveLocationFlowDetails({
+  symbol_movements: [{ symbol: "NEW_WINDOW", direction: "higher", magnitude: 1 }],
+  migration_events: [],
+}, { categories: { neutral: [{ symbol: "NEW_WINDOW" }] } });
+assert.deepEqual(refreshedFlow.higher.map((item) => item.symbol), ["NEW_WINDOW"], "window refresh derives only the new response symbols");
+assert.equal(refreshedFlow.higher.some((item) => item.symbol === "UP_CONFIRMED"), false, "window refresh retains no stale symbols");
+
 const leaderSortReport = deriveBreadthLeadership({
   flow: { moved_higher: 3, moved_lower: 0, unchanged: 0, net_higher: 3, comparable_symbols: 3 },
   symbol_movements: [
@@ -203,4 +224,24 @@ assert.deepEqual(
   leaderSortReport.leaders.map((item) => item.symbol),
   ["MIGRATION_FIRST", "ALPHA", "BETA"],
   "leaders sort by confirming migration, magnitude, recency, then deterministic symbol",
+);
+
+const flowSortReport = deriveLocationFlowDetails({
+  symbol_movements: [
+    { symbol: "BETA", direction: "higher", magnitude: 2 },
+    { symbol: "ALPHA", direction: "higher", magnitude: 2 },
+    { symbol: "PRESSURE_FIRST", direction: "higher", magnitude: 1 },
+    { symbol: "MIGRATION_SECOND", direction: "higher", magnitude: 1 },
+  ],
+  migration_events: [{ symbol: "MIGRATION_SECOND", direction: "higher", occurred_at: "2026-10-10T09:00:00Z" }],
+}, {
+  categories: {
+    higher: [{ symbol: "PRESSURE_FIRST" }],
+    neutral: [{ symbol: "ALPHA" }, { symbol: "BETA" }, { symbol: "MIGRATION_SECOND" }],
+  },
+});
+assert.deepEqual(
+  flowSortReport.higher.map((item) => item.symbol),
+  ["ALPHA", "BETA", "PRESSURE_FIRST", "MIGRATION_SECOND"],
+  "flow sorting is magnitude, confirming pressure, confirming migration, then symbol",
 );

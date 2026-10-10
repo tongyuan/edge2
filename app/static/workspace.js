@@ -11,6 +11,8 @@
     preferences: null,
     locationHistory: null,
     locationWindow: "24H",
+    locationFlowSelection: null,
+    locationFlowPressure: "all",
     selectedGroupId: "all",
     editingGroupId: null,
     symbolBoardSort: derive.restoreSymbolBoardSort(globalObject.localStorage),
@@ -408,9 +410,9 @@
       flowMetric("NET LOCATION FLOW", formatSigned(netFlow), `${netFlow > 0 ? "higher" : netFlow < 0 ? "lower" : "balanced"} · ${flow.comparable_symbols || 0} comparable`),
     );
     const flowSummary = $("#locationFlowSummary"); flowSummary.replaceChildren(
-      flowMetric("MOVED HIGHER", flow.moved_higher || 0, `${flow.comparable_symbols || 0} comparable symbols`),
-      flowMetric("MOVED LOWER", flow.moved_lower || 0, `${flow.comparable_symbols || 0} comparable symbols`),
-      flowMetric("UNCHANGED", flow.unchanged || 0, `Net ${formatSigned(netFlow)} ${netFlow > 0 ? "higher" : netFlow < 0 ? "lower" : "balanced"}`),
+      locationFlowButton("higher", "MOVED HIGHER", flow.moved_higher || 0, `${flow.comparable_symbols || 0} comparable symbols`),
+      locationFlowButton("lower", "MOVED LOWER", flow.moved_lower || 0, `${flow.comparable_symbols || 0} comparable symbols`),
+      locationFlowButton("unchanged", "UNCHANGED", flow.unchanged || 0, `Net ${formatSigned(netFlow)} ${netFlow > 0 ? "higher" : netFlow < 0 ? "lower" : "balanced"}`),
     );
     const transitions = $("#locationDominantTransitions"); transitions.replaceChildren();
     if (!(history.dominant_transitions || []).length) {
@@ -418,10 +420,74 @@
     } else {
       history.dominant_transitions.forEach((transition) => {
         const item = element("li", "");
-        item.append(document.createTextNode(`${transition.from_label} → ${transition.to_label} · `), element("strong", "", String(transition.count)));
+        const button = element("button", "location-transition-button", `${transition.from_label} → ${transition.to_label} · ${transition.count}`);
+        button.type = "button";
+        button.setAttribute("aria-pressed", String(state.locationFlowSelection?.fromKey === transition.from_key && state.locationFlowSelection?.toKey === transition.to_key));
+        button.addEventListener("click", () => {
+          state.locationFlowSelection = { fromKey: transition.from_key, toKey: transition.to_key, label: `${transition.from_label} → ${transition.to_label}` };
+          state.locationFlowPressure = "all";
+          renderLocationHistory();
+        });
+        item.append(button);
         transitions.append(item);
       });
     }
+    renderLocationFlowDrilldown();
+  }
+  function locationFlowButton(direction, label, value, support) {
+    const button = element("button", "");
+    button.type = "button";
+    button.setAttribute("aria-controls", "locationFlowDrilldown");
+    button.setAttribute("aria-expanded", String(state.locationFlowSelection?.direction === direction));
+    button.append(element("span", "", label), element("strong", "", String(value)), element("small", "", support));
+    button.addEventListener("click", () => {
+      state.locationFlowSelection = { direction, label: label.replace("MOVED ", "Moved ").replace("UNCHANGED", "Unchanged") };
+      state.locationFlowPressure = "all";
+      renderLocationHistory();
+    });
+    return button;
+  }
+  function renderLocationFlowDrilldown() {
+    const panel = $("#locationFlowDrilldown");
+    const selection = state.locationFlowSelection;
+    if (!selection || !state.locationHistory) {
+      panel.hidden = true;
+      $("#locationFlowSymbols").replaceChildren();
+      return;
+    }
+    const groups = derive.deriveLocationFlowDetails(state.locationHistory, state.symbolPayload?.pressure || {});
+    const allRows = selection.direction
+      ? groups[selection.direction] || []
+      : Object.values(groups).flat().filter((item) => item.start_location === selection.fromKey && item.current_location === selection.toKey);
+    const rows = state.locationFlowPressure === "all"
+      ? allRows
+      : allRows.filter((item) => item.pressure === state.locationFlowPressure);
+    panel.hidden = false;
+    $("#locationFlowDrilldownHeading").textContent = `${selection.label} · ${allRows.length}`;
+    $("#locationFlowDrilldownSupport").textContent = `${state.locationWindow} start → current · ${rows.length} shown`;
+    document.querySelectorAll("[data-flow-pressure]").forEach((button) => {
+      button.setAttribute("aria-pressed", String(button.dataset.flowPressure === state.locationFlowPressure));
+    });
+    const list = $("#locationFlowSymbols"); list.replaceChildren();
+    if (!rows.length) {
+      list.append(element("li", "flow-empty", "No symbols match this pressure filter."));
+      return;
+    }
+    rows.forEach((item) => {
+      const row = element("li", "");
+      const direction = item.direction === "higher" ? "Higher" : item.direction === "lower" ? "Lower" : "Unchanged";
+      const magnitude = item.direction === "higher" ? `+${item.magnitude}` : item.direction === "lower" ? `-${item.magnitude}` : "0";
+      const migrationDirections = new Set(item.migrationEvents.map((event) => event.direction));
+      const migration = migrationDirections.size > 1 ? "↑ + ↓" : migrationDirections.has("higher") ? "↑" : migrationDirections.has("lower") ? "↓" : "—";
+      row.append(
+        symbolLink(item.symbol, item.symbol),
+        element("span", "", `${item.start_location_label} → ${item.current_location_label}`),
+        element("span", "flow-magnitude", `${magnitude} bucket${item.magnitude === 1 ? "" : "s"} · ${direction}`),
+        element("span", `pressure-${item.pressure}`, `Pressure: ${pressureLabels[item.pressure] || pressureLabels.neutral}`),
+        element("span", "", `MRZ migration: ${migration}`),
+      );
+      list.append(row);
+    });
   }
   function percentage(numerator, denominator) {
     return denominator ? `${((Number(numerator) / Number(denominator)) * 100).toFixed(1)}%` : "0.0%";
@@ -518,6 +584,8 @@
   async function loadLocationHistory(window) {
     state.locationWindow = window;
     $("#locationHistoryStatus").textContent = "Loading canonical history…";
+    $("#locationFlowSymbols").replaceChildren();
+    if (state.locationFlowSelection) $("#locationFlowDrilldownSupport").textContent = `Loading ${window} flow…`;
     document.querySelectorAll("[data-location-window]").forEach((button) => {
       button.disabled = true;
       button.setAttribute("aria-pressed", String(button.dataset.locationWindow === window));
@@ -663,6 +731,14 @@
   });
   document.querySelectorAll("[data-location-window]").forEach((button) => button.addEventListener("click", () => loadLocationHistory(button.dataset.locationWindow)));
   document.querySelectorAll("[data-breadth-window]").forEach((button) => button.addEventListener("click", () => loadLocationHistory(button.dataset.breadthWindow)));
+  $("#locationFlowDrilldownClose")?.addEventListener("click", () => {
+    state.locationFlowSelection = null;
+    renderLocationHistory();
+  });
+  document.querySelectorAll("[data-flow-pressure]").forEach((button) => button.addEventListener("click", () => {
+    state.locationFlowPressure = button.dataset.flowPressure;
+    renderLocationFlowDrilldown();
+  }));
   $("#eventTypeFilter")?.addEventListener("change", renderEvents);
   $("#alertPreferencesForm")?.addEventListener("submit", (event) => savePreferences(event).catch(showError));
   function showError(error) { $("#workspaceStatus").hidden = false; $("#workspaceStatus").textContent = error.message || "The request could not be completed."; $("#workspaceStatus").classList.add("error"); }

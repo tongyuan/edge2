@@ -188,6 +188,27 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertIn('<h1>Pressure</h1>', HTML)
         self.assertNotIn('<h1>Structural location × canonical pressure</h1>', HTML)
 
+    def test_location_flow_cards_expose_shared_symbol_drilldown(self) -> None:
+        for target in (
+            "locationFlowDrilldown",
+            "locationFlowDrilldownHeading",
+            "locationFlowDrilldownClose",
+            "locationFlowFilters",
+            "locationFlowSymbols",
+        ):
+            self.assertIn(f'id="{target}"', HTML)
+        for direction in ("all", "higher", "lower", "neutral"):
+            self.assertIn(f'data-flow-pressure="{direction}"', HTML)
+        self.assertIn("locationFlowButton(\"higher\"", JS)
+        self.assertIn("locationFlowButton(\"lower\"", JS)
+        self.assertIn("derive.deriveLocationFlowDetails", JS)
+        self.assertIn("item.start_location_label", JS)
+        self.assertIn("item.current_location_label", JS)
+        self.assertIn("item.migrationEvents", JS)
+        self.assertIn("symbolLink(item.symbol, item.symbol)", JS)
+        self.assertIn("location-transition-button", JS)
+        self.assertIn("Loading ${window} flow", JS)
+
 
 if __name__ == "__main__":
     unittest.main()
