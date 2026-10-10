@@ -78,6 +78,10 @@ class LocationDistributionHistoryPayloadTests(unittest.TestCase):
                 ("shallow_discount", "deep_discount", 1),
             ],
         )
+        self.assertEqual(
+            [(item["symbol"], item["direction"], item["magnitude"]) for item in payload["symbol_movements"]],
+            [("UP", "higher", 1), ("DOWN", "lower", 1), ("SAME", "unchanged", 0)],
+        )
 
     def test_empty_history_is_denominator_safe(self) -> None:
         payload = location_distribution_history_payload(
@@ -161,6 +165,8 @@ class LocationDistributionHistoryRepositoryTests(unittest.TestCase):
         self.assertEqual(payload["flow"]["moved_higher"], 1)
         self.assertEqual(payload["flow"]["moved_lower"], 1)
         self.assertEqual(payload["flow"]["unchanged"], 1)
+        self.assertEqual(len(payload["symbol_movements"]), 3)
+        self.assertEqual(payload["migration_events"], [])
 
     def test_repository_applies_5d_and_20d_elapsed_cutoffs(self) -> None:
         self.ingest("RANGE", "110", NOW - timedelta(days=25), 1)

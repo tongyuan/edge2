@@ -423,6 +423,86 @@
       });
     }
   }
+  function percentage(numerator, denominator) {
+    return denominator ? `${((Number(numerator) / Number(denominator)) * 100).toFixed(1)}%` : "0.0%";
+  }
+  function migrationStateLabel(stateValue) {
+    return { up_only: "Up-only", down_only: "Down-only", mixed: "Mixed", none: "No migration" }[stateValue] || "No migration";
+  }
+  function renderLeadershipRows(targetSelector, rows) {
+    const target = $(targetSelector); target.replaceChildren();
+    if (!rows.length) {
+      const row = element("tr", ""); const cell = element("td", "", "No qualifying symbols in this window.");
+      cell.colSpan = 7; row.append(cell); target.append(row); return;
+    }
+    rows.forEach((item) => {
+      const row = element("tr", "");
+      const symbolCell = element("td", ""); symbolCell.append(symbolLink(item.symbol, item.symbol));
+      const move = `${item.direction === "higher" ? "↑" : "↓"} ${item.magnitude} bucket${item.magnitude === 1 ? "" : "s"}`;
+      row.append(
+        symbolCell,
+        element("td", "", item.start_location_label),
+        element("td", "", item.current_location_label),
+        element("td", item.direction === "higher" ? "location-change-higher" : "location-change-lower", move),
+        element("td", `pressure-${item.pressure}`, pressureLabels[item.pressure] || pressureLabels.neutral),
+        element("td", "", `${migrationStateLabel(item.migrationState)}${item.migrationEvents.length ? ` · ${item.migrationEvents.length}` : ""}`),
+        element("td", "", exactTime(item.latestRelevantAt)),
+      );
+      target.append(row);
+    });
+  }
+  function renderDivergenceSymbols(targetSelector, rows) {
+    const target = $(targetSelector); target.replaceChildren();
+    if (!rows.length) { target.append(element("span", "empty-inline", "No divergence in this window.")); return; }
+    const links = element("div", "research-symbol-links");
+    rows.forEach((item) => links.append(symbolLink(item.symbol, item.symbol)));
+    target.append(links);
+  }
+  function renderBreadthLeadership() {
+    const report = derive.deriveBreadthLeadership(state.locationHistory || {}, state.symbolPayload?.pressure || {});
+    document.querySelectorAll("[data-breadth-window]").forEach((button) => {
+      button.setAttribute("aria-pressed", String(button.dataset.breadthWindow === state.locationWindow));
+    });
+    const breadth = report.breadth;
+    const universe = report.universe;
+    $("#breadthSummaryHeading").textContent = `${report.window} structural breadth`;
+    $("#breadthResearchSummary").textContent = `Structural participation is ${breadth.participationPct.toFixed(1)}%: ${breadth.movedHigher + breadth.movedLower} of ${breadth.comparable} comparable symbols changed bucket over the last ${report.window}. Higher and lower flows produce net breadth ${formatSigned(breadth.netHigher)} ${breadth.netHigher > 0 ? "higher" : breadth.netHigher < 0 ? "lower" : "balanced"}. ${report.confirmationRates.higher.numerator} of ${report.confirmationRates.higher.denominator} higher movers currently show Higher pressure.`;
+    $("#breadthUniverseDisclosure").textContent = `${universe.now_eligible || 0} eligible now · ${universe.then_eligible || 0} eligible then · ${universe.common_eligible || 0} comparable · ${universe.added_or_became_eligible || 0} added/became eligible · ${universe.removed_or_became_ineligible || 0} removed/became ineligible. Universe changes are excluded from movement breadth.`;
+    $("#breadthMetrics").replaceChildren(
+      flowMetric("MOVED HIGHER", breadth.movedHigher, "Comparable symbols"),
+      flowMetric("MOVED LOWER", breadth.movedLower, "Comparable symbols"),
+      flowMetric("UNCHANGED", breadth.unchanged, "Comparable symbols"),
+      flowMetric("NET BREADTH", formatSigned(breadth.netHigher), breadth.netHigher > 0 ? "higher" : breadth.netHigher < 0 ? "lower" : "balanced"),
+      flowMetric("PARTICIPATION", `${breadth.participationPct.toFixed(1)}%`, `${breadth.movedHigher + breadth.movedLower} of ${breadth.comparable}`),
+    );
+    const confirmationRows = $("#pressureConfirmationRows"); confirmationRows.replaceChildren();
+    [["Moved higher", report.confirmation.higher], ["Moved lower", report.confirmation.lower]].forEach(([label, counts]) => {
+      const row = element("tr", ""); row.append(element("td", "", label), element("td", "pressure-higher", String(counts.higher)), element("td", "pressure-neutral", String(counts.neutral)), element("td", "pressure-lower", String(counts.lower))); confirmationRows.append(row);
+    });
+    const higherRate = report.confirmationRates.higher; const lowerRate = report.confirmationRates.lower;
+    $("#confirmationRates").replaceChildren(
+      flowMetric("HIGHER-MOVER CONFIRMATION", percentage(higherRate.numerator, higherRate.denominator), `${higherRate.numerator} of ${higherRate.denominator} · current Higher pressure`),
+      flowMetric("LOWER-MOVER CONFIRMATION", percentage(lowerRate.numerator, lowerRate.denominator), `${lowerRate.numerator} of ${lowerRate.denominator} · current Lower pressure`),
+    );
+    renderLeadershipRows("#breadthLeaders", report.leaders);
+    renderLeadershipRows("#breadthLaggards", report.laggards);
+    renderDivergenceSymbols("#higherLowerDivergences", report.divergences.higherWithLower);
+    renderDivergenceSymbols("#lowerHigherDivergences", report.divergences.lowerWithHigher);
+    const migration = report.migrationBreadth;
+    $("#migrationBreadth").replaceChildren(
+      flowMetric("UP-ONLY", migration.up_only, "Unique symbols"),
+      flowMetric("DOWN-ONLY", migration.down_only, "Unique symbols"),
+      flowMetric("MIXED", migration.mixed, "Both directions"),
+      flowMetric("NO MIGRATION", migration.none, "Comparable symbols"),
+      flowMetric("MIGRATING SYMBOLS", migration.uniqueSymbols, "Unique symbols"),
+      flowMetric("MIGRATION EVENTS", migration.eventCount, "Canonical events"),
+    );
+    const pressureRows = $("#locationPressureRows"); pressureRows.replaceChildren();
+    ["deep_discount", "shallow_discount", "at_eqm", "shallow_premium", "deep_premium"].forEach((key) => {
+      const counts = report.currentLocationPressure[key]?.counts || {};
+      const row = element("tr", ""); row.append(element("td", "", locationLabels[key]), element("td", "pressure-higher", String(counts.higher || 0)), element("td", "pressure-neutral", String(counts.neutral || 0)), element("td", "pressure-lower", String(counts.lower || 0))); pressureRows.append(row);
+    });
+  }
   function flowMetric(label, value, support) {
     const node = element("article", "");
     node.append(element("span", "", label), element("strong", "", String(value)), element("small", "", support));
@@ -447,6 +527,7 @@
       if (!response.ok) throw new Error("Unable to load canonical location history.");
       state.locationHistory = await response.json();
       renderLocationDistribution();
+      renderBreadthLeadership();
     } catch (error) {
       $("#locationHistoryStatus").textContent = error.message || "Unable to load canonical location history.";
     } finally {
@@ -542,12 +623,12 @@
 
   function renderAll() {
     const attention = derive.deriveAttention(state.events, state.groups);
-    renderOverview(attention); renderWatchlists(attention); renderAttention(attention); renderSymbolOptions(); renderPressure(); renderLocationDistribution(); renderEvents(); renderPreferences();
+    renderOverview(attention); renderWatchlists(attention); renderAttention(attention); renderSymbolOptions(); renderPressure(); renderLocationDistribution(); renderBreadthLeadership(); renderEvents(); renderPreferences();
   }
   async function initialize() {
     activateRoute();
     try {
-      const needsLocationHistory = routeName() === "location-distribution";
+      const needsLocationHistory = ["location-distribution", "breadth-leadership"].includes(routeName());
       const [symbolsResponse, groupsResponse, eventsResponse, preferencesResponse, locationHistoryResponse] = await Promise.all([
         fetch("/api/symbols", { cache: "no-store" }), fetch("/api/groups", { cache: "no-store" }), fetch("/api/mrz/events?limit=500", { cache: "no-store" }), fetch("/api/notifications/preferences", { cache: "no-store" }), needsLocationHistory ? fetch(`/api/location-distribution/history?window=${state.locationWindow}`, { cache: "no-store" }) : Promise.resolve(null),
       ]);
@@ -581,6 +662,7 @@
     );
   });
   document.querySelectorAll("[data-location-window]").forEach((button) => button.addEventListener("click", () => loadLocationHistory(button.dataset.locationWindow)));
+  document.querySelectorAll("[data-breadth-window]").forEach((button) => button.addEventListener("click", () => loadLocationHistory(button.dataset.breadthWindow)));
   $("#eventTypeFilter")?.addEventListener("change", renderEvents);
   $("#alertPreferencesForm")?.addEventListener("submit", (event) => savePreferences(event).catch(showError));
   function showError(error) { $("#workspaceStatus").hidden = false; $("#workspaceStatus").textContent = error.message || "The request could not be completed."; $("#workspaceStatus").classList.add("error"); }

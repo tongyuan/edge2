@@ -22,6 +22,7 @@ class WorkspaceContractTests(unittest.TestCase):
             ("/mrz/pressure", "Pressure"),
             ("/mrz/alert-settings", "Alert Settings"),
             ("/mrz/location-distribution", "Location Distribution"),
+            ("/mrz/breadth-leadership", "Breadth & Leadership"),
             ("/mrz/formation-diagnostics", "Formation Diagnostics"),
             ("/mrz/events", "Events"),
         ):
@@ -163,6 +164,29 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertIn("Start/end bucket per comparable symbol", HTML)
         self.assertIn('netFlow < 0 ? "lower" : "balanced"', JS)
         self.assertNotIn('formatSigned(flow.net_higher)} higher', JS)
+
+    def test_breadth_leadership_is_separate_research_route(self) -> None:
+        self.assertIn('data-route-panel="breadth-leadership"', HTML)
+        self.assertIn('name: "breadth-leadership"', SHELL)
+        self.assertIn('@application.get("/mrz/breadth-leadership"', API)
+        for window in ("24H", "5D", "20D"):
+            self.assertIn(f'data-breadth-window="{window}"', HTML)
+        for target in (
+            "breadthMetrics",
+            "pressureConfirmationRows",
+            "confirmationRates",
+            "breadthLeaders",
+            "breadthLaggards",
+            "higherLowerDivergences",
+            "lowerHigherDivergences",
+            "migrationBreadth",
+            "locationPressureRows",
+        ):
+            self.assertIn(f'id="{target}"', HTML)
+        self.assertIn("derive.deriveBreadthLeadership", JS)
+        self.assertIn("Historical pressure state is not stored or safely reconstructable", HTML)
+        self.assertIn('<h1>Pressure</h1>', HTML)
+        self.assertNotIn('<h1>Structural location × canonical pressure</h1>', HTML)
 
 
 if __name__ == "__main__":

@@ -147,6 +147,7 @@ def create_app(
     @application.get("/mrz/pressure", include_in_schema=False)
     @application.get("/mrz/alert-settings", include_in_schema=False)
     @application.get("/mrz/location-distribution", include_in_schema=False)
+    @application.get("/mrz/breadth-leadership", include_in_schema=False)
     @application.get("/mrz/events", include_in_schema=False)
     def mrz_workspace() -> FileResponse:
         return FileResponse(

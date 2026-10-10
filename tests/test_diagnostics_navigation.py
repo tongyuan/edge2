@@ -30,6 +30,7 @@ class DiagnosticsNavigationContractTests(unittest.TestCase):
             "/mrz/pressure",
             "/mrz/alert-settings",
             "/mrz/location-distribution",
+            "/mrz/breadth-leadership",
             "/mrz/formation-diagnostics",
             "/mrz/events",
         )

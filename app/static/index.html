@@ -9,7 +9,7 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/static/edge-mrz-icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/static/edge-mrz-icon-180.png" />
-    <link rel="stylesheet" href="/static/workspace.css?v=mrz-symbol-sort-20261010" />
+    <link rel="stylesheet" href="/static/workspace.css?v=mrz-breadth-20261010" />
   </head>
   <body>
     <div class="workspace-shell">
@@ -50,7 +50,7 @@
         </section>
 
         <section class="route-panel" data-route-panel="pressure" hidden>
-          <header class="route-heading"><p>PRESSURE</p><h1>Structural location × canonical pressure</h1><span>Current pressure uses the existing post-activation evidence model.</span></header>
+          <header class="route-heading"><p>PRESSURE</p><h1>Pressure</h1><span>Current canonical pressure across the monitored universe.</span></header>
           <section class="panel pressure-selected-context" id="pressureSelectedContext" hidden><div class="panel-heading"><div><p>SELECTED ALERT SYMBOL</p><h2 id="pressureSelectedSymbol">—</h2></div><a id="pressureSelectedDetails" href="/mrz/symbols">Open symbol details</a></div><div class="detail-block" id="pressureSelectedBody"></div></section>
           <div class="pressure-summary" id="pressureSummary"></div>
           <section class="panel"><div class="panel-heading"><div><p>PRESSURE MAP</p><h2>Monitored universe</h2></div><span>Global canonical scope</span></div><div class="pressure-map" id="pressureMap"></div></section>
@@ -75,6 +75,20 @@
           <section class="panel location-flow-panel"><div class="panel-heading"><div><p>LOCATION FLOW</p><h2 id="locationFlowHeading">During selected window</h2></div><span>Start/end bucket per comparable symbol</span></div><div class="location-flow-content"><div class="location-flow-summary" id="locationFlowSummary"></div><div class="location-transition-block"><h3>Dominant transitions</h3><ol id="locationDominantTransitions"></ol></div></div></section>
         </section>
 
+        <section class="route-panel" data-route-panel="breadth-leadership" hidden>
+          <header class="route-heading action-heading"><div><p>BREADTH &amp; LEADERSHIP</p><h1>Structural participation and confirmation</h1><span>Descriptive research across canonical location movement, current pressure, and MRZ migrations.</span></div><div class="location-window-selector" role="group" aria-label="Breadth research window"><button type="button" data-breadth-window="24H" aria-pressed="true">24H</button><button type="button" data-breadth-window="5D" aria-pressed="false">5D</button><button type="button" data-breadth-window="20D" aria-pressed="false">20D</button></div></header>
+          <section class="panel research-summary-panel"><div class="panel-heading"><div><p>RESEARCH SUMMARY</p><h2 id="breadthSummaryHeading">Selected-window structural breadth</h2></div><span>Descriptive, not predictive</span></div><p id="breadthResearchSummary" class="research-summary"></p><p id="breadthUniverseDisclosure" class="location-universe-disclosure"></p></section>
+          <section class="breadth-metrics" id="breadthMetrics" aria-label="Structural breadth summary"></section>
+          <section class="panel"><div class="panel-heading"><div><p>PRESSURE CONFIRMATION</p><h2>Structural movers × current pressure</h2></div><span>No directional inference</span></div><div class="table-scroll"><table class="research-table confirmation-table"><thead><tr><th>Structural movement</th><th>Higher pressure</th><th>Neutral pressure</th><th>Lower pressure</th></tr></thead><tbody id="pressureConfirmationRows"></tbody></table></div><div class="confirmation-rates" id="confirmationRates"></div></section>
+          <div class="research-split">
+            <section class="panel"><div class="panel-heading"><div><p>LEADERS</p><h2>Moved higher + Higher pressure</h2></div><span>Transparent ordering</span></div><div class="table-scroll"><table class="research-table leadership-table"><thead><tr><th>Symbol</th><th>Start</th><th>Current</th><th>Move</th><th>Pressure</th><th>MRZ migration</th><th>Latest relevant</th></tr></thead><tbody id="breadthLeaders"></tbody></table></div></section>
+            <section class="panel"><div class="panel-heading"><div><p>LAGGARDS</p><h2>Moved lower + Lower pressure</h2></div><span>Transparent ordering</span></div><div class="table-scroll"><table class="research-table leadership-table"><thead><tr><th>Symbol</th><th>Start</th><th>Current</th><th>Move</th><th>Pressure</th><th>MRZ migration</th><th>Latest relevant</th></tr></thead><tbody id="breadthLaggards"></tbody></table></div></section>
+          </div>
+          <section class="panel"><div class="panel-heading"><div><p>DIVERGENCES</p><h2>Structural movement without directional pressure confirmation</h2></div><span>Research cases, not reversal signals</span></div><div class="divergence-grid"><article><span>HIGHER MOVE + LOWER PRESSURE</span><div id="higherLowerDivergences"></div></article><article><span>LOWER MOVE + HIGHER PRESSURE</span><div id="lowerHigherDivergences"></div></article></div></section>
+          <section class="panel"><div class="panel-heading"><div><p>MRZ MIGRATION BREADTH</p><h2>Canonical MRZ_MIGRATED events</h2></div><span>Unique symbols and events remain separate</span></div><div class="migration-breadth-grid" id="migrationBreadth"></div></section>
+          <section class="panel"><div class="panel-heading"><div><p>LOCATION × CURRENT PRESSURE</p><h2>Current canonical universe</h2></div><span>Historical pressure comparison unavailable</span></div><div class="table-scroll"><table class="research-table location-pressure-table"><thead><tr><th>Structural location</th><th>Higher</th><th>Neutral</th><th>Lower</th></tr></thead><tbody id="locationPressureRows"></tbody></table></div><p class="research-limitation">Historical pressure state is not stored or safely reconstructable. Historical comparison is limited to structural location and canonical MRZ migration events.</p></section>
+        </section>
+
         <section class="route-panel" data-route-panel="events" hidden>
           <header class="route-heading"><p>EVENTS</p><h1>Global canonical event history</h1><span>All monitored symbols, independent of watchlists and alert interruption scope.</span></header>
           <section class="panel"><div class="panel-heading"><div><p>MRZ HISTORY</p><h2>Recent events</h2></div><label class="event-filter">TYPE<select id="eventTypeFilter"><option value="all">All events</option><option value="MRZ_ACTIVATED">Activation</option><option value="MRZ_MIGRATED">Migration</option><option value="POST_ACTIVATION_PRESSURE_CHANGED">Pressure</option><option value="MRZ_NEAR_MISS">Near-Miss</option></select></label></div><div id="eventsList"></div></section>
@@ -86,6 +100,6 @@
 
     <dialog class="workspace-dialog inbox-dialog" id="notificationInboxDialog" aria-labelledby="notificationInboxTitle"><section><header><div><p>DELIVERY HISTORY</p><h2 id="notificationInboxTitle">Notification Inbox</h2><span id="notificationInboxSummary">No unread notifications</span></div><button class="icon-button" id="notificationInboxClose" type="button" aria-label="Close">×</button></header><p class="notification-inbox-empty" id="notificationInboxEmpty">No active notifications.</p><ul class="notification-inbox-list" id="notificationInboxList" aria-live="polite"></ul><footer><button class="quiet-button" type="button" id="notificationMarkAllRead" disabled>Mark all read</button><button class="danger-button" type="button" id="notificationClearInbox" disabled>Clear inbox</button></footer></section></dialog>
     <div class="notification-toast-host" id="notificationToastHost" aria-live="polite"></div>
-    <script src="/static/mrz-shell.js?v=mrz-location-distribution-20261008" defer></script><script src="/static/operator-time.js?v=mrz-workspace-20261007" defer></script><script src="/static/heatmap-state.js?v=mrz-migration-outcomes-20261008" defer></script><script src="/static/workspace-derivations.js?v=mrz-symbol-sort-20261010" defer></script><script src="/static/notifications.js?v=mrz-inbox-actions-20261008" defer></script><script src="/static/workspace.js?v=mrz-symbol-sort-20261010" defer></script>
+    <script src="/static/mrz-shell.js?v=mrz-breadth-20261010" defer></script><script src="/static/operator-time.js?v=mrz-workspace-20261007" defer></script><script src="/static/heatmap-state.js?v=mrz-migration-outcomes-20261008" defer></script><script src="/static/workspace-derivations.js?v=mrz-breadth-20261010" defer></script><script src="/static/notifications.js?v=mrz-inbox-actions-20261008" defer></script><script src="/static/workspace.js?v=mrz-breadth-20261010" defer></script>
   </body>
 </html>

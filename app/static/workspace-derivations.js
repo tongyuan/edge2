@@ -274,12 +274,116 @@
       .filter((group) => group.rows.length > 0);
   }
 
+  function deriveBreadthLeadership(history = {}, pressureReport = {}) {
+    const pressureBySymbol = new Map();
+    Object.entries(pressureReport.categories || {}).forEach(([direction, members]) => {
+      (members || []).forEach((member) => pressureBySymbol.set(member.symbol, direction));
+    });
+    const migrationBySymbol = new Map();
+    (history.migration_events || []).forEach((event) => {
+      if (event.direction !== "higher" && event.direction !== "lower") return;
+      if (!migrationBySymbol.has(event.symbol)) migrationBySymbol.set(event.symbol, []);
+      migrationBySymbol.get(event.symbol).push(event);
+    });
+    function migrationState(symbol) {
+      const events = migrationBySymbol.get(symbol) || [];
+      const directions = new Set(events.map((event) => event.direction));
+      const state = directions.size > 1
+        ? "mixed"
+        : directions.has("higher") ? "up_only"
+          : directions.has("lower") ? "down_only" : "none";
+      return {
+        state,
+        events,
+        latestAt: events.reduce((latest, event) => (
+          timestamp(event.occurred_at) > timestamp(latest) ? event.occurred_at : latest
+        ), null),
+      };
+    }
+    const movements = (history.symbol_movements || []).map((movement) => {
+      const migration = migrationState(movement.symbol);
+      return {
+        ...movement,
+        pressure: pressureBySymbol.get(movement.symbol) || "neutral",
+        migrationState: migration.state,
+        migrationEvents: migration.events,
+        latestRelevantAt: migration.latestAt || movement.current_observed_at || null,
+      };
+    });
+    const confirmation = {
+      higher: { higher: 0, neutral: 0, lower: 0 },
+      lower: { higher: 0, neutral: 0, lower: 0 },
+    };
+    movements.forEach((movement) => {
+      if (confirmation[movement.direction]) {
+        confirmation[movement.direction][movement.pressure] += 1;
+      }
+    });
+    function leadershipRows(direction, pressure, migrationDirection) {
+      return movements
+        .filter((movement) => movement.direction === direction && movement.pressure === pressure)
+        .sort((left, right) => {
+          const leftConfirmed = left.migrationEvents.some((event) => event.direction === migrationDirection);
+          const rightConfirmed = right.migrationEvents.some((event) => event.direction === migrationDirection);
+          return Number(rightConfirmed) - Number(leftConfirmed)
+            || Number(right.magnitude || 0) - Number(left.magnitude || 0)
+            || compareNewest(left.latestRelevantAt, right.latestRelevantAt)
+            || compareSymbol(left, right);
+        });
+    }
+    const migrationSymbols = { up_only: 0, down_only: 0, mixed: 0, none: 0 };
+    migrationBySymbol.forEach((_events, symbol) => {
+      migrationSymbols[migrationState(symbol).state] += 1;
+    });
+    migrationSymbols.none = Math.max(0, movements.length - movements.filter((movement) => migrationBySymbol.has(movement.symbol)).length);
+    const flow = history.flow || {};
+    const comparable = Number(flow.comparable_symbols || movements.length || 0);
+    const moved = Number(flow.moved_higher || 0) + Number(flow.moved_lower || 0);
+    return {
+      window: history.window || "24H",
+      universe: history.universe || {},
+      breadth: {
+        movedHigher: Number(flow.moved_higher || 0),
+        movedLower: Number(flow.moved_lower || 0),
+        unchanged: Number(flow.unchanged || 0),
+        netHigher: Number(flow.net_higher || 0),
+        comparable,
+        participationPct: comparable ? (moved / comparable) * 100 : 0,
+      },
+      confirmation,
+      confirmationRates: {
+        higher: {
+          numerator: confirmation.higher.higher,
+          denominator: Number(flow.moved_higher || 0),
+        },
+        lower: {
+          numerator: confirmation.lower.lower,
+          denominator: Number(flow.moved_lower || 0),
+        },
+      },
+      leaders: leadershipRows("higher", "higher", "higher"),
+      laggards: leadershipRows("lower", "lower", "lower"),
+      divergences: {
+        higherWithLower: movements.filter((item) => item.direction === "higher" && item.pressure === "lower").sort(compareSymbol),
+        lowerWithHigher: movements.filter((item) => item.direction === "lower" && item.pressure === "higher").sort(compareSymbol),
+      },
+      migrationBreadth: {
+        ...migrationSymbols,
+        uniqueSymbols: migrationBySymbol.size,
+        eventCount: [...migrationBySymbol.values()].reduce((total, events) => total + events.length, 0),
+      },
+      currentLocationPressure: pressureReport.pressure_map?.locations || {},
+      historicalPressureAvailable: false,
+    };
+  }
+
   const exported = {
     SYMBOL_BOARD_GROUPS,
     SYMBOL_BOARD_SORT_STORAGE_KEY,
     allGroupsRows,
     currentAuthorityRow,
     deriveAttention,
+    deriveBreadthLeadership,
     eventDirection,
     eventLabel,
     groupMembership,

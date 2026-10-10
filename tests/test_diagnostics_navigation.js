@@ -147,7 +147,7 @@ console.log("diagnostics navigation tests passed");
   const routes = MRZ_NAVIGATION.flatMap((group) => group.routes);
   assert.deepEqual(
     routes.map((route) => route.name),
-    ["overview", "watchlists", "attention", "symbols", "pressure", "alert-settings", "location-distribution", "formation-diagnostics", "events"],
+    ["overview", "watchlists", "attention", "symbols", "pressure", "alert-settings", "location-distribution", "breadth-leadership", "formation-diagnostics", "events"],
   );
   const formationNavigation = navigationMarkup("formation-diagnostics");
   assert.match(formationNavigation, /href="\/mrz\/formation-diagnostics"[^>]+aria-current="page"/);
@@ -157,6 +157,7 @@ console.log("diagnostics navigation tests passed");
   assert.equal(routeNameForPath("/mrz/formation-diagnostics"), "formation-diagnostics");
   assert.equal(routeNameForPath("/diagnostics/activation-feasibility"), "formation-diagnostics");
   assert.equal(routeNameForPath("/mrz/location-distribution"), "location-distribution");
+  assert.equal(routeNameForPath("/mrz/breadth-leadership"), "breadth-leadership");
   assert.equal(routeNameForPath("/mrz/events"), "events");
 }
 

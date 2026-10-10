@@ -251,6 +251,7 @@ def location_distribution_history_payload(
     added_or_became_eligible = 0
     removed_or_became_ineligible = 0
     transition_counts: dict[tuple[str, str], int] = {}
+    symbol_movements: list[dict[str, Any]] = []
 
     def location(row: Mapping[str, Any], prefix: str) -> str | None:
         price = row.get(f"{prefix}_observation_price")
@@ -270,12 +271,28 @@ def location_distribution_history_payload(
             then_counts[then_location] += 1
 
         if now_location is not None and then_location is not None:
+            direction = "unchanged"
             if rank[now_location] > rank[then_location]:
                 moved_higher += 1
+                direction = "higher"
             elif rank[now_location] < rank[then_location]:
                 moved_lower += 1
+                direction = "lower"
             else:
                 unchanged += 1
+            symbol_movements.append(
+                {
+                    "symbol": str(row["symbol"]),
+                    "start_location": then_location,
+                    "start_location_label": GROUP_LOCATION_LABELS[then_location],
+                    "current_location": now_location,
+                    "current_location_label": GROUP_LOCATION_LABELS[now_location],
+                    "direction": direction,
+                    "magnitude": abs(rank[now_location] - rank[then_location]),
+                    "comparison_observed_at": iso(row.get("comparison_observed_at")),
+                    "current_observed_at": iso(row.get("current_observed_at")),
+                }
+            )
             if now_location != then_location:
                 key = (then_location, now_location)
                 transition_counts[key] = transition_counts.get(key, 0) + 1
@@ -359,6 +376,7 @@ def location_distribution_history_payload(
             "net_higher": moved_higher - moved_lower,
             "comparable_symbols": comparable,
         },
+        "symbol_movements": symbol_movements,
         "dominant_transitions": dominant_transitions,
     }
 
@@ -2894,12 +2912,34 @@ class EdgeRepository:
                     """,
                     (current_at, comparison_at),
                 )
-                return location_distribution_history_payload(
+                history = location_distribution_history_payload(
                     cursor.fetchall(),
                     window=window,
                     current_at=current_at,
                     comparison_at=comparison_at,
                 )
+                cursor.execute(
+                    """
+                    SELECT event_key, symbol, old_core_mrz_lower,
+                           old_core_mrz_upper, new_core_mrz_midpoint, occurred_at
+                    FROM mrz_events
+                    WHERE event_type = 'MRZ_MIGRATED'
+                      AND occurred_at > %s
+                      AND occurred_at <= %s
+                    ORDER BY occurred_at DESC, id DESC
+                    """,
+                    (comparison_at, current_at),
+                )
+                history["migration_events"] = [
+                    {
+                        "event_key": str(row["event_key"]),
+                        "symbol": str(row["symbol"]),
+                        "direction": migration_direction(row),
+                        "occurred_at": iso(row["occurred_at"]),
+                    }
+                    for row in cursor.fetchall()
+                ]
+                return history
         finally:
             connection.close()
 

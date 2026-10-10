@@ -3,6 +3,7 @@ const {
   allGroupsRows,
   currentAuthorityRow,
   deriveAttention,
+  deriveBreadthLeadership,
   eventLabel,
   groupSymbolBoardRows,
   normalizeSymbolBoardSort,
@@ -142,4 +143,64 @@ assert.deepEqual(
   symbolsFrom(sortSymbolBoardRows([...boardRows], restoreSymbolBoardSort(storage))),
   symbolsFrom(sortSymbolBoardRows(boardRows, "pressure")),
   "a data refresh preserves the operator's selected sort",
+);
+
+const breadthHistory = {
+  window: "24H",
+  universe: { now_eligible: 8, then_eligible: 8, common_eligible: 7, added_or_became_eligible: 1, removed_or_became_ineligible: 1 },
+  flow: { moved_higher: 3, moved_lower: 3, unchanged: 1, net_higher: 0, comparable_symbols: 7 },
+  symbol_movements: [
+    { symbol: "UP_CONFIRMED", start_location: "deep_discount", start_location_label: "Deep Discount", current_location: "shallow_premium", current_location_label: "Shallow Premium", direction: "higher", magnitude: 3, current_observed_at: "2026-10-10T10:00:00Z" },
+    { symbol: "UP_NEUTRAL", start_location: "deep_discount", start_location_label: "Deep Discount", current_location: "shallow_discount", current_location_label: "Shallow Discount", direction: "higher", magnitude: 1, current_observed_at: "2026-10-10T11:00:00Z" },
+    { symbol: "UP_DIVERGENT", start_location: "shallow_discount", start_location_label: "Shallow Discount", current_location: "at_eqm", current_location_label: "At EQM", direction: "higher", magnitude: 1, current_observed_at: "2026-10-10T12:00:00Z" },
+    { symbol: "DOWN_CONFIRMED", start_location: "deep_premium", start_location_label: "Deep Premium", current_location: "shallow_discount", current_location_label: "Shallow Discount", direction: "lower", magnitude: 3, current_observed_at: "2026-10-10T10:00:00Z" },
+    { symbol: "DOWN_NEUTRAL", start_location: "deep_premium", start_location_label: "Deep Premium", current_location: "shallow_premium", current_location_label: "Shallow Premium", direction: "lower", magnitude: 1, current_observed_at: "2026-10-10T11:00:00Z" },
+    { symbol: "DOWN_DIVERGENT", start_location: "shallow_premium", start_location_label: "Shallow Premium", current_location: "at_eqm", current_location_label: "At EQM", direction: "lower", magnitude: 1, current_observed_at: "2026-10-10T12:00:00Z" },
+    { symbol: "UNCHANGED", start_location: "at_eqm", start_location_label: "At EQM", current_location: "at_eqm", current_location_label: "At EQM", direction: "unchanged", magnitude: 0, current_observed_at: "2026-10-10T12:00:00Z" },
+  ],
+  migration_events: [
+    { event_key: "up-1", symbol: "UP_CONFIRMED", direction: "higher", occurred_at: "2026-10-10T09:00:00Z" },
+    { event_key: "down-1", symbol: "DOWN_CONFIRMED", direction: "lower", occurred_at: "2026-10-10T08:00:00Z" },
+    { event_key: "mixed-1", symbol: "MIXED", direction: "higher", occurred_at: "2026-10-10T07:00:00Z" },
+    { event_key: "mixed-2", symbol: "MIXED", direction: "lower", occurred_at: "2026-10-10T06:00:00Z" },
+  ],
+};
+const breadthPressure = {
+  categories: {
+    higher: [{ symbol: "UP_CONFIRMED" }, { symbol: "DOWN_DIVERGENT" }],
+    neutral: [{ symbol: "UP_NEUTRAL" }, { symbol: "DOWN_NEUTRAL" }, { symbol: "UNCHANGED" }],
+    lower: [{ symbol: "UP_DIVERGENT" }, { symbol: "DOWN_CONFIRMED" }],
+  },
+  pressure_map: { locations: { deep_discount: { counts: { higher: 1, neutral: 2, lower: 3 } } } },
+};
+const breadthReport = deriveBreadthLeadership(breadthHistory, breadthPressure);
+assert.deepEqual(breadthReport.breadth, { movedHigher: 3, movedLower: 3, unchanged: 1, netHigher: 0, comparable: 7, participationPct: 6 / 7 * 100 });
+assert.deepEqual(breadthReport.confirmation.higher, { higher: 1, neutral: 1, lower: 1 });
+assert.deepEqual(breadthReport.confirmation.lower, { higher: 1, neutral: 1, lower: 1 });
+assert.deepEqual(breadthReport.confirmationRates, { higher: { numerator: 1, denominator: 3 }, lower: { numerator: 1, denominator: 3 } });
+assert.deepEqual(breadthReport.leaders.map((item) => item.symbol), ["UP_CONFIRMED"]);
+assert.deepEqual(breadthReport.laggards.map((item) => item.symbol), ["DOWN_CONFIRMED"]);
+assert.deepEqual(breadthReport.divergences.higherWithLower.map((item) => item.symbol), ["UP_DIVERGENT"]);
+assert.deepEqual(breadthReport.divergences.lowerWithHigher.map((item) => item.symbol), ["DOWN_DIVERGENT"]);
+assert.deepEqual(breadthReport.migrationBreadth, { up_only: 1, down_only: 1, mixed: 1, none: 5, uniqueSymbols: 3, eventCount: 4 });
+assert.equal(breadthReport.currentLocationPressure.deep_discount.counts.lower, 3);
+assert.equal(breadthReport.historicalPressureAvailable, false);
+
+const leaderSortReport = deriveBreadthLeadership({
+  flow: { moved_higher: 3, moved_lower: 0, unchanged: 0, net_higher: 3, comparable_symbols: 3 },
+  symbol_movements: [
+    { symbol: "BETA", direction: "higher", magnitude: 2, current_observed_at: "2026-10-10T12:00:00Z" },
+    { symbol: "ALPHA", direction: "higher", magnitude: 2, current_observed_at: "2026-10-10T12:00:00Z" },
+    { symbol: "MIGRATION_FIRST", direction: "higher", magnitude: 1, current_observed_at: "2026-10-10T10:00:00Z" },
+  ],
+  migration_events: [
+    { event_key: "confirm", symbol: "MIGRATION_FIRST", direction: "higher", occurred_at: "2026-10-10T09:00:00Z" },
+  ],
+}, {
+  categories: { higher: [{ symbol: "ALPHA" }, { symbol: "BETA" }, { symbol: "MIGRATION_FIRST" }] },
+});
+assert.deepEqual(
+  leaderSortReport.leaders.map((item) => item.symbol),
+  ["MIGRATION_FIRST", "ALPHA", "BETA"],
+  "leaders sort by confirming migration, magnitude, recency, then deterministic symbol",
 );
