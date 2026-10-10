@@ -7,6 +7,31 @@
     POST_ACTIVATION_PRESSURE_CHANGED: 2,
     MRZ_NEAR_MISS: 1,
   };
+  const SYMBOL_BOARD_SORTS = new Set([
+    "attention",
+    "latest_event",
+    "activation_age",
+    "pressure",
+    "structural_location",
+    "symbol",
+  ]);
+  const SYMBOL_BOARD_SORT_STORAGE_KEY = "edge2.mrz.symbol-board.sort";
+  const SYMBOL_BOARD_GROUPS = [
+    { key: "changed_today", label: "Changed today" },
+    { key: "directional_pressure", label: "Directional pressure" },
+    { key: "stable", label: "Stable / no recent change" },
+  ];
+  const STRUCTURAL_LOCATION_PRIORITY = {
+    deep_discount: 0,
+    deep_discount_core_mrz: 0,
+    shallow_discount: 1,
+    shallow_discount_core_mrz: 1,
+    at_eqm: 2,
+    shallow_premium: 3,
+    shallow_premium_core_mrz: 3,
+    deep_premium: 4,
+    deep_premium_core_mrz: 4,
+  };
 
   function groupMembership(groups) {
     const membership = new Map();
@@ -102,7 +127,156 @@
     };
   }
 
+  function normalizeSymbolBoardSort(value) {
+    return SYMBOL_BOARD_SORTS.has(value) ? value : "attention";
+  }
+
+  function restoreSymbolBoardSort(storage) {
+    try {
+      return normalizeSymbolBoardSort(storage?.getItem(SYMBOL_BOARD_SORT_STORAGE_KEY));
+    } catch {
+      return "attention";
+    }
+  }
+
+  function persistSymbolBoardSort(storage, value) {
+    const normalized = normalizeSymbolBoardSort(value);
+    try {
+      storage?.setItem(SYMBOL_BOARD_SORT_STORAGE_KEY, normalized);
+    } catch {
+      // Sorting remains available for this page load when storage is blocked.
+    }
+    return normalized;
+  }
+
+  function timestamp(value) {
+    const resolved = new Date(value).getTime();
+    return Number.isFinite(resolved) ? resolved : Number.NEGATIVE_INFINITY;
+  }
+
+  function operatorDay(value, utcOffsetMinutes = -240) {
+    const resolved = timestamp(value);
+    if (!Number.isFinite(resolved)) return null;
+    return new Date(resolved + (utcOffsetMinutes * 60 * 1000))
+      .toISOString()
+      .slice(0, 10);
+  }
+
+  function isMeaningfulBoardEvent(event) {
+    return [
+      "MRZ_MIGRATED",
+      "POST_ACTIVATION_PRESSURE_CHANGED",
+      "MRZ_ACTIVATED",
+    ].includes(event?.event_type);
+  }
+
+  function symbolBoardGroup(row, options = {}) {
+    const now = options.now || new Date();
+    const utcOffsetMinutes = options.utcOffsetMinutes ?? -240;
+    if (
+      isMeaningfulBoardEvent(row.latestEvent)
+      && operatorDay(row.latestEvent.occurred_at, utcOffsetMinutes)
+        === operatorDay(now, utcOffsetMinutes)
+    ) return "changed_today";
+    if (row.pressure === "higher" || row.pressure === "lower") {
+      return "directional_pressure";
+    }
+    return "stable";
+  }
+
+  function compareSymbol(left, right) {
+    return String(left.symbol || "").localeCompare(String(right.symbol || ""));
+  }
+
+  function compareNewest(leftValue, rightValue) {
+    return timestamp(rightValue) - timestamp(leftValue);
+  }
+
+  function attentionEventPriority(event) {
+    return {
+      MRZ_MIGRATED: 0,
+      POST_ACTIVATION_PRESSURE_CHANGED: 1,
+      MRZ_ACTIVATED: 2,
+    }[event?.event_type] ?? 3;
+  }
+
+  function pressurePriority(direction) {
+    return { higher: 0, neutral: 1, lower: 2 }[direction] ?? 3;
+  }
+
+  function directionalPriority(direction) {
+    return direction === "higher" || direction === "lower" ? 0 : 1;
+  }
+
+  function attentionComparator(left, right, options) {
+    const groupPriority = {
+      changed_today: 0,
+      directional_pressure: 1,
+      stable: 2,
+    };
+    const leftGroup = symbolBoardGroup(left, options);
+    const rightGroup = symbolBoardGroup(right, options);
+    const groupOrder = groupPriority[leftGroup] - groupPriority[rightGroup];
+    if (groupOrder) return groupOrder;
+    if (leftGroup === "changed_today") {
+      const eventOrder = attentionEventPriority(left.latestEvent)
+        - attentionEventPriority(right.latestEvent);
+      if (eventOrder) return eventOrder;
+      if (
+        left.latestEvent?.event_type === "POST_ACTIVATION_PRESSURE_CHANGED"
+        && right.latestEvent?.event_type === "POST_ACTIVATION_PRESSURE_CHANGED"
+      ) {
+        const directionOrder = directionalPriority(left.pressure)
+          - directionalPriority(right.pressure);
+        if (directionOrder) return directionOrder;
+      }
+    }
+    if (leftGroup === "stable") {
+      const activeOrder = Number(right.active) - Number(left.active);
+      if (activeOrder) return activeOrder;
+    }
+    return compareNewest(
+      left.latestEvent?.occurred_at,
+      right.latestEvent?.occurred_at,
+    ) || compareSymbol(left, right);
+  }
+
+  function sortSymbolBoardRows(rows, sort = "attention", options = {}) {
+    const normalized = normalizeSymbolBoardSort(sort);
+    const comparators = {
+      attention: (left, right) => attentionComparator(left, right, options),
+      latest_event: (left, right) => compareNewest(
+        left.latestEvent?.occurred_at,
+        right.latestEvent?.occurred_at,
+      ) || compareSymbol(left, right),
+      activation_age: (left, right) => compareNewest(
+        left.activatedAt,
+        right.activatedAt,
+      ) || compareSymbol(left, right),
+      pressure: (left, right) => pressurePriority(left.pressure)
+        - pressurePriority(right.pressure)
+        || compareSymbol(left, right),
+      structural_location: (left, right) => (
+        (STRUCTURAL_LOCATION_PRIORITY[left.location] ?? 99)
+        - (STRUCTURAL_LOCATION_PRIORITY[right.location] ?? 99)
+        || compareSymbol(left, right)
+      ),
+      symbol: compareSymbol,
+    };
+    return [...(rows || [])].sort(comparators[normalized]);
+  }
+
+  function groupSymbolBoardRows(rows, options = {}) {
+    const grouped = new Map(SYMBOL_BOARD_GROUPS.map(({ key }) => [key, []]));
+    (rows || []).forEach((row) => grouped.get(symbolBoardGroup(row, options)).push(row));
+    return SYMBOL_BOARD_GROUPS
+      .map(({ key, label }) => ({ key, label, rows: grouped.get(key) }))
+      .filter((group) => group.rows.length > 0);
+  }
+
   const exported = {
+    SYMBOL_BOARD_GROUPS,
+    SYMBOL_BOARD_SORT_STORAGE_KEY,
     allGroupsRows,
     currentAuthorityRow,
     deriveAttention,
@@ -110,6 +284,12 @@
     eventLabel,
     groupMembership,
     latestEventsBySymbol,
+    groupSymbolBoardRows,
+    normalizeSymbolBoardSort,
+    persistSymbolBoardSort,
+    restoreSymbolBoardSort,
+    sortSymbolBoardRows,
+    symbolBoardGroup,
     symbolsForWatchlist,
     uniqueTrackedSymbols,
   };

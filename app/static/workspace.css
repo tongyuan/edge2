@@ -135,6 +135,9 @@ body.sidebar-collapsed .health-dot::before { margin-right: 0; font-size: .72rem;
 .compact-summary span, .compact-summary small { display: block; color: var(--muted); font-size: .64rem; }
 .compact-summary strong { display: block; margin: 5px 0; font-size: 1.08rem; }
 .attention-panel { margin-bottom: 18px; }
+.board-heading-actions { display: flex; align-items: flex-end; gap: 10px; }
+.symbol-board-sort { display: grid; gap: 5px; color: var(--muted); font-size: .58rem; font-weight: 750; letter-spacing: .08em; }
+.symbol-board-sort select { min-width: 164px; }
 .table-scroll { overflow-x: auto; }
 .symbol-board { width: 100%; border-collapse: collapse; min-width: 1020px; }
 .symbol-board th { padding: 11px 14px; border-bottom: 1px solid var(--line); color: #627185; font-size: .59rem; letter-spacing: .08em; text-align: left; text-transform: uppercase; white-space: nowrap; }
@@ -142,6 +145,9 @@ body.sidebar-collapsed .health-dot::before { margin-right: 0; font-size: .72rem;
 .symbol-board tr:last-child td { border: 0; }
 .symbol-board tr.quiet { opacity: .62; }
 .symbol-board tr:hover { background: rgba(255,255,255,.018); opacity: 1; }
+.symbol-board .symbol-board-group-row { background: rgba(79, 224, 177, .035); }
+.symbol-board .symbol-board-group-row:hover { background: rgba(79, 224, 177, .035); }
+.symbol-board .symbol-board-group-row th { padding: 9px 14px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line-soft); color: var(--accent); font-size: .58rem; letter-spacing: .1em; }
 .symbol-button { border: 0; background: transparent; color: var(--text); cursor: pointer; font-weight: 850; }
 .symbol-button:hover { color: var(--accent); }
 .active-state { color: var(--accent); font-weight: 800; }
@@ -308,6 +314,10 @@ input { padding: 0 11px; }
   .metric-strip article, .compact-summary > div { border-bottom: 1px solid var(--line-soft); }
   .route-links { grid-template-columns: repeat(2, 1fr); }
   .action-heading, .symbol-route-heading { align-items: flex-start; flex-direction: column; }
+  .board-panel .panel-heading { align-items: flex-start; flex-direction: column; }
+  .board-heading-actions { width: 100%; align-items: flex-end; justify-content: space-between; }
+  .symbol-board-sort { flex: 1; }
+  .symbol-board-sort select { width: 100%; min-width: 0; }
   .location-flow-content { grid-template-columns: 1fr; }
   .structural-read-grid { grid-template-columns: repeat(2, 1fr); }
   .structural-read-grid article { border-bottom: 1px solid var(--line-soft); }

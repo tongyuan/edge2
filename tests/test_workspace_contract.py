@@ -48,6 +48,26 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertIn("activatedAt", JS)
         self.assertIn("latestEvent", JS)
 
+    def test_watchlist_board_exposes_persistent_responsive_sorting(self) -> None:
+        self.assertIn('id="symbolBoardSort"', HTML)
+        for value, label in (
+            ("attention", "Attention first"),
+            ("latest_event", "Latest event"),
+            ("activation_age", "Activation age"),
+            ("pressure", "Pressure"),
+            ("structural_location", "Structural location"),
+            ("symbol", "Symbol A–Z"),
+        ):
+            self.assertIn(f'<option value="{value}">{label}</option>', HTML)
+        self.assertIn("derive.sortSymbolBoardRows", JS)
+        self.assertIn("derive.groupSymbolBoardRows", JS)
+        self.assertIn("derive.restoreSymbolBoardSort", JS)
+        self.assertIn("derive.persistSymbolBoardSort", JS)
+        self.assertIn("symbol-board-group-row", JS)
+        mobile_rules = CSS.split("@media (max-width: 820px)", 1)[1]
+        self.assertIn(".symbol-board-sort", mobile_rules)
+        self.assertNotIn(".symbol-board-sort { display: none; }", mobile_rules)
+
     def test_attention_and_events_have_distinct_scopes(self) -> None:
         self.assertIn("Tracked symbols only", HTML)
         self.assertIn("Global canonical event history", HTML)

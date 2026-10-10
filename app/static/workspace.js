@@ -13,6 +13,7 @@
     locationWindow: "24H",
     selectedGroupId: "all",
     editingGroupId: null,
+    symbolBoardSort: derive.restoreSymbolBoardSort(globalObject.localStorage),
   };
   const locationLabels = {
     deep_discount: "Deep Discount",
@@ -206,10 +207,24 @@
       cell.colSpan = 8;
       row.append(cell); body.append(row); return;
     }
-    symbols
+    const rows = symbols
       .map((symbol) => derive.currentAuthorityRow(symbol, pressure.get(symbol.symbol), latest.get(symbol.symbol)))
-      .sort((left, right) => Number(right.latestEvent !== null) - Number(left.latestEvent !== null) || Number(right.active) - Number(left.active) || left.symbol.localeCompare(right.symbol))
-      .forEach((item) => {
+    const sorted = derive.sortSymbolBoardRows(rows, state.symbolBoardSort);
+    const select = $("#symbolBoardSort");
+    if (select) select.value = state.symbolBoardSort;
+    const groups = state.symbolBoardSort === "attention"
+      ? derive.groupSymbolBoardRows(sorted)
+      : [{ key: null, label: null, rows: sorted }];
+    groups.forEach((group) => {
+      if (group.label) {
+        const heading = element("tr", "symbol-board-group-row");
+        const cell = element("th", "", group.label);
+        cell.colSpan = 8;
+        cell.scope = "rowgroup";
+        heading.append(cell);
+        body.append(heading);
+      }
+      group.rows.forEach((item) => {
         const row = element("tr", item.latestEvent || item.pressure !== "neutral" ? "" : "quiet");
         const symbolCell = element("td", "");
         const button = element("button", "symbol-button", item.symbol);
@@ -230,6 +245,7 @@
         );
         body.append(row);
       });
+    });
   }
 
   function renderAttention(attention) {
@@ -555,6 +571,15 @@
     const url = new URL(globalObject.location.href); if (symbol) url.searchParams.set("symbol", symbol); else url.searchParams.delete("symbol"); globalObject.history.replaceState({}, "", url); loadSymbolDetail(symbol).catch(showError);
   });
   $("#pressureGroupSelect")?.addEventListener("change", (event) => loadPeerPressure(event.target.value).catch(showError));
+  $("#symbolBoardSort")?.addEventListener("change", (event) => {
+    state.symbolBoardSort = derive.persistSymbolBoardSort(
+      globalObject.localStorage,
+      event.target.value,
+    );
+    renderSymbolBoard(
+      derive.symbolsForWatchlist(state.symbols, state.groups, state.selectedGroupId),
+    );
+  });
   document.querySelectorAll("[data-location-window]").forEach((button) => button.addEventListener("click", () => loadLocationHistory(button.dataset.locationWindow)));
   $("#eventTypeFilter")?.addEventListener("change", renderEvents);
   $("#alertPreferencesForm")?.addEventListener("submit", (event) => savePreferences(event).catch(showError));
