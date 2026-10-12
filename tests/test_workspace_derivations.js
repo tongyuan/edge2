@@ -8,15 +8,89 @@ const {
   deriveLocationFlowDetails,
   eventLabel,
   filterLocationSymbols,
+  groupPressureSourcesByAssetClass,
   groupSymbolBoardRows,
   normalizeSymbolBoardSort,
   persistSymbolBoardSort,
+  pressureConcentrationLabel,
+  pressureDrilldownMembers,
   restoreSymbolBoardSort,
   sortSymbolBoardRows,
   symbolBoardGroup,
   symbolsForWatchlist,
   uniqueTrackedSymbols,
 } = require("../app/static/workspace-derivations.js");
+
+const pressureSource = (symbol, direction, assetClass, sector = null, industry = null, location = "at_eqm") => ({
+  symbol,
+  direction,
+  asset_class: assetClass,
+  sector,
+  industry,
+  current_location: location,
+  current_location_label: location,
+  route_owner: "STR",
+});
+const nvdaPressure = pressureSource("NVDA", "higher", "EQUITY", "Technology", "Semiconductors", "deep_premium");
+const msftPressure = pressureSource("MSFT", "neutral", "EQUITY", "Technology", "Software", "shallow_premium");
+const d05Pressure = pressureSource("D05", "lower", "EQUITY", "Financials", "Banks", "shallow_discount");
+const mstrPressure = pressureSource("MSTR", "lower", "EQUITY", "Financials", "Digital Asset Treasury", "deep_discount");
+const btcPressure = pressureSource("BTCUSDT", "higher", "CRYPTO", null, null, "deep_discount");
+const taxonomyPressure = {
+  sources: { higher: [nvdaPressure, btcPressure], neutral: [msftPressure], lower: [d05Pressure, mstrPressure] },
+  included_equity_count: 4,
+  counts: { higher: 1, neutral: 1, lower: 2 },
+  sectors: [
+    { name: "Technology", members: { higher: [nvdaPressure], neutral: [msftPressure], lower: [] } },
+    { name: "Financials", members: { higher: [], neutral: [], lower: [d05Pressure, mstrPressure] } },
+  ],
+  industries: [
+    { name: "Semiconductors", sector: "Technology", members: { higher: [nvdaPressure], neutral: [], lower: [] } },
+    { name: "Digital Asset Treasury", sector: "Financials", members: { higher: [], neutral: [], lower: [mstrPressure] } },
+  ],
+  concentration: {
+    higher: { top_sector: "Technology", top_sector_share_pct: 100 },
+    lower: { top_sector: "Financials", top_sector_share_pct: 100 },
+  },
+};
+const pressureReport = {
+  categories: {
+    higher: [{ symbol: "NVDA", current_location: "deep_premium" }, { symbol: "BTCUSDT", current_location: "deep_discount" }],
+    neutral: [{ symbol: "MSFT", current_location: "shallow_premium" }],
+    lower: [{ symbol: "D05", current_location: "shallow_discount" }, { symbol: "MSTR", current_location: "deep_discount" }],
+  },
+};
+
+assert.deepEqual(
+  groupPressureSourcesByAssetClass(taxonomyPressure.sources.higher).map((group) => group.assetClass),
+  ["EQUITY", "CRYPTO"],
+  "pressure sources remain clearly separated by canonical asset class",
+);
+assert.deepEqual(
+  pressureDrilldownMembers(taxonomyPressure, pressureReport, { type: "direction", direction: "higher" }).map((item) => item.symbol),
+  ["BTCUSDT", "NVDA"],
+  "direction drill-down reconciles to the current Higher list without duplicates",
+);
+assert.deepEqual(
+  pressureDrilldownMembers(taxonomyPressure, pressureReport, { type: "sector", name: "Technology" }).map((item) => item.symbol),
+  ["NVDA", "MSFT"],
+  "sector drill-down returns its canonical equity constituents grouped by direction",
+);
+assert.deepEqual(
+  pressureDrilldownMembers(taxonomyPressure, pressureReport, { type: "industry", sector: "Financials", name: "Digital Asset Treasury" }).map((item) => item.symbol),
+  ["MSTR"],
+  "industry drill-down is scoped by canonical sector and industry",
+);
+assert.deepEqual(
+  pressureDrilldownMembers(taxonomyPressure, pressureReport, { type: "map", location: "deep_discount", direction: "higher" }).map((item) => item.symbol),
+  ["BTCUSDT"],
+  "Pressure Map drill-down reuses the same canonical source records",
+);
+assert.equal(
+  pressureConcentrationLabel(taxonomyPressure),
+  "Balanced globally, sector-concentrated",
+  "the restrained rotation read is deterministic and descriptive",
+);
 
 assert.deepEqual(filterLocationSymbols(["NVDA", "NVDL", "AAPL"], "nvd"), ["NVDA", "NVDL"], "location symbol search is case-insensitive and supports partial matches");
 assert.deepEqual(filterLocationSymbols(["NVDA", "AAPL"], "  aapl  "), ["AAPL"], "location symbol search trims operator input");

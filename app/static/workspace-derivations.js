@@ -280,6 +280,87 @@
       .filter((group) => group.rows.length > 0);
   }
 
+  function groupPressureSourcesByAssetClass(sources) {
+    const order = ["EQUITY", "ETF", "INDEX", "CRYPTO", "COMMODITY", "FX", "UNCLASSIFIED"];
+    const grouped = new Map();
+    (sources || []).forEach((source) => {
+      const assetClass = source.asset_class || "UNCLASSIFIED";
+      if (!grouped.has(assetClass)) grouped.set(assetClass, []);
+      grouped.get(assetClass).push(source);
+    });
+    grouped.forEach((members) => members.sort(compareSymbol));
+    return [...grouped.entries()]
+      .sort(([left], [right]) => (
+        (order.indexOf(left) < 0 ? order.length : order.indexOf(left))
+        - (order.indexOf(right) < 0 ? order.length : order.indexOf(right))
+        || left.localeCompare(right)
+      ))
+      .map(([assetClass, members]) => ({ assetClass, members }));
+  }
+
+  function pressureDrilldownMembers(taxonomy = {}, pressure = {}, selection = {}) {
+    const sourceIndex = new Map();
+    Object.values(taxonomy.sources || {}).flat().forEach((item) => {
+      sourceIndex.set(item.symbol, item);
+    });
+    let members = [];
+    if (selection.type === "direction") {
+      members = taxonomy.sources?.[selection.direction] || [];
+    } else if (selection.type === "sector") {
+      const group = (taxonomy.sectors || []).find((item) => item.name === selection.name);
+      members = Object.values(group?.members || {}).flat();
+    } else if (selection.type === "industry") {
+      const group = (taxonomy.industries || []).find((item) => (
+        item.name === selection.name && item.sector === selection.sector
+      ));
+      members = Object.values(group?.members || {}).flat();
+    } else if (selection.type === "map") {
+      members = (pressure.categories?.[selection.direction] || [])
+        .filter((item) => item.current_location === selection.location)
+        .map((item) => sourceIndex.get(item.symbol) || {
+          symbol: item.symbol,
+          direction: selection.direction,
+          asset_class: null,
+          sector: null,
+          industry: null,
+          current_location: item.current_location,
+          current_location_label: item.current_location_label,
+          route_owner: item.active_mrz?.route_owner || null,
+          latest_pressure_observed_at: item.evidence?.latest_pressure_observed_at || null,
+        });
+    }
+    const unique = new Map();
+    members.forEach((member) => unique.set(member.symbol, member));
+    const directionOrder = { higher: 0, neutral: 1, lower: 2 };
+    return [...unique.values()].sort((left, right) => (
+      (directionOrder[left.direction] ?? 3) - (directionOrder[right.direction] ?? 3)
+      || compareSymbol(left, right)
+    ));
+  }
+
+  function pressureConcentrationLabel(taxonomy = {}) {
+    const counts = taxonomy.counts || {};
+    const higher = taxonomy.concentration?.higher || {};
+    const lower = taxonomy.concentration?.lower || {};
+    const directional = Number(counts.higher || 0) + Number(counts.lower || 0);
+    if (directional === 0 || directional <= Math.max(2, Number(taxonomy.included_equity_count || 0) * 0.15)) {
+      return "Mostly neutral";
+    }
+    const balanced = Math.abs(Number(counts.higher || 0) - Number(counts.lower || 0)) <= 1;
+    const higherConcentrated = Number(higher.top_sector_share_pct || 0) >= 50;
+    const lowerConcentrated = Number(lower.top_sector_share_pct || 0) >= 50;
+    if (balanced && higherConcentrated && lowerConcentrated && higher.top_sector !== lower.top_sector) {
+      return "Balanced globally, sector-concentrated";
+    }
+    if (Number(counts.higher || 0) > Number(counts.lower || 0) && higherConcentrated) {
+      return `Higher pressure concentrated in ${higher.top_sector}`;
+    }
+    if (Number(counts.lower || 0) > Number(counts.higher || 0) && lowerConcentrated) {
+      return `Lower pressure concentrated in ${lower.top_sector}`;
+    }
+    return "Directional pressure broadly dispersed";
+  }
+
   function contextualizeLocationMovements(history = {}, pressureReport = {}) {
     const pressureBySymbol = new Map();
     Object.entries(pressureReport.categories || {}).forEach(([direction, members]) => {
@@ -554,11 +635,14 @@
     eventDirection,
     eventLabel,
     filterLocationSymbols,
+    groupPressureSourcesByAssetClass,
     groupMembership,
     latestEventsBySymbol,
     groupSymbolBoardRows,
     normalizeSymbolBoardSort,
     persistSymbolBoardSort,
+    pressureConcentrationLabel,
+    pressureDrilldownMembers,
     restoreSymbolBoardSort,
     sortSymbolBoardRows,
     symbolBoardGroup,

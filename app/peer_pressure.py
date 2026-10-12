@@ -334,14 +334,32 @@ def build_taxonomy_pressure_report(
     groups: dict[tuple[str, str | None, str], dict[str, Any]] = {}
     included_symbols: set[str] = set()
     pressure_by_symbol: dict[str, Mapping[str, Any]] = {}
+    sources: dict[str, list[dict[str, Any]]] = {
+        direction: [] for direction in PRESSURE_DIRECTIONS
+    }
 
     for direction in PRESSURE_DIRECTIONS:
         for state in pressure_report.get("categories", {}).get(direction, ()):
             symbol = str(state["symbol"])
             pressure_by_symbol[symbol] = state
             taxonomy = taxonomy_by_symbol.get(symbol, {})
+            is_equity = taxonomy.get("asset_class") == "EQUITY"
+            source = {
+                "symbol": symbol,
+                "direction": direction,
+                "asset_class": taxonomy.get("asset_class"),
+                "sector": taxonomy.get("sector") if is_equity else None,
+                "industry": taxonomy.get("industry") if is_equity else None,
+                "current_location": state.get("current_location"),
+                "current_location_label": state.get("current_location_label"),
+                "route_owner": state.get("active_mrz", {}).get("route_owner"),
+                "latest_pressure_observed_at": state.get("evidence", {}).get(
+                    "latest_pressure_observed_at"
+                ),
+            }
+            sources[direction].append(source)
             if (
-                taxonomy.get("asset_class") != "EQUITY"
+                not is_equity
                 or not taxonomy.get("sector")
                 or not taxonomy.get("industry")
             ):
@@ -359,18 +377,44 @@ def build_taxonomy_pressure_report(
                         **({"sector": sector} if sector is not None else {}),
                         "counts": {item: 0 for item in PRESSURE_DIRECTIONS},
                         "symbols": {item: [] for item in PRESSURE_DIRECTIONS},
+                        "members": {item: [] for item in PRESSURE_DIRECTIONS},
                     },
                 )
                 group["counts"][direction] += 1
                 group["symbols"][direction].append(symbol)
+                group["members"][direction].append(source)
 
     sectors: list[dict[str, Any]] = []
     industries: list[dict[str, Any]] = []
-    for (dimension, _sector, _name), group in sorted(groups.items()):
+    for direction in PRESSURE_DIRECTIONS:
+        sources[direction].sort(key=lambda item: str(item["symbol"]))
+    for (dimension, _sector, _name), group in groups.items():
         for symbols in group["symbols"].values():
             symbols.sort()
+        for members in group["members"].values():
+            members.sort(key=lambda item: str(item["symbol"]))
         group["total"] = sum(group["counts"].values())
+        group["directional_count"] = (
+            group["counts"]["higher"] + group["counts"]["lower"]
+        )
+        group["directional_share_pct"] = round(
+            (group["directional_count"] / group["total"]) * 100,
+            1,
+        ) if group["total"] else 0.0
         (sectors if dimension == "sector" else industries).append(group)
+
+    def relevance(group: Mapping[str, Any]) -> tuple[int, int, int, str, str]:
+        counts = group["counts"]
+        return (
+            -max(counts["higher"], counts["lower"]),
+            -abs(counts["higher"] - counts["lower"]),
+            -int(group["total"]),
+            str(group.get("sector", "")),
+            str(group["name"]),
+        )
+
+    sectors.sort(key=relevance)
+    industries.sort(key=relevance)
 
     sector_totals = {
         direction: sum(group["counts"][direction] for group in sectors)
@@ -386,11 +430,58 @@ def build_taxonomy_pressure_report(
     if sector_totals != included_counts:
         raise ValueError("taxonomy pressure must reconcile to included equities")
 
+    industry_totals_by_sector: dict[str, dict[str, int]] = {}
+    for group in industries:
+        totals = industry_totals_by_sector.setdefault(
+            str(group["sector"]),
+            {direction: 0 for direction in PRESSURE_DIRECTIONS},
+        )
+        for direction in PRESSURE_DIRECTIONS:
+            totals[direction] += int(group["counts"][direction])
+    for group in sectors:
+        if industry_totals_by_sector.get(str(group["name"])) != group["counts"]:
+            raise ValueError("industry pressure must reconcile to parent sector")
+
+    def concentration(direction: str) -> dict[str, Any]:
+        contributing = [
+            group for group in sectors if group["counts"][direction] > 0
+        ]
+        total = included_counts[direction]
+        if not contributing or total == 0:
+            return {
+                "direction": direction,
+                "equity_count": total,
+                "contributing_sector_count": 0,
+                "top_sector": None,
+                "top_sector_count": 0,
+                "top_sector_share_pct": None,
+            }
+        top = sorted(
+            contributing,
+            key=lambda group: (-group["counts"][direction], str(group["name"])),
+        )[0]
+        return {
+            "direction": direction,
+            "equity_count": total,
+            "contributing_sector_count": len(contributing),
+            "top_sector": top["name"],
+            "top_sector_count": top["counts"][direction],
+            "top_sector_share_pct": round(
+                (top["counts"][direction] / total) * 100,
+                1,
+            ),
+        }
+
     return {
+        "sources": sources,
         "sectors": sectors,
         "industries": industries,
         "included_equity_count": len(included_symbols),
         "excluded_count": len(pressure_by_symbol) - len(included_symbols),
         "counts": included_counts,
+        "concentration": {
+            "higher": concentration("higher"),
+            "lower": concentration("lower"),
+        },
         "method": "Canonical pressure state grouped by complete equity taxonomy.",
     }

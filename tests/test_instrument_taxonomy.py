@@ -156,12 +156,91 @@ class TaxonomyPressureTests(unittest.TestCase):
         self.assertEqual(taxonomy["excluded_count"], 1)
         self.assertEqual(sum(group["total"] for group in taxonomy["sectors"]), 2)
         self.assertEqual(
+            [source["symbol"] for source in taxonomy["sources"]["higher"]],
+            ["UP"],
+        )
+        neutral_source = taxonomy["sources"]["neutral"][0]
+        self.assertEqual(neutral_source["symbol"], "ETF")
+        self.assertEqual(neutral_source["asset_class"], "ETF")
+        self.assertIsNone(neutral_source["sector"])
+        self.assertIsNone(neutral_source["industry"])
+        technology = next(
+            group for group in taxonomy["sectors"] if group["name"] == "Technology"
+        )
+        self.assertEqual(
+            technology["counts"],
+            {"higher": 1, "lower": 0, "neutral": 0},
+        )
+        self.assertEqual(
+            technology["members"]["higher"][0]["industry"],
+            "Software",
+        )
+        self.assertEqual(
+            taxonomy["concentration"]["higher"]["top_sector"],
+            "Technology",
+        )
+        self.assertEqual(
+            taxonomy["concentration"]["higher"]["top_sector_share_pct"],
+            100.0,
+        )
+        self.assertEqual(
             before,
             {
                 direction: [item["symbol"] for item in pressure["categories"][direction]]
                 for direction in ("higher", "neutral", "lower")
             },
         )
+
+    def test_sector_and_industry_constituents_reconcile_and_sort_by_relevance(self) -> None:
+        def source(symbol: str, direction: str) -> dict[str, object]:
+            return {
+                "symbol": symbol,
+                "direction": direction,
+                "current_location": "deep_premium",
+                "current_location_label": "Deep Premium",
+                "active_mrz": {"route_owner": "STR"},
+                "evidence": {"latest_pressure_observed_at": "2026-10-12T00:00:00Z"},
+            }
+
+        pressure = {
+            "categories": {
+                "higher": [source("NVDA", "higher"), source("MSFT", "higher")],
+                "neutral": [source("D05", "neutral"), source("ETF", "neutral")],
+                "lower": [source("MSTR", "lower"), source("O39", "lower")],
+            }
+        }
+        instruments = (
+            {"symbol": "NVDA", "asset_class": "EQUITY", "sector": "Technology", "industry": "Semiconductors"},
+            {"symbol": "MSFT", "asset_class": "EQUITY", "sector": "Technology", "industry": "Software"},
+            {"symbol": "D05", "asset_class": "EQUITY", "sector": "Financials", "industry": "Banks"},
+            {"symbol": "O39", "asset_class": "EQUITY", "sector": "Financials", "industry": "Banks"},
+            {"symbol": "MSTR", "asset_class": "EQUITY", "sector": "Financials", "industry": "Digital Asset Treasury"},
+            {"symbol": "ETF", "asset_class": "ETF", "sector": None, "industry": None},
+        )
+        report = build_taxonomy_pressure_report(pressure, instruments)
+
+        self.assertEqual([group["name"] for group in report["sectors"]], ["Financials", "Technology"])
+        self.assertEqual(report["included_equity_count"], 5)
+        self.assertEqual(report["excluded_count"], 1)
+        self.assertEqual(
+            {direction: sum(group["counts"][direction] for group in report["sectors"]) for direction in ("higher", "lower", "neutral")},
+            report["counts"],
+        )
+        financials = next(group for group in report["sectors"] if group["name"] == "Financials")
+        financial_industries = [group for group in report["industries"] if group["sector"] == "Financials"]
+        self.assertEqual(
+            {direction: sum(group["counts"][direction] for group in financial_industries) for direction in ("higher", "lower", "neutral")},
+            financials["counts"],
+        )
+        dat = next(group for group in report["industries"] if group["name"] == "Digital Asset Treasury")
+        self.assertEqual(dat["symbols"]["lower"], ["MSTR"])
+        banks = next(group for group in report["industries"] if group["name"] == "Banks")
+        self.assertEqual(banks["symbols"]["neutral"], ["D05"])
+        self.assertEqual(banks["symbols"]["lower"], ["O39"])
+        all_sector_symbols = [symbol for group in report["sectors"] for symbols in group["symbols"].values() for symbol in symbols]
+        self.assertEqual(len(all_sector_symbols), len(set(all_sector_symbols)))
+        self.assertIsNone(report["sources"]["neutral"][-1]["sector"])
+        self.assertIsNone(report["sources"]["neutral"][-1]["industry"])
 
 
 class InstrumentTaxonomyIntegrationTests(unittest.TestCase):

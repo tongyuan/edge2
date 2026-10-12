@@ -85,11 +85,30 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(
             taxonomy_pressure,
             {
+                "sources": {"higher": [], "lower": [], "neutral": []},
                 "sectors": [],
                 "industries": [],
                 "included_equity_count": 0,
                 "excluded_count": 0,
                 "counts": {"higher": 0, "lower": 0, "neutral": 0},
+                "concentration": {
+                    "higher": {
+                        "direction": "higher",
+                        "equity_count": 0,
+                        "contributing_sector_count": 0,
+                        "top_sector": None,
+                        "top_sector_count": 0,
+                        "top_sector_share_pct": None,
+                    },
+                    "lower": {
+                        "direction": "lower",
+                        "equity_count": 0,
+                        "contributing_sector_count": 0,
+                        "top_sector": None,
+                        "top_sector_count": 0,
+                        "top_sector_share_pct": None,
+                    },
+                },
                 "method": "Canonical pressure state grouped by complete equity taxonomy.",
             },
         )

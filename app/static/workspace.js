@@ -14,6 +14,7 @@
     locationSearchQuery: "",
     locationFlowSelection: null,
     locationFlowPressure: "all",
+    pressureSelection: null,
     selectedGroupId: "all",
     editingGroupId: null,
     symbolBoardSort: derive.restoreSymbolBoardSort(globalObject.localStorage),
@@ -294,6 +295,7 @@
 
   function renderPressure() {
     const report = state.symbolPayload?.pressure || {};
+    const taxonomy = state.symbolPayload?.taxonomy_pressure || {};
     const counts = report.counts || { higher: 0, lower: 0, neutral: 0 };
     const selectedSymbol = new URLSearchParams(globalObject.location.search).get("symbol") || "";
     const selectedState = state.symbols.find((item) => item.symbol === selectedSymbol);
@@ -312,17 +314,147 @@
       );
     }
     $("#pressureSummary").replaceChildren(
-      summaryArticle("STATE", report.headline?.label || "—"), summaryArticle("↑ HIGHER", counts.higher || 0), summaryArticle("↓ LOWER", counts.lower || 0), summaryArticle("↔ NEUTRAL", counts.neutral || 0),
+      summaryArticle("REGIME", report.headline?.label || "—"),
+      pressureSummaryAction("higher", counts.higher || 0),
+      pressureSummaryAction("neutral", counts.neutral || 0),
+      pressureSummaryAction("lower", counts.lower || 0),
     );
+    renderPressureSources(taxonomy);
+    renderPressureTaxonomy(taxonomy);
+    renderPressureConcentration(taxonomy);
     const map = $("#pressureMap"); map.replaceChildren();
     const locations = report.pressure_map?.locations || {};
     ["deep_discount", "shallow_discount", "at_eqm", "shallow_premium", "deep_premium"].forEach((key) => {
       const card = element("article", ""); card.append(element("h3", "", locationLabels[key]));
       const dl = element("dl", "");
-      ["higher", "neutral", "lower"].forEach((direction) => { const row = element("div", ""); row.append(element("dt", `pressure-${direction}`, pressureLabels[direction]), element("dd", "", String(locations[key]?.counts?.[direction] || 0))); dl.append(row); });
+      ["higher", "neutral", "lower"].forEach((direction) => {
+        const row = element("div", "");
+        const button = element("button", `pressure-map-button pressure-${direction}`);
+        button.type = "button";
+        button.append(element("span", "", pressureLabels[direction]), element("strong", "", String(locations[key]?.counts?.[direction] || 0)));
+        button.addEventListener("click", () => openPressureDrilldown({ type: "map", location: key, direction }, `${locationLabels[key]} · ${pressureLabels[direction]}`, "Current location × canonical pressure"));
+        row.append(button); dl.append(row);
+      });
       card.append(dl); map.append(card);
     });
+    const population = $("#pressurePopulationComparison");
+    population.replaceChildren(
+      element("strong", "", "Monitored population"),
+      element("span", "pressure-higher", `↑ Higher ${counts.higher || 0}`),
+      element("span", "pressure-neutral", `↔ Neutral ${counts.neutral || 0}`),
+      element("span", "pressure-lower", `↓ Lower ${counts.lower || 0}`),
+    );
     $("#pressureGroupSelect").replaceChildren(new Option("Select watchlist", ""), ...state.groups.map((group) => new Option(group.name, String(group.id))));
+    renderPressureDrilldown();
+  }
+
+  function pressureSummaryAction(direction, count) {
+    const node = element("article", "pressure-summary-action");
+    const button = element("button", `pressure-${direction}`);
+    button.type = "button";
+    button.append(element("span", "", pressureLabels[direction].toUpperCase()), element("strong", "", String(count)));
+    button.addEventListener("click", () => openPressureDrilldown({ type: "direction", direction }, `${pressureLabels[direction]} pressure`, "Current monitored population"));
+    node.append(button);
+    return node;
+  }
+
+  function pressureCountStrip(counts = {}) {
+    const strip = element("div", "pressure-count-strip");
+    ["higher", "neutral", "lower"].forEach((direction) => strip.append(element("span", `pressure-${direction}`, `${pressureLabels[direction]} ${counts[direction] || 0}`)));
+    return strip;
+  }
+
+  function renderPressureSources(taxonomy) {
+    const target = $("#pressureSources"); target.replaceChildren();
+    ["higher", "lower"].forEach((direction) => {
+      const members = taxonomy.sources?.[direction] || [];
+      const card = element("article", "pressure-source-card");
+      const button = element("button", "pressure-source-button");
+      button.type = "button";
+      button.append(element("span", `pressure-${direction}`, `${pressureLabels[direction]} pressure`), element("strong", "", String(members.length)));
+      button.addEventListener("click", () => openPressureDrilldown({ type: "direction", direction }, `${pressureLabels[direction]} pressure`, "Grouped by canonical asset class"));
+      const breakdown = element("ul", "pressure-asset-breakdown");
+      derive.groupPressureSourcesByAssetClass(members).forEach((group) => breakdown.append(element("li", "", `${group.assetClass} · ${group.members.length}`)));
+      card.append(button, breakdown); target.append(card);
+    });
+  }
+
+  function renderPressureTaxonomy(taxonomy) {
+    const sectors = $("#pressureSectors"); sectors.replaceChildren();
+    (taxonomy.sectors || []).forEach((group) => {
+      const button = element("button", "pressure-taxonomy-card"); button.type = "button";
+      button.append(element("strong", "", group.name), pressureCountStrip(group.counts), element("small", "", `${group.total} equities · ${Number(group.directional_share_pct || 0).toFixed(1)}% directional`));
+      button.addEventListener("click", () => openPressureDrilldown({ type: "sector", name: group.name }, group.name, "Equity constituents grouped by current pressure"));
+      sectors.append(button);
+    });
+    const industries = $("#pressureIndustries"); industries.replaceChildren();
+    (taxonomy.industries || []).forEach((group) => {
+      const button = element("button", "pressure-industry-row"); button.type = "button";
+      const identity = element("span", "pressure-industry-identity"); identity.append(element("strong", "", group.name), element("small", "", group.sector));
+      button.append(identity, pressureCountStrip(group.counts), element("b", "", String(group.total)));
+      button.addEventListener("click", () => openPressureDrilldown({ type: "industry", name: group.name, sector: group.sector }, group.name, `${group.sector} equities grouped by current pressure`));
+      industries.append(button);
+    });
+  }
+
+  function renderPressureConcentration(taxonomy) {
+    $("#pressureConcentrationLabel").textContent = derive.pressureConcentrationLabel(taxonomy);
+    const target = $("#pressureConcentration"); target.replaceChildren();
+    ["higher", "lower"].forEach((direction) => {
+      const measure = taxonomy.concentration?.[direction] || {};
+      const card = element("article", "");
+      card.append(
+        element("span", `pressure-${direction}`, `${pressureLabels[direction]} equity pressure`),
+        element("strong", "", measure.top_sector ? `${measure.top_sector} · ${Number(measure.top_sector_share_pct || 0).toFixed(1)}%` : "No directional equities"),
+        element("small", "", measure.top_sector ? `${measure.top_sector_count} of ${measure.equity_count} across ${measure.contributing_sector_count} sector${measure.contributing_sector_count === 1 ? "" : "s"}` : "No contributing sector"),
+      );
+      target.append(card);
+    });
+  }
+
+  function openPressureDrilldown(selection, heading, support) {
+    state.pressureSelection = { ...selection, heading, support };
+    renderPressureDrilldown();
+    $("#pressureDrilldown").scrollIntoView?.({ behavior: "smooth", block: "nearest" });
+  }
+
+  function pressureMemberItem(member) {
+    const item = element("li", "pressure-member-item");
+    const heading = element("div", "pressure-member-heading");
+    heading.append(symbolLink(member.symbol, member.symbol), element("strong", `pressure-${member.direction}`, pressureLabels[member.direction] || pressureLabels.neutral));
+    const taxonomy = member.asset_class === "EQUITY"
+      ? `${member.sector} · ${member.industry}`
+      : member.asset_class || "Unclassified";
+    const context = element("div", "pressure-member-context");
+    context.append(
+      element("span", "", taxonomy),
+      element("span", "", member.current_location_label || locationLabels[member.current_location] || "Location unavailable"),
+      element("span", "", `Route · ${member.route_owner || "—"}`),
+    );
+    if (member.latest_pressure_observed_at) context.append(element("time", "", `Latest pressure · ${exactTime(member.latest_pressure_observed_at)}`));
+    item.append(heading, context); return item;
+  }
+
+  function renderPressureDrilldown() {
+    const panel = $("#pressureDrilldown");
+    if (!state.pressureSelection) { panel.hidden = true; $("#pressureDrilldownGroups").replaceChildren(); return; }
+    const taxonomy = state.symbolPayload?.taxonomy_pressure || {};
+    const report = state.symbolPayload?.pressure || {};
+    const members = derive.pressureDrilldownMembers(taxonomy, report, state.pressureSelection);
+    panel.hidden = false;
+    $("#pressureDrilldownHeading").textContent = `${state.pressureSelection.heading} · ${members.length}`;
+    $("#pressureDrilldownSupport").textContent = state.pressureSelection.support;
+    const target = $("#pressureDrilldownGroups"); target.replaceChildren();
+    const groups = ["sector", "industry"].includes(state.pressureSelection.type)
+      ? ["higher", "neutral", "lower"].map((direction) => ({ label: pressureLabels[direction], members: members.filter((item) => item.direction === direction) })).filter((group) => group.members.length)
+      : derive.groupPressureSourcesByAssetClass(members).map((group) => ({ label: group.assetClass, members: group.members }));
+    if (!groups.length) { target.append(empty("No symbols in this selection.")); return; }
+    groups.forEach((group) => {
+      const section = element("section", "pressure-member-group");
+      section.append(element("h3", "", `${group.label} · ${group.members.length}`));
+      const list = element("ul", "pressure-member-list"); group.members.forEach((member) => list.append(pressureMemberItem(member)));
+      section.append(list); target.append(section);
+    });
   }
 
   function renderLocationDistribution() {
@@ -743,6 +875,10 @@
     const url = new URL(globalObject.location.href); if (symbol) url.searchParams.set("symbol", symbol); else url.searchParams.delete("symbol"); globalObject.history.replaceState({}, "", url); loadSymbolDetail(symbol).catch(showError);
   });
   $("#pressureGroupSelect")?.addEventListener("change", (event) => loadPeerPressure(event.target.value).catch(showError));
+  $("#pressureDrilldownClose")?.addEventListener("click", () => {
+    state.pressureSelection = null;
+    renderPressureDrilldown();
+  });
   $("#symbolBoardSort")?.addEventListener("change", (event) => {
     state.symbolBoardSort = derive.persistSymbolBoardSort(
       globalObject.localStorage,

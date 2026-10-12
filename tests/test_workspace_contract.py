@@ -209,6 +209,32 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertIn('<h1>Pressure</h1>', HTML)
         self.assertNotIn('<h1>Structural location × canonical pressure</h1>', HTML)
 
+    def test_pressure_sources_taxonomy_and_shared_drilldown_are_present(self) -> None:
+        for target in (
+            "pressureSources",
+            "pressureSectors",
+            "pressureIndustries",
+            "pressureConcentration",
+            "pressureDrilldown",
+            "pressureDrilldownGroups",
+            "pressurePopulationComparison",
+        ):
+            self.assertIn(f'id="{target}"', HTML)
+        self.assertIn("PRESSURE SOURCES", HTML)
+        self.assertIn("PRESSURE BY SECTOR", HTML)
+        self.assertIn("PRESSURE BY INDUSTRY", HTML)
+        self.assertIn("PRESSURE CONCENTRATION", HTML)
+        self.assertIn("renderPressureSources(taxonomy)", JS)
+        self.assertIn("derive.pressureDrilldownMembers", JS)
+        self.assertIn("derive.groupPressureSourcesByAssetClass", JS)
+        self.assertIn("type: \"map\"", JS)
+        self.assertIn("/mrz/symbols?symbol=", JS)
+        self.assertIn(".pressure-taxonomy-grid", CSS)
+        self.assertIn(".pressure-member-list", CSS)
+        mobile_rules = CSS[CSS.index("@media (max-width: 560px)") :]
+        self.assertIn(".pressure-taxonomy-grid", mobile_rules)
+        self.assertIn(".pressure-member-list", mobile_rules)
+
     def test_location_flow_cards_expose_shared_symbol_drilldown(self) -> None:
         for target in (
             "locationFlowDrilldown",
