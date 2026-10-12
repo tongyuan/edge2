@@ -101,6 +101,7 @@ TNA,ETF,,,READY,Direxion official TNA fund page,Leveraged small-cap ETF; corpora
 TSLA,EQUITY,Consumer Discretionary,Automobiles,READY,SEC company-ticker reference and Tesla company profile,Tesla identity and automobile business verified.
 TSLL,ETF,,,READY,Direxion official TSLL fund page,Leveraged single-stock ETF; corporate taxonomy intentionally null.
 TTD,EQUITY,Communication Services,Media,READY,SEC company-ticker reference and Trade Desk company profile,Advertising-media platform mapped to controlled Media industry.
+U11,EQUITY,Financials,Banks,READY,UOB official corporate profile and SGX U11 issuer reference,Operator confirmed canonical U11 as United Overseas Bank Limited; reviewed Financial Services / Banks - Regional mapped to EDGE Financials / Banks.
 UBER,EQUITY,Technology,Software,READY,SEC company-ticker reference and Uber company profile,Operator confirmed UBER should use the same Technology / Software classification as GRAB.
 UNH,EQUITY,Health Care,Managed Health Care,READY,SEC company-ticker reference and UnitedHealth company profile,Managed-health-care business verified.
 URA,ETF,,,READY,Global X official URA fund page,Exchange-traded fund; corporate taxonomy intentionally null.
