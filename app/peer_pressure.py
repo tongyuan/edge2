@@ -320,3 +320,77 @@ def build_universe_pressure_report(
         },
         "excluded_unclassified_count": len(symbol_states) - len(classified_members),
     }
+
+
+def build_taxonomy_pressure_report(
+    pressure_report: Mapping[str, Any],
+    instruments: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Group existing canonical pressure states by complete equity taxonomy."""
+    taxonomy_by_symbol = {
+        str(item["symbol"]): item
+        for item in instruments
+    }
+    groups: dict[tuple[str, str | None, str], dict[str, Any]] = {}
+    included_symbols: set[str] = set()
+    pressure_by_symbol: dict[str, Mapping[str, Any]] = {}
+
+    for direction in PRESSURE_DIRECTIONS:
+        for state in pressure_report.get("categories", {}).get(direction, ()):
+            symbol = str(state["symbol"])
+            pressure_by_symbol[symbol] = state
+            taxonomy = taxonomy_by_symbol.get(symbol, {})
+            if (
+                taxonomy.get("asset_class") != "EQUITY"
+                or not taxonomy.get("sector")
+                or not taxonomy.get("industry")
+            ):
+                continue
+            included_symbols.add(symbol)
+            dimensions = (
+                ("sector", None, str(taxonomy["sector"])),
+                ("industry", str(taxonomy["sector"]), str(taxonomy["industry"])),
+            )
+            for dimension, sector, name in dimensions:
+                group = groups.setdefault(
+                    (dimension, sector, name),
+                    {
+                        "name": name,
+                        **({"sector": sector} if sector is not None else {}),
+                        "counts": {item: 0 for item in PRESSURE_DIRECTIONS},
+                        "symbols": {item: [] for item in PRESSURE_DIRECTIONS},
+                    },
+                )
+                group["counts"][direction] += 1
+                group["symbols"][direction].append(symbol)
+
+    sectors: list[dict[str, Any]] = []
+    industries: list[dict[str, Any]] = []
+    for (dimension, _sector, _name), group in sorted(groups.items()):
+        for symbols in group["symbols"].values():
+            symbols.sort()
+        group["total"] = sum(group["counts"].values())
+        (sectors if dimension == "sector" else industries).append(group)
+
+    sector_totals = {
+        direction: sum(group["counts"][direction] for group in sectors)
+        for direction in PRESSURE_DIRECTIONS
+    }
+    included_counts = {
+        direction: sum(
+            pressure_by_symbol[symbol]["direction"] == direction
+            for symbol in included_symbols
+        )
+        for direction in PRESSURE_DIRECTIONS
+    }
+    if sector_totals != included_counts:
+        raise ValueError("taxonomy pressure must reconcile to included equities")
+
+    return {
+        "sectors": sectors,
+        "industries": industries,
+        "included_equity_count": len(included_symbols),
+        "excluded_count": len(pressure_by_symbol) - len(included_symbols),
+        "counts": included_counts,
+        "method": "Canonical pressure state grouped by complete equity taxonomy.",
+    }

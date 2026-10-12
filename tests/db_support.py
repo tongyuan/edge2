@@ -40,6 +40,7 @@ def clean(database_url: str) -> None:
                     mrz_events,
                     active_mrz,
                     operator_mrz_promotions,
+                    instruments,
                     observations,
                     ingestion_rejections
                 RESTART IDENTITY CASCADE

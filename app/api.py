@@ -27,7 +27,11 @@ from app.notifications import (
     PushSubscriptionDelete,
     PushSubscriptionPayload,
 )
-from app.peer_pressure import build_peer_pressure_report, build_universe_pressure_report
+from app.peer_pressure import (
+    build_peer_pressure_report,
+    build_taxonomy_pressure_report,
+    build_universe_pressure_report,
+)
 from app.repository import (
     EdgeRepository,
     PromotionConflict,
@@ -367,13 +371,21 @@ def create_app(
         active_mrzs, observations, _migration_provenance = (
             repository.mrz_robustness_inputs()
         )
+        pressure = build_universe_pressure_report(
+            symbol_states,
+            active_mrzs,
+            observations,
+        )
         return {
             "minimum_cluster_observations": MIN_CLUSTER_OBSERVATIONS,
             "location_migration_tendency": repository.location_migration_tendency(),
-            "pressure": build_universe_pressure_report(
+            "pressure": pressure,
+            "taxonomy_pressure": build_taxonomy_pressure_report(
+                pressure,
                 symbol_states,
-                active_mrzs,
-                observations,
+            ),
+            "incomplete_taxonomy_count": (
+                repository.count_incomplete_taxonomy_records()
             ),
             "symbols": symbol_states,
         }

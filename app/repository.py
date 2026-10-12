@@ -39,6 +39,11 @@ from app.structure import (
     classify_structural_location,
     ipda_directional_context,
 )
+from app.taxonomy import (
+    InstrumentTaxonomy,
+    instrument_taxonomy_from_row,
+    validate_instrument_taxonomy,
+)
 from app.validation import (
     TRADEDESK_EXIT_LEVEL_ORDER,
     ObservationPayload,
@@ -631,6 +636,15 @@ class EdgeRepository:
                         replay=None,
                         triggered_transitions=(),
                     )
+
+                cursor.execute(
+                    """
+                    INSERT INTO instruments (symbol)
+                    VALUES (%s)
+                    ON CONFLICT (symbol) DO NOTHING
+                    """,
+                    (payload.symbol,),
+                )
 
                 cursor.execute(
                     """
@@ -2295,6 +2309,17 @@ class EdgeRepository:
                     (normalized,),
                 )
                 production_confirmation = cursor.fetchone()
+                cursor.execute(
+                    """
+                    SELECT symbol, asset_class, sector, industry
+                    FROM instruments
+                    WHERE symbol = %s
+                    """,
+                    (normalized,),
+                )
+                taxonomy = instrument_taxonomy_from_row(
+                    cursor.fetchone(), normalized
+                )
                 concentration_checks = None
                 if active is None:
                     concentration_checks = {
@@ -2313,6 +2338,7 @@ class EdgeRepository:
                     migration,
                     promotion_provenance_payload(promotion),
                     production_confirmation_payload(production_confirmation),
+                    taxonomy,
                 )
         finally:
             connection.close()
@@ -2586,6 +2612,100 @@ class EdgeRepository:
                     """
                 )
                 return [saved_group_payload(row) for row in cursor.fetchall()]
+        finally:
+            connection.close()
+
+    def get_instrument_taxonomy(self, symbol: str) -> dict[str, Any] | None:
+        normalized = normalize_symbol(symbol)
+        connection = connect(self.database_url)
+        try:
+            connection.set_session(readonly=True)
+            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    """
+                    SELECT symbol, asset_class, sector, industry,
+                           created_at, updated_at
+                    FROM instruments
+                    WHERE symbol = %s
+                    """,
+                    (normalized,),
+                )
+                row = cursor.fetchone()
+                return instrument_taxonomy_payload(row) if row else None
+        finally:
+            connection.close()
+
+    def list_instrument_taxonomy(self) -> list[dict[str, Any]]:
+        connection = connect(self.database_url)
+        try:
+            connection.set_session(readonly=True)
+            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    """
+                    SELECT symbol, asset_class, sector, industry,
+                           created_at, updated_at
+                    FROM instruments
+                    ORDER BY symbol ASC
+                    """
+                )
+                return [instrument_taxonomy_payload(row) for row in cursor.fetchall()]
+        finally:
+            connection.close()
+
+    def update_instrument_taxonomy(
+        self,
+        symbol: str,
+        *,
+        asset_class: str | None,
+        sector: str | None,
+        industry: str | None,
+    ) -> dict[str, Any] | None:
+        taxonomy = validate_instrument_taxonomy(
+            symbol=symbol,
+            asset_class=asset_class,
+            sector=sector,
+            industry=industry,
+        )
+        with transaction(self.database_url) as connection:
+            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    """
+                    UPDATE instruments
+                    SET asset_class = %s,
+                        sector = %s,
+                        industry = %s,
+                        updated_at = clock_timestamp()
+                    WHERE symbol = %s
+                    RETURNING symbol, asset_class, sector, industry,
+                              created_at, updated_at
+                    """,
+                    (
+                        taxonomy.asset_class,
+                        taxonomy.sector,
+                        taxonomy.industry,
+                        taxonomy.symbol,
+                    ),
+                )
+                row = cursor.fetchone()
+                return instrument_taxonomy_payload(row) if row else None
+
+    def count_incomplete_taxonomy_records(self) -> int:
+        connection = connect(self.database_url)
+        try:
+            connection.set_session(readonly=True)
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM instruments
+                    WHERE asset_class IS NULL
+                       OR (
+                            asset_class = 'EQUITY'
+                            AND (sector IS NULL OR industry IS NULL)
+                       )
+                    """
+                )
+                return int(cursor.fetchone()[0])
         finally:
             connection.close()
 
@@ -2966,6 +3086,7 @@ class EdgeRepository:
                         o.ipda_20w_high AS latest_ipda_20w_high,
                         o.ipda_20w_low AS latest_ipda_20w_low,
                         o.observed_at AS latest_observed_at,
+                        i.asset_class, i.sector, i.industry,
                         a.route_owner, a.core_mrz_lower, a.core_mrz_upper,
                         a.core_mrz_midpoint, a.structural_location,
                         a.confirming_observation_count, a.activation_source,
@@ -3000,6 +3121,7 @@ class EdgeRepository:
                         w.ipda_20w_high, w.ipda_20w_low,
                         w.observed_at, w.received_at
                     FROM latest_observations o
+                    LEFT JOIN instruments i ON i.symbol = o.symbol
                     LEFT JOIN active_mrz a ON a.symbol = o.symbol
                     LEFT JOIN LATERAL (
                         SELECT e.occurred_at, e.old_core_mrz_lower,
@@ -3062,6 +3184,7 @@ class EdgeRepository:
                     payloads.append(
                         {
                             "symbol": symbol,
+                            **instrument_taxonomy_from_row(anchor, symbol).payload(),
                             "mrz_status": (
                                 "active" if anchor["route_owner"] else "unestablished"
                             ),
@@ -3158,6 +3281,15 @@ def saved_group_payload(row: Mapping[str, Any]) -> dict[str, Any]:
         "member_count": len(members),
         "created_at": iso(row["created_at"]),
         "updated_at": iso(row["updated_at"]),
+    }
+
+
+def instrument_taxonomy_payload(row: Mapping[str, Any]) -> dict[str, Any]:
+    taxonomy = instrument_taxonomy_from_row(row, str(row["symbol"]))
+    return {
+        **taxonomy.payload(),
+        "created_at": iso(row.get("created_at")),
+        "updated_at": iso(row.get("updated_at")),
     }
 
 
@@ -3317,9 +3449,11 @@ def detail_payload(
     migration: Mapping[str, Any],
     operator_promotion: Mapping[str, Any] | None,
     production_confirmation: Mapping[str, Any] | None,
+    taxonomy: InstrumentTaxonomy,
 ) -> dict[str, Any]:
     base = {
         "symbol": symbol,
+        **taxonomy.payload(),
         "latest_observation_price": number(latest["observation_price"]),
         "latest_observed_at": iso(latest["observed_at"]),
         "latest_observation_route": str(latest["route"]),

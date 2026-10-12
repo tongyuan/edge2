@@ -52,9 +52,11 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(health.json()["database"], "ok")
         symbols_payload = self.client.get("/api/symbols").json()
         pressure = symbols_payload.pop("pressure")
+        taxonomy_pressure = symbols_payload.pop("taxonomy_pressure")
         self.assertEqual(
             symbols_payload,
             {
+                "incomplete_taxonomy_count": 0,
                 "minimum_cluster_observations": 4,
                 "location_migration_tendency": {
                     key: {
@@ -80,6 +82,17 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(pressure["participation"], {"count": 0, "total": 0})
         self.assertEqual(pressure["pressure_map"]["totals"], pressure["counts"])
         self.assertEqual(pressure["headline"]["label"], "Insufficient Participation")
+        self.assertEqual(
+            taxonomy_pressure,
+            {
+                "sectors": [],
+                "industries": [],
+                "included_equity_count": 0,
+                "excluded_count": 0,
+                "counts": {"higher": 0, "lower": 0, "neutral": 0},
+                "method": "Canonical pressure state grouped by complete equity taxonomy.",
+            },
+        )
 
     def test_location_distribution_history_defaults_to_24h_and_rejects_unknown_windows(self) -> None:
         response = self.client.get("/api/location-distribution/history")
