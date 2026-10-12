@@ -4,7 +4,7 @@ symbol,asset_class,sector,industry
 AAPL,EQUITY,Technology,"Technology Hardware, Storage & Peripherals"
 AMD,EQUITY,Technology,Semiconductors
 AMZN,EQUITY,Consumer Discretionary,Broadline Retail
-APLD,EQUITY,Financials,Capital Markets
+APLD,EQUITY,Technology,IT Services
 APO,EQUITY,Financials,Capital Markets
 ARCC,EQUITY,Financials,Capital Markets
 ASTS,EQUITY,Communication Services,Wireless Telecommunication Services
@@ -18,7 +18,7 @@ BOTZ,ETF,,
 BTCUSDT,CRYPTO,,
 CCJ,EQUITY,Materials,Metals & Mining
 CIEN,EQUITY,Technology,Communications Equipment
-CLSK,EQUITY,Financials,Capital Markets
+CLSK,EQUITY,Technology,IT Services
 COHR,EQUITY,Technology,"Electronic Equipment, Instruments & Components"
 COIN,EQUITY,Financials,Capital Markets
 CORZ,EQUITY,Technology,Software
@@ -101,7 +101,7 @@ TNA,ETF,,
 TSLA,EQUITY,Consumer Discretionary,Automobiles
 TSLL,ETF,,
 TTD,EQUITY,Communication Services,Media
-UBER,EQUITY,Industrials,Ground Transportation
+UBER,EQUITY,Technology,Software
 UNH,EQUITY,Health Care,Managed Health Care
 URA,ETF,,
 USO,ETF,,
