@@ -50,6 +50,7 @@ EQUITY_INDUSTRIES_BY_SECTOR: Mapping[str, frozenset[str]] = {
         "Banks",
         "Capital Markets",
         "Consumer Finance",
+        "Digital Asset Treasury",
         "Financial Services",
         "Insurance",
         "Mortgage REITs",
@@ -89,6 +90,7 @@ EQUITY_INDUSTRIES_BY_SECTOR: Mapping[str, frozenset[str]] = {
     }),
     "Technology": frozenset({
         "Communications Equipment",
+        "Consumer Electronics",
         "Electronic Equipment, Instruments & Components",
         "IT Services",
         "Semiconductors",

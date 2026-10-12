@@ -1,0 +1,127 @@
+symbol,asset_class,sector,industry
+1810,EQUITY,Technology,Consumer Electronics
+9988,EQUITY,Consumer Discretionary,Broadline Retail
+AAPL,EQUITY,Technology,"Technology Hardware, Storage & Peripherals"
+AMD,EQUITY,Technology,Semiconductors
+AMZN,EQUITY,Consumer Discretionary,Broadline Retail
+APLD,EQUITY,Financials,Capital Markets
+APO,EQUITY,Financials,Capital Markets
+ARCC,EQUITY,Financials,Capital Markets
+ASTS,EQUITY,Communication Services,Wireless Telecommunication Services
+AVGO,EQUITY,Technology,Semiconductors
+BABA,EQUITY,Consumer Discretionary,Broadline Retail
+BE,EQUITY,Industrials,Electrical Equipment
+BIDU,EQUITY,Communication Services,Interactive Media & Services
+BMNR,EQUITY,Financials,Digital Asset Treasury
+BMNU,ETF,,
+BOTZ,ETF,,
+BTCUSDT,CRYPTO,,
+CCJ,EQUITY,Materials,Metals & Mining
+CIEN,EQUITY,Technology,Communications Equipment
+CLSK,EQUITY,Financials,Capital Markets
+COHR,EQUITY,Technology,"Electronic Equipment, Instruments & Components"
+COIN,EQUITY,Financials,Capital Markets
+CORZ,EQUITY,Technology,Software
+CRM,EQUITY,Technology,Software
+CRWV,EQUITY,Technology,IT Services
+D05,EQUITY,Financials,Banks
+DDOG,EQUITY,Technology,Software
+DJI,INDEX,,
+DPST,ETF,,
+DRAM,ETF,,
+ETHUSDT,CRYPTO,,
+FXI,ETF,,
+GLL,ETF,,
+GOOG,EQUITY,Communication Services,Interactive Media & Services
+GRAB,EQUITY,Technology,Software
+HIMS,EQUITY,Health Care,Health Care Providers & Services
+HIVE,EQUITY,Technology,IT Services
+HOOD,EQUITY,Financials,Capital Markets
+HSI,INDEX,,
+HSTECH,INDEX,,
+HUT,EQUITY,Technology,IT Services
+IBIT,ETF,,
+IBM,EQUITY,Technology,IT Services
+IGV,ETF,,
+INTC,EQUITY,Technology,Semiconductors
+INTU,EQUITY,Technology,Software
+IONQ,EQUITY,Technology,"Technology Hardware, Storage & Peripherals"
+IREN,EQUITY,Technology,IT Services
+IWM,ETF,,
+JD,EQUITY,Consumer Discretionary,Broadline Retail
+KOSPI,INDEX,,
+KRE,ETF,,
+KWEB,ETF,,
+MAGS,ETF,,
+META,EQUITY,Communication Services,Interactive Media & Services
+MO,EQUITY,Consumer Staples,Tobacco
+MP,EQUITY,Materials,Metals & Mining
+MRVL,EQUITY,Technology,Semiconductors
+MSFT,EQUITY,Technology,Software
+MSTR,EQUITY,Financials,Digital Asset Treasury
+MU,EQUITY,Technology,Semiconductors
+NB,EQUITY,Materials,Metals & Mining
+NBIS,EQUITY,Technology,IT Services
+NDQ,INDEX,,
+NIO,EQUITY,Consumer Discretionary,Automobiles
+NKE,EQUITY,Consumer Discretionary,"Textiles, Apparel & Luxury Goods"
+NOK,EQUITY,Technology,Communications Equipment
+NOW,EQUITY,Technology,Software
+NVDA,EQUITY,Technology,Semiconductors
+NVDL,ETF,,
+O39,EQUITY,Financials,Banks
+OCSL,EQUITY,Financials,Capital Markets
+ORBS,EQUITY,Financials,Digital Asset Treasury
+ORCL,EQUITY,Technology,Software
+OWL,EQUITY,Financials,Capital Markets
+PDD,EQUITY,Consumer Discretionary,Broadline Retail
+PEP,EQUITY,Consumer Staples,Beverages
+PLTR,EQUITY,Technology,Software
+POET,EQUITY,Technology,Semiconductors
+QQQ,ETF,,
+RDW,EQUITY,Industrials,Aerospace & Defense
+RGTI,EQUITY,Technology,"Technology Hardware, Storage & Peripherals"
+RKLB,EQUITY,Industrials,Aerospace & Defense
+SBET,EQUITY,Financials,Digital Asset Treasury
+SE,EQUITY,Consumer Discretionary,Broadline Retail
+SMH,ETF,,
+SNDK,EQUITY,Technology,"Technology Hardware, Storage & Peripherals"
+SOLUSDT,CRYPTO,,
+SOXL,ETF,,
+SOXS,ETF,,
+SPCE,EQUITY,Industrials,Aerospace & Defense
+SPX,INDEX,,
+SPXUSDT,CRYPTO,,
+SPY,ETF,,
+STM,EQUITY,Technology,Semiconductors
+SUIUSDT,CRYPTO,,
+TGTX,EQUITY,Health Care,Biotechnology
+TLT,ETF,,
+TNA,ETF,,
+TSLA,EQUITY,Consumer Discretionary,Automobiles
+TSLL,ETF,,
+TTD,EQUITY,Communication Services,Media
+UBER,EQUITY,Industrials,Ground Transportation
+UNH,EQUITY,Health Care,Managed Health Care
+URA,ETF,,
+USO,ETF,,
+USOIL,COMMODITY,,
+WLDUSDT,CRYPTO,,
+XAGUSD,COMMODITY,,
+XAUUSD,COMMODITY,,
+XBI,ETF,,
+XCUUSD,COMMODITY,,
+XLB,ETF,,
+XLC,ETF,,
+XLE,ETF,,
+XLF,ETF,,
+XLI,ETF,,
+XLK,ETF,,
+XLP,ETF,,
+XLRE,ETF,,
+XLU,ETF,,
+XLV,ETF,,
+XLY,ETF,,
+ZECUSDT,CRYPTO,,
+ZION,EQUITY,Financials,Banks
+ZSL,ETF,,

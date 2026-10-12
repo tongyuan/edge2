@@ -1,0 +1,127 @@
+symbol,proposed_asset_class,proposed_sector,proposed_industry,classification_status,source,notes
+1810,EQUITY,Technology,Consumer Electronics,READY,TradingView HKEX:1810 Xiaomi profile; operator confirmation,Operator confirmed the monitored canonical 1810 identity as Xiaomi Corporation.
+9988,EQUITY,Consumer Discretionary,Broadline Retail,READY,Alibaba investor relations and HKEX issuer reference,HKEX 9988 Alibaba identity verified; mapped to EDGE controlled vocabulary.
+AAPL,EQUITY,Technology,"Technology Hardware, Storage & Peripherals",READY,SEC company-ticker reference and Apple company profile,Apple identity and principal hardware business verified.
+AMD,EQUITY,Technology,Semiconductors,READY,SEC company-ticker reference and AMD company profile,AMD identity and semiconductor business verified.
+AMZN,EQUITY,Consumer Discretionary,Broadline Retail,READY,SEC company-ticker reference and Amazon company profile,Amazon identity and principal broadline retail classification verified.
+APLD,EQUITY,Technology,IT Services,READY,Applied Digital official company information and SEC filings,Current data-center and high-performance-compute hosting operations map to EDGE Technology / IT Services rather than the legacy Financials / Capital Markets label.
+APO,EQUITY,Financials,Capital Markets,READY,SEC company-ticker reference and Apollo company profile,Apollo identity and asset-management business verified.
+ARCC,EQUITY,Financials,Capital Markets,READY,SEC company-ticker reference and Ares Capital company profile,Ares Capital identity and investment-company business verified.
+ASTS,EQUITY,Communication Services,Wireless Telecommunication Services,READY,SEC company-ticker reference and AST SpaceMobile company profile,Satellite-delivered mobile broadband service mapped to controlled wireless telecommunications industry.
+AVGO,EQUITY,Technology,Semiconductors,READY,SEC company-ticker reference and Broadcom company profile,Broadcom identity and semiconductor business verified.
+BABA,EQUITY,Consumer Discretionary,Broadline Retail,READY,SEC company-ticker reference and Alibaba investor relations,Alibaba ADR identity and broadline retail business verified.
+BE,EQUITY,Industrials,Electrical Equipment,READY,SEC company-ticker reference and Bloom Energy company profile,Bloom Energy identity and fuel-cell electrical-equipment business verified.
+BIDU,EQUITY,Communication Services,Interactive Media & Services,READY,SEC company-ticker reference and Baidu investor relations,Baidu identity and internet-services business verified.
+BMNR,EQUITY,Financials,Digital Asset Treasury,READY,BitMine official investor relations and SEC SIC 6199 reference,Operator-approved canonical Digital Asset Treasury industry classification.
+BMNU,ETF,,,READY,SEC ETF Opportunities Trust filing for BMNU,T-REX 2X Long BMNR Daily Target ETF; corporate taxonomy intentionally null.
+BOTZ,ETF,,,READY,Global X official BOTZ fund page,Exchange-traded fund; corporate taxonomy intentionally null.
+BTCUSDT,CRYPTO,,,READY,TradingView BTCUSDT market reference,Bitcoin/Tether crypto pair; corporate taxonomy intentionally null.
+CCJ,EQUITY,Materials,Metals & Mining,READY,Cameco official company profile and SEC issuer reference,Uranium mining business mapped to controlled metals and mining industry.
+CIEN,EQUITY,Technology,Communications Equipment,READY,SEC company-ticker reference and Ciena company profile,Ciena identity and networking-equipment business verified.
+CLSK,EQUITY,Technology,IT Services,READY,CleanSpark official investor relations and SEC annual report,Current data-center development and compute infrastructure operations map to EDGE Technology / IT Services rather than the legacy Financials / Capital Markets label.
+COHR,EQUITY,Technology,"Electronic Equipment, Instruments & Components",READY,SEC company-ticker reference and Coherent company profile,Photonics and electronic-components business verified.
+COIN,EQUITY,Financials,Capital Markets,READY,SEC company-ticker reference and Coinbase company profile,Crypto exchange and capital-markets business verified.
+CORZ,EQUITY,Technology,Software,READY,Core Scientific official company information,Issuer industry classification is Technology / Software.
+CRM,EQUITY,Technology,Software,READY,SEC company-ticker reference and Salesforce company profile,Salesforce identity and software business verified.
+CRWV,EQUITY,Technology,IT Services,READY,SEC company-ticker reference and CoreWeave company profile,Cloud-compute service business mapped to controlled IT Services industry.
+D05,EQUITY,Financials,Banks,READY,DBS Group official investor relations and SGX D05 issuer reference,Operator confirmed canonical D05 as DBS Group Holdings Ltd; mapped consistently with EDGE banking equities.
+DDOG,EQUITY,Technology,Software,READY,SEC company-ticker reference and Datadog company profile,Datadog identity and software business verified.
+DJI,INDEX,,,READY,S&P Dow Jones Indices and TradingView DJI reference,Dow Jones Industrial Average index; corporate taxonomy intentionally null.
+DPST,ETF,,,READY,Direxion official DPST fund page,Leveraged regional-bank ETF; corporate taxonomy intentionally null.
+DRAM,ETF,,,READY,Roundhill official DRAM fund page and Cboe listing,Roundhill Memory ETF; corporate taxonomy intentionally null.
+ETHUSDT,CRYPTO,,,READY,TradingView ETHUSDT market reference,Ether/Tether crypto pair; corporate taxonomy intentionally null.
+FXI,ETF,,,READY,iShares official FXI fund page,Exchange-traded fund; corporate taxonomy intentionally null.
+GLL,ETF,,,READY,ProShares official GLL fund page,Exchange-traded fund; corporate taxonomy intentionally null.
+GOOG,EQUITY,Communication Services,Interactive Media & Services,READY,SEC company-ticker reference and Alphabet company profile,Alphabet identity and interactive internet-services business verified.
+GRAB,EQUITY,Technology,Software,READY,Grab official investor relations and SEC issuer reference,Operator-approved reviewed market classification maps the technology and application-software platform to Software.
+HIMS,EQUITY,Health Care,Health Care Providers & Services,READY,SEC company-ticker reference and Hims & Hers company profile,Health-services platform identity verified.
+HIVE,EQUITY,Technology,IT Services,READY,HIVE official company profile and S&P Global company classification,Operator-approved current digital-infrastructure and compute business classification maps to IT Services.
+HOOD,EQUITY,Financials,Capital Markets,READY,SEC company-ticker reference and Robinhood company profile,Brokerage and capital-markets business verified.
+HSI,INDEX,,,READY,Hang Seng Indexes official HSI reference,Hang Seng Index; corporate taxonomy intentionally null.
+HSTECH,INDEX,,,READY,Hang Seng Indexes official HSTECH reference,Hang Seng TECH Index; corporate taxonomy intentionally null.
+HUT,EQUITY,Technology,IT Services,READY,Hut 8 official company profile and SEC annual report,Operator-approved current digital-infrastructure and compute business classification maps to IT Services.
+IBIT,ETF,,,READY,iShares official IBIT fund page,Exchange-traded fund; corporate taxonomy intentionally null.
+IBM,EQUITY,Technology,IT Services,READY,SEC company-ticker reference and IBM company profile,IBM identity and IT-services business verified.
+IGV,ETF,,,READY,iShares official IGV fund page,Exchange-traded fund; corporate taxonomy intentionally null.
+INTC,EQUITY,Technology,Semiconductors,READY,SEC company-ticker reference and Intel company profile,Intel identity and semiconductor business verified.
+INTU,EQUITY,Technology,Software,READY,SEC company-ticker reference and Intuit company profile,Intuit identity and software business verified.
+IONQ,EQUITY,Technology,"Technology Hardware, Storage & Peripherals",READY,SEC company-ticker reference and IonQ company profile,Quantum-computing hardware business mapped to controlled technology-hardware industry.
+IREN,EQUITY,Technology,IT Services,READY,IREN official SEC annual report and company profile,Current AI cloud and data-center service platform mapped to controlled IT Services industry.
+IWM,ETF,,,READY,iShares official IWM fund page,Exchange-traded fund; corporate taxonomy intentionally null.
+JD,EQUITY,Consumer Discretionary,Broadline Retail,READY,SEC company-ticker reference and JD.com investor relations,JD.com identity and broadline retail business verified.
+KOSPI,INDEX,,,READY,Korea Exchange KOSPI reference,Korea Composite Stock Price Index; corporate taxonomy intentionally null.
+KRE,ETF,,,READY,State Street official KRE fund page,Exchange-traded fund; corporate taxonomy intentionally null.
+KWEB,ETF,,,READY,KraneShares official KWEB fund page,Exchange-traded fund; corporate taxonomy intentionally null.
+MAGS,ETF,,,READY,Roundhill official MAGS fund page,Exchange-traded fund; corporate taxonomy intentionally null.
+META,EQUITY,Communication Services,Interactive Media & Services,READY,SEC company-ticker reference and Meta company profile,Meta identity and interactive media business verified.
+MO,EQUITY,Consumer Staples,Tobacco,READY,SEC company-ticker reference and Altria company profile,Altria identity and tobacco business verified.
+MP,EQUITY,Materials,Metals & Mining,READY,SEC company-ticker reference and MP Materials company profile,Rare-earth mining business verified.
+MRVL,EQUITY,Technology,Semiconductors,READY,SEC company-ticker reference and Marvell company profile,Marvell identity and semiconductor business verified.
+MSFT,EQUITY,Technology,Software,READY,SEC company-ticker reference and Microsoft company profile,Microsoft identity and software business verified.
+MSTR,EQUITY,Financials,Digital Asset Treasury,READY,Strategy SEC annual report and S&P Global company profile,Operator-approved canonical Digital Asset Treasury industry classification.
+MU,EQUITY,Technology,Semiconductors,READY,SEC company-ticker reference and Micron company profile,Micron identity and semiconductor business verified.
+NB,EQUITY,Materials,Metals & Mining,READY,SEC company-ticker reference and NioCorp company profile,Critical-minerals development business mapped to metals and mining.
+NBIS,EQUITY,Technology,IT Services,READY,Nebius official investor relations and SEC issuer reference,AI cloud and infrastructure services mapped to controlled IT Services industry.
+NDQ,INDEX,,,READY,TradingView TVC:NDQ index reference; operator confirmation,Operator confirmed the monitored canonical NDQ identity as the Nasdaq index; it is not the ASX BetaShares NDQ ETF.
+NIO,EQUITY,Consumer Discretionary,Automobiles,READY,NIO official investor relations and SEC issuer reference,NIO identity and automobile business verified.
+NKE,EQUITY,Consumer Discretionary,"Textiles, Apparel & Luxury Goods",READY,SEC company-ticker reference and Nike company profile,Nike identity and apparel business verified.
+NOK,EQUITY,Technology,Communications Equipment,READY,Nokia official investor relations and SEC issuer reference,Nokia identity and communications-equipment business verified.
+NOW,EQUITY,Technology,Software,READY,SEC company-ticker reference and ServiceNow company profile,ServiceNow identity and software business verified.
+NVDA,EQUITY,Technology,Semiconductors,READY,SEC company-ticker reference and NVIDIA company profile,NVIDIA identity and semiconductor business verified.
+NVDL,ETF,,,READY,GraniteShares official NVDL fund page,Leveraged single-stock ETF; corporate taxonomy intentionally null.
+O39,EQUITY,Financials,Banks,READY,OCBC official shareholder listing reference,Official issuer reference identifies SGX O39 as OCBC Bank.
+OCSL,EQUITY,Financials,Capital Markets,READY,SEC company-ticker reference and Oaktree Specialty Lending profile,Business-development and investment-company business verified.
+ORBS,EQUITY,Financials,Digital Asset Treasury,READY,Eightco SEC filing and official company profile,Operator-approved canonical Digital Asset Treasury industry classification.
+ORCL,EQUITY,Technology,Software,READY,SEC company-ticker reference and Oracle company profile,Oracle identity and software business verified.
+OWL,EQUITY,Financials,Capital Markets,READY,SEC company-ticker reference and Blue Owl company profile,Asset-management business verified.
+PDD,EQUITY,Consumer Discretionary,Broadline Retail,READY,SEC company-ticker reference and PDD Holdings investor relations,PDD identity and broadline retail business verified.
+PEP,EQUITY,Consumer Staples,Beverages,READY,SEC company-ticker reference and PepsiCo company profile,PepsiCo identity and beverages business verified.
+PLTR,EQUITY,Technology,Software,READY,SEC company-ticker reference and Palantir company profile,Palantir identity and software business verified.
+POET,EQUITY,Technology,Semiconductors,READY,POET official company profile and SEC annual report,Photonic integrated semiconductor platform verified.
+QQQ,ETF,,,READY,Invesco official QQQ fund page,Exchange-traded fund; corporate taxonomy intentionally null.
+RDW,EQUITY,Industrials,Aerospace & Defense,READY,SEC company-ticker reference and Redwire company profile,Space-infrastructure business mapped to aerospace and defense.
+RGTI,EQUITY,Technology,"Technology Hardware, Storage & Peripherals",READY,SEC company-ticker reference and Rigetti company profile,Quantum-computing hardware business mapped to controlled technology-hardware industry.
+RKLB,EQUITY,Industrials,Aerospace & Defense,READY,Rocket Lab official investor relations and SEC issuer reference,Launch and space-systems business verified.
+SBET,EQUITY,Financials,Digital Asset Treasury,READY,Sharplink current company profile and S&P Global company classification,Operator-approved canonical Digital Asset Treasury industry classification.
+SE,EQUITY,Consumer Discretionary,Broadline Retail,READY,Sea Limited official investor relations and SEC issuer reference,Principal e-commerce platform mapped to controlled broadline retail industry.
+SMH,ETF,,,READY,VanEck official SMH fund page,Exchange-traded fund; corporate taxonomy intentionally null.
+SNDK,EQUITY,Technology,"Technology Hardware, Storage & Peripherals",READY,SanDisk official investor relations and SEC issuer reference,Data-storage hardware business verified.
+SOLUSDT,CRYPTO,,,READY,TradingView SOLUSDT market reference,Solana/Tether crypto pair; corporate taxonomy intentionally null.
+SOXL,ETF,,,READY,Direxion official SOXL fund page,Leveraged semiconductor ETF; corporate taxonomy intentionally null.
+SOXS,ETF,,,READY,Direxion official SOXS fund page,Inverse semiconductor ETF; corporate taxonomy intentionally null.
+SPCE,EQUITY,Industrials,Aerospace & Defense,READY,SEC company-ticker reference and Virgin Galactic company profile,Commercial spaceflight business mapped to aerospace and defense.
+SPX,INDEX,,,READY,S&P Dow Jones Indices S&P 500 reference and TradingView SPX reference,S&P 500 index; corporate taxonomy intentionally null.
+SPXUSDT,CRYPTO,,,READY,TradingView SPXUSDT market reference,SPX6900/Tether crypto pair; corporate taxonomy intentionally null.
+SPY,ETF,,,READY,State Street official SPY fund page,Exchange-traded fund; corporate taxonomy intentionally null.
+STM,EQUITY,Technology,Semiconductors,READY,STMicroelectronics official investor relations and SEC issuer reference,Semiconductor business verified.
+SUIUSDT,CRYPTO,,,READY,TradingView SUIUSDT market reference,Sui/Tether crypto pair; corporate taxonomy intentionally null.
+TGTX,EQUITY,Health Care,Biotechnology,READY,SEC company-ticker reference and TG Therapeutics company profile,Biotechnology business verified.
+TLT,ETF,,,READY,iShares official TLT fund page,Exchange-traded fund; corporate taxonomy intentionally null.
+TNA,ETF,,,READY,Direxion official TNA fund page,Leveraged small-cap ETF; corporate taxonomy intentionally null.
+TSLA,EQUITY,Consumer Discretionary,Automobiles,READY,SEC company-ticker reference and Tesla company profile,Tesla identity and automobile business verified.
+TSLL,ETF,,,READY,Direxion official TSLL fund page,Leveraged single-stock ETF; corporate taxonomy intentionally null.
+TTD,EQUITY,Communication Services,Media,READY,SEC company-ticker reference and Trade Desk company profile,Advertising-media platform mapped to controlled Media industry.
+UBER,EQUITY,Technology,Software,READY,SEC company-ticker reference and Uber company profile,Operator confirmed UBER should use the same Technology / Software classification as GRAB.
+UNH,EQUITY,Health Care,Managed Health Care,READY,SEC company-ticker reference and UnitedHealth company profile,Managed-health-care business verified.
+URA,ETF,,,READY,Global X official URA fund page,Exchange-traded fund; corporate taxonomy intentionally null.
+USO,ETF,,,READY,USCF official USO fund page,Commodity-pool exchange-traded fund; corporate taxonomy intentionally null.
+USOIL,COMMODITY,,,READY,TradingView crude-oil market reference,Crude-oil reference instrument; corporate taxonomy intentionally null.
+WLDUSDT,CRYPTO,,,READY,TradingView WLDUSDT market reference,Worldcoin/Tether crypto pair; corporate taxonomy intentionally null.
+XAGUSD,COMMODITY,,,READY,TradingView silver XAGUSD market reference,Spot-silver reference instrument; corporate taxonomy intentionally null.
+XAUUSD,COMMODITY,,,READY,TradingView gold XAUUSD market reference,Spot-gold reference instrument; corporate taxonomy intentionally null.
+XBI,ETF,,,READY,State Street official XBI fund page,Exchange-traded fund; corporate taxonomy intentionally null.
+XCUUSD,COMMODITY,,,READY,TradingView copper XCUUSD market reference,Copper reference instrument; corporate taxonomy intentionally null.
+XLB,ETF,,,READY,State Street official XLB fund page,Exchange-traded fund; corporate taxonomy intentionally null.
+XLC,ETF,,,READY,State Street official XLC fund page,Exchange-traded fund; corporate taxonomy intentionally null.
+XLE,ETF,,,READY,State Street official XLE fund page,Exchange-traded fund; corporate taxonomy intentionally null.
+XLF,ETF,,,READY,State Street official XLF fund page,Exchange-traded fund; corporate taxonomy intentionally null.
+XLI,ETF,,,READY,State Street official XLI fund page,Exchange-traded fund; corporate taxonomy intentionally null.
+XLK,ETF,,,READY,State Street official XLK fund page,Exchange-traded fund; corporate taxonomy intentionally null.
+XLP,ETF,,,READY,State Street official XLP fund page,Exchange-traded fund; corporate taxonomy intentionally null.
+XLRE,ETF,,,READY,State Street official XLRE fund page,Exchange-traded fund; corporate taxonomy intentionally null.
+XLU,ETF,,,READY,State Street official XLU fund page,Exchange-traded fund; corporate taxonomy intentionally null.
+XLV,ETF,,,READY,State Street official XLV fund page,Exchange-traded fund; corporate taxonomy intentionally null.
+XLY,ETF,,,READY,State Street official XLY fund page,Exchange-traded fund; corporate taxonomy intentionally null.
+ZECUSDT,CRYPTO,,,READY,TradingView ZECUSDT market reference,Zcash/Tether crypto pair; corporate taxonomy intentionally null.
+ZION,EQUITY,Financials,Banks,READY,SEC company-ticker reference and Zions Bancorporation company profile,Banking business verified.
+ZSL,ETF,,,READY,ProShares official ZSL fund page,Exchange-traded fund; corporate taxonomy intentionally null.

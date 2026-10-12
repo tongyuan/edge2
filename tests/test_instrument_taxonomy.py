@@ -86,6 +86,22 @@ class InstrumentTaxonomyValidationTests(unittest.TestCase):
         )
         self.assertEqual(taxonomy.symbol, "NVDA")
         self.assertTrue(taxonomy.complete)
+        dat = validate_instrument_taxonomy(
+            symbol="MSTR",
+            asset_class="EQUITY",
+            sector="Financials",
+            industry="Digital Asset Treasury",
+            require_complete_equity=True,
+        )
+        xiaomi = validate_instrument_taxonomy(
+            symbol="1810",
+            asset_class="EQUITY",
+            sector="Technology",
+            industry="Consumer Electronics",
+            require_complete_equity=True,
+        )
+        self.assertTrue(dat.complete)
+        self.assertTrue(xiaomi.complete)
         with self.assertRaisesRegex(TaxonomyValidationError, "require both"):
             validate_instrument_taxonomy(
                 symbol="NVDA",

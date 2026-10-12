@@ -49,7 +49,8 @@ CREATE TABLE IF NOT EXISTS instruments (
         )) OR
         (sector = 'Financials' AND industry IN (
             'Banks', 'Capital Markets', 'Consumer Finance',
-            'Financial Services', 'Insurance', 'Mortgage REITs'
+            'Digital Asset Treasury', 'Financial Services', 'Insurance',
+            'Mortgage REITs'
         )) OR
         (sector = 'Health Care' AND industry IN (
             'Biotechnology', 'Health Care Equipment & Supplies',
@@ -72,7 +73,7 @@ CREATE TABLE IF NOT EXISTS instruments (
             'Equity REITs', 'Real Estate Management & Development'
         )) OR
         (sector = 'Technology' AND industry IN (
-            'Communications Equipment',
+            'Communications Equipment', 'Consumer Electronics',
             'Electronic Equipment, Instruments & Components', 'IT Services',
             'Semiconductors', 'Software',
             'Technology Hardware, Storage & Peripherals'
