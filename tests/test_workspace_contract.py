@@ -186,6 +186,10 @@ class WorkspaceContractTests(unittest.TestCase):
             self.assertIn(f'data-breadth-window="{window}"', HTML)
         for target in (
             "breadthMetrics",
+            "researchInterpretationHeading",
+            "researchInterpretationDimensions",
+            "researchInterpretationNarrative",
+            "researchInterpretationEvidence",
             "pressureConfirmationRows",
             "confirmationRates",
             "breadthLeaders",
@@ -197,6 +201,10 @@ class WorkspaceContractTests(unittest.TestCase):
         ):
             self.assertIn(f'id="{target}"', HTML)
         self.assertIn("derive.deriveBreadthLeadership", JS)
+        self.assertIn("derive.deriveResearchInterpretation(report)", JS)
+        self.assertIn("Why this read?", HTML)
+        self.assertIn("Descriptive, not predictive", HTML)
+        self.assertIn("fixed operator heuristics", HTML)
         self.assertIn("Historical pressure state is not stored or safely reconstructable", HTML)
         self.assertIn('<h1>Pressure</h1>', HTML)
         self.assertNotIn('<h1>Structural location × canonical pressure</h1>', HTML)

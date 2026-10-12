@@ -540,6 +540,7 @@
   }
   function renderBreadthLeadership() {
     const report = derive.deriveBreadthLeadership(state.locationHistory || {}, state.symbolPayload?.pressure || {});
+    const interpretation = derive.deriveResearchInterpretation(report);
     document.querySelectorAll("[data-breadth-window]").forEach((button) => {
       button.setAttribute("aria-pressed", String(button.dataset.breadthWindow === state.locationWindow));
     });
@@ -548,6 +549,14 @@
     $("#breadthSummaryHeading").textContent = `${report.window} structural breadth`;
     $("#breadthResearchSummary").textContent = `Structural participation is ${breadth.participationPct.toFixed(1)}%: ${breadth.movedHigher + breadth.movedLower} of ${breadth.comparable} comparable symbols changed bucket over the last ${report.window}. Higher and lower flows produce net breadth ${formatSigned(breadth.netHigher)} ${breadth.netHigher > 0 ? "higher" : breadth.netHigher < 0 ? "lower" : "balanced"}. ${report.confirmationRates.higher.numerator} of ${report.confirmationRates.higher.denominator} higher movers currently show Higher pressure.`;
     $("#breadthUniverseDisclosure").textContent = `${universe.now_eligible || 0} eligible now · ${universe.then_eligible || 0} eligible then · ${universe.common_eligible || 0} comparable · ${universe.added_or_became_eligible || 0} added/became eligible · ${universe.removed_or_became_ineligible || 0} removed/became ineligible. Universe changes are excluded from movement breadth.`;
+    $("#researchInterpretationHeading").textContent = `${interpretation.window} structural read`;
+    const interpretationDimensions = $("#researchInterpretationDimensions"); interpretationDimensions.replaceChildren();
+    [["Structural direction", "direction"], ["Participation", "participation"], ["Pressure confirmation", "confirmation"], ["MRZ migration skew", "migration"], ["Current pressure regime", "pressure"]].forEach(([label, key]) => {
+      interpretationDimensions.append(element("dt", "", label), element("dd", "", interpretation.dimensions[key]));
+    });
+    $("#researchInterpretationNarrative").textContent = interpretation.narrative;
+    const interpretationEvidence = $("#researchInterpretationEvidence"); interpretationEvidence.replaceChildren();
+    interpretation.evidence.forEach(([label, value]) => interpretationEvidence.append(element("dt", "", label), element("dd", "", value)));
     $("#breadthMetrics").replaceChildren(
       flowMetric("MOVED HIGHER", breadth.movedHigher, "Comparable symbols"),
       flowMetric("MOVED LOWER", breadth.movedLower, "Comparable symbols"),

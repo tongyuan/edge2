@@ -344,6 +344,135 @@
     };
   }
 
+  // Operator heuristics for descriptive research only. These deliberately avoid
+  // confidence, probability, or trading implications.
+  function participationLabel(value) {
+    const percentage = Number(value || 0);
+    if (percentage < 20) return "Narrow";
+    if (percentage < 40) return "Limited";
+    if (percentage <= 60) return "Moderate";
+    return "Broad";
+  }
+
+  function confirmationLabel(numerator, denominator) {
+    const sample = Number(denominator || 0);
+    if (!sample || sample <= 2) return "Not applicable / insufficient";
+    const percentage = (Number(numerator || 0) / sample) * 100;
+    if (percentage < 25) return "Weak";
+    if (percentage < 50) return "Partial";
+    if (percentage <= 70) return "Moderate";
+    return "Strong";
+  }
+
+  function structuralDirection(breadth) {
+    const higher = Number(breadth?.movedHigher || 0);
+    const lower = Number(breadth?.movedLower || 0);
+    const movers = higher + lower;
+    if (movers <= 2) return { key: "insufficient", label: "Insufficient breadth", imbalance: movers ? Math.abs(higher - lower) / movers : 0 };
+    const imbalance = Math.abs(higher - lower) / movers;
+    if (imbalance < 0.2) return { key: "balanced", label: "Balanced / Mixed", imbalance };
+    return higher > lower
+      ? { key: "higher", label: "Higher-skewed", imbalance }
+      : { key: "lower", label: "Lower-skewed", imbalance };
+  }
+
+  function currentPressureCounts(report) {
+    const totals = { higher: 0, neutral: 0, lower: 0 };
+    Object.values(report.currentLocationPressure || {}).forEach((location) => {
+      Object.keys(totals).forEach((key) => { totals[key] += Number(location?.counts?.[key] || 0); });
+    });
+    return totals;
+  }
+
+  function pressureRegime(counts) {
+    const total = counts.higher + counts.neutral + counts.lower;
+    if (!total) return { key: "insufficient", label: "Insufficient data" };
+    if ((counts.neutral / total) >= 0.6) return { key: "neutral", label: "Mostly neutral" };
+    if ((counts.higher / total) >= 0.4 && counts.higher >= counts.lower * 1.5) return { key: "higher", label: "Higher pressure dominant" };
+    if ((counts.lower / total) >= 0.4 && counts.lower >= counts.higher * 1.5) return { key: "lower", label: "Lower pressure dominant" };
+    return { key: "mixed", label: "Directionally mixed" };
+  }
+
+  function migrationSkew(migration, comparable) {
+    const up = Number(migration?.up_only || 0);
+    const down = Number(migration?.down_only || 0);
+    const unique = Number(migration?.uniqueSymbols || 0);
+    if (!unique) return { key: "none", label: "No meaningful migration activity", narrow: true };
+    if (unique <= 2) return { key: "insufficient", label: "Sparse / insufficient breadth", narrow: true };
+    const directional = up + down;
+    const imbalance = directional ? Math.abs(up - down) / directional : 0;
+    const narrow = !comparable || (unique / comparable) < 0.2;
+    const key = !directional || imbalance < 0.2 ? "balanced" : up > down ? "upward" : "downward";
+    const base = { balanced: "Balanced", upward: "Upward-skewed", downward: "Downward-skewed" }[key];
+    return { key, label: `${base}${narrow ? " · narrow" : ""}`, narrow };
+  }
+
+  function researchNarrative({ report, direction, participation, confirmation, migration, pressure }) {
+    const breadth = report.breadth;
+    const movers = breadth.movedHigher + breadth.movedLower;
+    let first;
+    if (direction.key === "insufficient") {
+      first = `Only ${movers} symbol${movers === 1 ? "" : "s"} changed structural bucket over the last ${report.window}, so the evidence is too narrow to establish a directional structural read.`;
+    } else if (direction.key === "balanced") {
+      first = `Structural movement over the last ${report.window} is directionally mixed, with ${participation.toLowerCase()} participation.`;
+    } else {
+      first = `Structural movement over the last ${report.window} favored ${direction.key} locations, with ${participation.toLowerCase()} participation and ${confirmation.toLowerCase()} matching current pressure confirmation.`;
+    }
+    let migrationText;
+    if (migration.key === "none") migrationText = "No meaningful canonical MRZ migration activity occurred in the window";
+    else if (migration.key === "insufficient") migrationText = "Canonical MRZ migration activity is too sparse for a directional breadth read";
+    else if (migration.key === "balanced") migrationText = `Canonical MRZ migrations are balanced${migration.narrow ? " across a narrow share of comparable symbols" : ""}`;
+    else migrationText = `Canonical MRZ migrations are skewed ${migration.key}${migration.narrow ? ", but cover only a narrow share of comparable symbols" : ""}`;
+    const pressureText = {
+      neutral: "current pressure is mostly neutral",
+      higher: "Higher pressure is currently dominant",
+      lower: "Lower pressure is currently dominant",
+      mixed: "current directional pressure is mixed",
+      insufficient: "current pressure coverage is insufficient",
+    }[pressure.key];
+    return `${first} ${migrationText}; ${pressureText}.`;
+  }
+
+  function deriveResearchInterpretation(report = {}) {
+    const breadth = report.breadth || { movedHigher: 0, movedLower: 0, comparable: 0, participationPct: 0 };
+    const direction = structuralDirection(breadth);
+    const participation = participationLabel(breadth.participationPct);
+    const dominantRate = direction.key === "higher" ? report.confirmationRates?.higher
+      : direction.key === "lower" ? report.confirmationRates?.lower : null;
+    const confirmation = dominantRate
+      ? confirmationLabel(dominantRate.numerator, dominantRate.denominator)
+      : direction.key === "balanced" ? "Mixed" : "Not applicable / insufficient";
+    const migration = migrationSkew(report.migrationBreadth || {}, Number(breadth.comparable || 0));
+    const pressureCounts = currentPressureCounts(report);
+    const pressure = pressureRegime(pressureCounts);
+    const higherRate = report.confirmationRates?.higher || { numerator: 0, denominator: 0 };
+    const lowerRate = report.confirmationRates?.lower || { numerator: 0, denominator: 0 };
+    const moved = Number(breadth.movedHigher || 0) + Number(breadth.movedLower || 0);
+    const formatRate = (rate) => rate.denominator ? `${((rate.numerator / rate.denominator) * 100).toFixed(1)}%` : "n/a";
+    const migrationBreadth = report.migrationBreadth || {};
+    const divergences = report.divergences || { higherWithLower: [], lowerWithHigher: [] };
+    const result = {
+      window: report.window || "24H",
+      dimensions: {
+        direction: direction.label,
+        participation,
+        confirmation,
+        migration: migration.label,
+        pressure: pressure.label,
+      },
+      evidence: [
+        ["Structural flow", `${breadth.movedHigher || 0} higher · ${breadth.movedLower || 0} lower · net ${Number(breadth.netHigher || 0) > 0 ? "+" : ""}${Number(breadth.netHigher || 0)}`],
+        ["Participation", `${moved} / ${breadth.comparable || 0} · ${Number(breadth.participationPct || 0).toFixed(1)}%`],
+        ["Matching pressure", `Higher ${higherRate.numerator} / ${higherRate.denominator} · ${formatRate(higherRate)} · Lower ${lowerRate.numerator} / ${lowerRate.denominator} · ${formatRate(lowerRate)}`],
+        ["MRZ migration breadth", `${migrationBreadth.up_only || 0} up-only · ${migrationBreadth.down_only || 0} down-only · ${migrationBreadth.mixed || 0} mixed · ${migrationBreadth.uniqueSymbols || 0} / ${breadth.comparable || 0} symbols · ${migrationBreadth.eventCount || 0} events`],
+        ["Current pressure", `${pressureCounts.higher} Higher · ${pressureCounts.neutral} Neutral · ${pressureCounts.lower} Lower`],
+        ["Non-confirmation cases", `${divergences.higherWithLower?.length || 0} higher movers with Lower pressure · ${divergences.lowerWithHigher?.length || 0} lower movers with Higher pressure`],
+      ],
+    };
+    result.narrative = researchNarrative({ report, direction, participation, confirmation, migration, pressure });
+    return result;
+  }
+
   function deriveBreadthLeadership(history = {}, pressureReport = {}) {
     const { movements, migrationBySymbol, migrationState } = contextualizeLocationMovements(history, pressureReport);
     const confirmation = {
@@ -421,6 +550,7 @@
     deriveLocationFlowDetails,
     deriveAttention,
     deriveBreadthLeadership,
+    deriveResearchInterpretation,
     eventDirection,
     eventLabel,
     filterLocationSymbols,

@@ -4,6 +4,7 @@ const {
   currentAuthorityRow,
   deriveAttention,
   deriveBreadthLeadership,
+  deriveResearchInterpretation,
   deriveLocationFlowDetails,
   eventLabel,
   filterLocationSymbols,
@@ -192,6 +193,73 @@ assert.deepEqual(breadthReport.divergences.lowerWithHigher.map((item) => item.sy
 assert.deepEqual(breadthReport.migrationBreadth, { up_only: 1, down_only: 1, mixed: 1, none: 5, uniqueSymbols: 3, eventCount: 4 });
 assert.equal(breadthReport.currentLocationPressure.deep_discount.counts.lower, 3);
 assert.equal(breadthReport.historicalPressureAvailable, false);
+
+const interpretationReport = (overrides = {}) => ({
+  window: "5D",
+  breadth: { movedHigher: 12, movedLower: 24, unchanged: 88, netHigher: -12, comparable: 124, participationPct: 36 / 124 * 100 },
+  confirmationRates: { higher: { numerator: 3, denominator: 12 }, lower: { numerator: 4, denominator: 24 } },
+  migrationBreadth: { up_only: 1, down_only: 7, mixed: 0, none: 116, uniqueSymbols: 8, eventCount: 8 },
+  currentLocationPressure: { all: { counts: { higher: 14, neutral: 96, lower: 14 } } },
+  divergences: { higherWithLower: [{}], lowerWithHigher: [{}, {}] },
+  ...overrides,
+});
+const lowerInterpretation = deriveResearchInterpretation(interpretationReport());
+assert.equal(lowerInterpretation.dimensions.direction, "Lower-skewed");
+assert.equal(lowerInterpretation.dimensions.participation, "Limited");
+assert.equal(lowerInterpretation.dimensions.confirmation, "Weak");
+assert.equal(lowerInterpretation.dimensions.migration, "Downward-skewed · narrow");
+assert.equal(lowerInterpretation.dimensions.pressure, "Mostly neutral");
+assert.deepEqual(lowerInterpretation.evidence, [
+  ["Structural flow", "12 higher · 24 lower · net -12"],
+  ["Participation", "36 / 124 · 29.0%"],
+  ["Matching pressure", "Higher 3 / 12 · 25.0% · Lower 4 / 24 · 16.7%"],
+  ["MRZ migration breadth", "1 up-only · 7 down-only · 0 mixed · 8 / 124 symbols · 8 events"],
+  ["Current pressure", "14 Higher · 96 Neutral · 14 Lower"],
+  ["Non-confirmation cases", "1 higher movers with Lower pressure · 2 lower movers with Higher pressure"],
+]);
+
+const interpretationFor = ({ higher, lower, comparable = 100, confirmation = 0, up = 0, down = 0, mixed = 0, pressure = { higher: 20, neutral: 60, lower: 20 }, window = "5D" }) => deriveResearchInterpretation(interpretationReport({
+  window,
+  breadth: { movedHigher: higher, movedLower: lower, unchanged: Math.max(0, comparable - higher - lower), netHigher: higher - lower, comparable, participationPct: comparable ? ((higher + lower) / comparable) * 100 : 0 },
+  confirmationRates: { higher: { numerator: confirmation, denominator: higher }, lower: { numerator: confirmation, denominator: lower } },
+  migrationBreadth: { up_only: up, down_only: down, mixed, none: Math.max(0, comparable - up - down - mixed), uniqueSymbols: up + down + mixed, eventCount: up + down + mixed },
+  currentLocationPressure: { all: { counts: pressure } },
+  divergences: { higherWithLower: [], lowerWithHigher: [] },
+}));
+
+assert.equal(interpretationFor({ higher: 35, lower: 8, comparable: 72, confirmation: 25, up: 18, down: 3 }).dimensions.direction, "Higher-skewed");
+assert.equal(interpretationFor({ higher: 30, lower: 28, comparable: 124 }).dimensions.direction, "Balanced / Mixed");
+assert.equal(interpretationFor({ higher: 10, lower: 5, comparable: 100 }).dimensions.participation, "Narrow");
+assert.equal(interpretationFor({ higher: 20, lower: 10, comparable: 100 }).dimensions.participation, "Limited");
+assert.equal(interpretationFor({ higher: 30, lower: 20, comparable: 100 }).dimensions.participation, "Moderate");
+assert.equal(interpretationFor({ higher: 50, lower: 20, comparable: 100 }).dimensions.participation, "Broad");
+assert.equal(interpretationFor({ higher: 20, lower: 5, confirmation: 4 }).dimensions.confirmation, "Weak");
+assert.equal(interpretationFor({ higher: 20, lower: 5, confirmation: 6 }).dimensions.confirmation, "Partial");
+assert.equal(interpretationFor({ higher: 20, lower: 5, confirmation: 12 }).dimensions.confirmation, "Moderate");
+assert.equal(interpretationFor({ higher: 20, lower: 5, confirmation: 15 }).dimensions.confirmation, "Strong");
+assert.equal(interpretationFor({ higher: 20, lower: 5, up: 7, down: 1 }).dimensions.migration, "Upward-skewed · narrow");
+assert.equal(interpretationFor({ higher: 20, lower: 5, up: 4, down: 4 }).dimensions.migration, "Balanced · narrow");
+assert.equal(interpretationFor({ higher: 20, lower: 5 }).dimensions.migration, "No meaningful migration activity");
+assert.equal(interpretationFor({ higher: 20, lower: 5, up: 1, down: 0 }).dimensions.migration, "Sparse / insufficient breadth");
+assert.equal(interpretationFor({ higher: 20, lower: 5, pressure: { higher: 55, neutral: 25, lower: 20 } }).dimensions.pressure, "Higher pressure dominant");
+assert.equal(interpretationFor({ higher: 20, lower: 5, pressure: { higher: 20, neutral: 25, lower: 55 } }).dimensions.pressure, "Lower pressure dominant");
+assert.equal(interpretationFor({ higher: 20, lower: 5, pressure: { higher: 35, neutral: 30, lower: 35 } }).dimensions.pressure, "Directionally mixed");
+assert.equal(interpretationFor({ higher: 1, lower: 1 }).dimensions.direction, "Insufficient breadth");
+assert.equal(interpretationFor({ higher: 1, lower: 1 }).dimensions.confirmation, "Not applicable / insufficient");
+assert.equal(interpretationFor({ higher: 1, lower: 0 }).narrative.includes("too narrow to establish"), true);
+for (const window of ["24H", "5D", "20D"]) {
+  const refreshed = interpretationFor({ higher: 20, lower: 5, window });
+  assert.equal(refreshed.window, window);
+  assert.equal(refreshed.narrative.includes(`last ${window}`), true, `${window} refreshes the interpretation narrative`);
+}
+const interpretationLanguage = JSON.stringify([
+  lowerInterpretation,
+  interpretationFor({ higher: 35, lower: 8, comparable: 72, confirmation: 25, up: 18, down: 3 }),
+  interpretationFor({ higher: 30, lower: 28, comparable: 124 }),
+]).toLowerCase();
+for (const forbidden of ["bullish", "bearish", "probability", "expected return", "recommendation", "long bias", "short bias", "trade grade"]) {
+  assert.equal(interpretationLanguage.includes(forbidden), false, `interpretation avoids ${forbidden}`);
+}
 
 const flowDetails = deriveLocationFlowDetails(breadthHistory, breadthPressure);
 assert.deepEqual(flowDetails.higher.map((item) => item.symbol), ["UP_CONFIRMED", "UP_DIVERGENT", "UP_NEUTRAL"]);
