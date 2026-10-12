@@ -58,6 +58,12 @@
     return (symbols || []).filter((state) => wanted.has(state.symbol));
   }
 
+  function filterLocationSymbols(symbols, query) {
+    const normalized = String(query || "").trim().toUpperCase();
+    if (!normalized) return [...(symbols || [])];
+    return (symbols || []).filter((symbol) => String(symbol || "").toUpperCase().includes(normalized));
+  }
+
   function eventDirection(event) {
     if (event.event_type === "POST_ACTIVATION_PRESSURE_CHANGED") {
       return event.current_state === "UP" ? "UP" : event.current_state === "DOWN" ? "DOWN" : null;
@@ -417,6 +423,7 @@
     deriveBreadthLeadership,
     eventDirection,
     eventLabel,
+    filterLocationSymbols,
     groupMembership,
     latestEventsBySymbol,
     groupSymbolBoardRows,

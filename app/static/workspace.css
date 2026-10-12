@@ -190,12 +190,21 @@ input { padding: 0 11px; }
 .location-window-selector button { min-width: 50px; min-height: 32px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; font-size: .68rem; font-weight: 800; }
 .location-window-selector button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
 .location-window-selector button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.location-panel-heading { align-items: flex-end; }
+.location-search-controls { display: grid; width: min(260px, 100%); gap: 6px; }
+.location-search-controls label { color: var(--muted); font-size: .61rem; font-weight: 800; letter-spacing: .13em; }
+.location-search-controls input { width: 100%; min-height: 36px; padding: 0 11px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); color: var(--text); font: inherit; font-size: .72rem; text-transform: uppercase; }
+.location-search-controls input::placeholder { color: var(--muted); text-transform: none; }
+.location-search-controls input:focus-visible { border-color: var(--accent); outline: 2px solid rgba(87,224,179,.22); outline-offset: 1px; }
+.location-search-status { margin: 0; padding: 11px 18px; border-bottom: 1px solid var(--line-soft); color: var(--accent); font-size: .69rem; }
+.location-search-status.no-match { color: var(--muted); }
 .location-heatmap { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; padding: 18px; }
 .location-column { min-height: 126px; padding: 12px; border: 1px solid var(--line-soft); border-radius: 8px; background: rgba(19,26,36,.6); }
 .location-column h3 { margin: 0 0 10px; color: var(--muted); font-size: .68rem; }
 .location-distribution-current { display: grid; gap: 4px; padding-bottom: 10px; border-bottom: 1px solid var(--line-soft); }
 .location-distribution-current span { color: var(--muted); font-size: .66rem; }
 .location-distribution-current strong { color: var(--text); font-size: .75rem; }
+.location-search-bucket-count { color: var(--accent) !important; font-weight: 750; }
 .location-distribution-change { font-variant-numeric: tabular-nums; }
 .location-change-higher { color: var(--accent) !important; }
 .location-change-lower { color: var(--red) !important; }
@@ -360,6 +369,8 @@ input { padding: 0 11px; }
   .action-heading, .symbol-route-heading { align-items: flex-start; flex-direction: column; }
   .board-panel .panel-heading { align-items: flex-start; flex-direction: column; }
   .board-heading-actions { width: 100%; align-items: flex-end; justify-content: space-between; }
+  .location-panel-heading { align-items: stretch; flex-direction: column; }
+  .location-search-controls { width: 100%; }
   .symbol-board-sort { flex: 1; }
   .symbol-board-sort select { width: 100%; min-width: 0; }
   .location-flow-content { grid-template-columns: 1fr; }

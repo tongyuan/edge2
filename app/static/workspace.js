@@ -11,6 +11,7 @@
     preferences: null,
     locationHistory: null,
     locationWindow: "24H",
+    locationSearchQuery: "",
     locationFlowSelection: null,
     locationFlowPressure: "all",
     selectedGroupId: "all",
@@ -326,19 +327,26 @@
 
   function renderLocationDistribution() {
     const selectedSymbol = new URLSearchParams(globalObject.location.search).get("symbol") || "";
+    const searchInput = $("#locationSymbolSearch");
+    if (searchInput && searchInput.value !== state.locationSearchQuery) searchInput.value = state.locationSearchQuery;
     const columns = new Map();
     ["deep_discount", "shallow_discount", "at_eqm", "shallow_premium", "deep_premium"].forEach((key) => columns.set(key, []));
     state.symbols.forEach((symbol) => { if (columns.has(symbol.current_price_location)) columns.get(symbol.current_price_location).push(symbol.symbol); });
     const classifiedTotal = [...columns.values()].reduce((total, symbols) => total + symbols.length, 0);
     const migrationTendency = state.symbolPayload?.location_migration_tendency || {};
     const historyLocations = new Map((state.locationHistory?.locations || []).map((item) => [item.key, item]));
+    const query = state.locationSearchQuery.trim();
+    let matchCount = 0;
     const heatmap = $("#locationHeatmap"); heatmap.replaceChildren();
     columns.forEach((symbols, key) => {
+      const visibleSymbols = derive.filterLocationSymbols(symbols, query);
+      matchCount += visibleSymbols.length;
       const column = element("section", `location-column${key === "at_eqm" ? " location-column-boundary" : ""}`);
       column.append(element("h3", "", locationLabels[key]));
       const current = element("div", "location-distribution-current");
       const percentage = classifiedTotal ? ((symbols.length / classifiedTotal) * 100).toFixed(1) : "0.0";
       current.append(element("span", "", "Current"), element("strong", "", `${symbols.length} symbol${symbols.length === 1 ? "" : "s"} · ${percentage}% of universe`));
+      if (query) current.append(element("span", "location-search-bucket-count", `${visibleSymbols.length} of ${symbols.length} shown`));
       const historical = historyLocations.get(key);
       if (historical) {
         const delta = Number(historical.change_count || 0);
@@ -366,10 +374,16 @@
         column.append(history);
       }
       const symbolList = element("div", "location-symbol-list");
-      symbols.forEach((symbol) => { const button = element("button", "", symbol); button.type = "button"; if (symbol === selectedSymbol) button.setAttribute("aria-current", "true"); button.addEventListener("click", () => { globalObject.location.href = `/mrz/symbols?symbol=${encodeURIComponent(symbol)}`; }); symbolList.append(button); });
+      visibleSymbols.forEach((symbol) => { const button = element("button", "", symbol); button.type = "button"; if (symbol === selectedSymbol) button.setAttribute("aria-current", "true"); button.addEventListener("click", () => { globalObject.location.href = `/mrz/symbols?symbol=${encodeURIComponent(symbol)}`; }); symbolList.append(button); });
       column.append(symbolList);
       heatmap.append(column);
     });
+    const searchStatus = $("#locationSearchStatus");
+    searchStatus.hidden = !query;
+    searchStatus.classList.toggle("no-match", Boolean(query) && matchCount === 0);
+    if (query) searchStatus.textContent = matchCount
+      ? `${matchCount} symbol${matchCount === 1 ? "" : "s"} match “${query}” across current structural locations.`
+      : `No symbols match “${query}”.`;
     renderLocationHistory();
   }
 
@@ -728,6 +742,16 @@
     renderSymbolBoard(
       derive.symbolsForWatchlist(state.symbols, state.groups, state.selectedGroupId),
     );
+  });
+  $("#locationSymbolSearch")?.addEventListener("input", (event) => {
+    state.locationSearchQuery = event.target.value;
+    renderLocationDistribution();
+  });
+  $("#locationSymbolSearch")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    state.locationSearchQuery = "";
+    renderLocationDistribution();
   });
   document.querySelectorAll("[data-location-window]").forEach((button) => button.addEventListener("click", () => loadLocationHistory(button.dataset.locationWindow)));
   document.querySelectorAll("[data-breadth-window]").forEach((button) => button.addEventListener("click", () => loadLocationHistory(button.dataset.breadthWindow)));

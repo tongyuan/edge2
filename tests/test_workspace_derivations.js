@@ -6,6 +6,7 @@ const {
   deriveBreadthLeadership,
   deriveLocationFlowDetails,
   eventLabel,
+  filterLocationSymbols,
   groupSymbolBoardRows,
   normalizeSymbolBoardSort,
   persistSymbolBoardSort,
@@ -15,6 +16,11 @@ const {
   symbolsForWatchlist,
   uniqueTrackedSymbols,
 } = require("../app/static/workspace-derivations.js");
+
+assert.deepEqual(filterLocationSymbols(["NVDA", "NVDL", "AAPL"], "nvd"), ["NVDA", "NVDL"], "location symbol search is case-insensitive and supports partial matches");
+assert.deepEqual(filterLocationSymbols(["NVDA", "AAPL"], "  aapl  "), ["AAPL"], "location symbol search trims operator input");
+assert.deepEqual(filterLocationSymbols(["NVDA", "AAPL"], ""), ["NVDA", "AAPL"], "empty location search preserves the existing order");
+assert.deepEqual(filterLocationSymbols(["NVDA"], "MSFT"), [], "location symbol search reports an empty result without adding symbols");
 
 const groups = [
   { id: 1, name: "Large Cap", members: ["NVDA", "META"] },

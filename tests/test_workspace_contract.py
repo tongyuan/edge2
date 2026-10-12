@@ -130,6 +130,19 @@ class WorkspaceContractTests(unittest.TestCase):
                 self.assertIn(f'"{key}"', JS)
                 self.assertIn(f'{key}: "{label}"', JS)
 
+    def test_location_distribution_symbol_search_filters_existing_chips_responsively(self) -> None:
+        self.assertIn('id="locationSymbolSearch"', HTML)
+        self.assertIn('type="search"', HTML)
+        self.assertIn('id="locationSearchStatus"', HTML)
+        self.assertIn("derive.filterLocationSymbols(symbols, query)", JS)
+        self.assertIn('$("#locationSymbolSearch")?.addEventListener("input"', JS)
+        self.assertIn("location-search-bucket-count", JS)
+        self.assertIn("No symbols match", JS)
+        self.assertIn("/mrz/symbols?symbol=", JS)
+        mobile_rules = CSS.split("@media (max-width: 820px)", 1)[1]
+        self.assertIn(".location-search-controls { width: 100%; }", mobile_rules)
+        self.assertNotIn(".location-search-controls { display: none; }", mobile_rules)
+
     def test_location_distribution_restores_historical_migration_outcomes(self) -> None:
         self.assertIn('/static/heatmap-state.js', HTML)
         self.assertIn("migrationTendencyPresentation", JS)
