@@ -5,6 +5,7 @@ const {
   deriveAttention,
   deriveBreadthLeadership,
   deriveResearchInterpretation,
+  directionalTaxonomyDrilldown,
   deriveLocationFlowDetails,
   derivePeerLocation,
   derivePeerLocationFlow,
@@ -104,6 +105,25 @@ assert.equal(
   null,
   "a missing directional event is not converted to Neutral",
 );
+
+const directionalMembers = [
+  { symbol: "HIGH_OLD", direction: "higher", industry: "Software", latest_directional_pressure: { direction: "higher", occurred_at: "2026-10-11T00:00:00Z" } },
+  { symbol: "HIGH_NEW", direction: "higher", industry: "Semiconductors", latest_directional_pressure: { direction: "higher", occurred_at: "2026-10-12T00:00:00Z" } },
+  { symbol: "LOW", direction: "lower", industry: "IT Services", latest_directional_pressure: { direction: "lower", occurred_at: "2026-10-10T00:00:00Z" } },
+  { symbol: "NEUTRAL_B", direction: "neutral", industry: "Hardware", latest_directional_pressure: null },
+  { symbol: "NEUTRAL_A", direction: "neutral", industry: "Hardware", latest_directional_pressure: null },
+];
+const directionalSnapshot = JSON.stringify(directionalMembers);
+const directionalDrilldown = directionalTaxonomyDrilldown(directionalMembers);
+assert.deepEqual(directionalDrilldown.counts, { higher: 2, lower: 1, neutral: 2 }, "sector summary counts preserve current-state membership");
+assert.equal(directionalDrilldown.total, 5, "Higher, Lower and Neutral reconcile to the sector total");
+assert.equal(directionalDrilldown.directional, 3, "directional participation excludes current Neutral members");
+assert.equal(directionalDrilldown.directional_share_pct, 60, "directional participation uses the existing member counts");
+assert.deepEqual(directionalDrilldown.sections.higher.map((item) => item.symbol), ["HIGH_NEW", "HIGH_OLD"], "Higher members are exact and newest directional event sorts first");
+assert.deepEqual(directionalDrilldown.sections.lower.map((item) => item.symbol), ["LOW"], "Lower members are exact");
+assert.deepEqual(directionalDrilldown.sections.neutral.map((item) => item.symbol), ["NEUTRAL_A", "NEUTRAL_B"], "Neutral members are complete and deterministically sorted");
+assert.equal(new Set(Object.values(directionalDrilldown.sections).flat().map((item) => item.symbol)).size, 5, "no symbol appears in multiple current-state sections");
+assert.equal(JSON.stringify(directionalMembers), directionalSnapshot, "presentation grouping does not mutate pressure or taxonomy input");
 assert.deepEqual(
   pressureDrilldownMembers(taxonomyPressure, pressureReport, { type: "sector", name: "Technology" }).map((item) => item.symbol),
   ["NVDA", "MSFT"],

@@ -417,6 +417,36 @@
     };
   }
 
+  function directionalTaxonomyDrilldown(members = []) {
+    const byDirection = { higher: [], lower: [], neutral: [] };
+    const seen = new Set();
+    members.forEach((member) => {
+      if (seen.has(member.symbol)) return;
+      seen.add(member.symbol);
+      const direction = ["higher", "lower", "neutral"].includes(member.direction)
+        ? member.direction
+        : "neutral";
+      byDirection[direction].push(member);
+    });
+    Object.values(byDirection).forEach((items) => items.sort((left, right) => {
+      const leftAt = left.latest_directional_pressure?.occurred_at || "";
+      const rightAt = right.latest_directional_pressure?.occurred_at || "";
+      return rightAt.localeCompare(leftAt) || compareSymbol(left, right);
+    }));
+    const counts = Object.fromEntries(
+      Object.entries(byDirection).map(([direction, items]) => [direction, items.length]),
+    );
+    const total = counts.higher + counts.lower + counts.neutral;
+    const directional = counts.higher + counts.lower;
+    return {
+      counts,
+      total,
+      directional,
+      directional_share_pct: total ? (directional / total) * 100 : 0,
+      sections: byDirection,
+    };
+  }
+
   function pressureConcentrationLabel(taxonomy = {}) {
     const counts = taxonomy.counts || {};
     const higher = taxonomy.concentration?.higher || {};
@@ -713,6 +743,7 @@
     deriveAttention,
     deriveBreadthLeadership,
     deriveResearchInterpretation,
+    directionalTaxonomyDrilldown,
     eventDirection,
     eventLabel,
     filterLocationSymbols,

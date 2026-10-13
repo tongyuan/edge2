@@ -15,6 +15,7 @@
     locationFlowSelection: null,
     locationFlowPressure: "all",
     pressureSelection: null,
+    pressureNeutralExpanded: false,
     peerWindow: "24H",
     peerLocationHistory: null,
     peerPressure: null,
@@ -624,22 +625,23 @@
 
   function openPressureDrilldown(selection, heading, support) {
     state.pressureSelection = { ...selection, heading, support };
+    state.pressureNeutralExpanded = false;
     renderPressureDrilldown();
     $("#pressureDrilldown").scrollIntoView?.({ behavior: "smooth", block: "nearest" });
   }
 
-  function pressureMemberItem(member) {
+  function pressureMemberItem(member, { showCurrentState = true, industryOnly = false } = {}) {
     const item = element("li", "pressure-member-item");
     const heading = element("div", "pressure-member-heading");
     const presentation = derive.pressureDetailPresentation(member);
     const currentDirection = presentation.current.direction;
     const latestDirectional = presentation.latest;
-    heading.append(
-      symbolLink(member.symbol, member.symbol),
-      element("strong", `pressure-${currentDirection}`, `Current state · ${pressureLabels[currentDirection] || pressureLabels.neutral}`),
-    );
+    heading.append(symbolLink(member.symbol, member.symbol));
+    if (showCurrentState) {
+      heading.append(element("strong", `pressure-${currentDirection}`, `Current state · ${pressureLabels[currentDirection] || pressureLabels.neutral}`));
+    }
     const taxonomy = member.asset_class === "EQUITY"
-      ? `${member.sector} · ${member.industry}`
+      ? (industryOnly ? member.industry : `${member.sector} · ${member.industry}`)
       : member.asset_class || "Unclassified";
     const context = element("div", "pressure-member-context");
     context.append(
@@ -658,6 +660,50 @@
     item.append(heading, context); return item;
   }
 
+  function renderDirectionalTaxonomyDrilldown(target, members) {
+    const model = derive.directionalTaxonomyDrilldown(members);
+    const summary = element("section", "pressure-directional-summary");
+    const counts = element("div", "pressure-directional-summary-counts");
+    ["higher", "lower", "neutral"].forEach((direction) => counts.append(
+      element("span", `pressure-${direction}`, `${pressureLabels[direction]} ${model.counts[direction]}`),
+    ));
+    summary.append(
+      counts,
+      element("strong", "", `Directional participation · ${model.directional} / ${model.total} · ${model.directional_share_pct.toFixed(1)}%`),
+    );
+    target.append(summary);
+
+    ["higher", "lower"].forEach((direction) => {
+      const section = element("section", "pressure-member-group pressure-directional-section");
+      section.append(element("h3", `pressure-${direction}`, `${pressureLabels[direction]} · ${model.counts[direction]}`));
+      if (model.sections[direction].length) {
+        const list = element("ul", "pressure-member-list");
+        model.sections[direction].forEach((member) => list.append(pressureMemberItem(member, { showCurrentState: false, industryOnly: true })));
+        section.append(list);
+      }
+      target.append(section);
+    });
+
+    const neutral = element("section", "pressure-member-group pressure-neutral-section");
+    const neutralHeading = element("div", "pressure-neutral-heading");
+    neutralHeading.append(element("h3", "pressure-neutral", `${pressureLabels.neutral} · ${model.counts.neutral}`));
+    const toggle = element("button", "quiet-button", state.pressureNeutralExpanded ? "Hide" : "Show");
+    toggle.type = "button";
+    toggle.setAttribute("aria-expanded", String(state.pressureNeutralExpanded));
+    toggle.addEventListener("click", () => {
+      state.pressureNeutralExpanded = !state.pressureNeutralExpanded;
+      renderPressureDrilldown();
+    });
+    neutralHeading.append(toggle);
+    neutral.append(neutralHeading);
+    if (state.pressureNeutralExpanded && model.sections.neutral.length) {
+      const list = element("ul", "pressure-member-list");
+      model.sections.neutral.forEach((member) => list.append(pressureMemberItem(member, { showCurrentState: false, industryOnly: true })));
+      neutral.append(list);
+    }
+    target.append(neutral);
+  }
+
   function renderPressureDrilldown() {
     const panel = $("#pressureDrilldown");
     if (!state.pressureSelection) { panel.hidden = true; $("#pressureDrilldownGroups").replaceChildren(); return; }
@@ -668,7 +714,11 @@
     $("#pressureDrilldownHeading").textContent = `${state.pressureSelection.heading} · ${members.length}`;
     $("#pressureDrilldownSupport").textContent = state.pressureSelection.support;
     const target = $("#pressureDrilldownGroups"); target.replaceChildren();
-    const groups = ["asset_class", "sector", "industry"].includes(state.pressureSelection.type)
+    if (["sector", "industry"].includes(state.pressureSelection.type)) {
+      renderDirectionalTaxonomyDrilldown(target, members);
+      return;
+    }
+    const groups = state.pressureSelection.type === "asset_class"
       ? ["higher", "neutral", "lower"].map((direction) => ({ label: `CURRENT STATE · ${pressureLabels[direction]}`, members: members.filter((item) => item.direction === direction) })).filter((group) => group.members.length)
       : derive.groupPressureSourcesByAssetClass(members).map((group) => ({ label: group.assetClass, members: group.members }));
     if (!groups.length) { target.append(empty("No symbols in this selection.")); return; }

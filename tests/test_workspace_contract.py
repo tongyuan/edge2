@@ -228,6 +228,12 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertIn("CURRENT STATE ·", JS)
         self.assertIn("Latest directional ·", JS)
         self.assertNotIn("Latest pressure ·", JS)
+        self.assertIn("renderDirectionalTaxonomyDrilldown", JS)
+        self.assertIn('state.pressureNeutralExpanded ? "Hide" : "Show"', JS)
+        self.assertIn('showCurrentState: false, industryOnly: true', JS)
+        self.assertIn('["sector", "industry"].includes', JS)
+        self.assertIn(".pressure-neutral-heading", CSS)
+        self.assertIn(".pressure-directional-summary", CSS)
         self.assertIn("renderPressureSources(taxonomy)", JS)
         self.assertIn("derive.pressureDrilldownMembers", JS)
         self.assertIn("derive.groupPressureSourcesByAssetClass", JS)
@@ -238,6 +244,8 @@ class WorkspaceContractTests(unittest.TestCase):
         mobile_rules = CSS[CSS.index("@media (max-width: 560px)") :]
         self.assertIn(".pressure-taxonomy-grid", mobile_rules)
         self.assertIn(".pressure-member-list", mobile_rules)
+        self.assertIn(".pressure-directional-summary-counts", mobile_rules)
+        self.assertIn(".pressure-neutral-heading .quiet-button", mobile_rules)
 
     def test_peer_context_belongs_to_watchlists_and_is_mobile_safe(self) -> None:
         watchlists = HTML.split('data-route-panel="watchlists"', 1)[1].split(

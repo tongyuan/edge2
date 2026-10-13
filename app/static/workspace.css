@@ -246,8 +246,14 @@ input { padding: 0 11px; }
 .pressure-drilldown > header h2 { margin-top: 5px; font-size: 1rem; }
 .pressure-drilldown > header span { color: var(--muted); font-size: .67rem; }
 #pressureDrilldownGroups { display: grid; gap: 14px; }
+.pressure-directional-summary { display: grid; gap: 9px; padding: 13px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--surface-2); }
+.pressure-directional-summary-counts { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: .69rem; font-weight: 800; }
+.pressure-directional-summary > strong { color: var(--muted); font-size: .67rem; }
 .pressure-member-group { border: 1px solid var(--line-soft); border-radius: 8px; overflow: hidden; }
 .pressure-member-group h3 { margin: 0; padding: 10px 13px; border-bottom: 1px solid var(--line-soft); background: var(--surface-2); font-size: .69rem; text-transform: uppercase; }
+.pressure-neutral-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-right: 10px; background: var(--surface-2); }
+.pressure-neutral-heading h3 { flex: 1; border-bottom: 0; }
+.pressure-neutral-heading .quiet-button { min-width: 72px; min-height: 36px; }
 .pressure-member-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; padding: 0; list-style: none; }
 .pressure-member-item { display: grid; gap: 7px; padding: 12px 13px; border-right: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); }
 .pressure-member-heading { display: flex; align-items: center; justify-content: space-between; gap: 9px; }
@@ -489,4 +495,6 @@ input { padding: 0 11px; }
   .pressure-source-grid, .pressure-taxonomy-grid, .pressure-concentration, .pressure-member-list { grid-template-columns: 1fr; }
   .pressure-source-grid, .pressure-taxonomy-grid, .pressure-concentration { padding: 12px; }
   .pressure-drilldown > header { flex-direction: column; }
+  .pressure-directional-summary-counts { display: grid; grid-template-columns: 1fr; gap: 7px; }
+  .pressure-neutral-heading .quiet-button { min-height: 42px; }
 }
