@@ -15,7 +15,6 @@ const {
   groupSymbolBoardRows,
   normalizeSymbolBoardSort,
   persistSymbolBoardSort,
-  pressureConcentrationLabel,
   pressureDetailPresentation,
   pressureDrilldownMembers,
   restoreSymbolBoardSort,
@@ -138,11 +137,6 @@ assert.deepEqual(
   pressureDrilldownMembers(taxonomyPressure, pressureReport, { type: "map", location: "deep_discount", direction: "higher" }).map((item) => item.symbol),
   ["BTCUSDT"],
   "Pressure Map drill-down reuses the same canonical source records",
-);
-assert.equal(
-  pressureConcentrationLabel(taxonomyPressure),
-  "Balanced globally, sector-concentrated",
-  "the restrained rotation read is deterministic and descriptive",
 );
 
 assert.deepEqual(filterLocationSymbols(["NVDA", "NVDL", "AAPL"], "nvd"), ["NVDA", "NVDL"], "location symbol search is case-insensitive and supports partial matches");

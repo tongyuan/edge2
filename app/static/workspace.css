@@ -234,11 +234,6 @@ input { padding: 0 11px; }
 .pressure-industry-identity strong { font-size: .72rem; }
 .pressure-industry-identity small { color: var(--muted); font-size: .62rem; }
 .pressure-industry-row > b { min-width: 24px; text-align: right; }
-.pressure-concentration { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 18px; }
-.pressure-concentration article { display: grid; gap: 6px; padding: 14px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--surface-2); }
-.pressure-concentration span { font-size: .65rem; font-weight: 800; text-transform: uppercase; }
-.pressure-concentration strong { font-size: .9rem; }
-.pressure-concentration small { color: var(--muted); font-size: .66rem; }
 .pressure-drilldown { padding: 18px; }
 .pressure-drilldown > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 16px; }
 .pressure-drilldown > header p, .pressure-drilldown > header h2 { margin: 0; }
@@ -492,8 +487,8 @@ input { padding: 0 11px; }
   .research-interpretation-evidence dd { padding-top: 0; }
   .structural-read-grid article { border-right: 0; }
   .breadth-metrics, .confirmation-rates, .migration-breadth-grid { grid-template-columns: 1fr; }
-  .pressure-source-grid, .pressure-taxonomy-grid, .pressure-concentration, .pressure-member-list { grid-template-columns: 1fr; }
-  .pressure-source-grid, .pressure-taxonomy-grid, .pressure-concentration { padding: 12px; }
+  .pressure-source-grid, .pressure-taxonomy-grid, .pressure-member-list { grid-template-columns: 1fr; }
+  .pressure-source-grid, .pressure-taxonomy-grid { padding: 12px; }
   .pressure-drilldown > header { flex-direction: column; }
   .pressure-directional-summary-counts { display: grid; grid-template-columns: 1fr; gap: 7px; }
   .pressure-neutral-heading .quiet-button { min-height: 42px; }

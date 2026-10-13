@@ -447,29 +447,6 @@
     };
   }
 
-  function pressureConcentrationLabel(taxonomy = {}) {
-    const counts = taxonomy.counts || {};
-    const higher = taxonomy.concentration?.higher || {};
-    const lower = taxonomy.concentration?.lower || {};
-    const directional = Number(counts.higher || 0) + Number(counts.lower || 0);
-    if (directional === 0 || directional <= Math.max(2, Number(taxonomy.included_equity_count || 0) * 0.15)) {
-      return "Mostly neutral";
-    }
-    const balanced = Math.abs(Number(counts.higher || 0) - Number(counts.lower || 0)) <= 1;
-    const higherConcentrated = Number(higher.top_sector_share_pct || 0) >= 50;
-    const lowerConcentrated = Number(lower.top_sector_share_pct || 0) >= 50;
-    if (balanced && higherConcentrated && lowerConcentrated && higher.top_sector !== lower.top_sector) {
-      return "Balanced globally, sector-concentrated";
-    }
-    if (Number(counts.higher || 0) > Number(counts.lower || 0) && higherConcentrated) {
-      return `Higher pressure concentrated in ${higher.top_sector}`;
-    }
-    if (Number(counts.lower || 0) > Number(counts.higher || 0) && lowerConcentrated) {
-      return `Lower pressure concentrated in ${lower.top_sector}`;
-    }
-    return "Directional pressure broadly dispersed";
-  }
-
   function contextualizeLocationMovements(history = {}, pressureReport = {}) {
     const pressureBySymbol = new Map();
     Object.entries(pressureReport.categories || {}).forEach(([direction, members]) => {
@@ -753,7 +730,6 @@
     groupSymbolBoardRows,
     normalizeSymbolBoardSort,
     persistSymbolBoardSort,
-    pressureConcentrationLabel,
     pressureDetailPresentation,
     pressureDrilldownMembers,
     restoreSymbolBoardSort,

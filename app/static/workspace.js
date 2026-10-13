@@ -516,7 +516,6 @@
     renderPressureSources(taxonomy);
     renderPressureAssetClasses(taxonomy, report);
     renderPressureTaxonomy(taxonomy);
-    renderPressureConcentration(taxonomy);
     const map = $("#pressureMap"); map.replaceChildren();
     const locations = report.pressure_map?.locations || {};
     ["deep_discount", "shallow_discount", "at_eqm", "shallow_premium", "deep_premium"].forEach((key) => {
@@ -605,21 +604,6 @@
       button.append(identity, pressureCountStrip(group.counts), element("b", "", String(group.total)));
       button.addEventListener("click", () => openPressureDrilldown({ type: "industry", name: group.name, sector: group.sector }, group.name, `${group.sector} equities grouped by current pressure`));
       industries.append(button);
-    });
-  }
-
-  function renderPressureConcentration(taxonomy) {
-    $("#pressureConcentrationLabel").textContent = derive.pressureConcentrationLabel(taxonomy);
-    const target = $("#pressureConcentration"); target.replaceChildren();
-    ["higher", "lower"].forEach((direction) => {
-      const measure = taxonomy.concentration?.[direction] || {};
-      const card = element("article", "");
-      card.append(
-        element("span", `pressure-${direction}`, `${pressureLabels[direction]} equity pressure`),
-        element("strong", "", measure.top_sector ? `${measure.top_sector} · ${Number(measure.top_sector_share_pct || 0).toFixed(1)}%` : "No directional equities"),
-        element("small", "", measure.top_sector ? `${measure.top_sector_count} of ${measure.equity_count} across ${measure.contributing_sector_count} sector${measure.contributing_sector_count === 1 ? "" : "s"}` : "No contributing sector"),
-      );
-      target.append(card);
     });
   }
 

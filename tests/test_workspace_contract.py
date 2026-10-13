@@ -215,7 +215,6 @@ class WorkspaceContractTests(unittest.TestCase):
             "pressureAssetClasses",
             "pressureSectors",
             "pressureIndustries",
-            "pressureConcentration",
             "pressureDrilldown",
             "pressureDrilldownGroups",
         ):
@@ -224,7 +223,9 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertIn("PRESSURE BY ASSET CLASS", HTML)
         self.assertIn("PRESSURE BY SECTOR", HTML)
         self.assertIn("PRESSURE BY INDUSTRY", HTML)
-        self.assertIn("PRESSURE CONCENTRATION", HTML)
+        self.assertNotIn("PRESSURE CONCENTRATION", HTML)
+        self.assertNotIn('id="pressureConcentration"', HTML)
+        self.assertNotIn("renderPressureConcentration", JS)
         self.assertIn("CURRENT STATE ·", JS)
         self.assertIn("Latest directional ·", JS)
         self.assertNotIn("Latest pressure ·", JS)
