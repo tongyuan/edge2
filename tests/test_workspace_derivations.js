@@ -6,6 +6,8 @@ const {
   deriveBreadthLeadership,
   deriveResearchInterpretation,
   deriveLocationFlowDetails,
+  derivePeerLocation,
+  derivePeerLocationFlow,
   eventLabel,
   filterLocationSymbols,
   groupPressureSourcesByAssetClass,
@@ -40,6 +42,10 @@ const taxonomyPressure = {
   sources: { higher: [nvdaPressure, btcPressure], neutral: [msftPressure], lower: [d05Pressure, mstrPressure] },
   included_equity_count: 4,
   counts: { higher: 1, neutral: 1, lower: 2 },
+  asset_classes: [
+    { name: "EQUITY", members: { higher: [nvdaPressure], neutral: [msftPressure], lower: [d05Pressure, mstrPressure] } },
+    { name: "CRYPTO", members: { higher: [btcPressure], neutral: [], lower: [] } },
+  ],
   sectors: [
     { name: "Technology", members: { higher: [nvdaPressure], neutral: [msftPressure], lower: [] } },
     { name: "Financials", members: { higher: [], neutral: [], lower: [d05Pressure, mstrPressure] } },
@@ -70,6 +76,11 @@ assert.deepEqual(
   pressureDrilldownMembers(taxonomyPressure, pressureReport, { type: "direction", direction: "higher" }).map((item) => item.symbol),
   ["BTCUSDT", "NVDA"],
   "direction drill-down reconciles to the current Higher list without duplicates",
+);
+assert.deepEqual(
+  pressureDrilldownMembers(taxonomyPressure, pressureReport, { type: "asset_class", name: "CRYPTO" }).map((item) => item.symbol),
+  ["BTCUSDT"],
+  "asset-class drill-down reconciles to the clicked canonical class",
 );
 assert.deepEqual(
   pressureDrilldownMembers(taxonomyPressure, pressureReport, { type: "sector", name: "Technology" }).map((item) => item.symbol),
@@ -111,6 +122,27 @@ const events = [
   { id: 2, symbol: "XAGUSD", event_type: "MRZ_NEAR_MISS", occurred_at: "2026-10-07T10:30:00Z" },
   { id: 3, symbol: "META", event_type: "MRZ_MIGRATED", occurred_at: "2026-10-07T09:00:00Z", previous_mrz_lower: "100", previous_mrz_upper: "102", mrz_lower: "105", mrz_upper: "107" },
 ];
+
+const peerGroup = {
+  id: 9,
+  name: "Peers",
+  member_count: 4,
+  members: ["NVDA", "META", "MISSING", "CORE"],
+  current_state: {
+    members: [
+      { symbol: "NVDA", current_location: "deep_discount", route_owner: "BTD", has_active_mrz: true },
+      { symbol: "META", current_location: "shallow_premium", route_owner: "STR", has_active_mrz: true },
+      { symbol: "MISSING", current_location: null, route_owner: null, has_active_mrz: false },
+      { symbol: "CORE", current_location: "deep_premium_core_mrz", route_owner: "STR", has_active_mrz: true },
+    ],
+  },
+};
+const peerLocations = derivePeerLocation(peerGroup);
+assert.equal(peerLocations.reduce((total, item) => total + item.members.length, 0), 4, "peer location reconciles to watchlist membership");
+assert.deepEqual(peerLocations.find((item) => item.key === "deep_discount").members.map((item) => item.symbol), ["NVDA"], "clickable location groups expose exact members");
+assert.deepEqual(peerLocations.find((item) => item.key === "deep_premium").members.map((item) => item.symbol), ["CORE"], "canonical core-location aliases map to their structural bucket");
+assert.deepEqual(peerLocations.find((item) => item.key === "unavailable").members.map((item) => item.symbol), ["MISSING"], "missing location is explicit rather than dropped");
+assert.equal(peerGroup.current_state.members[0].current_location, "deep_discount", "grouping does not mutate canonical structural location state");
 
 assert.deepEqual([...uniqueTrackedSymbols(groups)].sort(), ["META", "NVDA", "PLTR"]);
 assert.deepEqual(symbolsForWatchlist(symbols, groups, "all").map((item) => item.symbol), ["NVDA", "META"]);
@@ -347,6 +379,18 @@ assert.deepEqual(flowDetails.higher[0].migrationEvents.map((event) => event.dire
 assert.equal(flowDetails.higher.length, breadthHistory.flow.moved_higher, "aggregate higher count remains unchanged");
 assert.equal(flowDetails.lower.length, breadthHistory.flow.moved_lower, "aggregate lower count remains unchanged");
 assert.equal(flowDetails.unchanged.length, breadthHistory.flow.unchanged, "aggregate unchanged count remains unchanged");
+
+const peerFlow = derivePeerLocationFlow(
+  breadthHistory,
+  ["UP_CONFIRMED", "DOWN_NEUTRAL", "UNCHANGED", "NOT_COMPARABLE"],
+  breadthPressure,
+);
+assert.deepEqual(peerFlow.counts, { higher: 1, lower: 1, unchanged: 1 }, "peer flow filters the existing canonical flow without re-deriving locations");
+assert.equal(peerFlow.comparable, 3, "peer flow counts reconcile to comparable watchlist members");
+assert.equal(peerFlow.categories.higher[0].magnitude, 3, "peer flow preserves ordered start-to-current bucket distance");
+assert.equal(peerFlow.categories.higher[0].pressure, "higher", "peer flow keeps current canonical pressure context");
+assert.deepEqual(peerFlow.categories.higher[0].migrationEvents.map((event) => event.direction), ["higher"], "peer flow keeps canonical migration context only when present");
+assert.equal(breadthHistory.symbol_movements.length, 7, "watchlist membership does not mutate global location history");
 
 const refreshedFlow = deriveLocationFlowDetails({
   symbol_movements: [{ symbol: "NEW_WINDOW", direction: "higher", magnitude: 1 }],

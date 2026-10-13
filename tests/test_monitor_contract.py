@@ -68,7 +68,7 @@ class MonitorContractTests(unittest.TestCase):
             'data-route-panel="alert-settings"', 1
         )[0]
         self.assertIn("PRESSURE MAP", pressure)
-        self.assertIn("PEER PRESSURE", pressure)
+        self.assertNotIn("PEER PRESSURE", pressure)
         self.assertNotIn("LOCATION DISTRIBUTION", pressure)
         self.assertNotIn('id="locationHeatmap"', pressure)
         distribution = HTML.split('data-route-panel="location-distribution"', 1)[1].split(

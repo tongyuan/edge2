@@ -32,6 +32,14 @@
     deep_premium: 4,
     deep_premium_core_mrz: 4,
   };
+  const PEER_LOCATION_ORDER = [
+    "deep_discount",
+    "shallow_discount",
+    "at_eqm",
+    "shallow_premium",
+    "deep_premium",
+    "unavailable",
+  ];
 
   function groupMembership(groups) {
     const membership = new Map();
@@ -298,6 +306,54 @@
       .map(([assetClass, members]) => ({ assetClass, members }));
   }
 
+  function derivePeerLocation(group = {}) {
+    const currentBySymbol = new Map(
+      (group.current_state?.members || []).map((item) => [item.symbol, item]),
+    );
+    const groups = new Map(PEER_LOCATION_ORDER.map((key) => [key, []]));
+    (group.members || []).forEach((symbol) => {
+      const current = currentBySymbol.get(symbol) || { symbol };
+      const location = {
+        deep_discount_core_mrz: "deep_discount",
+        shallow_discount_core_mrz: "shallow_discount",
+        shallow_premium_core_mrz: "shallow_premium",
+        deep_premium_core_mrz: "deep_premium",
+      }[current.current_location] || (
+        PEER_LOCATION_ORDER.includes(current.current_location)
+          ? current.current_location
+          : "unavailable"
+      );
+      groups.get(location).push({
+        symbol,
+        current_location: location === "unavailable" ? null : location,
+        route_owner: current.route_owner || null,
+        has_active_mrz: Boolean(current.has_active_mrz),
+      });
+    });
+    groups.forEach((members) => members.sort(compareSymbol));
+    return PEER_LOCATION_ORDER.map((key) => ({ key, members: groups.get(key) }));
+  }
+
+  function derivePeerLocationFlow(history = {}, members = [], pressureReport = {}) {
+    const wanted = new Set(members || []);
+    const filtered = {
+      ...history,
+      symbol_movements: (history.symbol_movements || []).filter((item) => wanted.has(item.symbol)),
+      migration_events: (history.migration_events || []).filter((item) => wanted.has(item.symbol)),
+    };
+    const details = deriveLocationFlowDetails(filtered, pressureReport);
+    return {
+      window: history.window || "24H",
+      counts: {
+        higher: details.higher.length,
+        lower: details.lower.length,
+        unchanged: details.unchanged.length,
+      },
+      comparable: details.higher.length + details.lower.length + details.unchanged.length,
+      categories: details,
+    };
+  }
+
   function pressureDrilldownMembers(taxonomy = {}, pressure = {}, selection = {}) {
     const sourceIndex = new Map();
     Object.values(taxonomy.sources || {}).flat().forEach((item) => {
@@ -306,6 +362,9 @@
     let members = [];
     if (selection.type === "direction") {
       members = taxonomy.sources?.[selection.direction] || [];
+    } else if (selection.type === "asset_class") {
+      const group = (taxonomy.asset_classes || []).find((item) => item.name === selection.name);
+      members = Object.values(group?.members || {}).flat();
     } else if (selection.type === "sector") {
       const group = (taxonomy.sectors || []).find((item) => item.name === selection.name);
       members = Object.values(group?.members || {}).flat();
@@ -628,6 +687,8 @@
     SYMBOL_BOARD_SORT_STORAGE_KEY,
     allGroupsRows,
     currentAuthorityRow,
+    derivePeerLocation,
+    derivePeerLocationFlow,
     deriveLocationFlowDetails,
     deriveAttention,
     deriveBreadthLeadership,

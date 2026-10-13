@@ -4,6 +4,7 @@ import hmac
 import json
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -29,11 +30,13 @@ from app.notifications import (
 )
 from app.peer_pressure import (
     build_peer_pressure_report,
+    build_recent_peer_pressure_report,
     build_taxonomy_pressure_report,
     build_universe_pressure_report,
 )
 from app.repository import (
     EdgeRepository,
+    LOCATION_HISTORY_WINDOWS,
     PromotionConflict,
     json_diagnostics,
     sanitize_payload,
@@ -464,15 +467,32 @@ def create_app(
         )
 
     @application.get("/api/groups/{group_id}/peer-pressure")
-    def saved_group_peer_pressure(group_id: int) -> JSONResponse:
+    def saved_group_peer_pressure(
+        group_id: int,
+        window: str = Query("24H", pattern=r"^(24H|5D|20D)$"),
+    ) -> JSONResponse:
         group = repository.saved_group_report(group_id)
         if group is None:
             raise HTTPException(status_code=404, detail="group_not_found")
         active_mrzs, observations, _migration_provenance = (
             repository.mrz_robustness_inputs()
         )
+        current_pressure = build_peer_pressure_report(
+            group, active_mrzs, observations
+        )
+        since = datetime.now(timezone.utc) - LOCATION_HISTORY_WINDOWS[window]
+        directional_events = (
+            notification_repository.latest_directional_pressure_events(
+                group["members"], since
+            )
+        )
         return JSONResponse(
-            build_peer_pressure_report(group, active_mrzs, observations),
+            build_recent_peer_pressure_report(
+                group,
+                current_pressure,
+                directional_events,
+                window=window,
+            ),
             headers={"Cache-Control": "no-store, max-age=0"},
         )
 

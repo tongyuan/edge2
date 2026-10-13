@@ -253,6 +253,92 @@ def build_peer_pressure_report(
     )
 
 
+def build_recent_peer_pressure_report(
+    group: Mapping[str, Any],
+    current_pressure: Mapping[str, Any],
+    directional_events: Sequence[Mapping[str, Any]],
+    *,
+    window: str,
+) -> dict[str, Any]:
+    """Classify each peer once by its latest directional pressure event."""
+    members = tuple(str(symbol) for symbol in group.get("members", ()))
+    current_by_symbol = {
+        str(item["symbol"]): item
+        for category in current_pressure.get("categories", {}).values()
+        for item in category
+    }
+    latest_by_symbol: dict[str, Mapping[str, Any]] = {}
+    for event in sorted(
+        directional_events,
+        key=lambda item: (
+            str(item.get("occurred_at") or ""),
+            int(item.get("id") or 0),
+        ),
+        reverse=True,
+    ):
+        symbol = str(event.get("symbol") or "")
+        direction = str(event.get("current_state") or "")
+        if (
+            symbol in members
+            and direction in {"UP", "DOWN"}
+            and symbol not in latest_by_symbol
+        ):
+            latest_by_symbol[symbol] = event
+
+    categories: dict[str, list[dict[str, Any]]] = {
+        "higher": [],
+        "lower": [],
+        "none": [],
+    }
+    for symbol in members:
+        current = current_by_symbol.get(symbol, {})
+        event = latest_by_symbol.get(symbol)
+        category = (
+            "higher" if event and event.get("current_state") == "UP"
+            else "lower" if event and event.get("current_state") == "DOWN"
+            else "none"
+        )
+        categories[category].append({
+            "symbol": symbol,
+            "recent_direction": category if event else None,
+            "latest_event": dict(event) if event else None,
+            "current_pressure": current.get("direction", "neutral"),
+            "current_location": current.get("current_location"),
+            "current_location_label": current.get(
+                "current_location_label", "Unavailable"
+            ),
+            "route_owner": current.get("active_mrz", {}).get("route_owner"),
+        })
+
+    for category, items in categories.items():
+        items.sort(key=lambda item: str(item["symbol"]))
+        if category != "none":
+            items.sort(
+                key=lambda item: str(
+                    item.get("latest_event", {}).get("occurred_at") or ""
+                ),
+                reverse=True,
+            )
+
+    counts = {category: len(items) for category, items in categories.items()}
+    if sum(counts.values()) != len(members):
+        raise ValueError("recent peer pressure must reconcile to group membership")
+    return {
+        "id": int(group["id"]),
+        "name": str(group["name"]),
+        "window": window,
+        "member_count": len(members),
+        "counts": counts,
+        "categories": categories,
+        "method": {
+            "source": "latest canonical directional pressure event per group member inside the selected elapsed-time window",
+            "higher": "Latest directional event in the window entered Higher pressure.",
+            "lower": "Latest directional event in the window entered Lower pressure.",
+            "none": "No directional pressure event occurred inside the window.",
+        },
+    }
+
+
 def build_universe_pressure_report(
     symbol_states: Sequence[Mapping[str, Any]],
     active_mrzs: Sequence[ActiveMRZ],
@@ -332,6 +418,7 @@ def build_taxonomy_pressure_report(
         for item in instruments
     }
     groups: dict[tuple[str, str | None, str], dict[str, Any]] = {}
+    asset_class_groups: dict[str, dict[str, Any]] = {}
     included_symbols: set[str] = set()
     pressure_by_symbol: dict[str, Mapping[str, Any]] = {}
     sources: dict[str, list[dict[str, Any]]] = {
@@ -358,6 +445,20 @@ def build_taxonomy_pressure_report(
                 ),
             }
             sources[direction].append(source)
+            asset_class = taxonomy.get("asset_class")
+            if asset_class:
+                asset_group = asset_class_groups.setdefault(
+                    str(asset_class),
+                    {
+                        "name": str(asset_class),
+                        "counts": {item: 0 for item in PRESSURE_DIRECTIONS},
+                        "symbols": {item: [] for item in PRESSURE_DIRECTIONS},
+                        "members": {item: [] for item in PRESSURE_DIRECTIONS},
+                    },
+                )
+                asset_group["counts"][direction] += 1
+                asset_group["symbols"][direction].append(symbol)
+                asset_group["members"][direction].append(source)
             if (
                 not is_equity
                 or not taxonomy.get("sector")
@@ -384,10 +485,30 @@ def build_taxonomy_pressure_report(
                 group["symbols"][direction].append(symbol)
                 group["members"][direction].append(source)
 
+    asset_classes: list[dict[str, Any]] = []
     sectors: list[dict[str, Any]] = []
     industries: list[dict[str, Any]] = []
     for direction in PRESSURE_DIRECTIONS:
         sources[direction].sort(key=lambda item: str(item["symbol"]))
+    asset_class_order = {
+        name: index
+        for index, name in enumerate(
+            ("EQUITY", "ETF", "INDEX", "CRYPTO", "COMMODITY", "FX")
+        )
+    }
+    for group in asset_class_groups.values():
+        for symbols in group["symbols"].values():
+            symbols.sort()
+        for members in group["members"].values():
+            members.sort(key=lambda item: str(item["symbol"]))
+        group["total"] = sum(group["counts"].values())
+        asset_classes.append(group)
+    asset_classes.sort(
+        key=lambda group: (
+            asset_class_order.get(str(group["name"]), len(asset_class_order)),
+            str(group["name"]),
+        )
+    )
     for (dimension, _sector, _name), group in groups.items():
         for symbols in group["symbols"].values():
             symbols.sort()
@@ -474,6 +595,14 @@ def build_taxonomy_pressure_report(
 
     return {
         "sources": sources,
+        "asset_classes": asset_classes,
+        "asset_class_included_count": sum(
+            group["total"] for group in asset_classes
+        ),
+        "asset_class_excluded_count": (
+            len(pressure_by_symbol)
+            - sum(group["total"] for group in asset_classes)
+        ),
         "sectors": sectors,
         "industries": industries,
         "included_equity_count": len(included_symbols),
@@ -483,5 +612,8 @@ def build_taxonomy_pressure_report(
             "higher": concentration("higher"),
             "lower": concentration("lower"),
         },
-        "method": "Canonical pressure state grouped by complete equity taxonomy.",
+        "method": (
+            "Canonical pressure state grouped by instrument asset class; "
+            "sector and industry remain complete EQUITY taxonomy only."
+        ),
     }

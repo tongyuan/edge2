@@ -212,15 +212,16 @@ class WorkspaceContractTests(unittest.TestCase):
     def test_pressure_sources_taxonomy_and_shared_drilldown_are_present(self) -> None:
         for target in (
             "pressureSources",
+            "pressureAssetClasses",
             "pressureSectors",
             "pressureIndustries",
             "pressureConcentration",
             "pressureDrilldown",
             "pressureDrilldownGroups",
-            "pressurePopulationComparison",
         ):
             self.assertIn(f'id="{target}"', HTML)
         self.assertIn("PRESSURE SOURCES", HTML)
+        self.assertIn("PRESSURE BY ASSET CLASS", HTML)
         self.assertIn("PRESSURE BY SECTOR", HTML)
         self.assertIn("PRESSURE BY INDUSTRY", HTML)
         self.assertIn("PRESSURE CONCENTRATION", HTML)
@@ -234,6 +235,35 @@ class WorkspaceContractTests(unittest.TestCase):
         mobile_rules = CSS[CSS.index("@media (max-width: 560px)") :]
         self.assertIn(".pressure-taxonomy-grid", mobile_rules)
         self.assertIn(".pressure-member-list", mobile_rules)
+
+    def test_peer_context_belongs_to_watchlists_and_is_mobile_safe(self) -> None:
+        watchlists = HTML.split('data-route-panel="watchlists"', 1)[1].split(
+            'data-route-panel="attention"', 1
+        )[0]
+        pressure = HTML.split('data-route-panel="pressure"', 1)[1].split(
+            'data-route-panel="alert-settings"', 1
+        )[0]
+        self.assertIn("PEER CONTEXT", watchlists)
+        self.assertLess(watchlists.index("ATTENTION NOW"), watchlists.index("PEER CONTEXT"))
+        self.assertLess(watchlists.index("PEER CONTEXT"), watchlists.index("SYMBOL BOARD"))
+        self.assertNotIn("Watchlist context", pressure)
+        self.assertNotIn('id="pressureGroupSelect"', pressure)
+        for target in (
+            "peerLocation",
+            "peerLocationFlow",
+            "peerPressure",
+            "peerContextDrilldown",
+            "peerContextMembers",
+        ):
+            self.assertIn(f'id="{target}"', watchlists)
+        for window in ("24H", "5D", "20D"):
+            self.assertIn(f'data-peer-window="{window}"', watchlists)
+        self.assertIn("derive.derivePeerLocation", JS)
+        self.assertIn("derive.derivePeerLocationFlow", JS)
+        self.assertIn("/peer-pressure?window=", JS)
+        mobile_rules = CSS[CSS.index("@media (max-width: 560px)") :]
+        for selector in (".peer-location-grid", ".peer-flow-grid", ".peer-context-members"):
+            self.assertIn(selector, mobile_rules)
 
     def test_location_flow_cards_expose_shared_symbol_drilldown(self) -> None:
         for target in (

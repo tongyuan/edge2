@@ -690,6 +690,35 @@ class NotificationRepository:
         finally:
             connection.close()
 
+    def latest_directional_pressure_events(
+        self,
+        symbols: Sequence[str],
+        since: datetime,
+    ) -> list[dict[str, Any]]:
+        """Return one latest canonical directional event per requested symbol."""
+        if not symbols:
+            return []
+        connection = connect(self.database_url)
+        try:
+            connection.set_session(readonly=True)
+            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    """
+                    SELECT DISTINCT ON (symbol) *
+                    FROM web_push_notifications
+                    WHERE deliverable = TRUE
+                      AND event_type = 'POST_ACTIVATION_PRESSURE_CHANGED'
+                      AND current_pressure_state IN ('UP', 'DOWN')
+                      AND symbol = ANY(%s)
+                      AND occurred_at >= %s
+                    ORDER BY symbol ASC, occurred_at DESC, id DESC
+                    """,
+                    (list(symbols), since),
+                )
+                return [notification_inbox_item(row) for row in cursor.fetchall()]
+        finally:
+            connection.close()
+
     def inbox(self, limit: int = 50) -> dict[str, Any]:
         connection = connect(self.database_url)
         try:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
 
@@ -86,6 +87,9 @@ class APIIntegrationTests(unittest.TestCase):
             taxonomy_pressure,
             {
                 "sources": {"higher": [], "lower": [], "neutral": []},
+                "asset_classes": [],
+                "asset_class_included_count": 0,
+                "asset_class_excluded_count": 0,
                 "sectors": [],
                 "industries": [],
                 "included_equity_count": 0,
@@ -109,7 +113,10 @@ class APIIntegrationTests(unittest.TestCase):
                         "top_sector_share_pct": None,
                     },
                 },
-                "method": "Canonical pressure state grouped by complete equity taxonomy.",
+                "method": (
+                    "Canonical pressure state grouped by instrument asset class; "
+                    "sector and industry remain complete EQUITY taxonomy only."
+                ),
             },
         )
 
@@ -177,19 +184,18 @@ class APIIntegrationTests(unittest.TestCase):
         pressure_payload = pressure.json()
         self.assertEqual(
             pressure_payload["counts"],
-            {"higher": 0, "lower": 0, "neutral": 7},
+            {"higher": 0, "lower": 0, "none": 7},
         )
-        self.assertEqual(
-            pressure_payload["participation"],
-            {"count": 0, "total": 7},
-        )
-        self.assertEqual(
-            pressure_payload["headline"]["status"],
-            "INSUFFICIENT_PARTICIPATION",
-        )
+        self.assertEqual(pressure_payload["window"], "24H")
         self.assertEqual(
             sum(len(members) for members in pressure_payload["categories"].values()),
             7,
+        )
+        self.assertEqual(
+            self.client.get(
+                f"/api/groups/{group['id']}/peer-pressure?window=30D"
+            ).status_code,
+            422,
         )
 
         renamed = self.client.put(
@@ -1064,12 +1070,15 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(updated["DD"]["current_price_location"], "shallow_premium")
 
     def test_universe_pressure_reconciles_and_matches_saved_group_scope(self) -> None:
+        observed_base = datetime.now(timezone.utc) - timedelta(hours=1)
+
         def ingest(symbol: str, index: int, price: str) -> None:
             packet = webhook_payload(
                 index,
                 price,
                 symbol=symbol,
                 event_id=f"pressure-{symbol}-{index}",
+                observed_at=(observed_base + timedelta(seconds=index)).isoformat(),
             )
             self.assertEqual(
                 self.client.post("/webhook/tradingview", json=packet).status_code,
@@ -1100,14 +1109,23 @@ class APIIntegrationTests(unittest.TestCase):
             json={"name": "Pressure parity", "members": ["UP", "DOWN", "QUIET", "NOACTIVE"]},
         ).json()
         peers = self.client.get(f"/api/groups/{created['id']}/peer-pressure").json()
-        self.assertEqual(peers["counts"], pressure["counts"])
+        self.assertEqual(sum(peers["counts"].values()), 4)
+        self.assertEqual(peers["counts"], {"higher": 1, "lower": 1, "none": 2})
+        self.assertEqual(
+            [item["symbol"] for item in peers["categories"]["higher"]],
+            ["UP"],
+        )
+        self.assertEqual(
+            [item["symbol"] for item in peers["categories"]["lower"]],
+            ["DOWN"],
+        )
         global_directions = {
             item["symbol"]: item["direction"]
             for members in pressure["categories"].values()
             for item in members
         }
         group_directions = {
-            item["symbol"]: item["direction"]
+            item["symbol"]: item["current_pressure"]
             for members in peers["categories"].values()
             for item in members
         }

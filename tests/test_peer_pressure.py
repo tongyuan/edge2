@@ -12,7 +12,11 @@ from app.domain import (
     Route,
     StructuralLocation,
 )
-from app.peer_pressure import build_peer_pressure_report, build_universe_pressure_report
+from app.peer_pressure import (
+    build_peer_pressure_report,
+    build_recent_peer_pressure_report,
+    build_universe_pressure_report,
+)
 
 
 BASE_TIME = datetime(2026, 9, 20, 12, 0, tzinfo=timezone.utc)
@@ -93,6 +97,76 @@ def symbol_state(symbol: str, location: str | None) -> dict[str, object]:
 
 
 class PeerPressureTests(unittest.TestCase):
+    def test_recent_peer_pressure_uses_latest_event_once_per_member(self) -> None:
+        cohort = group("UP", "DOWN", "QUIET")
+        current = build_peer_pressure_report(
+            cohort,
+            (active("UP"), active("DOWN"), active("QUIET")),
+            (
+                observation("UP", 1, "114"),
+                observation("UP", 2, "115"),
+                observation("UP", 3, "116"),
+            ),
+        )
+        report = build_recent_peer_pressure_report(
+            cohort,
+            current,
+            (
+                {"id": 1, "symbol": "UP", "current_state": "DOWN", "occurred_at": "2026-10-10T10:00:00Z"},
+                {"id": 2, "symbol": "UP", "current_state": "UP", "occurred_at": "2026-10-10T11:00:00Z"},
+                {"id": 3, "symbol": "DOWN", "current_state": "UP", "occurred_at": "2026-10-10T10:30:00Z"},
+                {"id": 4, "symbol": "DOWN", "current_state": "DOWN", "occurred_at": "2026-10-10T11:30:00Z"},
+                {"id": 5, "symbol": "OUTSIDE", "current_state": "UP", "occurred_at": "2026-10-10T12:00:00Z"},
+            ),
+            window="5D",
+        )
+
+        self.assertEqual(report["counts"], {"higher": 1, "lower": 1, "none": 1})
+        self.assertEqual(report["member_count"], 3)
+        self.assertEqual(
+            [item["symbol"] for item in report["categories"]["higher"]],
+            ["UP"],
+        )
+        self.assertEqual(
+            [item["symbol"] for item in report["categories"]["lower"]],
+            ["DOWN"],
+        )
+        self.assertEqual(
+            [item["symbol"] for item in report["categories"]["none"]],
+            ["QUIET"],
+        )
+        self.assertEqual(
+            report["categories"]["higher"][0]["current_pressure"],
+            "higher",
+        )
+        self.assertEqual(
+            report["categories"]["lower"][0]["current_pressure"],
+            "neutral",
+            "recent event direction remains distinct from current canonical pressure",
+        )
+        self.assertEqual(
+            report["categories"]["higher"][0]["latest_event"]["occurred_at"],
+            "2026-10-10T11:00:00Z",
+        )
+        self.assertEqual(
+            sum(len(items) for items in report["categories"].values()),
+            len(cohort["members"]),
+        )
+
+    def test_recent_peer_pressure_keeps_window_label_and_empty_event_members(self) -> None:
+        cohort = group("A", "B")
+        current = build_peer_pressure_report(cohort, (), ())
+        for window in ("24H", "5D", "20D"):
+            with self.subTest(window=window):
+                report = build_recent_peer_pressure_report(
+                    cohort, current, (), window=window
+                )
+                self.assertEqual(report["window"], window)
+                self.assertEqual(
+                    report["counts"],
+                    {"higher": 0, "lower": 0, "none": 2},
+                )
+
     def test_directional_counts_participation_and_drilldown_reconcile(self) -> None:
         report = build_peer_pressure_report(
             group("UP", "DOWN", "QUIET", "MISSING"),

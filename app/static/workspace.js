@@ -15,6 +15,11 @@
     locationFlowSelection: null,
     locationFlowPressure: "all",
     pressureSelection: null,
+    peerWindow: "24H",
+    peerLocationHistory: null,
+    peerPressure: null,
+    peerContextKey: null,
+    peerSelection: null,
     selectedGroupId: "all",
     editingGroupId: null,
     symbolBoardSort: derive.restoreSymbolBoardSort(globalObject.localStorage),
@@ -171,7 +176,10 @@
     button.append(document.createTextNode(label), element("b", "", String(count)));
     button.addEventListener("click", () => {
       state.selectedGroupId = String(id);
+      state.peerContextKey = null;
+      state.peerSelection = null;
       renderWatchlists(derive.deriveAttention(state.events, state.groups));
+      loadPeerContext().catch(showError);
     });
     return button;
   }
@@ -192,6 +200,7 @@
     );
     $("#watchlistAttentionHeading").textContent = title;
     $("#watchlistAttention").replaceChildren(eventList(currentAttention, { limit: 8 }));
+    renderPeerContext(group);
     renderSymbolBoard(symbols);
     $("#editWatchlistButton").hidden = !group;
   }
@@ -199,6 +208,163 @@
     const cell = element("div", "");
     cell.append(element("span", "", label), element("strong", "", String(value)), element("small", "", support));
     return cell;
+  }
+
+  function peerCountButton(label, count, support, selected, onClick, disabled = false) {
+    const button = element("button", "peer-count-button");
+    button.type = "button";
+    button.disabled = disabled;
+    button.setAttribute("aria-expanded", String(selected));
+    button.append(
+      element("span", "", label),
+      element("strong", "", String(count)),
+      element("small", "", support),
+    );
+    button.addEventListener("click", onClick);
+    return button;
+  }
+
+  function selectPeerDetail(type, key, label) {
+    state.peerSelection = { type, key, label };
+    renderPeerContext(selectedGroup());
+    $("#peerContextDrilldown").scrollIntoView?.({ behavior: "smooth", block: "nearest" });
+  }
+
+  function renderPeerContext(group) {
+    const content = $("#peerContextContent");
+    document.querySelectorAll("[data-peer-window]").forEach((button) => {
+      button.setAttribute("aria-pressed", String(button.dataset.peerWindow === state.peerWindow));
+    });
+    if (!group) {
+      $("#peerContextHeading").textContent = "Select one watchlist";
+      $("#peerContextStatus").textContent = state.groups.length
+        ? "Choose a named watchlist tab to inspect peer context."
+        : "Create a watchlist to inspect peer context.";
+      content.hidden = true;
+      return;
+    }
+    content.hidden = false;
+    $("#peerContextHeading").textContent = group.name;
+    const loaded = state.peerContextKey === `${group.id}:${state.peerWindow}`;
+    $("#peerContextStatus").textContent = loaded ? "" : `Loading ${state.peerWindow} peer context…`;
+
+    const hasCurrentState = Boolean(group.current_state?.members);
+    const locations = hasCurrentState ? derive.derivePeerLocation(group) : [];
+    const locationTarget = $("#peerLocation"); locationTarget.replaceChildren();
+    if (!hasCurrentState) locationTarget.append(empty("Loading current peer locations…"));
+    locations.forEach(({ key, members }) => {
+      const label = key === "unavailable" ? "Unavailable" : locationLabels[key];
+      locationTarget.append(peerCountButton(
+        label,
+        members.length,
+        `${members.length} of ${group.member_count}`,
+        state.peerSelection?.type === "location" && state.peerSelection.key === key,
+        () => selectPeerDetail("location", key, label),
+        !hasCurrentState,
+      ));
+    });
+
+    const flow = loaded
+      ? derive.derivePeerLocationFlow(
+        state.peerLocationHistory,
+        group.members,
+        state.symbolPayload?.pressure || {},
+      )
+      : { counts: { higher: 0, lower: 0, unchanged: 0 }, comparable: 0, categories: {} };
+    $("#peerLocationFlowHeading").textContent = `Structural movement · ${state.peerWindow}`;
+    $("#peerLocationFlowCoverage").textContent = loaded
+      ? `${flow.comparable} of ${group.member_count} comparable members`
+      : "Loading comparable members";
+    const flowTarget = $("#peerLocationFlow"); flowTarget.replaceChildren();
+    [
+      ["higher", "↑ Moved Higher"],
+      ["lower", "↓ Moved Lower"],
+      ["unchanged", "↔ Unchanged"],
+    ].forEach(([key, label]) => flowTarget.append(peerCountButton(
+      label,
+      flow.counts[key] || 0,
+      `${state.peerWindow} start → current`,
+      state.peerSelection?.type === "flow" && state.peerSelection.key === key,
+      () => selectPeerDetail("flow", key, label),
+      !loaded,
+    )));
+
+    const recent = loaded ? state.peerPressure : null;
+    $("#peerPressureHeading").textContent = `Recent directional pressure · ${state.peerWindow}`;
+    const pressureTarget = $("#peerPressure"); pressureTarget.replaceChildren();
+    [
+      ["higher", "↑ Higher pressure"],
+      ["lower", "↓ Lower pressure"],
+      ["none", "— No recent directional pressure"],
+    ].forEach(([key, label]) => pressureTarget.append(peerCountButton(
+      label,
+      recent?.counts?.[key] || 0,
+      key === "none" ? "No directional event in window" : "Latest event per member",
+      state.peerSelection?.type === "pressure" && state.peerSelection.key === key,
+      () => selectPeerDetail("pressure", key, label),
+      !loaded,
+    )));
+    renderPeerContextDrilldown(group, locations, flow, recent);
+  }
+
+  function renderPeerContextDrilldown(group, locations, flow, recent) {
+    const panel = $("#peerContextDrilldown");
+    const selection = state.peerSelection;
+    if (!selection) { panel.hidden = true; $("#peerContextMembers").replaceChildren(); return; }
+    let members = [];
+    if (selection.type === "location") {
+      members = locations.find((item) => item.key === selection.key)?.members || [];
+    } else if (selection.type === "flow") {
+      members = flow.categories?.[selection.key] || [];
+    } else if (selection.type === "pressure") {
+      members = recent?.categories?.[selection.key] || [];
+    }
+    panel.hidden = false;
+    $("#peerContextDrilldownHeading").textContent = `${selection.label} · ${members.length}`;
+    $("#peerContextDrilldownSupport").textContent = selection.type === "location"
+      ? `${group.name} · current canonical state`
+      : `${group.name} · ${state.peerWindow}`;
+    const target = $("#peerContextMembers"); target.replaceChildren();
+    if (!members.length) { target.append(empty("No members in this selection.")); return; }
+    members.forEach((member) => {
+      const item = element("li", "peer-context-member");
+      const heading = element("div", "peer-context-member-heading");
+      heading.append(symbolLink(member.symbol, member.symbol));
+      const context = element("div", "peer-context-member-body");
+      if (selection.type === "location") {
+        context.append(
+          element("span", "", member.current_location ? locationLabels[member.current_location] : "Location unavailable"),
+          element("span", "", `Route · ${member.route_owner || "—"}`),
+          element("span", "", member.has_active_mrz ? "Active MRZ" : "No active MRZ"),
+        );
+      } else if (selection.type === "flow") {
+        const signed = member.direction === "higher" ? `+${member.magnitude}` : member.direction === "lower" ? `-${member.magnitude}` : "0";
+        const migrations = member.migrationEvents || [];
+        const migration = migrations.length
+          ? [...new Set(migrations.map((event) => event.direction === "higher" ? "↑" : "↓"))].join(" / ")
+          : "—";
+        context.append(
+          element("strong", "", `${member.start_location_label} → ${member.current_location_label}`),
+          element("span", "", `${signed} bucket${Number(member.magnitude) === 1 ? "" : "s"} · ${member.direction}`),
+          element("span", `pressure-${member.pressure}`, `Current pressure · ${pressureLabels[member.pressure] || pressureLabels.neutral}`),
+          element("span", "", `MRZ migration · ${migration}`),
+        );
+      } else {
+        const event = member.latest_event;
+        context.append(
+          element("span", "", event ? `Latest pressure · ${member.recent_direction === "higher" ? "↑" : "↓"} · ${relativeTime(event.occurred_at)}` : "No directional pressure event in window"),
+          element("span", `pressure-${member.current_pressure}`, `Current pressure · ${pressureLabels[member.current_pressure] || pressureLabels.neutral}`),
+          element("span", "", `Location · ${member.current_location_label || "Unavailable"}`),
+          element("span", "", `Route · ${member.route_owner || "—"}`),
+        );
+        if (event?.occurred_at) {
+          const time = element("time", "", exactTime(event.occurred_at));
+          time.dateTime = event.occurred_at;
+          context.append(time);
+        }
+      }
+      item.append(heading, context); target.append(item);
+    });
   }
   function renderSymbolBoard(symbols) {
     const pressure = pressureBySymbol();
@@ -320,6 +486,7 @@
       pressureSummaryAction("lower", counts.lower || 0),
     );
     renderPressureSources(taxonomy);
+    renderPressureAssetClasses(taxonomy, report);
     renderPressureTaxonomy(taxonomy);
     renderPressureConcentration(taxonomy);
     const map = $("#pressureMap"); map.replaceChildren();
@@ -337,14 +504,6 @@
       });
       card.append(dl); map.append(card);
     });
-    const population = $("#pressurePopulationComparison");
-    population.replaceChildren(
-      element("strong", "", "Monitored population"),
-      element("span", "pressure-higher", `↑ Higher ${counts.higher || 0}`),
-      element("span", "pressure-neutral", `↔ Neutral ${counts.neutral || 0}`),
-      element("span", "pressure-lower", `↓ Lower ${counts.lower || 0}`),
-    );
-    $("#pressureGroupSelect").replaceChildren(new Option("Select watchlist", ""), ...state.groups.map((group) => new Option(group.name, String(group.id))));
     renderPressureDrilldown();
   }
 
@@ -376,6 +535,30 @@
       const breakdown = element("ul", "pressure-asset-breakdown");
       derive.groupPressureSourcesByAssetClass(members).forEach((group) => breakdown.append(element("li", "", `${group.assetClass} · ${group.members.length}`)));
       card.append(button, breakdown); target.append(card);
+    });
+  }
+
+  function renderPressureAssetClasses(taxonomy, report) {
+    const target = $("#pressureAssetClasses"); target.replaceChildren();
+    const included = Number(taxonomy.asset_class_included_count || 0);
+    const total = Number(report.member_count || 0);
+    const excluded = Number(taxonomy.asset_class_excluded_count || 0);
+    $("#pressureAssetClassCoverage").textContent = excluded
+      ? `${included} of ${total} classified · ${excluded} unavailable`
+      : `${included} of ${total} eligible symbols reconciled`;
+    (taxonomy.asset_classes || []).forEach((group) => {
+      const button = element("button", "pressure-taxonomy-card"); button.type = "button";
+      button.append(
+        element("strong", "", group.name),
+        pressureCountStrip(group.counts),
+        element("small", "", `${group.total} monitored symbol${group.total === 1 ? "" : "s"}`),
+      );
+      button.addEventListener("click", () => openPressureDrilldown(
+        { type: "asset_class", name: group.name },
+        group.name,
+        "Current canonical pressure by asset class",
+      ));
+      target.append(button);
     });
   }
 
@@ -445,7 +628,7 @@
     $("#pressureDrilldownHeading").textContent = `${state.pressureSelection.heading} · ${members.length}`;
     $("#pressureDrilldownSupport").textContent = state.pressureSelection.support;
     const target = $("#pressureDrilldownGroups"); target.replaceChildren();
-    const groups = ["sector", "industry"].includes(state.pressureSelection.type)
+    const groups = ["asset_class", "sector", "industry"].includes(state.pressureSelection.type)
       ? ["higher", "neutral", "lower"].map((direction) => ({ label: pressureLabels[direction], members: members.filter((item) => item.direction === direction) })).filter((group) => group.members.length)
       : derive.groupPressureSourcesByAssetClass(members).map((group) => ({ label: group.assetClass, members: group.members }));
     if (!groups.length) { target.append(empty("No symbols in this selection.")); return; }
@@ -758,19 +941,29 @@
     }
   }
   function summaryArticle(label, value) { const node = element("article", ""); node.append(element("span", "", label), element("strong", "", String(value))); return node; }
-  async function loadPeerPressure(groupId) {
-    const target = $("#peerPressureDetail");
-    if (!groupId) { target.className = "empty-inline"; target.textContent = "Choose a watchlist to load canonical peer pressure."; return; }
-    target.className = "empty-inline"; target.textContent = "Loading peer pressure…";
-    const response = await fetch(`/api/groups/${encodeURIComponent(groupId)}/peer-pressure`, { cache: "no-store" });
-    if (!response.ok) throw new Error("Unable to load peer pressure.");
-    const payload = await response.json();
-    const grid = element("div", "peer-pressure-grid");
-    ["higher", "neutral", "lower"].forEach((direction) => {
-      const section = element("section", ""); section.append(element("h3", `pressure-${direction}`, `${pressureLabels[direction]} · ${payload.counts?.[direction] || 0}`));
-      const list = element("ul", ""); (payload.categories?.[direction] || []).forEach((member) => list.append(element("li", "", `${member.symbol} · ${member.active_mrz?.route_owner || "—"} · ${member.current_location_label}`))); section.append(list); grid.append(section);
-    });
-    target.className = ""; target.replaceChildren(grid);
+  async function loadPeerContext() {
+    const group = selectedGroup();
+    if (!group) { renderPeerContext(null); return; }
+    const key = `${group.id}:${state.peerWindow}`;
+    state.peerContextKey = null;
+    renderPeerContext(group);
+    const [groupResponse, historyResponse, pressureResponse] = await Promise.all([
+      fetch(`/api/groups/${encodeURIComponent(group.id)}`, { cache: "no-store" }),
+      fetch(`/api/location-distribution/history?window=${encodeURIComponent(state.peerWindow)}`, { cache: "no-store" }),
+      fetch(`/api/groups/${encodeURIComponent(group.id)}/peer-pressure?window=${encodeURIComponent(state.peerWindow)}`, { cache: "no-store" }),
+    ]);
+    if (!groupResponse.ok || !historyResponse.ok || !pressureResponse.ok) throw new Error("Unable to load peer context.");
+    const [groupReport, history, pressure] = await Promise.all([
+      groupResponse.json(), historyResponse.json(), pressureResponse.json(),
+    ]);
+    if (`${selectedGroup()?.id}:${state.peerWindow}` !== key) return;
+    state.groups = state.groups.map((item) => (
+      String(item.id) === String(groupReport.id) ? groupReport : item
+    ));
+    state.peerLocationHistory = history;
+    state.peerPressure = pressure;
+    state.peerContextKey = key;
+    renderPeerContext(selectedGroup());
   }
 
   function renderEvents() {
@@ -820,6 +1013,7 @@
     state.groups = (await response.json()).groups || [];
     if (state.groups.length === 1 && state.selectedGroupId === "all") state.selectedGroupId = String(state.groups[0].id);
     renderAll();
+    await loadPeerContext();
   }
 
   function renderPreferences() {
@@ -862,7 +1056,9 @@
       state.preferences = await preferencesResponse.json();
       state.locationHistory = locationHistoryResponse ? await locationHistoryResponse.json() : null;
       if (state.groups.length === 1) state.selectedGroupId = String(state.groups[0].id);
-      renderAll(); $("#workspaceStatus").hidden = true;
+      renderAll();
+      if (routeName() === "watchlists") await loadPeerContext();
+      $("#workspaceStatus").hidden = true;
     } catch (error) { $("#workspaceStatus").textContent = error.message || "Unable to load MRZ workspace."; $("#workspaceStatus").classList.add("error"); }
   }
 
@@ -874,7 +1070,15 @@
     const symbol = event.target.value;
     const url = new URL(globalObject.location.href); if (symbol) url.searchParams.set("symbol", symbol); else url.searchParams.delete("symbol"); globalObject.history.replaceState({}, "", url); loadSymbolDetail(symbol).catch(showError);
   });
-  $("#pressureGroupSelect")?.addEventListener("change", (event) => loadPeerPressure(event.target.value).catch(showError));
+  document.querySelectorAll("[data-peer-window]").forEach((button) => button.addEventListener("click", () => {
+    state.peerWindow = button.dataset.peerWindow;
+    state.peerSelection = null;
+    loadPeerContext().catch(showError);
+  }));
+  $("#peerContextDrilldownClose")?.addEventListener("click", () => {
+    state.peerSelection = null;
+    renderPeerContext(selectedGroup());
+  });
   $("#pressureDrilldownClose")?.addEventListener("click", () => {
     state.pressureSelection = null;
     renderPressureDrilldown();

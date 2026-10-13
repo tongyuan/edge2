@@ -154,6 +154,12 @@ class TaxonomyPressureTests(unittest.TestCase):
         self.assertEqual(taxonomy["counts"], {"higher": 1, "neutral": 0, "lower": 1})
         self.assertEqual(taxonomy["included_equity_count"], 2)
         self.assertEqual(taxonomy["excluded_count"], 1)
+        self.assertEqual(
+            [(group["name"], group["total"]) for group in taxonomy["asset_classes"]],
+            [("EQUITY", 2), ("ETF", 1)],
+        )
+        self.assertEqual(taxonomy["asset_class_included_count"], 3)
+        self.assertEqual(taxonomy["asset_class_excluded_count"], 0)
         self.assertEqual(sum(group["total"] for group in taxonomy["sectors"]), 2)
         self.assertEqual(
             [source["symbol"] for source in taxonomy["sources"]["higher"]],
@@ -241,6 +247,60 @@ class TaxonomyPressureTests(unittest.TestCase):
         self.assertEqual(len(all_sector_symbols), len(set(all_sector_symbols)))
         self.assertIsNone(report["sources"]["neutral"][-1]["sector"])
         self.assertIsNone(report["sources"]["neutral"][-1]["industry"])
+
+    def test_asset_class_groups_reconcile_every_pressure_member_without_duplicates(self) -> None:
+        classes = ("EQUITY", "ETF", "INDEX", "CRYPTO", "COMMODITY", "FX")
+        directions = ("higher", "neutral", "lower", "neutral", "higher", "lower")
+        categories = {direction: [] for direction in ("higher", "neutral", "lower")}
+        instruments = []
+        for asset_class, direction in zip(classes, directions, strict=True):
+            symbol = f"{asset_class}_ONE"
+            categories[direction].append({
+                "symbol": symbol,
+                "direction": direction,
+                "current_location": "deep_discount",
+                "current_location_label": "Deep Discount",
+                "active_mrz": {"route_owner": "BTD"},
+                "evidence": {"latest_pressure_observed_at": "2026-10-12T00:00:00Z"},
+            })
+            instruments.append({
+                "symbol": symbol,
+                "asset_class": asset_class,
+                "sector": "Technology" if asset_class == "EQUITY" else None,
+                "industry": "Software" if asset_class == "EQUITY" else None,
+            })
+
+        report = build_taxonomy_pressure_report(
+            {"categories": categories}, instruments
+        )
+        self.assertEqual(
+            [group["name"] for group in report["asset_classes"]],
+            list(classes),
+        )
+        self.assertEqual(
+            sum(group["total"] for group in report["asset_classes"]), 6
+        )
+        self.assertEqual(report["asset_class_included_count"], 6)
+        self.assertEqual(report["asset_class_excluded_count"], 0)
+        asset_symbols = [
+            symbol
+            for group in report["asset_classes"]
+            for symbols in group["symbols"].values()
+            for symbol in symbols
+        ]
+        self.assertEqual(len(asset_symbols), len(set(asset_symbols)))
+        for group in report["asset_classes"]:
+            self.assertEqual(sum(group["counts"].values()), group["total"])
+        self.assertEqual(report["included_equity_count"], 1)
+        self.assertEqual(sum(group["total"] for group in report["sectors"]), 1)
+        for source in (
+            item
+            for direction in report["sources"].values()
+            for item in direction
+            if item["asset_class"] != "EQUITY"
+        ):
+            self.assertIsNone(source["sector"])
+            self.assertIsNone(source["industry"])
 
 
 class InstrumentTaxonomyIntegrationTests(unittest.TestCase):
