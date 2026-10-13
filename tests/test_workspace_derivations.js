@@ -15,6 +15,7 @@ const {
   normalizeSymbolBoardSort,
   persistSymbolBoardSort,
   pressureConcentrationLabel,
+  pressureDetailPresentation,
   pressureDrilldownMembers,
   restoreSymbolBoardSort,
   sortSymbolBoardRows,
@@ -81,6 +82,27 @@ assert.deepEqual(
   pressureDrilldownMembers(taxonomyPressure, pressureReport, { type: "asset_class", name: "CRYPTO" }).map((item) => item.symbol),
   ["BTCUSDT"],
   "asset-class drill-down reconciles to the clicked canonical class",
+);
+
+[
+  ["neutral", "higher", "Neutral", "Higher"],
+  ["neutral", "lower", "Neutral", "Lower"],
+  ["lower", "lower", "Lower", "Lower"],
+  ["higher", "higher", "Higher", "Higher"],
+].forEach(([current, latest, currentLabel, latestLabel]) => {
+  const occurredAt = `2026-10-12T0${latest === "higher" ? "3" : "4"}:12:00Z`;
+  const presentation = pressureDetailPresentation({
+    direction: current,
+    latest_directional_pressure: { direction: latest, occurred_at: occurredAt },
+  });
+  assert.equal(presentation.current.label, currentLabel, "current canonical state is displayed independently");
+  assert.equal(presentation.latest.label, latestLabel, "latest event direction is displayed independently");
+  assert.equal(presentation.latest.occurred_at, occurredAt, "latest timestamp stays paired with its event direction");
+});
+assert.equal(
+  pressureDetailPresentation({ direction: "neutral", latest_directional_pressure: null }).latest,
+  null,
+  "a missing directional event is not converted to Neutral",
 );
 assert.deepEqual(
   pressureDrilldownMembers(taxonomyPressure, pressureReport, { type: "sector", name: "Technology" }).map((item) => item.symbol),

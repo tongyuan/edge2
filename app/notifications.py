@@ -693,7 +693,7 @@ class NotificationRepository:
     def latest_directional_pressure_events(
         self,
         symbols: Sequence[str],
-        since: datetime,
+        since: datetime | None = None,
     ) -> list[dict[str, Any]]:
         """Return one latest canonical directional event per requested symbol."""
         if not symbols:
@@ -702,18 +702,24 @@ class NotificationRepository:
         try:
             connection.set_session(readonly=True)
             with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                since_clause = "AND occurred_at >= %s" if since is not None else ""
+                parameters: tuple[Any, ...] = (
+                    (list(symbols), since)
+                    if since is not None
+                    else (list(symbols),)
+                )
                 cursor.execute(
-                    """
+                    f"""
                     SELECT DISTINCT ON (symbol) *
                     FROM web_push_notifications
                     WHERE deliverable = TRUE
                       AND event_type = 'POST_ACTIVATION_PRESSURE_CHANGED'
                       AND current_pressure_state IN ('UP', 'DOWN')
                       AND symbol = ANY(%s)
-                      AND occurred_at >= %s
+                      {since_clause}
                     ORDER BY symbol ASC, occurred_at DESC, id DESC
                     """,
-                    (list(symbols), since),
+                    parameters,
                 )
                 return [notification_inbox_item(row) for row in cursor.fetchall()]
         finally:

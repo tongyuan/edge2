@@ -91,6 +91,12 @@
     });
     return result;
   }
+  function pressureSourceBySymbol() {
+    const result = new Map();
+    const sources = state.symbolPayload?.taxonomy_pressure?.sources || {};
+    Object.values(sources).flat().forEach((member) => result.set(member.symbol, member));
+    return result;
+  }
   function latestEvents() { return derive.latestEventsBySymbol(state.events); }
   function selectedGroup() {
     return state.groups.find((group) => String(group.id) === String(state.selectedGroupId)) || null;
@@ -352,7 +358,7 @@
       } else {
         const event = member.latest_event;
         context.append(
-          element("span", "", event ? `Latest pressure · ${member.recent_direction === "higher" ? "↑" : "↓"} · ${relativeTime(event.occurred_at)}` : "No directional pressure event in window"),
+          element("span", "", event ? `Latest directional · ${member.recent_direction === "higher" ? "↑ Higher" : "↓ Lower"} · ${relativeTime(event.occurred_at)}` : "Latest directional · —"),
           element("span", `pressure-${member.current_pressure}`, `Current pressure · ${pressureLabels[member.current_pressure] || pressureLabels.neutral}`),
           element("span", "", `Location · ${member.current_location_label || "Unavailable"}`),
           element("span", "", `Route · ${member.route_owner || "—"}`),
@@ -441,6 +447,11 @@
     const detail = await response.json();
     const event = latestEvents().get(symbol);
     const pressure = pressureBySymbol().get(symbol);
+    const pressureSource = pressureSourceBySymbol().get(symbol) || {};
+    const pressurePresentation = derive.pressureDetailPresentation({
+      ...pressureSource,
+      direction: pressure?.direction || "neutral",
+    });
     $("#symbolEmpty").hidden = true; $("#symbolDetail").hidden = false;
     $("#detailSymbol").textContent = symbol;
     $("#detailStatus").textContent = detail.mrz_status === "active" ? "● ACTIVE" : "NO ACTIVE MRZ";
@@ -455,8 +466,16 @@
     } else $("#detailPrevious").textContent = "No previous migrated authority for the current lifecycle.";
     if (event) $("#detailLatestEvent").replaceChildren(element("strong", "", derive.eventLabel(event)), element("span", "", exactTime(event.occurred_at)), element("span", "", event.body || ""));
     else $("#detailLatestEvent").textContent = "No recent canonical event.";
-    const direction = pressure?.direction || "neutral";
-    $("#detailPressure").replaceChildren(element("strong", `pressure-${direction}`, pressureLabels[direction]), element("span", "", pressure?.evidence?.label || "Canonical current pressure"), element("span", "", pressure?.evidence?.latest_pressure_observed_at ? `Latest pressure · ${exactTime(pressure.evidence.latest_pressure_observed_at)}` : "No qualifying directional pressure"));
+    const direction = pressurePresentation.current.direction;
+    const latestDirectional = pressurePresentation.latest;
+    $("#detailPressure").replaceChildren(
+      element("strong", `pressure-${direction}`, `Current pressure · ${pressureLabels[direction]}`),
+      element("span", "", pressure?.evidence?.label || "Canonical current pressure"),
+      element("span", latestDirectional ? `pressure-${latestDirectional.direction}` : "", latestDirectional
+        ? `Latest directional · ${pressureLabels[latestDirectional.direction]} · ${relativeTime(latestDirectional.occurred_at)}`
+        : "Latest directional · —"),
+      ...(latestDirectional?.occurred_at ? [element("time", "", exactTime(latestDirectional.occurred_at))] : []),
+    );
   }
 
   function renderPressure() {
@@ -466,17 +485,25 @@
     const selectedSymbol = new URLSearchParams(globalObject.location.search).get("symbol") || "";
     const selectedState = state.symbols.find((item) => item.symbol === selectedSymbol);
     const selectedPressure = pressureBySymbol().get(selectedSymbol);
+    const selectedPressureSource = pressureSourceBySymbol().get(selectedSymbol) || {};
     const selectedContext = $("#pressureSelectedContext");
     selectedContext.hidden = !selectedState;
     if (selectedState) {
-      const direction = selectedPressure?.direction || "neutral";
+      const presentation = derive.pressureDetailPresentation({
+        ...selectedPressureSource,
+        direction: selectedPressure?.direction || "neutral",
+      });
+      const direction = presentation.current.direction;
+      const latestDirectional = presentation.latest;
       $("#pressureSelectedSymbol").textContent = selectedSymbol;
       $("#pressureSelectedDetails").href = `/mrz/symbols?symbol=${encodeURIComponent(selectedSymbol)}`;
       $("#pressureSelectedBody").replaceChildren(
-        element("strong", `pressure-${direction}`, pressureLabels[direction] || pressureLabels.neutral),
+        element("strong", `pressure-${direction}`, `Current pressure · ${pressureLabels[direction] || pressureLabels.neutral}`),
         element("span", "", `Location · ${locationLabels[selectedState.current_price_location] || "—"}`),
         element("span", "", `Route · ${selectedState.route_owner || "—"}`),
-        element("span", "", selectedPressure?.evidence?.latest_pressure_observed_at ? `Latest pressure · ${exactTime(selectedPressure.evidence.latest_pressure_observed_at)}` : "No qualifying directional pressure"),
+        element("span", latestDirectional ? `pressure-${latestDirectional.direction}` : "", latestDirectional
+          ? `Latest directional · ${pressureLabels[latestDirectional.direction]} · ${relativeTime(latestDirectional.occurred_at)}`
+          : "Latest directional · —"),
       );
     }
     $("#pressureSummary").replaceChildren(
@@ -604,7 +631,13 @@
   function pressureMemberItem(member) {
     const item = element("li", "pressure-member-item");
     const heading = element("div", "pressure-member-heading");
-    heading.append(symbolLink(member.symbol, member.symbol), element("strong", `pressure-${member.direction}`, pressureLabels[member.direction] || pressureLabels.neutral));
+    const presentation = derive.pressureDetailPresentation(member);
+    const currentDirection = presentation.current.direction;
+    const latestDirectional = presentation.latest;
+    heading.append(
+      symbolLink(member.symbol, member.symbol),
+      element("strong", `pressure-${currentDirection}`, `Current state · ${pressureLabels[currentDirection] || pressureLabels.neutral}`),
+    );
     const taxonomy = member.asset_class === "EQUITY"
       ? `${member.sector} · ${member.industry}`
       : member.asset_class || "Unclassified";
@@ -614,7 +647,14 @@
       element("span", "", member.current_location_label || locationLabels[member.current_location] || "Location unavailable"),
       element("span", "", `Route · ${member.route_owner || "—"}`),
     );
-    if (member.latest_pressure_observed_at) context.append(element("time", "", `Latest pressure · ${exactTime(member.latest_pressure_observed_at)}`));
+    context.append(element("span", latestDirectional ? `pressure-${latestDirectional.direction}` : "", latestDirectional
+      ? `Latest directional · ${pressureLabels[latestDirectional.direction]} · ${relativeTime(latestDirectional.occurred_at)}`
+      : "Latest directional · —"));
+    if (latestDirectional?.occurred_at) {
+      const time = element("time", "", exactTime(latestDirectional.occurred_at));
+      time.dateTime = latestDirectional.occurred_at;
+      context.append(time);
+    }
     item.append(heading, context); return item;
   }
 
@@ -629,7 +669,7 @@
     $("#pressureDrilldownSupport").textContent = state.pressureSelection.support;
     const target = $("#pressureDrilldownGroups"); target.replaceChildren();
     const groups = ["asset_class", "sector", "industry"].includes(state.pressureSelection.type)
-      ? ["higher", "neutral", "lower"].map((direction) => ({ label: pressureLabels[direction], members: members.filter((item) => item.direction === direction) })).filter((group) => group.members.length)
+      ? ["higher", "neutral", "lower"].map((direction) => ({ label: `CURRENT STATE · ${pressureLabels[direction]}`, members: members.filter((item) => item.direction === direction) })).filter((group) => group.members.length)
       : derive.groupPressureSourcesByAssetClass(members).map((group) => ({ label: group.assetClass, members: group.members }));
     if (!groups.length) { target.append(empty("No symbols in this selection.")); return; }
     groups.forEach((group) => {

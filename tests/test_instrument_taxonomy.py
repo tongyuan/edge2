@@ -302,6 +302,66 @@ class TaxonomyPressureTests(unittest.TestCase):
             self.assertIsNone(source["sector"])
             self.assertIsNone(source["industry"])
 
+    def test_latest_directional_event_is_independent_of_current_pressure(self) -> None:
+        def state(symbol: str, direction: str) -> dict[str, object]:
+            return {
+                "symbol": symbol,
+                "direction": direction,
+                "current_location": "deep_premium",
+                "current_location_label": "Deep Premium",
+                "active_mrz": {"route_owner": "STR"},
+                "evidence": {"latest_pressure_observed_at": "2026-10-13T01:00:00Z"},
+            }
+
+        pressure = {
+            "categories": {
+                "higher": [state("CURRENT_HIGH", "higher")],
+                "neutral": [
+                    state("NEUTRAL_AFTER_HIGH", "neutral"),
+                    state("NEUTRAL_AFTER_LOW", "neutral"),
+                    state("NEVER_DIRECTIONAL", "neutral"),
+                ],
+                "lower": [state("CURRENT_LOW", "lower")],
+            }
+        }
+        instruments = [
+            {"symbol": symbol, "asset_class": "CRYPTO", "sector": None, "industry": None}
+            for symbol in (
+                "CURRENT_HIGH", "NEUTRAL_AFTER_HIGH", "NEUTRAL_AFTER_LOW",
+                "NEVER_DIRECTIONAL", "CURRENT_LOW",
+            )
+        ]
+        events = (
+            {"symbol": "NEUTRAL_AFTER_HIGH", "current_state": "UP", "occurred_at": "2026-10-12T10:00:00Z", "event_id": "up-1"},
+            {"symbol": "NEUTRAL_AFTER_LOW", "current_state": "DOWN", "occurred_at": "2026-10-12T11:00:00Z", "event_id": "down-1"},
+            {"symbol": "CURRENT_LOW", "current_state": "DOWN", "occurred_at": "2026-10-12T12:00:00Z", "event_id": "down-2"},
+            {"symbol": "CURRENT_HIGH", "current_state": "UP", "occurred_at": "2026-10-12T13:00:00Z", "event_id": "up-2"},
+        )
+
+        report = build_taxonomy_pressure_report(pressure, instruments, events)
+        sources = {
+            item["symbol"]: item
+            for members in report["sources"].values()
+            for item in members
+        }
+        self.assertEqual(sources["NEUTRAL_AFTER_HIGH"]["direction"], "neutral")
+        self.assertEqual(
+            sources["NEUTRAL_AFTER_HIGH"]["latest_directional_pressure"],
+            {"direction": "higher", "occurred_at": "2026-10-12T10:00:00Z", "event_id": "up-1"},
+        )
+        self.assertEqual(sources["NEUTRAL_AFTER_LOW"]["direction"], "neutral")
+        self.assertEqual(sources["NEUTRAL_AFTER_LOW"]["latest_directional_pressure"]["direction"], "lower")
+        self.assertEqual(sources["CURRENT_LOW"]["direction"], "lower")
+        self.assertEqual(sources["CURRENT_LOW"]["latest_directional_pressure"]["direction"], "lower")
+        self.assertEqual(sources["CURRENT_HIGH"]["direction"], "higher")
+        self.assertEqual(sources["CURRENT_HIGH"]["latest_directional_pressure"]["direction"], "higher")
+        self.assertIsNone(sources["NEVER_DIRECTIONAL"]["latest_directional_pressure"])
+        self.assertEqual(
+            sources["NEUTRAL_AFTER_HIGH"]["latest_directional_pressure"]["occurred_at"],
+            events[0]["occurred_at"],
+            "the displayed timestamp belongs to the same canonical event as its direction",
+        )
+
 
 class InstrumentTaxonomyIntegrationTests(unittest.TestCase):
     @classmethod

@@ -1103,6 +1103,25 @@ class APIIntegrationTests(unittest.TestCase):
         deep_discount = pressure["pressure_map"]["locations"]["deep_discount"]
         self.assertEqual(deep_discount["participation"], {"count": 2, "total": 4})
         self.assertEqual(deep_discount["counts"], pressure["counts"])
+        pressure_sources = {
+            item["symbol"]: item
+            for members in overview["taxonomy_pressure"]["sources"].values()
+            for item in members
+        }
+        self.assertEqual(pressure_sources["UP"]["direction"], "higher")
+        self.assertEqual(
+            pressure_sources["UP"]["latest_directional_pressure"]["direction"],
+            "higher",
+        )
+        self.assertEqual(pressure_sources["DOWN"]["direction"], "lower")
+        self.assertEqual(
+            pressure_sources["DOWN"]["latest_directional_pressure"]["direction"],
+            "lower",
+        )
+        self.assertEqual(pressure_sources["QUIET"]["direction"], "neutral")
+        self.assertIsNone(
+            pressure_sources["QUIET"]["latest_directional_pressure"]
+        )
 
         created = self.client.post(
             "/api/groups",

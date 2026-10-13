@@ -379,6 +379,11 @@ def create_app(
             active_mrzs,
             observations,
         )
+        directional_events = (
+            notification_repository.latest_directional_pressure_events(
+                [str(item["symbol"]) for item in symbol_states]
+            )
+        )
         return {
             "minimum_cluster_observations": MIN_CLUSTER_OBSERVATIONS,
             "location_migration_tendency": repository.location_migration_tendency(),
@@ -386,6 +391,7 @@ def create_app(
             "taxonomy_pressure": build_taxonomy_pressure_report(
                 pressure,
                 symbol_states,
+                directional_events,
             ),
             "incomplete_taxonomy_count": (
                 repository.count_incomplete_taxonomy_records()

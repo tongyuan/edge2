@@ -579,7 +579,7 @@ function pressureMemberItem(member) {
       ? `Since ${formatPathTimestamp(member.evidence.current_pressure_since)}`
       : "Regime not established";
     const latest = member.evidence.latest_pressure_observed_at
-      ? `Latest pressure ${formatPathTimestamp(member.evidence.latest_pressure_observed_at)}`
+      ? `Latest qualifying observation ${formatPathTimestamp(member.evidence.latest_pressure_observed_at)}`
       : "No qualifying pressure observations";
     evidence.textContent = (
       `Recent ${sequence} · ${since} · ${latest} · `

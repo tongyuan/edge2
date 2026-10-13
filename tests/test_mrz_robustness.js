@@ -129,7 +129,7 @@ const operationCardHtml = fs.readFileSync(
   "utf8",
 );
 assert.match(operationCardHtml, /mrz-robustness\.css\?v=symbol-search-restore-20261002/);
-assert.match(operationCardHtml, /mrz-robustness\.js\?v=symbol-search-restore-20261002/);
+assert.match(operationCardHtml, /mrz-robustness\.js\?v=pressure-observation-label-20261013/);
 assert.doesNotMatch(operationCardSource, /bb_mrz_(?:discount|premium)/);
 assert.doesNotMatch(operationCardSource, /trade recommendation/i);
 assert.doesNotMatch(operationCardSource, /Candidate forming|Awaiting confirmation/i);
@@ -450,7 +450,7 @@ const ethCurrentRegimeSummary = ethCurrentRegimeMarkup.split("</header>", 1)[0];
 assert.match(ethCurrentRegimeSummary, /↑ Upward Pressure/);
 assert.match(ethCurrentRegimeSummary, /Since 19 Sep 2026 · 12:52 UTC−4/);
 assert.match(ethCurrentRegimeSummary, /↑ ↑ ↑ ↑/);
-assert.match(ethCurrentRegimeSummary, /Latest pressure 19 Sep 2026 · 20:46 UTC−4/);
+assert.match(ethCurrentRegimeSummary, /Observed 19 Sep 2026 · 20:46 UTC−4/);
 assert.match(ethCurrentRegimeSummary, /↑ 5 · ↓ 8 · 13 outside/);
 assert.doesNotMatch(ethCurrentRegimeSummary, /↓ Downward Pressure/);
 assert.deepEqual(

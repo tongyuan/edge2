@@ -397,6 +397,26 @@
     ));
   }
 
+  function pressureDetailPresentation(member = {}) {
+    const directions = new Set(["higher", "neutral", "lower"]);
+    const currentDirection = directions.has(member.direction) ? member.direction : "neutral";
+    const latest = member.latest_directional_pressure;
+    const latestDirection = latest && ["higher", "lower"].includes(latest.direction)
+      ? latest.direction
+      : null;
+    return {
+      current: {
+        direction: currentDirection,
+        label: currentDirection === "higher" ? "Higher" : currentDirection === "lower" ? "Lower" : "Neutral",
+      },
+      latest: latestDirection ? {
+        direction: latestDirection,
+        label: latestDirection === "higher" ? "Higher" : "Lower",
+        occurred_at: latest.occurred_at || null,
+      } : null,
+    };
+  }
+
   function pressureConcentrationLabel(taxonomy = {}) {
     const counts = taxonomy.counts || {};
     const higher = taxonomy.concentration?.higher || {};
@@ -703,6 +723,7 @@
     normalizeSymbolBoardSort,
     persistSymbolBoardSort,
     pressureConcentrationLabel,
+    pressureDetailPresentation,
     pressureDrilldownMembers,
     restoreSymbolBoardSort,
     sortSymbolBoardRows,

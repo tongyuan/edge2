@@ -277,7 +277,7 @@ function robustnessCardMarkup(
     ? `Since ${timestampFormatter(pressure.current_pressure_since)}`
     : "Regime not established";
   const latestPressureObservation = pressure.latest_pressure_observed_at
-    ? `Latest pressure ${timestampFormatter(pressure.latest_pressure_observed_at)}`
+    ? `Observed ${timestampFormatter(pressure.latest_pressure_observed_at)}`
     : "No qualifying pressure observations";
   const migrationSummary = report.migration?.has_migrated
     ? `Migrated ${String(report.migration.direction || "").toLowerCase()}`

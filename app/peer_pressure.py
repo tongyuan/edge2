@@ -411,11 +411,23 @@ def build_universe_pressure_report(
 def build_taxonomy_pressure_report(
     pressure_report: Mapping[str, Any],
     instruments: Sequence[Mapping[str, Any]],
+    directional_events: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
     """Group existing canonical pressure states by complete equity taxonomy."""
     taxonomy_by_symbol = {
         str(item["symbol"]): item
         for item in instruments
+    }
+    latest_directional_by_symbol = {
+        str(event["symbol"]): {
+            "direction": (
+                "higher" if event.get("current_state") == "UP" else "lower"
+            ),
+            "occurred_at": event.get("occurred_at"),
+            "event_id": event.get("event_id"),
+        }
+        for event in directional_events
+        if event.get("current_state") in {"UP", "DOWN"}
     }
     groups: dict[tuple[str, str | None, str], dict[str, Any]] = {}
     asset_class_groups: dict[str, dict[str, Any]] = {}
@@ -440,6 +452,9 @@ def build_taxonomy_pressure_report(
                 "current_location": state.get("current_location"),
                 "current_location_label": state.get("current_location_label"),
                 "route_owner": state.get("active_mrz", {}).get("route_owner"),
+                "latest_directional_pressure": (
+                    latest_directional_by_symbol.get(symbol)
+                ),
                 "latest_pressure_observed_at": state.get("evidence", {}).get(
                     "latest_pressure_observed_at"
                 ),
