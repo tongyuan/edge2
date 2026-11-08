@@ -171,7 +171,6 @@ def create_app(
     @application.get("/mrz/pressure", include_in_schema=False)
     @application.get("/mrz/alert-settings", include_in_schema=False)
     @application.get("/mrz/location-distribution", include_in_schema=False)
-    @application.get("/mrz/breadth-leadership", include_in_schema=False)
     @application.get("/mrz/events", include_in_schema=False)
     def mrz_workspace() -> FileResponse:
         return FileResponse(
@@ -182,6 +181,14 @@ def create_app(
                 "Expires": "0",
             },
         )
+
+    @application.get("/mrz/breadth-leadership", include_in_schema=False)
+    def legacy_breadth_leadership(request: Request) -> RedirectResponse:
+        query = request.url.query
+        destination = "/mrz/location-distribution"
+        if query:
+            destination = f"{destination}?{query}"
+        return RedirectResponse(url=destination, status_code=307)
 
     @application.get("/diagnostics/activation-feasibility", include_in_schema=False)
     @application.get("/mrz/formation-diagnostics", include_in_schema=False)

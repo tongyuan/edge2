@@ -415,7 +415,6 @@
     [
       ["Universe Location", `/mrz/location-distribution?window=${state.scope.window}&${canonicalScopeUrl()}`],
       ["Universe Pressure", `/mrz/pressure?${canonicalScopeUrl()}`],
-      ["Breadth research", `/mrz/breadth-leadership?window=${state.scope.window}&${canonicalScopeUrl()}`],
       ["Formation Diagnostics", `/mrz/formation-diagnostics?${canonicalScopeUrl()}`],
       ["Notification Event History", `/mrz/events?${canonicalScopeUrl()}`],
       ["Alert Settings", `/mrz/alert-settings?${canonicalScopeUrl()}`],

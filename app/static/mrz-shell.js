@@ -16,7 +16,6 @@
       section: "MRZ RESEARCH",
       routes: [
         { name: "location-distribution", label: "Location Distribution", abbreviation: "LD", href: "/mrz/location-distribution" },
-        { name: "breadth-leadership", label: "Breadth & Leadership", abbreviation: "BL", href: "/mrz/breadth-leadership" },
         { name: "formation-diagnostics", label: "Formation Diagnostics", abbreviation: "FD", href: "/mrz/formation-diagnostics" },
         { name: "events", label: "Notification Event History", abbreviation: "EV", href: "/mrz/events" },
       ],
@@ -26,6 +25,7 @@
   function routeNameForPath(pathname) {
     const normalized = String(pathname || "/").replace(/\/$/, "");
     if (normalized === "" || normalized === "/" || normalized === "/mrz" || normalized === "/mrz/overview" || normalized === "/mrz/attention") return "watchlists";
+    if (normalized === "/mrz/breadth-leadership") return "location-distribution";
     if (
       normalized === "/mrz/formation-diagnostics"
       || normalized === "/diagnostics/activation-feasibility"

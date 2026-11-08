@@ -415,6 +415,18 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertIn('data-route-panel="location-distribution"', response.text)
         self.assertIn('id="locationHeatmap"', response.text)
 
+    def test_legacy_breadth_navigation_redirects_with_context(self) -> None:
+        response = self.client.get(
+            "/mrz/breadth-leadership?group=22&window=5D&return=%2Fmrz%2Fwatchlists%3Fgroup%3D22",
+            follow_redirects=False,
+        )
+
+        self.assertEqual(response.status_code, 307)
+        self.assertEqual(
+            response.headers["location"],
+            "/mrz/location-distribution?group=22&window=5D&return=%2Fmrz%2Fwatchlists%3Fgroup%3D22",
+        )
+
     def test_mrz_robustness_report_api_is_hidden(self) -> None:
         response = self.client.get("/api/diagnostics/mrz-robustness-report")
 

@@ -21,7 +21,6 @@ class WorkspaceContractTests(unittest.TestCase):
             ("/mrz/pressure", "Pressure"),
             ("/mrz/alert-settings", "Alert Settings"),
             ("/mrz/location-distribution", "Location Distribution"),
-            ("/mrz/breadth-leadership", "Breadth & Leadership"),
             ("/mrz/formation-diagnostics", "Formation Diagnostics"),
             ("/mrz/events", "Notification Event History"),
         ):
@@ -175,12 +174,16 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertIn('netFlow < 0 ? "lower" : "balanced"', JS)
         self.assertNotIn('formatSigned(flow.net_higher)} higher', JS)
 
-    def test_breadth_leadership_is_separate_research_route(self) -> None:
-        self.assertIn('data-route-panel="breadth-leadership"', HTML)
-        self.assertIn('name: "breadth-leadership"', SHELL)
+    def test_breadth_leadership_page_is_removed_but_legacy_route_is_preserved(self) -> None:
+        self.assertNotIn('data-route-panel="breadth-leadership"', HTML)
+        self.assertNotIn('name: "breadth-leadership"', SHELL)
+        self.assertNotIn('label: "Breadth & Leadership"', SHELL)
+        self.assertNotIn('Breadth research', GROUP_JS)
         self.assertIn('@application.get("/mrz/breadth-leadership"', API)
-        for window in ("24H", "5D", "20D"):
-            self.assertIn(f'data-breadth-window="{window}"', HTML)
+        self.assertIn('destination = "/mrz/location-distribution"', API)
+        self.assertIn('normalized === "/mrz/breadth-leadership"', SHELL)
+        self.assertIn('return "location-distribution"', SHELL)
+        self.assertNotIn("data-breadth-window", HTML)
         for target in (
             "breadthMetrics",
             "researchInterpretationHeading",
@@ -196,15 +199,17 @@ class WorkspaceContractTests(unittest.TestCase):
             "migrationBreadth",
             "locationPressureRows",
         ):
-            self.assertIn(f'id="{target}"', HTML)
-        self.assertIn("derive.deriveBreadthLeadership", JS)
-        self.assertIn("derive.deriveResearchInterpretation(report)", JS)
-        self.assertIn("Why this read?", HTML)
-        self.assertIn("Descriptive, not predictive", HTML)
-        self.assertIn("fixed operator heuristics", HTML)
-        self.assertIn("Historical pressure state is not stored or safely reconstructable", HTML)
+            self.assertNotIn(f'id="{target}"', HTML)
+        self.assertNotIn("derive.deriveBreadthLeadership", JS)
+        self.assertNotIn("derive.deriveResearchInterpretation(report)", JS)
         self.assertIn('<h1>Pressure</h1>', HTML)
-        self.assertNotIn('<h1>Structural location × canonical pressure</h1>', HTML)
+
+    def test_mrz_research_navigation_contains_only_supported_pages(self) -> None:
+        research = SHELL.split('section: "MRZ RESEARCH"', 1)[1].split("],", 1)[0]
+        self.assertIn('label: "Location Distribution"', research)
+        self.assertIn('label: "Formation Diagnostics"', research)
+        self.assertIn('label: "Notification Event History"', research)
+        self.assertNotIn("Breadth", research)
 
     def test_pressure_sources_taxonomy_and_shared_drilldown_are_present(self) -> None:
         for target in (
