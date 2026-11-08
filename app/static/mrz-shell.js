@@ -4,16 +4,9 @@
   const SIDEBAR_STORAGE_KEY = "edge2.mrz.sidebar.collapsed";
   const MRZ_NAVIGATION = [
     {
-      section: "OVERVIEW",
-      routes: [
-        { name: "overview", label: "Overview", abbreviation: "OV", href: "/mrz/overview" },
-      ],
-    },
-    {
       section: "TRADING",
       routes: [
-        { name: "watchlists", label: "Watchlists", abbreviation: "WL", href: "/mrz/watchlists", badgeId: "navAttentionCount" },
-        { name: "attention", label: "Attention", abbreviation: "AT", href: "/mrz/attention" },
+        { name: "watchlists", label: "Group Evidence", abbreviation: "GE", href: "/mrz/watchlists?group=all&window=24H", badgeId: "navAttentionCount" },
         { name: "symbols", label: "Symbols", abbreviation: "SY", href: "/mrz/symbols" },
         { name: "pressure", label: "Pressure", abbreviation: "PR", href: "/mrz/pressure" },
         { name: "alert-settings", label: "Alert Settings", abbreviation: "AL", href: "/mrz/alert-settings" },
@@ -25,14 +18,14 @@
         { name: "location-distribution", label: "Location Distribution", abbreviation: "LD", href: "/mrz/location-distribution" },
         { name: "breadth-leadership", label: "Breadth & Leadership", abbreviation: "BL", href: "/mrz/breadth-leadership" },
         { name: "formation-diagnostics", label: "Formation Diagnostics", abbreviation: "FD", href: "/mrz/formation-diagnostics" },
-        { name: "events", label: "Events", abbreviation: "EV", href: "/mrz/events" },
+        { name: "events", label: "Notification Event History", abbreviation: "EV", href: "/mrz/events" },
       ],
     },
   ];
 
   function routeNameForPath(pathname) {
     const normalized = String(pathname || "/").replace(/\/$/, "");
-    if (normalized === "" || normalized === "/" || normalized === "/mrz") return "overview";
+    if (normalized === "" || normalized === "/" || normalized === "/mrz" || normalized === "/mrz/overview" || normalized === "/mrz/attention") return "watchlists";
     if (
       normalized === "/mrz/formation-diagnostics"
       || normalized === "/diagnostics/activation-feasibility"
@@ -41,7 +34,7 @@
     return MRZ_NAVIGATION.flatMap((group) => group.routes)
       .some((route) => route.name === candidate)
       ? candidate
-      : "overview";
+      : "watchlists";
   }
 
   function navigationMarkup(activeRoute) {
@@ -57,7 +50,7 @@
 
   function sidebarMarkup(activeRoute) {
     return `
-      <a class="workspace-brand" href="/mrz/overview" aria-label="EDGE 2.0 MRZ Monitor home"><span class="brand-mark">E</span><span class="brand-copy"><strong>EDGE 2.0</strong><small>MRZ Monitor</small></span></a>
+      <a class="workspace-brand" href="/mrz/watchlists?group=all&window=24H" aria-label="EDGE 2.0 Group Evidence home"><span class="brand-mark">E</span><span class="brand-copy"><strong>EDGE 2.0</strong><small>MRZ Monitor</small></span></a>
       <nav class="workspace-navigation">${navigationMarkup(activeRoute)}</nav>
       <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-controls="mrzWorkspaceMain"><span class="sidebar-toggle-icon" aria-hidden="true">‹</span><span class="sidebar-toggle-label">Collapse</span></button>
       <div class="sidebar-foot"><span class="health-dot" id="healthState">Checking system</span><small>Canonical universe monitoring</small></div>

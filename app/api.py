@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -18,6 +18,10 @@ from app.concentration import MIN_CLUSTER_OBSERVATIONS
 from app.config import Settings
 from app.domain import Route
 from app.group_tracking import SavedGroupInput, SavedGroupNameConflict
+from app.group_evidence import (
+    build_all_groups_evidence,
+    build_named_group_evidence,
+)
 from app.logging_config import configure_logging
 from app.mrz_robustness import MRZRobustnessService
 from app.notifications import (
@@ -147,9 +151,22 @@ def create_app(
         )
 
     @application.get("/", include_in_schema=False)
+    @application.get("/mrz", include_in_schema=False)
     @application.get("/mrz/overview", include_in_schema=False)
-    @application.get("/mrz/watchlists", include_in_schema=False)
+    def mrz_home() -> RedirectResponse:
+        return RedirectResponse(
+            url="/mrz/watchlists?group=all&window=24H",
+            status_code=307,
+        )
+
     @application.get("/mrz/attention", include_in_schema=False)
+    def mrz_attention() -> RedirectResponse:
+        return RedirectResponse(
+            url="/mrz/watchlists?group=all&window=24H&events=recent",
+            status_code=307,
+        )
+
+    @application.get("/mrz/watchlists", include_in_schema=False)
     @application.get("/mrz/symbols", include_in_schema=False)
     @application.get("/mrz/pressure", include_in_schema=False)
     @application.get("/mrz/alert-settings", include_in_schema=False)
@@ -412,6 +429,54 @@ def create_app(
     def saved_groups() -> JSONResponse:
         return JSONResponse(
             {"groups": repository.saved_groups()},
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
+    @application.get("/api/group-evidence")
+    def all_group_evidence(
+        window: str = Query("24H", pattern=r"^(24H|5D|20D)$"),
+    ) -> JSONResponse:
+        try:
+            inputs = repository.group_evidence_inputs(window)
+            if inputs is None:
+                raise RuntimeError("all-groups snapshot unexpectedly missing")
+            payload = build_all_groups_evidence(inputs)
+        except Exception:
+            LOGGER.exception("All-groups evidence snapshot failed")
+            return JSONResponse(
+                {"detail": "group_evidence_unavailable"},
+                status_code=503,
+                headers={"Cache-Control": "no-store, max-age=0"},
+            )
+        return JSONResponse(
+            payload,
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
+    @application.get("/api/group-evidence/{group_id}")
+    def named_group_evidence(
+        group_id: int,
+        window: str = Query("24H", pattern=r"^(24H|5D|20D)$"),
+    ) -> JSONResponse:
+        try:
+            inputs = repository.group_evidence_inputs(window, group_id=group_id)
+            if inputs is None:
+                raise HTTPException(status_code=404, detail="group_not_found")
+            payload = build_named_group_evidence(inputs, inputs["groups"][0])
+        except HTTPException:
+            raise
+        except Exception:
+            LOGGER.exception(
+                "Named-group evidence snapshot failed",
+                extra={"group_id": group_id, "window": window},
+            )
+            return JSONResponse(
+                {"detail": "group_evidence_unavailable"},
+                status_code=503,
+                headers={"Cache-Control": "no-store, max-age=0"},
+            )
+        return JSONResponse(
+            payload,
             headers={"Cache-Control": "no-store, max-age=0"},
         )
 

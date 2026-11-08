@@ -11,18 +11,45 @@ const {
   derivePeerLocationFlow,
   eventLabel,
   filterLocationSymbols,
+  filterGroupEvidenceContributors,
   groupPressureSourcesByAssetClass,
+  isGroupEvidenceRequestCurrent,
   groupSymbolBoardRows,
   normalizeSymbolBoardSort,
   persistSymbolBoardSort,
   pressureDetailPresentation,
   pressureDrilldownMembers,
+  parseGroupEvidenceState,
   restoreSymbolBoardSort,
   sortSymbolBoardRows,
+  sortGroupEvidenceRows,
   symbolBoardGroup,
   symbolsForWatchlist,
   uniqueTrackedSymbols,
 } = require("../app/static/workspace-derivations.js");
+
+assert.deepEqual(parseGroupEvidenceState("?group=12&window=20D&dimension=structural&bucket=higher"), {
+  groupId: "12", window: "20D", dimension: "structural", bucket: "higher", evidence: null, sort: "name", openRecentEvents: false, normalized: false,
+});
+assert.deepEqual(parseGroupEvidenceState("?group=invalid&window=3D"), {
+  groupId: "all", window: "24H", dimension: null, bucket: null, evidence: null, sort: "name", openRecentEvents: false, normalized: true,
+});
+assert.equal(isGroupEvidenceRequestCurrent(
+  { requestId: 1, groupId: "7", window: "20D" },
+  { requestId: 2, groupId: "7", window: "24H" },
+), false, "a slow 20D response cannot overwrite the newer 24H request");
+assert.equal(isGroupEvidenceRequestCurrent(
+  { requestId: 2, groupId: "7", window: "24H" },
+  { requestId: 2, groupId: "7", window: "24H" },
+), true);
+assert.deepEqual(sortGroupEvidenceRows([
+  { name: "Zulu", membership_total: 2, coverage: { structural_comparable: 2 } },
+  { name: "Alpha", membership_total: 2, coverage: { structural_comparable: 1 } },
+]).map((item) => item.name), ["Alpha", "Zulu"]);
+assert.deepEqual(filterGroupEvidenceContributors({ structural: { contributors: [
+  { symbol: "A", direction: "same_bucket", new_observation_in_window: false },
+  { symbol: "B", direction: "higher", new_observation_in_window: true },
+] } }, { dimension: "structural", bucket: "no_new_observation" }).map((item) => item.symbol), ["A"]);
 
 const pressureSource = (symbol, direction, assetClass, sector = null, industry = null, location = "at_eqm") => ({
   symbol,

@@ -709,6 +709,100 @@
     };
   }
 
+  function parseGroupEvidenceState(search = "") {
+    const params = new URLSearchParams(search);
+    const requestedWindow = params.get("window") || "24H";
+    const window = ["24H", "5D", "20D"].includes(requestedWindow)
+      ? requestedWindow
+      : "24H";
+    const requestedGroup = params.get("group") || "all";
+    const groupId = requestedGroup === "all" || /^\d+$/.test(requestedGroup)
+      ? requestedGroup
+      : "all";
+    return {
+      groupId,
+      window,
+      dimension: params.get("dimension") || null,
+      bucket: params.get("bucket") || null,
+      evidence: params.get("evidence") || null,
+      sort: params.get("sort") || "name",
+      openRecentEvents: params.get("events") === "recent",
+      normalized: groupId !== requestedGroup || window !== requestedWindow,
+    };
+  }
+
+  function filterGroupEvidenceContributors(detail = {}, selection = {}) {
+    const dimension = selection.dimension;
+    const bucket = selection.bucket;
+    const evidence = selection.evidence;
+    if (dimension === "structural") {
+      if (bucket === "unavailable") return (detail.structural?.unavailable_members || [])
+        .filter((item) => item.reason === "current_location_unavailable");
+      if (bucket === "no_new_observation") {
+        return (detail.structural?.contributors || [])
+          .filter((item) => !item.new_observation_in_window);
+      }
+      return (detail.structural?.contributors || [])
+        .filter((item) => !bucket || item.direction === bucket);
+    }
+    if (dimension === "directional" && evidence === "current_pressure") {
+      return (detail.directional?.current_pressure?.members || [])
+        .filter((item) => !bucket || item.direction === bucket);
+    }
+    if (dimension === "directional" && evidence === "cumulative_latest") {
+      return (detail.directional?.cumulative_lifecycle_pressure_events?.latest_by_member || [])
+        .filter((item) => !bucket || item.state === bucket);
+    }
+    if (dimension === "directional" && evidence === "cumulative_events") {
+      return (detail.directional?.cumulative_lifecycle_pressure_events?.events || [])
+        .filter((item) => !bucket || item.event_direction === bucket || item.comparison === bucket);
+    }
+    if (dimension === "directional" && evidence === "migration_contributors") {
+      return detail.directional?.mrz_migrations?.contributors || [];
+    }
+    if (dimension === "directional" && evidence === "migration_events") {
+      return detail.directional?.mrz_migrations?.events || [];
+    }
+    return [];
+  }
+
+  function sortGroupEvidenceRows(groups = [], sort = "name") {
+    const rows = [...groups];
+    const numeric = (item, path) => path.reduce((value, key) => value?.[key], item) || 0;
+    rows.sort((left, right) => {
+      if (sort === "latest") {
+        return String(right.latest_relevant_evidence_at || "").localeCompare(String(left.latest_relevant_evidence_at || ""))
+          || left.name.localeCompare(right.name);
+      }
+      if (sort === "comparable") {
+        const leftRatio = numeric(left, ["coverage", "structural_comparable"]) / Math.max(1, left.membership_total || 0);
+        const rightRatio = numeric(right, ["coverage", "structural_comparable"]) / Math.max(1, right.membership_total || 0);
+        return rightRatio - leftRatio || left.name.localeCompare(right.name);
+      }
+      if (sort === "fresh") {
+        const leftRatio = numeric(left, ["coverage", "structural_fresh_in_window"]) / Math.max(1, numeric(left, ["coverage", "structural_comparable"]));
+        const rightRatio = numeric(right, ["coverage", "structural_fresh_in_window"]) / Math.max(1, numeric(right, ["coverage", "structural_comparable"]));
+        return rightRatio - leftRatio || left.name.localeCompare(right.name);
+      }
+      if (sort === "migration_contributors") {
+        return numeric(right, ["migrations", "unique_contributors"]) - numeric(left, ["migrations", "unique_contributors"])
+          || left.name.localeCompare(right.name);
+      }
+      if (sort === "migration_events") {
+        return numeric(right, ["migrations", "event_count"]) - numeric(left, ["migrations", "event_count"])
+          || left.name.localeCompare(right.name);
+      }
+      return left.name.localeCompare(right.name);
+    });
+    return rows;
+  }
+
+  function isGroupEvidenceRequestCurrent(request = {}, current = {}) {
+    return request.requestId === current.requestId
+      && String(request.groupId) === String(current.groupId)
+      && request.window === current.window;
+  }
+
   const exported = {
     SYMBOL_BOARD_GROUPS,
     SYMBOL_BOARD_SORT_STORAGE_KEY,
@@ -725,6 +819,7 @@
     eventLabel,
     filterLocationSymbols,
     groupPressureSourcesByAssetClass,
+    isGroupEvidenceRequestCurrent,
     groupMembership,
     latestEventsBySymbol,
     groupSymbolBoardRows,
@@ -732,8 +827,11 @@
     persistSymbolBoardSort,
     pressureDetailPresentation,
     pressureDrilldownMembers,
+    parseGroupEvidenceState,
+    filterGroupEvidenceContributors,
     restoreSymbolBoardSort,
     sortSymbolBoardRows,
+    sortGroupEvidenceRows,
     symbolBoardGroup,
     symbolsForWatchlist,
     uniqueTrackedSymbols,

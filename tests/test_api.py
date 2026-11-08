@@ -119,6 +119,16 @@ class APIIntegrationTests(unittest.TestCase):
                 ),
             },
         )
+        evidence = self.client.get("/api/group-evidence")
+        self.assertEqual(evidence.status_code, 200)
+        self.assertEqual(evidence.headers["cache-control"], "no-store, max-age=0")
+        self.assertEqual(evidence.json()["scope_totals"], {
+            "group_count": 0,
+            "member_slots": 0,
+            "unique_members": 0,
+            "canonical_migration_events": 0,
+            "group_context_migration_appearances": 0,
+        })
 
     def test_location_distribution_history_defaults_to_24h_and_rejects_unknown_windows(self) -> None:
         response = self.client.get("/api/location-distribution/history")
@@ -191,6 +201,64 @@ class APIIntegrationTests(unittest.TestCase):
             sum(len(members) for members in pressure_payload["categories"].values()),
             7,
         )
+        protected_tables = (
+            "observations", "active_mrz", "mrz_events", "saved_symbol_groups",
+            "post_activation_pressure_states", "web_push_notifications",
+            "web_push_delivery_attempts", "web_push_subscriptions",
+            "web_push_notification_cutovers", "notification_preferences",
+            "operator_mrz_promotions", "mrz_production_confirmations",
+            "current_production_near_miss_episodes",
+            "tradedesk_lifecycle_events", "tradedesk_setups",
+            "tradedesk_entry_attempts", "tradedesk_trade_results",
+        )
+        def protected_state(cursor, table):
+            cursor.execute(
+                f"""
+                SELECT COUNT(*),
+                       md5(COALESCE(string_agg(row_payload, '|' ORDER BY row_payload), ''))
+                FROM (
+                    SELECT row_to_json(source_row)::text AS row_payload
+                    FROM {table} source_row
+                ) serialized
+                """
+            )
+            return cursor.fetchone()
+        connection = connect(self.database_url)
+        try:
+            with connection.cursor() as cursor:
+                before = {}
+                for table in protected_tables:
+                    before[table] = protected_state(cursor, table)
+        finally:
+            connection.close()
+        all_evidence = self.client.get("/api/group-evidence?window=5D")
+        named_evidence = self.client.get(
+            f"/api/group-evidence/{group['id']}?window=5D"
+        )
+        self.assertEqual(all_evidence.status_code, 200)
+        self.assertEqual(named_evidence.status_code, 200)
+        self.assertEqual(all_evidence.json()["contract_version"], "stage-a-1")
+        self.assertEqual(all_evidence.json()["scope"], "all_groups")
+        self.assertEqual(named_evidence.json()["scope"], "named_group")
+        self.assertEqual(named_evidence.json()["group"]["members"], group["members"])
+        self.assertEqual(
+            named_evidence.json()["directional"]["current_pressure"]["summary"],
+            {"higher": 0, "lower": 0, "neutral": 7},
+        )
+        self.assertEqual(
+            named_evidence.json()["directional"]
+            ["cumulative_lifecycle_pressure_events"]["summary"]["latest_event"],
+            {"higher": 0, "lower": 0, "none": 7},
+        )
+        connection = connect(self.database_url)
+        try:
+            with connection.cursor() as cursor:
+                after = {}
+                for table in protected_tables:
+                    after[table] = protected_state(cursor, table)
+        finally:
+            connection.close()
+        self.assertEqual(after, before)
         self.assertEqual(
             self.client.get(
                 f"/api/groups/{group['id']}/peer-pressure?window=30D"
@@ -237,6 +305,12 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(self.client.get("/api/groups/999").status_code, 404)
         self.assertEqual(self.client.get("/api/groups/999/migration-path").status_code, 404)
         self.assertEqual(self.client.get("/api/groups/999/peer-pressure").status_code, 404)
+        self.assertEqual(self.client.get("/api/group-evidence/999").status_code, 404)
+        self.assertEqual(self.client.get("/api/group-evidence?window=30D").status_code, 422)
+        self.assertEqual(
+            self.client.get("/api/group-evidence/999?window=30D").status_code,
+            422,
+        )
         self.assertEqual(self.client.delete("/api/groups/999").status_code, 404)
 
     def test_monitor_shell_uses_current_terminology_and_is_not_cached(self) -> None:

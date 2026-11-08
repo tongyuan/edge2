@@ -1,0 +1,50 @@
+{
+  "tracked_24h_no_new_observation": {
+    "window": "24H",
+    "membership_total": 51,
+    "structural": {"higher": 0, "lower": 0, "same_bucket": 51, "higher_steps": 0, "lower_steps": 0},
+    "fresh_in_window": 5,
+    "no_new_observation": 46
+  },
+  "chinese_5d_dimension_disagreement": {
+    "window": "5D",
+    "membership_total": 9,
+    "structural": {"higher": 6, "lower": 0, "same_bucket": 3, "higher_steps": 9},
+    "fresh_in_window": 9,
+    "migrations": {"unique_contributors": 1, "event_count": 1, "higher": 0, "lower": 1},
+    "current_pressure": {"higher": 1, "lower": 4, "neutral": 4},
+    "latest_cumulative_event": {"higher": 0, "lower": 0, "none": 9},
+    "near_miss_aggregated": false
+  },
+  "crypto_24h_pressure_disagreement": {
+    "window": "24H",
+    "membership_total": 7,
+    "current_pressure": {"higher": 3, "lower": 0, "neutral": 4},
+    "latest_cumulative_event": {"higher": 0, "lower": 2, "none": 5},
+    "latest_event_vs_current": {"same_direction": 0, "current_neutral": 2, "opposite_direction": 0, "current_unavailable": 0},
+    "migration_event_count": 0
+  },
+  "crypto_20d_repeat_migrations": {
+    "window": "20D",
+    "membership_total": 7,
+    "structural": {"higher": 0, "lower": 4, "same_bucket": 3, "lower_steps": 6},
+    "migrations": {"unique_contributors": 7, "event_count": 44, "higher": 12, "lower": 32, "repeated_contributors": 7, "both_direction_contributors": 6},
+    "current_pressure": {"higher": 3, "lower": 0, "neutral": 4},
+    "latest_cumulative_event": {"higher": 4, "lower": 3, "none": 0},
+    "latest_event_vs_current": {"same_direction": 3, "current_neutral": 4, "opposite_direction": 0, "current_unavailable": 0}
+  },
+  "multi_group_duplicate_attribution": {
+    "group_count": 8,
+    "member_slots": 57,
+    "unique_members": 51,
+    "overlapping_members": 6,
+    "canonical_events": 137,
+    "group_context_appearances": 145
+  },
+  "nested_window_aging": {
+    "boundary": "comparison_at < occurred_at <= as_of",
+    "inside_5d_outside_24h": true,
+    "aged_out_label": "No event in window",
+    "current_pressure_semantics": "present_at_as_of"
+  }
+}

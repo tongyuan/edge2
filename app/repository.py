@@ -2599,6 +2599,216 @@ class EdgeRepository:
         finally:
             connection.close()
 
+    def group_evidence_inputs(
+        self,
+        window: str,
+        *,
+        group_id: int | None = None,
+    ) -> dict[str, Any] | None:
+        """Capture every Stage A input inside one read-only snapshot."""
+        duration = LOCATION_HISTORY_WINDOWS.get(window)
+        if duration is None:
+            raise ValueError(f"Unsupported group-evidence window: {window}")
+        connection = connect(self.database_url)
+        try:
+            connection.set_session(
+                readonly=True,
+                isolation_level="REPEATABLE READ",
+            )
+            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute("SELECT transaction_timestamp() AS as_of")
+                as_of = cursor.fetchone()["as_of"]
+                comparison_at = as_of - duration
+                parameters: tuple[Any, ...] = ()
+                where_clause = ""
+                if group_id is not None:
+                    where_clause = "WHERE id = %s"
+                    parameters = (group_id,)
+                cursor.execute(
+                    f"""
+                    SELECT id, name, member_symbols, created_at, updated_at
+                    FROM saved_symbol_groups
+                    {where_clause}
+                    ORDER BY lower(name) ASC, id ASC
+                    """,
+                    parameters,
+                )
+                groups = [saved_group_payload(row) for row in cursor.fetchall()]
+                if group_id is not None and not groups:
+                    return None
+                symbols = sorted({
+                    str(symbol)
+                    for group in groups
+                    for symbol in group["members"]
+                })
+                if not symbols:
+                    return {
+                        "window": window,
+                        "as_of": as_of,
+                        "comparison_at": comparison_at,
+                        "groups": groups,
+                        "endpoint_rows": (),
+                        "active_mrzs": (),
+                        "observations": (),
+                        "migration_events": (),
+                        "pressure_events": (),
+                    }
+
+                cursor.execute(
+                    """
+                    WITH members(symbol) AS (
+                        SELECT unnest(%s::text[])
+                    )
+                    SELECT
+                        members.symbol,
+                        current_observation.id AS current_observation_id,
+                        current_observation.event_id AS current_event_id,
+                        current_observation.observation_price
+                            AS current_observation_price,
+                        current_observation.ipda_20w_high AS current_ipda_20w_high,
+                        current_observation.ipda_20w_low AS current_ipda_20w_low,
+                        current_observation.observed_at AS current_observed_at,
+                        comparison_observation.id AS comparison_observation_id,
+                        comparison_observation.event_id AS comparison_event_id,
+                        comparison_observation.observation_price
+                            AS comparison_observation_price,
+                        comparison_observation.ipda_20w_high
+                            AS comparison_ipda_20w_high,
+                        comparison_observation.ipda_20w_low
+                            AS comparison_ipda_20w_low,
+                        comparison_observation.observed_at
+                            AS comparison_observed_at
+                    FROM members
+                    LEFT JOIN LATERAL (
+                        SELECT id, event_id, observation_price, ipda_20w_high,
+                               ipda_20w_low, observed_at
+                        FROM observations
+                        WHERE schema_version = '4.3'
+                          AND symbol = members.symbol
+                          AND observed_at <= %s
+                        ORDER BY observed_at DESC, received_at DESC, id DESC
+                        LIMIT 1
+                    ) current_observation ON TRUE
+                    LEFT JOIN LATERAL (
+                        SELECT id, event_id, observation_price, ipda_20w_high,
+                               ipda_20w_low, observed_at
+                        FROM observations
+                        WHERE schema_version = '4.3'
+                          AND symbol = members.symbol
+                          AND observed_at <= %s
+                        ORDER BY observed_at DESC, received_at DESC, id DESC
+                        LIMIT 1
+                    ) comparison_observation ON TRUE
+                    ORDER BY members.symbol ASC
+                    """,
+                    (symbols, as_of, comparison_at),
+                )
+                endpoint_rows = tuple(cursor.fetchall())
+
+                cursor.execute(
+                    """
+                    SELECT *
+                    FROM active_mrz
+                    WHERE symbol = ANY(%s)
+                      AND activated_at <= %s
+                    ORDER BY symbol ASC
+                    """,
+                    (symbols, as_of),
+                )
+                active_mrzs = tuple(
+                    active
+                    for active in (
+                        active_from_row(row) for row in cursor.fetchall()
+                    )
+                    if active is not None
+                )
+
+                cursor.execute(
+                    """
+                    SELECT
+                        observation.id,
+                        observation.event_id,
+                        observation.schema_version,
+                        observation.symbol,
+                        observation.route,
+                        observation.observation_type,
+                        observation.observation_price,
+                        observation.observation_price_tick,
+                        observation.ipda_20w_high,
+                        observation.ipda_20w_low,
+                        observation.observed_at,
+                        observation.received_at
+                    FROM observations AS observation
+                    INNER JOIN active_mrz AS authority
+                        ON authority.symbol = observation.symbol
+                       AND authority.activated_at <= %s
+                    WHERE observation.schema_version = '4.3'
+                      AND observation.symbol = ANY(%s)
+                      AND observation.observed_at >= authority.activated_at
+                      AND observation.observed_at <= %s
+                    ORDER BY observation.symbol ASC,
+                             observation.observed_at ASC,
+                             observation.received_at ASC,
+                             observation.id ASC
+                    """,
+                    (as_of, symbols, as_of),
+                )
+                observations = tuple(
+                    observation_from_row(row) for row in cursor.fetchall()
+                )
+
+                cursor.execute(
+                    """
+                    SELECT
+                        event_key, sequence, symbol, occurred_at,
+                        trigger_event_id, previous_route_owner, route_owner,
+                        old_core_mrz_lower, old_core_mrz_upper,
+                        new_core_mrz_lower, new_core_mrz_upper,
+                        new_core_mrz_midpoint, structural_location
+                    FROM mrz_events
+                    WHERE event_type = 'MRZ_MIGRATED'
+                      AND symbol = ANY(%s)
+                      AND occurred_at > %s
+                      AND occurred_at <= %s
+                    ORDER BY occurred_at DESC, sequence DESC, event_key ASC
+                    """,
+                    (symbols, comparison_at, as_of),
+                )
+                migration_events = tuple(cursor.fetchall())
+
+                cursor.execute(
+                    """
+                    SELECT
+                        id, source_event_key, symbol, occurred_at,
+                        lifecycle_activation_event_id,
+                        previous_pressure_state, current_pressure_state,
+                        route_owner, post_activation_observation_count,
+                        above_envelope_count, below_envelope_count
+                    FROM web_push_notifications
+                    WHERE event_type = 'POST_ACTIVATION_PRESSURE_CHANGED'
+                      AND current_pressure_state IN ('UP', 'DOWN')
+                      AND symbol = ANY(%s)
+                      AND occurred_at > %s
+                      AND occurred_at <= %s
+                    ORDER BY occurred_at DESC, id DESC
+                    """,
+                    (symbols, comparison_at, as_of),
+                )
+                pressure_events = tuple(cursor.fetchall())
+                return {
+                    "window": window,
+                    "as_of": as_of,
+                    "comparison_at": comparison_at,
+                    "groups": groups,
+                    "endpoint_rows": endpoint_rows,
+                    "active_mrzs": active_mrzs,
+                    "observations": observations,
+                    "migration_events": migration_events,
+                    "pressure_events": pressure_events,
+                }
+        finally:
+            connection.close()
+
     def saved_groups(self) -> list[dict[str, Any]]:
         connection = connect(self.database_url)
         try:

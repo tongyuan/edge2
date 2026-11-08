@@ -23,9 +23,7 @@ class DiagnosticsNavigationContractTests(unittest.TestCase):
 
     def test_shared_workspace_destinations_are_available(self) -> None:
         expected = (
-            "/mrz/overview",
             "/mrz/watchlists",
-            "/mrz/attention",
             "/mrz/symbols",
             "/mrz/pressure",
             "/mrz/alert-settings",
@@ -35,7 +33,9 @@ class DiagnosticsNavigationContractTests(unittest.TestCase):
             "/mrz/events",
         )
         for path in expected:
-            self.assertIn(f'href: "{path}"', SHELL)
+            self.assertIn(path, SHELL)
+        self.assertNotIn('name: "overview"', SHELL)
+        self.assertNotIn('name: "attention"', SHELL)
         for name in ("monitor", "activation"):
             with self.subTest(page=name):
                 self.assertIn("data-mrz-sidebar", PAGES[name])

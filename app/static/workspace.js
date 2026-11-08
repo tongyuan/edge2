@@ -1118,6 +1118,11 @@
   }
   async function initialize() {
     activateRoute();
+    if (routeName() === "watchlists") {
+      await globalObject.edgeGroupEvidence.mount();
+      $("#workspaceStatus").hidden = true;
+      return;
+    }
     try {
       const needsLocationHistory = ["location-distribution", "breadth-leadership"].includes(routeName());
       const [symbolsResponse, groupsResponse, eventsResponse, preferencesResponse, locationHistoryResponse] = await Promise.all([
