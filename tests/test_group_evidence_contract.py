@@ -54,11 +54,21 @@ class GroupEvidenceContractTests(unittest.TestCase):
         self.assertIn('label: "Notification Event History"', SHELL)
 
     def test_initial_watchlist_load_is_decoupled_from_global_sources(self) -> None:
-        initialize = (ROOT / "app/static/workspace.js").read_text(encoding="utf-8").split("async function initialize()", 1)[1]
+        workspace_js = (ROOT / "app/static/workspace.js").read_text(encoding="utf-8")
+        initialize = workspace_js.split("async function initialize()", 1)[1]
         self.assertLess(initialize.index('routeName() === "watchlists"'), initialize.index('fetch("/api/symbols"'))
         self.assertIn("/api/group-evidence", JS)
         self.assertIn("/api/mrz/events?limit=500", JS)
         self.assertIn("recentTrackedEventsToggle", JS)
+
+        render_all = workspace_js.split("function renderAll()", 1)[1].split("async function initialize()", 1)[0]
+        self.assertNotIn("renderWatchlists", render_all)
+
+    def test_stage_a_assets_share_a_fresh_cache_version(self) -> None:
+        version = "group-evidence-stage-a-hotfix-20261108-2"
+        self.assertIn(f'/static/workspace.css?v={version}', HTML)
+        self.assertIn(f'/static/group-evidence.js?v={version}', HTML)
+        self.assertIn(f'/static/workspace.js?v={version}', HTML)
 
     def test_url_state_stale_response_and_accessibility_contracts_exist(self) -> None:
         for key in ("group", "window", "dimension", "bucket", "evidence"):
@@ -72,6 +82,8 @@ class GroupEvidenceContractTests(unittest.TestCase):
         mobile = CSS[CSS.index("@media (max-width: 560px)") :]
         self.assertNotIn(".event-row .event-open { display: none; }", mobile)
         self.assertIn(".recent-tracked-event-list .quiet-button", mobile)
+        self.assertIn(".named-group-evidence { display: grid; min-width: 0", CSS)
+        self.assertIn(".named-evidence-section .table-scroll { min-width: 0; max-width: 100%; }", CSS)
 
     def test_no_schema_or_runtime_dependency_was_added(self) -> None:
         migration_names = {path.name for path in (ROOT / "migrations").glob("*.sql")}

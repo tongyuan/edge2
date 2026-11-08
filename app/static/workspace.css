@@ -462,7 +462,8 @@ input { padding: 0 11px; }
 .evidence-empty { color: var(--muted); font-size: .72rem; line-height: 1.5; }
 .group-evidence-disclosure { margin: 13px 0 0; }
 .group-evidence-research { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 13px; }
-.named-group-evidence { display: grid; gap: 13px; }
+.named-group-evidence { display: grid; min-width: 0; gap: 13px; }
+.named-evidence-section, .named-evidence-section .table-scroll { min-width: 0; max-width: 100%; }
 .named-evidence-section > .panel-heading { align-items: flex-start; }
 .named-evidence-section > h3 { margin: 18px 18px 9px; font-size: .83rem; }
 .named-evidence-section > .evidence-count-grid, .named-evidence-section > .evidence-count { margin: 0 18px 14px; }

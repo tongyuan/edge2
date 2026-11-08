@@ -1114,7 +1114,7 @@
 
   function renderAll() {
     const attention = derive.deriveAttention(state.events, state.groups);
-    renderOverview(attention); renderWatchlists(attention); renderAttention(attention); renderSymbolOptions(); renderPressure(); renderLocationDistribution(); renderBreadthLeadership(); renderEvents(); renderPreferences();
+    renderOverview(attention); renderAttention(attention); renderSymbolOptions(); renderPressure(); renderLocationDistribution(); renderBreadthLeadership(); renderEvents(); renderPreferences();
   }
   async function initialize() {
     activateRoute();
