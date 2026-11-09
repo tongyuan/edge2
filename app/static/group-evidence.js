@@ -1,18 +1,25 @@
-(function initializeGroupEvidence(globalObject) {
+(function initializeGroupOpportunityRadar(globalObject) {
   "use strict";
 
   const derive = globalObject.edgeWorkspaceDerivations;
   const state = {
     scope: derive.parseGroupEvidenceState(globalObject.location?.search || ""),
-    payload: null,
+    overview: null,
+    detail: null,
+    groups: [],
+    allSymbols: [],
+    editingGroup: null,
+    editorMembers: new Set(),
     requestId: 0,
     controller: null,
     lastSuccessful: new Map(),
     recentLoaded: false,
-    editingGroup: null,
+    search: "",
+    mounted: false,
   };
   const $ = (selector) => globalObject.document.querySelector(selector);
-  const text = (value) => value === null || value === undefined ? "—" : String(value);
+  const text = (value, fallback = "—") => value === null || value === undefined || value === "" ? fallback : String(value);
+  const titleCase = (value) => text(value, "Unavailable").replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 
   function node(tag, className, content) {
     const element = globalObject.document.createElement(tag);
@@ -23,16 +30,22 @@
 
   function exactTime(value) {
     if (!value) return "Unavailable";
-    return globalObject.formatOperatorTimestampUtcMinus4?.(value)
-      || new Date(value).toLocaleString();
+    return globalObject.formatOperatorTimestampUtcMinus4?.(value) || new Date(value).toLocaleString();
   }
 
-  function ratio(numerator, denominator, unavailable = false) {
-    const numericNumerator = Number(numerator);
-    const numericDenominator = Number(denominator);
-    if (unavailable || !Number.isFinite(numericNumerator) || !Number.isFinite(numericDenominator)) return "Unavailable";
-    if (numericDenominator === 0) return "0 / 0 — unavailable";
-    return `${numericNumerator} / ${numericDenominator}`;
+  function shortDate(value) {
+    if (!value) return "—";
+    return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+
+  function ratio(numerator, denominator) {
+    if (!Number.isFinite(Number(numerator)) || !Number.isFinite(Number(denominator))) return "Unavailable";
+    if (!Number(denominator)) return "0 / 0 — unavailable";
+    return `${numerator} / ${denominator}`;
+  }
+
+  function percent(value, total) {
+    return total > 0 ? Math.max(0, Math.min(100, Number(value) / Number(total) * 100)) : 0;
   }
 
   function updateUrl(updates, { replace = false } = {}) {
@@ -41,602 +54,368 @@
       if (value === null || value === undefined || value === "") url.searchParams.delete(key);
       else url.searchParams.set(key, String(value));
     });
-    const historyMethod = replace ? "replaceState" : "pushState";
-    globalObject.history[historyMethod]({}, "", url);
+    globalObject.history[replace ? "replaceState" : "pushState"]({}, "", url);
     state.scope = derive.parseGroupEvidenceState(url.search);
   }
 
   function canonicalScopeUrl(extra = {}) {
-    const params = new URLSearchParams({
+    return new URLSearchParams({
       from: "watchlists",
       group: state.scope.groupId,
       window: state.scope.window,
       return: `${globalObject.location.pathname}${globalObject.location.search}`,
       ...extra,
     });
-    return params;
   }
 
-  function symbolUrl(symbol, extra = {}) {
-    const params = canonicalScopeUrl(extra);
-    params.set("symbol", symbol);
+  function symbolUrl(symbol) {
+    const params = canonicalScopeUrl({ symbol });
     return `/mrz/symbols?${params}`;
   }
 
-  function eventUrl(symbol, eventId) {
-    const params = canonicalScopeUrl({ symbol, event: eventId });
-    return `/mrz/events?${params}`;
+  function detailLink(label, href, className = "quiet-button") {
+    const link = node("a", className, label);
+    link.href = href;
+    return link;
   }
 
-  function setLoading(message = "Loading watchlist evidence…") {
-    $("#groupEvidenceLive").hidden = false;
-    $("#groupEvidenceLive").className = "group-evidence-live";
-    $("#groupEvidenceLive").textContent = message;
+  function setLoading(message = "Loading Group Opportunity Radar…") {
+    const live = $("#groupEvidenceLive");
+    live.hidden = false;
+    live.className = "group-evidence-live";
+    live.textContent = message;
     $("#groupEvidenceContent").replaceChildren(node("div", "group-evidence-skeleton", message));
   }
 
-  function setError(message, retry = true) {
+  function setError(message) {
     const live = $("#groupEvidenceLive");
     live.hidden = false;
     live.className = "group-evidence-live error";
     live.setAttribute("role", "alert");
     live.textContent = message;
     const panel = node("section", "panel group-evidence-error");
-    panel.append(node("p", "", message));
-    if (retry) {
-      const button = node("button", "primary-button", "Retry");
-      button.type = "button";
-      button.addEventListener("click", load);
-      panel.append(button);
-    }
+    panel.append(node("h2", "", "Radar unavailable"), node("p", "", message));
+    const retry = node("button", "primary-button", "Retry");
+    retry.type = "button";
+    retry.addEventListener("click", load);
+    panel.append(retry);
     $("#groupEvidenceContent").replaceChildren(panel);
   }
 
-  function renderMeta(payload) {
-    const meta = $("#groupEvidenceMeta");
-    meta.replaceChildren();
-    const values = payload.scope === "all_groups"
-      ? [
-        ["As of", exactTime(payload.window.as_of)],
-        ["Comparison", exactTime(payload.window.comparison_at)],
-        ["Saved groups", payload.scope_totals.group_count],
-        ["Member slots", payload.scope_totals.member_slots],
-        ["Unique symbols", payload.scope_totals.unique_members],
-        ["Canonical migrations", payload.scope_totals.canonical_migration_events],
-        ["Group appearances", payload.scope_totals.group_context_migration_appearances],
-      ]
-      : [
-        ["As of", exactTime(payload.window.as_of)],
-        ["Comparison", exactTime(payload.window.comparison_at)],
-        ["Current members", payload.group.member_count],
-        ["Latest relevant", exactTime(payload.latest_relevant_evidence_at)],
-        ["Structural comparable", ratio(payload.coverage.structural_comparable, payload.group.member_count)],
-        ["New observation inside window", ratio(payload.coverage.structural_fresh_in_window, payload.coverage.structural_comparable)],
-        ["Current location unavailable", ratio(payload.coverage.structural_unavailable_current, payload.group.member_count)],
-        ["Current-pressure active MRZ", ratio(payload.coverage.current_pressure_active_mrz, payload.group.member_count)],
-        ["Current-pressure directional", ratio(payload.coverage.current_pressure_directional, payload.group.member_count)],
-        ["Directional evidence inside window", ratio(payload.coverage.current_pressure_evidence_fresh_in_window, payload.coverage.current_pressure_directional)],
-      ];
-    values.forEach(([label, value]) => {
-      const item = node("div", "");
-      item.append(node("span", "", label), node("strong", "", text(value)));
-      meta.append(item);
+  function selectedGroup() {
+    if (state.detail?.group) return state.groups.find((group) => String(group.id) === String(state.detail.group.id)) || state.detail.group;
+    return state.groups.find((group) => String(group.id) === String(state.scope.groupId)) || null;
+  }
+
+  function openGroup(groupId) {
+    updateUrl({ group: groupId, dimension: null, bucket: null, evidence: null });
+    state.recentLoaded = false;
+    load().then(() => $("#selectedGroupWorkspace")?.scrollIntoView({ block: "start", behavior: "smooth" }));
+  }
+
+  function breadthCounts(group) {
+    const distribution = group.structural?.current_distribution;
+    if (!distribution) return null;
+    const lower = Number(distribution.deep_discount || 0) + Number(distribution.shallow_discount || 0);
+    const neutral = Number(distribution.at_eqm || 0);
+    const higher = Number(distribution.shallow_premium || 0) + Number(distribution.deep_premium || 0);
+    const unavailable = Number(distribution.unavailable || 0);
+    return { lower, neutral, higher, unavailable, eligible: lower + neutral + higher };
+  }
+
+  function renderBreadth(group) {
+    const counts = breadthCounts(group);
+    if (!counts || !counts.eligible) return node("span", "radar-unavailable", "Unavailable");
+    const wrap = node("div", "breadth-cell");
+    const bar = node("div", "breadth-bar");
+    ["lower", "neutral", "higher"].forEach((bucket) => {
+      const segment = node("span", bucket);
+      segment.style.width = `${percent(counts[bucket], counts.eligible)}%`;
+      segment.title = `${titleCase(bucket)} ${counts[bucket]} (${Math.round(percent(counts[bucket], counts.eligible))}%)`;
+      bar.append(segment);
     });
+    const values = node("span", "breadth-values", `${counts.higher} / ${counts.neutral} / ${counts.lower} (H / N / L)`);
+    if (counts.unavailable) values.title = `${counts.unavailable} member(s) unavailable and excluded from the breadth denominator.`;
+    wrap.append(bar, values);
+    return wrap;
   }
 
-  function selectionButton(label, count, denominator, selection, support = "") {
-    const button = node("button", "evidence-count");
-    button.type = "button";
-    button.dataset.selection = JSON.stringify(selection);
-    button.setAttribute(
-      "aria-label",
-      `${label}, ${ratio(count, denominator)}, ${state.payload?.group?.name || "group"}, ${state.scope.window}`,
-    );
-    button.append(node("span", "", label), node("strong", "", text(count)), node("small", "", support || ratio(count, denominator)));
-    return button;
-  }
-
-  function groupCard(group) {
-    const card = node("article", "group-evidence-card");
-    if (group.status === "partial") card.classList.add("partial");
-    const heading = node("header", "group-evidence-card-heading");
-    const identity = node("div", "");
-    identity.append(node("h2", "", group.name), node("p", "", `${group.membership_total} current members · updated ${exactTime(group.updated_at)}`));
-    const open = node("button", "primary-button", "Open group");
-    open.type = "button";
-    open.dataset.openGroup = group.id;
-    heading.append(identity, open);
-
-    const coverage = node("section", "group-evidence-card-section");
-    coverage.append(node("h3", "", "Coverage & freshness"));
-    const coverageList = node("dl", "evidence-facts");
-    [
-      ["Structural comparable", ratio(group.coverage.structural_comparable, group.membership_total)],
-      ["New observation inside window", ratio(group.coverage.structural_fresh_in_window, group.coverage.structural_comparable)],
-      ["No new observation inside window", ratio(group.coverage.structural_no_new_observation, group.coverage.structural_comparable)],
-      ["Current location unavailable", ratio(group.coverage.structural_unavailable_current, group.membership_total)],
-      ["Current-pressure active MRZ", ratio(group.coverage.current_pressure_active_mrz, group.membership_total)],
-      ["Latest relevant evidence", exactTime(group.latest_relevant_evidence_at)],
-    ].forEach(([label, value]) => coverageList.append(node("dt", "", label), node("dd", "", value)));
-    coverage.append(coverageList);
-
-    const structural = node("section", "group-evidence-card-section");
-    structural.append(node("h3", "", "Structural evidence"));
-    const structuralUnavailable = group.structural?.status === "unavailable";
-    if (structuralUnavailable) structural.append(node("p", "evidence-empty", "Structural evidence unavailable for this snapshot."));
+  function directionMetric(higher, lower, empty = "—") {
+    if (higher === undefined || lower === undefined) return node("span", "radar-unavailable", "Unavailable");
+    const wrap = node("span", "direction-metric");
+    if (!higher && !lower) wrap.textContent = empty;
     else {
-      const structuralGrid = node("div", "evidence-count-grid");
-      const comparable = group.coverage.structural_comparable;
-      structuralGrid.append(
-        selectionButton("Moved Higher", group.structural.moved_higher, comparable, { group: group.id, dimension: "structural", bucket: "higher" }, `${group.structural.higher_steps} native steps`),
-        selectionButton("Moved Lower", group.structural.moved_lower, comparable, { group: group.id, dimension: "structural", bucket: "lower" }, `${group.structural.lower_steps} native steps`),
-        selectionButton("Same Bucket", group.structural.same_bucket, comparable, { group: group.id, dimension: "structural", bucket: "same_bucket" }),
-      );
-      structural.append(structuralGrid);
+      if (higher) wrap.append(node("span", "higher", `Higher ${higher}`));
+      if (lower) wrap.append(node("span", "lower", `Lower ${lower}`));
     }
-
-    const directional = node("section", "group-evidence-card-section");
-    directional.append(node("h3", "", "Directional evidence"));
-    const current = group.directional.current_pressure || {};
-    const latest = group.directional.latest_cumulative_event || {};
-    if (current.status === "unavailable") directional.append(node("p", "evidence-empty", "Current pressure evidence unavailable for this snapshot."));
-    else {
-      const currentLine = node("p", "evidence-inline", `Current pressure now · ${current.higher} Higher · ${current.lower} Lower · ${current.neutral} Neutral`);
-      const currentButtons = node("div", "evidence-count-grid");
-      ["higher", "lower", "neutral"].forEach((bucket) => currentButtons.append(selectionButton(`Current ${bucket[0].toUpperCase()}${bucket.slice(1)}`, current[bucket], group.membership_total, { group: group.id, dimension: "directional", evidence: "current_pressure", bucket })));
-      directional.append(currentLine, currentButtons, node("p", "evidence-inline", `Current-pressure evidence inside selected window ${ratio(group.coverage.current_pressure_evidence_fresh_in_window, group.coverage.current_pressure_directional)}`));
-    }
-    if (latest.status === "unavailable") directional.append(node("p", "evidence-empty", "Cumulative lifecycle pressure events unavailable for this snapshot."));
-    else {
-      const eventLine = node("p", "evidence-inline", `Latest Cumulative lifecycle pressure event · ${latest.higher} Higher · ${latest.lower} Lower · ${latest.none} No event in window`);
-      const comparison = group.directional.latest_event_vs_current || {};
-      const comparisonLine = node("p", "evidence-inline", `Event versus Current pressure · ${comparison.same_direction} Same · ${comparison.current_neutral} Current Neutral · ${comparison.opposite_direction} Opposite · ${comparison.current_unavailable} Current Unavailable`);
-      const cumulativeButtons = node("div", "evidence-count-grid");
-      ["higher", "lower", "none"].forEach((bucket) => cumulativeButtons.append(selectionButton(bucket === "none" ? "No event in window" : `Latest event ${bucket[0].toUpperCase()}${bucket.slice(1)}`, latest[bucket], group.membership_total, { group: group.id, dimension: "directional", evidence: "cumulative_latest", bucket })));
-      directional.append(eventLine, cumulativeButtons, comparisonLine);
-    }
-
-    const migrations = node("section", "group-evidence-card-section");
-    migrations.append(node("h3", "", "Recent canonical MRZ migrations"));
-    const migration = group.migrations || {};
-    if (migration.status === "unavailable") migrations.append(node("p", "evidence-empty", "Migration evidence unavailable for this snapshot."));
-    else {
-      const migrationButton = selectionButton(
-        "Unique contributors",
-        migration.unique_contributors,
-        group.membership_total,
-        { group: group.id, dimension: "directional", evidence: "migration_contributors" },
-        `${migration.event_count} raw events`,
-      );
-      migrations.append(migrationButton, node("p", "evidence-inline", `${migration.higher_events} Higher · ${migration.lower_events} Lower · ${migration.same_midpoint_events || 0} Same midpoint · ${migration.repeated_contributors} repeated contributors · ${migration.both_direction_contributors} both directions · ${migration.route_change_events} route changes`));
-      if (migration.event_count) migrations.append(node("p", "evidence-inline", `${exactTime(migration.earliest_at)} → ${exactTime(migration.latest_at)}${migration.event_count > 1 ? ` · ${migration.span_seconds}s raw span` : ""}`));
-      else migrations.append(node("p", "evidence-empty", "No event in window."));
-    }
-    card.append(heading, coverage, structural, directional, migrations);
-    return card;
+    return wrap;
   }
 
-  function renderAllGroups(payload) {
-    $("#groupEvidenceTitle").textContent = "All Groups";
-    $("#groupEvidenceScope").textContent = "Historical evidence for today's members · elapsed calendar time · factual comparison ordered by group name";
-    $("#groupEvidenceEdit").hidden = true;
-    const wrapper = node("div", "all-groups-evidence");
-    const controls = node("div", "group-evidence-sort");
-    const label = node("label", "", "FACTUAL SORT ");
-    const select = node("select", "");
-    [
-      ["name", "Group name A–Z"], ["latest", "Latest evidence time"],
-      ["comparable", "Structural comparable ratio"], ["fresh", "Fresh-observation ratio"],
-      ["migration_contributors", "Unique migration contributors"], ["migration_events", "Raw migration event count"],
-    ].forEach(([value, copy]) => {
-      const option = node("option", "", copy); option.value = value; option.selected = state.scope.sort === value; select.append(option);
-    });
-    select.addEventListener("change", () => { updateUrl({ sort: select.value }); renderAllGroups(payload); });
-    const sortMeaning = {
-      name: "A–Z by saved-group name",
-      latest: "latest relevant evidence timestamp",
-      comparable: "structural comparable / current members",
-      fresh: "new observation inside window / structural comparable",
-      migration_contributors: "unique migration contributors / current members",
-      migration_events: "raw migration event count",
-    }[state.scope.sort] || "A–Z by saved-group name";
-    label.append(select); controls.append(label, node("span", "", `Active sort: ${sortMeaning}. Exact values remain visible on every card.`)); wrapper.append(controls);
-    if (!payload.groups.length) {
-      wrapper.append(node("section", "panel group-evidence-empty", "No saved groups. Create a group to inspect factual evidence for its current members."));
-    } else {
-      const cards = node("div", "group-evidence-cards");
-      derive.sortGroupEvidenceRows(payload.groups, state.scope.sort).forEach((group) => cards.append(groupCard(group)));
-      wrapper.append(cards);
-    }
-    const disclosure = node("p", "group-evidence-disclosure", `Canonical migration events: ${payload.scope_totals.canonical_migration_events}; group-context appearances: ${payload.scope_totals.group_context_migration_appearances}. Shared events retain one canonical identity.`);
-    const limitationLink = detailLink("Current pressure snapshot limitations", "#groupEvidenceLimitations");
-    const limitations = node("section", "panel group-evidence-limitations"); limitations.id = "groupEvidenceLimitations";
-    limitations.append(node("h2", "", "Stage A limitations"));
-    const limitationList = node("ul", ""); (payload.limitations || []).forEach((item) => limitationList.append(node("li", "", item))); limitations.append(limitationList);
-    wrapper.append(disclosure, limitationLink, limitations);
-    $("#groupEvidenceContent").replaceChildren(wrapper);
-  }
-
-  function detailLink(label, href) {
-    const link = node("a", "quiet-button", label); link.href = href; return link;
-  }
-
-  function detailSection(title, support) {
-    const section = node("section", "panel named-evidence-section");
-    const header = node("header", "panel-heading");
-    const copy = node("div", ""); copy.append(node("h2", "", title), node("span", "", support)); header.append(copy);
-    section.append(header);
-    return section;
-  }
-
-  function openSelection(selection) {
-    updateUrl({
-      dimension: selection.dimension,
-      bucket: selection.bucket || null,
-      evidence: selection.evidence || null,
-    });
-    renderNamedGroup(state.payload);
-    $("#groupEvidenceDrilldown")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }
-
-  function contributorCard(item, type) {
-    const card = node("li", "evidence-contributor");
-    const symbol = item.symbol || "Unavailable";
-    const header = node("div", "evidence-contributor-heading");
-    header.append(node("strong", "", symbol), detailLink("Open symbol", symbolUrl(symbol, { evidence: type, event: item.event_key || item.event_id || "" })));
-    card.append(header);
-    const facts = node("dl", "evidence-facts");
-    const rows = type === "structural" ? [
-      ["Endpoint", item.start_location_label ? `${item.start_location_label} → ${item.current_location_label}` : item.reason || "Unavailable"],
-      ["Direction", item.direction ? item.direction.replace("same_bucket", "Same Bucket") : "Unavailable"],
-      ["Native bucket steps", item.magnitude_steps],
-      ["Comparison source", exactTime(item.comparison_observed_at)],
-      ["Current source", exactTime(item.current_observed_at)],
-      ["New observation inside window", item.new_observation_in_window === true ? "Yes" : item.new_observation_in_window === false ? "No" : "Unavailable"],
-      ["Source observation IDs", (item.source_observation_ids || []).join(", ") || "Not available"],
-    ] : type === "current_pressure" ? [
-      ["Current pressure", item.direction_label || item.direction],
-      ["Classifier status", item.evidence?.status],
-      ["Reason", item.evidence?.reason],
-      ["Active MRZ", item.active_mrz?.status],
-      ["Lifecycle activation", item.lifecycle_activation_event_id],
-      ["Route owner", item.active_mrz?.route_owner],
-      ["Structural location", item.current_location_label],
-      ["Current pressure since", exactTime(item.evidence?.current_pressure_since)],
-      ["Latest pressure evidence", exactTime(item.evidence?.latest_pressure_observed_at)],
-      ["Evidence inside selected window", item.evidence_in_window ? "Yes" : "No"],
-      ["Latest four sequence", (item.evidence?.recent_sequence || []).map((entry) => `${entry.direction} ${exactTime(entry.observed_at)}`).join(" · ") || "Unavailable"],
-    ] : type === "cumulative" ? [
-      ["Cumulative lifecycle pressure event", item.event_direction ? `${item.event_direction[0].toUpperCase()}${item.event_direction.slice(1)}` : item.state === "none" ? "No event in window" : "Unavailable"],
-      ["Canonical identity", item.source_event_key || item.event_id],
-      ["Lifecycle activation", item.lifecycle_activation_event_id],
-      ["Previous state", item.previous_state],
-      ["Occurred / evaluated", exactTime(item.occurred_at)],
-      ["Route owner", item.route_owner],
-      ["Cumulative observations", item.post_activation_observation_count],
-      ["Above / below envelope", item.above_envelope_count === undefined ? "Unavailable" : `${item.above_envelope_count} / ${item.below_envelope_count}`],
-      ["Current pressure now", item.current_pressure_direction || "Unavailable"],
-      ["Current pressure evidence time", exactTime(item.current_pressure_evidence_at)],
-      ["Event versus Current pressure", item.comparison || "Unavailable"],
-    ] : type === "migration_contributors" ? [
-      ["Raw event count", item.event_count],
-      ["Directions in window", (item.directions || []).join(" · ")],
-      ["First event", exactTime(item.first_at)],
-      ["Latest event", exactTime(item.latest_at)],
-      ["Canonical event identities", (item.event_keys || []).join(", ")],
-    ] : [
-      ["Canonical event", item.event_key],
-      ["Sequence", item.sequence],
-      ["Occurred", exactTime(item.occurred_at)],
-      ["Direction", item.direction],
-      ["Route", `${item.previous_route_owner} → ${item.route_owner}`],
-      ["Route changed", item.route_changed ? "Yes" : "No"],
-      ["Old bounds / midpoint", `${text(item.old_lower)}–${text(item.old_upper)} / ${text(item.old_midpoint)}`],
-      ["New bounds / midpoint", `${text(item.new_lower)}–${text(item.new_upper)} / ${text(item.new_midpoint)}`],
-      ["New structural location", item.new_structural_location],
-      ["Trigger observation", item.trigger_observation_event_id],
-      ["Repeat index in window", item.repeat_index],
-    ];
-    rows.forEach(([label, value]) => facts.append(node("dt", "", label), node("dd", "", text(value))));
-    card.append(facts);
-    if ((type === "cumulative" || type === "migration_events") && (item.event_key || item.event_id)) {
-      card.append(detailLink("Open event reference", eventUrl(symbol, item.event_key || item.event_id)));
-    }
-    return card;
-  }
-
-  function renderDrilldown(payload) {
-    const selection = state.scope;
-    if (!selection.dimension) return null;
-    const section = detailSection("Exact contributors", `${state.scope.window} · canonical identities and source timestamps`);
-    section.id = "groupEvidenceDrilldown";
-    section.setAttribute("aria-live", "polite");
-    const close = node("button", "quiet-button", "Close contributor view"); close.type = "button";
-    close.addEventListener("click", () => { updateUrl({ dimension: null, bucket: null, evidence: null }); renderNamedGroup(payload); $("#groupEvidenceTitle").focus(); });
-    section.querySelector("header").append(close);
-    const rows = derive.filterGroupEvidenceContributors(payload, selection);
-    const list = node("ul", "evidence-contributors");
-    const type = selection.dimension === "structural" ? "structural"
-      : selection.evidence?.startsWith("cumulative") ? "cumulative"
-        : selection.evidence || "current_pressure";
-    rows.forEach((item) => list.append(contributorCard(item, type)));
-    if (!rows.length) list.append(node("li", "evidence-empty", "No contributors in this category for the selected window."));
-    section.append(list);
-    return section;
-  }
-
-  function renderConstituentBoard(payload) {
-    const section = detailSection("Constituent board", "Current canonical reference · Symbol A–Z");
-    const structural = new Map((payload.structural.contributors || []).map((item) => [item.symbol, item]));
-    const pressure = new Map((payload.directional.current_pressure.members || []).map((item) => [item.symbol, item]));
-    const latestEvents = new Map();
-    const rememberEvent = (symbol, occurredAt, label) => {
-      if (!occurredAt) return;
-      const current = latestEvents.get(symbol);
-      if (!current || String(occurredAt) > String(current.occurredAt)) latestEvents.set(symbol, { occurredAt, label });
-    };
-    (payload.directional.cumulative_lifecycle_pressure_events.events || []).forEach((item) => rememberEvent(item.symbol, item.occurred_at, `Cumulative pressure ${item.event_direction}`));
-    (payload.directional.mrz_migrations.events || []).forEach((item) => rememberEvent(item.symbol, item.occurred_at, `MRZ migration ${item.direction}`));
-    const tableWrap = node("div", "table-scroll");
-    const table = node("table", "symbol-board group-evidence-board");
-    const head = node("thead", ""); head.innerHTML = "<tr><th>Symbol</th><th>MRZ status</th><th>Authority</th><th>Route</th><th>Activated</th><th>Structural location</th><th>Current pressure</th><th>Latest selected-window event</th><th>Action</th></tr>";
+  function renderOverviewTable() {
+    const section = node("section", "radar-overview");
+    const tableWrap = node("div", "radar-table-wrap");
+    const table = node("table", "radar-table");
+    const head = node("thead", "");
+    head.innerHTML = "<tr><th>Group</th><th>Members</th><th>Breadth (H / N / L)</th><th>Migration</th><th>Pressure</th><th>Near Miss</th><th>OTE (1D)</th><th>OTE (1W)</th><th>Latest OTE Alert</th><th aria-label=\"Open\"></th></tr>";
     const body = node("tbody", "");
-    [...payload.group.members].sort((a, b) => a.localeCompare(b)).forEach((symbol) => {
-      const member = pressure.get(symbol) || { symbol };
-      const movement = structural.get(symbol);
-      const active = member.active_mrz || {};
-      const authority = active.authority;
-      const latest = latestEvents.get(symbol);
+    const groups = (state.overview?.groups || []).filter((group) => group.name.toLowerCase().includes(state.search));
+    groups.forEach((group) => {
       const row = node("tr", "");
-      const action = node("td", ""); action.append(detailLink("Open symbol", symbolUrl(symbol)));
-      [
-        symbol,
-        active.status || "Unavailable",
-        authority ? `${text(authority.lower)}–${text(authority.upper)}` : "Unavailable",
-        active.route_owner || "Unavailable",
-        exactTime(active.activated_at),
-        movement?.current_location_label || member.current_location_label || "Unavailable",
-        member.direction_label || member.direction || "Unavailable",
-        latest ? `${latest.label} · ${exactTime(latest.occurredAt)}` : "No event in window",
-      ].forEach((value) => row.append(node("td", "", text(value))));
-      row.append(action); body.append(row);
+      row.tabIndex = 0;
+      row.dataset.groupId = group.id;
+      if (String(group.id) === String(state.scope.groupId)) row.classList.add("selected");
+      const nameCell = node("td", "group-name-cell");
+      nameCell.append(node("span", "group-initial", group.name.slice(0, 2).toUpperCase()), node("strong", "", group.name));
+      const memberCell = node("td", "", group.membership_total);
+      const breadthCell = node("td", ""); breadthCell.append(renderBreadth(group));
+      const migrationCell = node("td", ""); migrationCell.append(directionMetric(group.migrations?.unique_higher_contributors, group.migrations?.unique_lower_contributors));
+      const current = group.directional?.current_pressure || {};
+      const pressureCell = node("td", ""); pressureCell.append(directionMetric(current.higher, current.lower));
+      const nearCell = node("td", "near-miss-count", group.near_miss?.status === "available" ? group.near_miss.active_episode_count : "Unavailable");
+      const oteDaily = node("td", "ote-unavailable", group.ote?.status === "not_connected" ? "Not connected" : text(group.ote?.daily));
+      const oteWeekly = node("td", "ote-unavailable", group.ote?.status === "not_connected" ? "Not connected" : text(group.ote?.weekly));
+      const latestOte = node("td", "ote-unavailable", group.ote?.status === "not_connected" ? "OTE feed not connected" : text(group.ote?.latest));
+      const open = node("td", "radar-open-cell"); open.append(node("span", "", "Open"));
+      row.append(nameCell, memberCell, breadthCell, migrationCell, pressureCell, nearCell, oteDaily, oteWeekly, latestOte, open);
+      row.addEventListener("click", () => openGroup(group.id));
+      row.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openGroup(group.id); } });
+      body.append(row);
     });
+    if (!groups.length) {
+      const row = node("tr", "");
+      const cell = node("td", "radar-empty", state.overview?.groups?.length ? "No groups match this search." : "No saved groups. Create a group to begin.");
+      cell.colSpan = 10; row.append(cell); body.append(row);
+    }
     table.append(head, body); tableWrap.append(table); section.append(tableWrap);
     return section;
   }
 
-  function renderNamedGroup(payload) {
-    const group = payload.group;
-    $("#groupEvidenceTitle").textContent = group.name;
-    $("#groupEvidenceScope").textContent = `${group.member_count} current members · Historical evidence for today's members · membership edits reattribute history to the new current membership`;
-    $("#groupEvidenceEdit").hidden = false;
-    const wrapper = node("div", "named-group-evidence");
-    const research = node("nav", "group-evidence-research", ""); research.setAttribute("aria-label", "Specialist research and settings");
-    [
-      ["Universe Location", `/mrz/location-distribution?window=${state.scope.window}&${canonicalScopeUrl()}`],
-      ["Formation Diagnostics", `/mrz/formation-diagnostics?${canonicalScopeUrl()}`],
-      ["Notification Event History", `/mrz/events?${canonicalScopeUrl()}`],
-      ["Alert Settings", `/mrz/alert-settings?${canonicalScopeUrl()}`],
-    ].forEach(([label, href]) => research.append(detailLink(label, href)));
-    wrapper.append(research);
-
-    const structural = detailSection("Structural evidence", "Endpoint comparison is not a stability claim");
-    if (payload.structural.status === "unavailable") structural.append(node("p", "evidence-empty", "Structural evidence unavailable for this snapshot."));
-    else {
-      const counts = node("div", "evidence-count-grid");
-      const summary = payload.structural.summary;
-      const comparable = payload.coverage.structural_comparable;
-      counts.append(
-        selectionButton("Moved Higher", summary.moved_higher, comparable, { dimension: "structural", bucket: "higher" }, `${summary.higher_steps} native steps`),
-        selectionButton("Moved Lower", summary.moved_lower, comparable, { dimension: "structural", bucket: "lower" }, `${summary.lower_steps} native steps`),
-        selectionButton("Same Bucket", summary.same_bucket, comparable, { dimension: "structural", bucket: "same_bucket" }),
-        selectionButton("No new observation inside window", payload.coverage.structural_no_new_observation, comparable, { dimension: "structural", bucket: "no_new_observation" }),
-        selectionButton("Unavailable", payload.coverage.structural_unavailable_current, group.member_count, { dimension: "structural", bucket: "unavailable" }),
-      );
-      structural.append(counts, node("p", "evidence-inline", `New observation inside selected window ${ratio(payload.coverage.structural_fresh_in_window, comparable)} · current endpoints ${exactTime(payload.structural.endpoint_observed_at.earliest_current)} → ${exactTime(payload.structural.endpoint_observed_at.latest_current)}`));
-      const distribution = node("p", "evidence-inline", `Current distribution · Deep Discount ${payload.structural.current_distribution.deep_discount} · Shallow Discount ${payload.structural.current_distribution.shallow_discount} · At EQM ${payload.structural.current_distribution.at_eqm} · Shallow Premium ${payload.structural.current_distribution.shallow_premium} · Deep Premium ${payload.structural.current_distribution.deep_premium} · Unavailable ${payload.structural.current_distribution.unavailable}`);
-      structural.append(distribution);
-    }
-
-    const directional = detailSection("Directional evidence", `Current snapshot as of ${exactTime(payload.window.as_of)}; the selected window reports evidence freshness and events, not historical Current pressure`);
-    const current = payload.directional.current_pressure;
-    if (current.status === "unavailable") directional.append(node("p", "evidence-empty", "Current pressure evidence unavailable for this snapshot."));
-    else {
-      const currentHeading = node("h3", "", "Current pressure — now");
-      const currentCounts = node("div", "evidence-count-grid");
-      ["higher", "lower", "neutral"].forEach((bucket) => currentCounts.append(selectionButton(bucket[0].toUpperCase() + bucket.slice(1), current.summary[bucket], group.member_count, { dimension: "directional", evidence: "current_pressure", bucket })));
-      directional.append(currentHeading, currentCounts, node("p", "evidence-inline", `Directional evidence inside selected window ${ratio(payload.coverage.current_pressure_evidence_fresh_in_window, payload.coverage.current_pressure_directional)}`));
-    }
-    const cumulative = payload.directional.cumulative_lifecycle_pressure_events;
-    if (cumulative.status === "available") {
-      directional.append(node("h3", "", "Cumulative lifecycle pressure events — selected window"));
-      const latest = cumulative.summary.latest_event;
-      const eventCounts = node("div", "evidence-count-grid");
-      eventCounts.append(
-        selectionButton("Latest Higher", latest.higher, group.member_count, { dimension: "directional", evidence: "cumulative_latest", bucket: "higher" }),
-        selectionButton("Latest Lower", latest.lower, group.member_count, { dimension: "directional", evidence: "cumulative_latest", bucket: "lower" }),
-        selectionButton("No event in window", latest.none, group.member_count, { dimension: "directional", evidence: "cumulative_latest", bucket: "none" }),
-      );
-      const rawEventButton = selectionButton("Raw cumulative events", cumulative.summary.event_count, cumulative.summary.event_count, { dimension: "directional", evidence: "cumulative_events" }, `${cumulative.summary.unique_contributors} unique members`);
-      directional.append(eventCounts, rawEventButton, node("p", "evidence-inline", `${cumulative.summary.unique_contributors} unique members · ${cumulative.summary.event_count} raw events · ${cumulative.summary.repeated_contributors} repeated · ${cumulative.summary.both_direction_contributors} both directions within one lifecycle identity`));
-      const compare = cumulative.summary.latest_event_vs_current;
-      directional.append(node("p", "evidence-inline", `Latest event versus Current pressure · ${compare.same_direction} Same · ${compare.current_neutral} Current Neutral · ${compare.opposite_direction} Opposite · ${compare.current_unavailable} Current Unavailable`));
-    } else directional.append(node("p", "evidence-empty", "Cumulative lifecycle pressure events unavailable for this snapshot."));
-    const migrations = payload.directional.mrz_migrations;
-    if (migrations.status === "available") {
-      directional.append(node("h3", "", "Recent canonical MRZ migrations — selected window"));
-      directional.append(selectionButton("Unique migration contributors", migrations.summary.unique_contributors, group.member_count, { dimension: "directional", evidence: "migration_contributors" }, `${migrations.summary.event_count} raw events`));
-      directional.append(selectionButton("Raw migration events", migrations.summary.event_count, migrations.summary.event_count, { dimension: "directional", evidence: "migration_events" }, `${migrations.summary.unique_contributors} unique symbols`));
-      directional.append(node("p", "evidence-inline", `${migrations.summary.higher_events} Higher · ${migrations.summary.lower_events} Lower · ${migrations.summary.same_midpoint_events || 0} Same midpoint · ${migrations.summary.repeated_contributors} repeated contributors · ${migrations.summary.both_direction_contributors} both directions · ${migrations.summary.route_change_events} route changes`));
-      if (migrations.summary.event_count) directional.append(node("p", "evidence-inline", `${exactTime(migrations.summary.earliest_at)} → ${exactTime(migrations.summary.latest_at)}${migrations.summary.event_count > 1 ? ` · ${migrations.summary.span_seconds}s raw span` : ""}`));
-      else directional.append(node("p", "evidence-empty", "No event in window."));
-    } else directional.append(node("p", "evidence-empty", "Migration evidence unavailable for this snapshot."));
-    wrapper.append(structural, directional);
-    const drilldown = renderDrilldown(payload); if (drilldown) wrapper.append(drilldown);
-    wrapper.append(renderConstituentBoard(payload));
-    $("#groupEvidenceContent").replaceChildren(wrapper);
-    $("#groupEvidenceContent").querySelectorAll("[data-selection]").forEach((button) => button.addEventListener("click", () => openSelection(JSON.parse(button.dataset.selection))));
+  function evidenceCard(kind, title, value, supporting, tone) {
+    const card = node("button", `radar-evidence-card ${tone || ""}`);
+    card.type = "button";
+    card.dataset.inspect = kind;
+    card.append(node("span", "evidence-card-label", title), node("strong", "evidence-card-value", value), node("small", "", supporting));
+    return card;
   }
 
-  function render(payload) {
-    state.payload = payload;
-    renderMeta(payload);
-    if (payload.scope === "all_groups") renderAllGroups(payload); else renderNamedGroup(payload);
-    $("#groupEvidenceLive").hidden = false;
-    $("#groupEvidenceLive").removeAttribute("role");
-    $("#groupEvidenceLive").setAttribute("role", "status");
-    $("#groupEvidenceLive").className = "group-evidence-live";
-    $("#groupEvidenceLive").textContent = payload.status === "partial"
-      ? `Evidence loaded as of ${exactTime(payload.window.as_of)}; one or more dimensions are unavailable.`
-      : `Evidence loaded as of ${exactTime(payload.window.as_of)}.`;
+  function renderEvidenceCards(payload) {
+    const current = payload.directional.current_pressure;
+    const migrations = payload.directional.mrz_migrations;
+    const near = payload.near_miss;
+    const cards = node("div", "radar-evidence-cards");
+    const migrationValue = migrations.status === "available" ? `${migrations.summary.unique_contributors} contributor${migrations.summary.unique_contributors === 1 ? "" : "s"}` : "Unavailable";
+    const migrationSupport = migrations.status === "available" && migrations.summary.event_count ? `Latest ${shortDate(migrations.summary.latest_at)} · ${migrations.summary.event_count} event${migrations.summary.event_count === 1 ? "" : "s"}` : "No migration in selected window";
+    const dominant = current.status === "available" ? current.summary.lower > current.summary.higher ? `Lower ${current.summary.lower}` : current.summary.higher > current.summary.lower ? `Higher ${current.summary.higher}` : `Balanced ${current.summary.higher}/${current.summary.lower}` : "Unavailable";
+    cards.append(
+      evidenceCard("migration", "MRZ Migration", migrationValue, migrationSupport, "migration"),
+      evidenceCard("pressure", "Pressure", dominant, current.status === "available" ? `${current.summary.neutral} neutral · current state` : "Current pressure unavailable", "pressure"),
+      evidenceCard("near-miss", "Near Miss", near.status === "available" ? `${near.active_episode_count} active` : "Unavailable", near.status === "available" ? `${near.historical_episode_count} historical in window` : "Episode data unavailable", "near-miss"),
+      evidenceCard("ote", "OTE (from EDGE_BOT)", payload.ote.status === "not_connected" ? "Feed not connected" : `${text(payload.ote.daily)} 1D · ${text(payload.ote.weekly)} 1W`, payload.ote.status === "not_connected" ? "No counts until a supported feed exists" : `Latest ${exactTime(payload.ote.latest)}`, "ote"),
+    );
+    return cards;
+  }
+
+  function renderInspector(payload, kind) {
+    const inspector = $("#radarEvidenceInspector");
+    if (!inspector) return;
+    inspector.replaceChildren();
+    const header = node("header", "");
+    const close = node("button", "quiet-button", "Close"); close.type = "button";
+    close.addEventListener("click", () => { inspector.hidden = true; });
+    const list = node("div", "inspector-list");
+    let title = "Evidence"; let rows = [];
+    if (kind === "migration") {
+      title = "Migration contributors"; rows = payload.directional.mrz_migrations.contributors || [];
+      rows.forEach((item) => { const row = node("a", "inspector-row"); row.href = symbolUrl(item.symbol); row.append(node("strong", "", item.symbol), node("span", "", `${item.directions.map(titleCase).join(" · ")} · ${item.event_count} event${item.event_count === 1 ? "" : "s"} · latest ${exactTime(item.latest_at)}`)); list.append(row); });
+    } else if (kind === "pressure") {
+      title = "Current pressure contributors"; rows = (payload.directional.current_pressure.members || []).filter((item) => item.direction !== "neutral");
+      rows.forEach((item) => { const row = node("a", "inspector-row"); row.href = symbolUrl(item.symbol); row.append(node("strong", item.direction, item.symbol), node("span", "", `${titleCase(item.direction)} · evidence ${exactTime(item.evidence?.latest_pressure_observed_at)}`)); list.append(row); });
+    } else if (kind === "near-miss") {
+      title = "Near Miss episodes"; rows = payload.near_miss.episodes || [];
+      rows.forEach((item) => { const row = node("a", "inspector-row"); row.href = symbolUrl(item.symbol); row.append(node("strong", item.active ? "active" : "", item.symbol), node("span", "", `${item.route_owner} · ${item.active ? "Active episode" : `Ended ${exactTime(item.ended_at)}`} · started ${exactTime(item.started_at)}`)); list.append(row); });
+    } else {
+      title = "OTE integration"; list.append(node("div", "inspector-empty", "OTE feed not connected. EDGE 2.0 is ready to present supported EDGE_BOT events without recreating OTE calculations."));
+    }
+    if (!rows.length && kind !== "ote") list.append(node("div", "inspector-empty", "No contributing symbols or events in the selected window."));
+    header.append(node("h3", "", title), close); inspector.append(header, list); inspector.hidden = false;
+    inspector.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+
+  function drawLocationFlow(canvas, history) {
+    if (!canvas || history?.status !== "available") return;
+    const rect = canvas.getBoundingClientRect();
+    const width = Math.max(420, Math.floor(rect.width)); const height = 100; const scale = globalObject.devicePixelRatio || 1;
+    canvas.width = Math.floor(width * scale); canvas.height = Math.floor(height * scale);
+    const ctx = canvas.getContext("2d"); ctx.scale(scale, scale);
+    const points = history.points || []; const left = 42, right = 12, top = 12, bottom = 24; const chartWidth = width - left - right, chartHeight = height - top - bottom;
+    ctx.clearRect(0, 0, width, height); ctx.strokeStyle = "#263747"; ctx.fillStyle = "#8290a1"; ctx.lineWidth = 1; ctx.font = "10px Inter, sans-serif";
+    [0, 25, 50, 75, 100].forEach((tick) => { const y = top + chartHeight - chartHeight * tick / 100; ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(width - right, y); ctx.stroke(); ctx.fillText(`${tick}%`, 4, y + 3); });
+    const layers = [{ key: "lower", fill: "rgba(255,83,92,.78)" }, { key: "neutral", fill: "rgba(130,144,161,.75)" }, { key: "higher", fill: "rgba(20,210,132,.72)" }];
+    const xAt = (index) => left + (points.length <= 1 ? 0 : chartWidth * index / (points.length - 1)); let baseline = points.map(() => 0);
+    layers.forEach((layer) => {
+      const values = points.map((point) => percent(point.aggregate[layer.key], point.aggregate.eligible));
+      ctx.beginPath(); ctx.moveTo(xAt(0), top + chartHeight - chartHeight * baseline[0] / 100);
+      values.forEach((value, index) => ctx.lineTo(xAt(index), top + chartHeight - chartHeight * (baseline[index] + value) / 100));
+      for (let index = values.length - 1; index >= 0; index -= 1) ctx.lineTo(xAt(index), top + chartHeight - chartHeight * baseline[index] / 100);
+      ctx.closePath(); ctx.fillStyle = layer.fill; ctx.fill(); baseline = baseline.map((value, index) => value + values[index]);
+    });
+    ctx.fillStyle = "#8290a1";
+    if (points.length) { ctx.fillText(shortDate(points[0].at), left, height - 5); const end = shortDate(points[points.length - 1].at); ctx.fillText(end, width - right - ctx.measureText(end).width, height - 5); }
+  }
+
+  function renderLocationFlow(payload) {
+    const panel = node("section", "radar-panel location-flow-panel"); const header = node("header", "radar-panel-heading");
+    header.append(node("h3", "", "Group Location Flow"), node("span", "", "Canonical location distribution")); panel.append(header);
+    if (payload.location_history?.status !== "available") { panel.append(node("div", "chart-unavailable", payload.location_history?.message || "Historical location data unavailable.")); return panel; }
+    const legend = node("div", "flow-legend"); [["higher", "Higher"], ["neutral", "Neutral"], ["lower", "Lower"]].forEach(([key, label]) => legend.append(node("span", key, label)));
+    const canvas = node("canvas", "location-flow-canvas"); canvas.setAttribute("aria-label", "Historical group member distribution by structural location");
+    const disclosure = node("details", "bucket-disclosure"); disclosure.append(node("summary", "", "View five canonical bucket definitions")); const list = node("ul", ""); payload.location_history.canonical_buckets.forEach((bucket) => list.append(node("li", "", bucket.label))); disclosure.append(list);
+    panel.append(legend, canvas, disclosure); globalObject.requestAnimationFrame(() => drawLocationFlow(canvas, payload.location_history)); return panel;
+  }
+
+  function timelineEvents(payload) {
+    return {
+      migration: (payload.directional.mrz_migrations.events || []).map((event) => ({ ...event, at: event.occurred_at, label: `${event.symbol} · ${titleCase(event.direction)}`, tone: event.direction })),
+      pressure: (payload.directional.cumulative_lifecycle_pressure_events.events || []).map((event) => ({ ...event, at: event.occurred_at, label: `${event.symbol} · ${titleCase(event.event_direction)}`, tone: event.event_direction })),
+      "near-miss": (payload.near_miss.episodes || []).flatMap((episode) => { const events = [{ ...episode, at: episode.started_at, label: `${episode.symbol} · Started`, tone: "near-miss" }]; if (episode.ended_at) events.push({ ...episode, at: episode.ended_at, label: `${episode.symbol} · Ended`, tone: "near-miss-ended" }); return events; }),
+      ote: [],
+    };
+  }
+
+  function renderTimeline(payload) {
+    const panel = node("section", "radar-panel event-timeline-panel"); const header = node("header", "radar-panel-heading"); header.append(node("h3", "", "Group Event Timeline"), node("span", "", `Last ${state.scope.window}`)); panel.append(header);
+    const lanes = node("div", "timeline-lanes"); const events = timelineEvents(payload); const start = new Date(payload.window.comparison_at).getTime(); const end = new Date(payload.window.as_of).getTime();
+    [["migration", "Migration"], ["pressure", "Pressure"], ["near-miss", "Near Miss"], ["ote", "OTE"]].forEach(([key, label]) => {
+      const lane = node("div", "timeline-lane"); lane.append(node("span", `lane-label ${key}`, label)); const track = node("div", "timeline-track");
+      (events[key] || []).forEach((event) => { const marker = node("button", `timeline-marker ${event.tone || key}`); marker.type = "button"; marker.title = `${event.label} · ${exactTime(event.at)}`; marker.style.left = `${percent(new Date(event.at).getTime() - start, end - start)}%`; marker.setAttribute("aria-label", marker.title); marker.addEventListener("click", () => { const details = $("#timelineEventDetails"); details.textContent = `${event.label} · ${exactTime(event.at)} · ${text(event.event_key || event.episode_key || event.source_event_key, "Canonical event")}`; details.hidden = false; }); track.append(marker); });
+      if (key === "ote" && payload.ote.status === "not_connected") track.append(node("span", "timeline-unavailable", "Feed not connected")); lane.append(track); lanes.append(lane);
+    });
+    const axis = node("div", "timeline-axis"); axis.append(node("span", "", shortDate(payload.window.comparison_at)), node("span", "", shortDate(payload.window.as_of))); const detail = node("div", "timeline-event-details"); detail.id = "timelineEventDetails"; detail.hidden = true;
+    panel.append(lanes, axis, detail); return panel;
+  }
+
+  function statusPill(value, tone) { return node("span", `radar-pill ${tone || ""}`, value); }
+
+  function renderMembers(payload) {
+    const panel = node("section", "radar-panel group-members-panel"); const header = node("header", "radar-panel-heading"); header.append(node("h3", "", `Group Members (${payload.group.member_count})`)); panel.append(header);
+    const wrap = node("div", "radar-table-wrap"); const table = node("table", "member-evidence-table"); const head = node("thead", ""); head.innerHTML = "<tr><th>Symbol</th><th>Route</th><th>Location</th><th>MRZ Status</th><th>Pressure (Current)</th><th>Near Miss</th><th>OTE (1D)</th><th>OTE (1W)</th><th>Latest OTE Alert</th><th aria-label=\"Open\"></th></tr>"; const body = node("tbody", "");
+    (payload.members || []).forEach((member) => {
+      const row = node("tr", ""); const symbol = node("td", "symbol-cell"); symbol.append(detailLink(member.symbol, symbolUrl(member.symbol), "symbol-link")); const route = node("td", ""); route.append(statusPill(text(member.route), String(member.route || "").toLowerCase())); const location = node("td", ""); location.append(statusPill(member.location_label, member.location?.includes("discount") ? "lower" : member.location?.includes("premium") ? "higher" : "neutral")); const mrz = node("td", ""); mrz.append(statusPill(member.mrz_status, member.mrz_status === "Active" ? "active" : "neutral")); const pressure = node("td", ""); pressure.append(statusPill(titleCase(member.pressure), member.pressure)); const near = node("td", "near-miss-cell", member.near_miss ? (member.near_miss.active ? "Active" : "Historical") : "—"); const daily = node("td", "ote-unavailable", member.ote?.status === "not_connected" ? "Not connected" : text(member.ote?.daily)); const weekly = node("td", "ote-unavailable", member.ote?.status === "not_connected" ? "Not connected" : text(member.ote?.weekly)); const latest = node("td", "ote-unavailable", member.ote?.status === "not_connected" ? "OTE feed not connected" : text(member.ote?.latest)); const open = node("td", "radar-open-cell"); open.append(detailLink("Open", symbolUrl(member.symbol), "table-open-link")); row.append(symbol, route, location, mrz, pressure, near, daily, weekly, latest, open); body.append(row);
+    });
+    table.append(head, body); wrap.append(table); panel.append(wrap); return panel;
+  }
+
+  function renderNamedGroup(payload) {
+    const workspace = node("section", "selected-group-workspace"); workspace.id = "selectedGroupWorkspace";
+    const header = node("header", "selected-group-header"); const back = node("button", "back-button", "Back to all groups"); back.type = "button"; back.addEventListener("click", () => { updateUrl({ group: "all" }); state.detail = null; render(); globalObject.scrollTo({ top: 0, behavior: "smooth" }); }); const identity = node("div", "selected-group-identity"); identity.append(node("h2", "", payload.group.name), node("p", "", `${payload.group.member_count} members · Group evidence`)); const edit = node("button", "quiet-button", "Edit Group"); edit.type = "button"; edit.addEventListener("click", () => openEditor(selectedGroup())); header.append(back, identity, edit); workspace.append(header, renderEvidenceCards(payload));
+    const inspector = node("section", "radar-evidence-inspector"); inspector.id = "radarEvidenceInspector"; inspector.hidden = true; workspace.append(inspector); const charts = node("div", "radar-chart-grid"); charts.append(renderLocationFlow(payload), renderTimeline(payload)); workspace.append(charts, renderMembers(payload)); workspace.querySelectorAll("[data-inspect]").forEach((button) => button.addEventListener("click", () => renderInspector(payload, button.dataset.inspect))); return workspace;
+  }
+
+  function renderDetails() {
+    const body = $("#groupEvidenceDetailsBody"); body.replaceChildren(); const payload = state.detail || state.overview; if (!payload) return; const grid = node("dl", "evidence-detail-grid");
+    const values = payload.scope === "named_group" ? [["As of", exactTime(payload.window.as_of)], ["Comparison", exactTime(payload.window.comparison_at)], ["Members", payload.group.member_count], ["Structural comparable", ratio(payload.coverage.structural_comparable, payload.group.member_count)], ["Current locations available", ratio(payload.coverage.structural_current_available, payload.group.member_count)], ["Fresh observations", ratio(payload.coverage.structural_fresh_in_window, payload.coverage.structural_comparable)], ["Active MRZ coverage", ratio(payload.coverage.current_pressure_active_mrz, payload.group.member_count)], ["Latest relevant evidence", exactTime(payload.latest_relevant_evidence_at)], ["Membership updated", exactTime(payload.group.updated_at)]] : [["As of", exactTime(payload.window.as_of)], ["Comparison", exactTime(payload.window.comparison_at)], ["Saved groups", payload.scope_totals.group_count], ["Member slots", payload.scope_totals.member_slots], ["Unique symbols", payload.scope_totals.unique_members], ["Canonical migrations", payload.scope_totals.canonical_migration_events]];
+    values.forEach(([label, value]) => { grid.append(node("dt", "", label), node("dd", "", text(value))); }); const limitations = node("ul", "evidence-limitations"); (payload.limitations || []).forEach((item) => limitations.append(node("li", "", item))); body.append(grid, limitations);
+  }
+
+  function render() {
+    const wrapper = node("div", "radar-content"); wrapper.append(renderOverviewTable()); if (state.detail?.scope === "named_group") wrapper.append(renderNamedGroup(state.detail)); $("#groupEvidenceContent").replaceChildren(wrapper);
+    $("#groupEvidenceGroupCount").textContent = `Groups (${state.overview?.scope_totals?.group_count || 0})`; $("#groupEvidenceAsOf").textContent = exactTime((state.detail || state.overview)?.window?.as_of); $("#groupEvidenceEdit").hidden = true;
     globalObject.document.querySelectorAll("[data-group-window]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.groupWindow === state.scope.window)));
+    const live = $("#groupEvidenceLive"); live.className = "group-evidence-live"; live.hidden = false; live.textContent = state.detail?.status === "partial" || state.overview?.status === "partial" ? "Evidence loaded with one or more unavailable dimensions." : "Canonical group evidence loaded."; renderDetails(); updateManageMenuState();
+  }
+
+  async function loadGroups() {
+    const response = await globalObject.fetch("/api/groups", { cache: "no-store" }); if (!response.ok) throw new Error("Saved groups unavailable."); state.groups = (await response.json()).groups || []; return state.groups;
   }
 
   async function load() {
-    state.controller?.abort();
-    const controller = new AbortController(); state.controller = controller;
-    const requestId = ++state.requestId;
-    const scope = { ...state.scope };
-    setLoading();
-    const endpoint = scope.groupId === "all"
-      ? `/api/group-evidence?window=${encodeURIComponent(scope.window)}`
-      : `/api/group-evidence/${encodeURIComponent(scope.groupId)}?window=${encodeURIComponent(scope.window)}`;
+    state.controller?.abort(); const controller = new AbortController(); state.controller = controller; const requestId = ++state.requestId; const scope = { ...state.scope }; setLoading();
     try {
-      const response = await globalObject.fetch(endpoint, { cache: "no-store", signal: controller.signal });
-      if (!derive.isGroupEvidenceRequestCurrent(
-        { requestId, groupId: scope.groupId, window: scope.window },
-        { requestId: state.requestId, groupId: state.scope.groupId, window: state.scope.window },
-      )) return;
-      if (response.status === 404) {
-        const panel = node("section", "panel group-evidence-error");
-        panel.append(node("h2", "", "Group no longer exists"), node("p", "", "This link points to a deleted saved group."));
-        const back = node("button", "primary-button", "Return to All Groups"); back.type = "button"; back.addEventListener("click", () => { updateUrl({ group: "all", dimension: null, bucket: null, evidence: null }); load(); }); panel.append(back);
-        $("#groupEvidenceContent").replaceChildren(panel); $("#groupEvidenceLive").textContent = "Group no longer exists."; return;
-      }
-      if (!response.ok) throw new Error(response.status === 422 ? "Unsupported window." : "Group evidence service unavailable.");
-      const payload = await response.json();
-      if (!derive.isGroupEvidenceRequestCurrent(
-        { requestId, groupId: scope.groupId, window: scope.window },
-        { requestId: state.requestId, groupId: state.scope.groupId, window: state.scope.window },
-      )) return;
-      state.lastSuccessful.set(`${scope.groupId}:${scope.window}`, payload);
-      render(payload);
+      const requests = [globalObject.fetch(`/api/group-evidence?window=${encodeURIComponent(scope.window)}`, { cache: "no-store", signal: controller.signal }), loadGroups()];
+      if (scope.groupId !== "all") requests.push(globalObject.fetch(`/api/group-evidence/${encodeURIComponent(scope.groupId)}?window=${encodeURIComponent(scope.window)}`, { cache: "no-store", signal: controller.signal }));
+      const results = await Promise.all(requests); if (requestId !== state.requestId || scope.window !== state.scope.window || scope.groupId !== state.scope.groupId) return;
+      const overviewResponse = results[0]; if (!overviewResponse.ok) throw new Error("Group evidence service unavailable."); state.overview = await overviewResponse.json();
+      if (scope.groupId !== "all") { const detailResponse = results[2]; if (detailResponse.status === 404) { updateUrl({ group: "all" }, { replace: true }); state.detail = null; } else if (!detailResponse.ok) throw new Error("Selected group evidence unavailable."); else state.detail = await detailResponse.json(); } else state.detail = null;
+      state.lastSuccessful.set(`${scope.groupId}:${scope.window}`, { overview: state.overview, detail: state.detail }); render();
     } catch (error) {
-      if (error.name === "AbortError") return;
-      const previous = state.lastSuccessful.get(`${scope.groupId}:${scope.window}`);
-      if (previous) {
-        render(previous);
-        $("#groupEvidenceLive").textContent = `Showing previously loaded evidence as of ${exactTime(previous.window.as_of)}. Refresh failed.`;
-        $("#groupEvidenceLive").classList.add("error");
-      } else setError(error.message || "Group evidence service unavailable.");
+      if (error.name === "AbortError") return; const previous = state.lastSuccessful.get(`${scope.groupId}:${scope.window}`); if (previous) { state.overview = previous.overview; state.detail = previous.detail; render(); $("#groupEvidenceLive").textContent = "Showing the last successfully loaded snapshot."; $("#groupEvidenceLive").classList.add("error"); } else setError(error.message || "Group evidence service unavailable.");
     }
   }
 
   async function loadRecentEvents() {
-    const body = $("#recentTrackedEventsBody");
-    const toggle = $("#recentTrackedEventsToggle");
-    const expanded = body.hidden;
-    body.hidden = !expanded; toggle.setAttribute("aria-expanded", String(expanded)); toggle.textContent = expanded ? "Hide" : "Show";
-    if (!expanded || state.recentLoaded) return;
-    $("#recentTrackedEventsStatus").textContent = "Loading recent tracked symbol events…";
+    const body = $("#recentTrackedEventsBody"); const toggle = $("#recentTrackedEventsToggle"); const expanded = body.hidden; body.hidden = !expanded; toggle.setAttribute("aria-expanded", String(expanded)); toggle.textContent = expanded ? "Hide" : "Show"; if (!expanded || state.recentLoaded) return; $("#recentTrackedEventsStatus").textContent = "Loading recent tracked symbol events…";
     try {
-      let members = state.payload?.group?.members || null;
-      if (!members) {
-        const groupsResponse = await globalObject.fetch("/api/groups", { cache: "no-store" });
-        if (!groupsResponse.ok) throw new Error("Tracked membership unavailable.");
-        const groups = (await groupsResponse.json()).groups || [];
-        members = [...new Set(groups.flatMap((group) => group.members || []))];
-      }
-      const response = await globalObject.fetch("/api/mrz/events?limit=500", { cache: "no-store" });
-      if (!response.ok) throw new Error("Recent event history unavailable.");
-      const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-      const memberSet = new Set(members);
-      const events = ((await response.json()).events || []).filter((event) => memberSet.has(event.symbol) && new Date(event.occurred_at).getTime() > cutoff);
-      const list = node("ul", "recent-tracked-event-list");
-      events.forEach((event) => {
-        const row = node("li", "");
-        const copy = node("div", ""); copy.append(node("strong", "", `${event.symbol} · ${event.event_name || event.event_type}`), node("p", "", `${exactTime(event.occurred_at)} · ${event.body || "Canonical event"}`));
-        row.append(copy, detailLink("Open symbol", symbolUrl(event.symbol, { event: event.source_event_key || event.event_id || "" })));
-        list.append(row);
-      });
-      if (!events.length) list.append(node("li", "evidence-empty", "No tracked symbol event in the last 24H."));
-      $("#recentTrackedEventsList").replaceChildren(list);
-      $("#recentTrackedEventsStatus").textContent = `${events.length} raw tracked symbol events loaded.`;
-      state.recentLoaded = true;
-    } catch (error) {
-      $("#recentTrackedEventsStatus").textContent = `${error.message} Watchlists remains available.`;
-      $("#recentTrackedEventsStatus").classList.add("error");
-    }
+      const members = state.detail?.group?.members || [...new Set(state.groups.flatMap((group) => group.members || []))]; const response = await globalObject.fetch("/api/mrz/events?limit=500", { cache: "no-store" }); if (!response.ok) throw new Error("Recent event history unavailable."); const cutoff = Date.now() - 24 * 60 * 60 * 1000; const memberSet = new Set(members); const events = ((await response.json()).events || []).filter((event) => memberSet.has(event.symbol) && new Date(event.occurred_at).getTime() > cutoff); const list = node("ul", "recent-tracked-event-list"); events.forEach((event) => { const row = node("li", ""); const copy = node("div", ""); copy.append(node("strong", "", `${event.symbol} · ${event.event_name || event.event_type}`), node("p", "", `${exactTime(event.occurred_at)} · ${event.body || "Canonical event"}`)); row.append(copy, detailLink("Open symbol", symbolUrl(event.symbol))); list.append(row); }); if (!events.length) list.append(node("li", "evidence-empty", "No tracked symbol event in the last 24H.")); $("#recentTrackedEventsList").replaceChildren(list); $("#recentTrackedEventsStatus").textContent = `${events.length} raw tracked symbol events loaded.`; state.recentLoaded = true;
+    } catch (error) { $("#recentTrackedEventsStatus").textContent = `${error.message} Group Opportunity remains available.`; $("#recentTrackedEventsStatus").classList.add("error"); }
+  }
+
+  function closeMenu() { $("#groupEvidenceManageMenu").hidden = true; $("#groupEvidenceManage").setAttribute("aria-expanded", "false"); }
+
+  function updateManageMenuState() {
+    const groupSelected = Boolean(selectedGroup()); ["edit", "duplicate", "delete"].forEach((action) => { const button = $(`[data-manage-action="${action}"]`); if (button) button.disabled = !groupSelected; });
+  }
+
+  async function ensureSymbols() {
+    if (state.allSymbols.length) return state.allSymbols; const response = await globalObject.fetch("/api/symbols", { cache: "no-store" }); if (!response.ok) throw new Error("Canonical symbols unavailable."); state.allSymbols = (await response.json()).symbols || []; return state.allSymbols;
+  }
+
+  function renderEditorMembers() {
+    const chips = $("#groupEvidenceSelectedChips"); chips.replaceChildren(); [...state.editorMembers].sort().forEach((symbol) => { const chip = node("button", "member-chip", `${symbol} ×`); chip.type = "button"; chip.setAttribute("aria-label", `Remove ${symbol}`); chip.addEventListener("click", () => { state.editorMembers.delete(symbol); renderEditorMembers(); renderSymbolChoices(); }); chips.append(chip); }); $("#groupEvidenceChoicesStatus").textContent = `${state.editorMembers.size} member${state.editorMembers.size === 1 ? "" : "s"} selected`;
+  }
+
+  function renderSymbolChoices() {
+    const query = $("#groupEvidenceSymbolSearch").value.trim().toLowerCase(); const results = $("#groupEvidenceSymbolChoices"); results.replaceChildren(); const matches = state.allSymbols.filter((item) => !state.editorMembers.has(item.symbol) && (!query || item.symbol.toLowerCase().includes(query))).slice(0, 20); matches.forEach((item) => { const button = node("button", "symbol-result", item.symbol); button.type = "button"; button.addEventListener("click", () => { state.editorMembers.add(item.symbol); $("#groupEvidenceSymbolSearch").value = ""; renderEditorMembers(); renderSymbolChoices(); }); results.append(button); }); if (!matches.length) results.append(node("p", "evidence-empty", query ? "No matching canonical symbols." : "All matching symbols are selected."));
   }
 
   async function openEditor(group = null) {
-    state.editingGroup = group;
-    $("#groupEvidenceDialogTitle").textContent = group ? `Edit ${group.name}` : "New group";
-    $("#groupEvidenceName").value = group?.name || "";
-    $("#groupEvidenceDelete").hidden = !group;
-    $("#groupEvidenceFormError").hidden = true;
-    $("#groupEvidenceSymbolChoices").replaceChildren();
-    $("#groupEvidenceChoicesStatus").textContent = "Loading symbols…";
-    $("#groupEvidenceDialog").showModal();
-    try {
-      const response = await globalObject.fetch("/api/symbols", { cache: "no-store" });
-      if (!response.ok) throw new Error("Symbols unavailable.");
-      const symbols = (await response.json()).symbols || [];
-      const selected = new Set(group?.members || []);
-      symbols.forEach((symbolState) => {
-        const label = node("label", ""); const input = node("input", ""); input.type = "checkbox"; input.value = symbolState.symbol; input.checked = selected.has(symbolState.symbol); label.append(input, globalObject.document.createTextNode(symbolState.symbol)); $("#groupEvidenceSymbolChoices").append(label);
-      });
-      $("#groupEvidenceChoicesStatus").textContent = `${symbols.length} canonical symbols available.`;
-    } catch (error) {
-      $("#groupEvidenceChoicesStatus").textContent = error.message;
-    }
+    closeMenu(); if ($("#groupEvidenceManageDialog").open) $("#groupEvidenceManageDialog").close(); state.editingGroup = group; state.editorMembers = new Set(group?.members || []); $("#groupEvidenceDialogTitle").textContent = group ? `Edit ${group.name}` : "Create Group"; $("#groupEvidenceName").value = group?.name || ""; $("#groupEvidenceDelete").hidden = !group; $("#groupEvidenceSave").textContent = group ? "Save Changes" : "Create Group"; $("#groupEvidenceFormError").hidden = true; $("#groupEvidenceSymbolSearch").value = ""; $("#groupEvidenceDialog").showModal();
+    try { await ensureSymbols(); renderEditorMembers(); renderSymbolChoices(); } catch (error) { $("#groupEvidenceChoicesStatus").textContent = error.message; }
   }
 
   async function saveGroup(event) {
-    event.preventDefault();
-    if (event.submitter?.value === "cancel") { $("#groupEvidenceDialog").close(); return; }
-    const members = [...$("#groupEvidenceSymbolChoices").querySelectorAll("input:checked")].map((input) => input.value);
-    const payload = { name: $("#groupEvidenceName").value.trim(), members };
-    if (!payload.name || !members.length) { $("#groupEvidenceFormError").textContent = "Add a name and at least one symbol."; $("#groupEvidenceFormError").hidden = false; return; }
-    const editing = Boolean(state.editingGroup);
-    const response = await globalObject.fetch(editing ? `/api/groups/${state.editingGroup.id}` : "/api/groups", { method: editing ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    if (!response.ok) { const body = await response.json().catch(() => ({})); $("#groupEvidenceFormError").textContent = body.detail || "Unable to save group."; $("#groupEvidenceFormError").hidden = false; return; }
-    const saved = await response.json(); $("#groupEvidenceDialog").close(); updateUrl({ group: saved.id, dimension: null, bucket: null, evidence: null }); state.recentLoaded = false; await load();
+    event.preventDefault(); if (event.submitter?.value === "cancel") { $("#groupEvidenceDialog").close(); return; } const payload = { name: $("#groupEvidenceName").value.trim(), members: [...state.editorMembers] }; if (!payload.name || !payload.members.length) { $("#groupEvidenceFormError").textContent = "Add a group name and at least one member."; $("#groupEvidenceFormError").hidden = false; return; } const url = state.editingGroup ? `/api/groups/${state.editingGroup.id}` : "/api/groups"; const response = await globalObject.fetch(url, { method: state.editingGroup ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); if (!response.ok) { const body = await response.json().catch(() => ({})); $("#groupEvidenceFormError").textContent = body.detail || "Unable to save group."; $("#groupEvidenceFormError").hidden = false; return; } const saved = await response.json(); $("#groupEvidenceDialog").close(); updateUrl({ group: saved.id }); state.recentLoaded = false; await load();
   }
 
-  async function deleteGroup() {
-    if (!state.editingGroup || !globalObject.confirm(`Delete ${state.editingGroup.name}? Canonical EDGE observations and alerts are unaffected.`)) return;
-    const response = await globalObject.fetch(`/api/groups/${state.editingGroup.id}`, { method: "DELETE" });
-    if (!response.ok) { $("#groupEvidenceFormError").textContent = "Unable to delete group."; $("#groupEvidenceFormError").hidden = false; return; }
-    $("#groupEvidenceDialog").close(); updateUrl({ group: "all", dimension: null, bucket: null, evidence: null }); state.recentLoaded = false; await load();
+  async function deleteGroup(group = state.editingGroup || selectedGroup()) {
+    if (!group) return; if (!globalObject.confirm(`Delete “${group.name}”? Canonical MRZ, pressure, Near Miss and event evidence will not be changed.`)) return; const response = await globalObject.fetch(`/api/groups/${group.id}`, { method: "DELETE" }); if (!response.ok) throw new Error("Unable to delete group."); if ($("#groupEvidenceDialog").open) $("#groupEvidenceDialog").close(); if ($("#groupEvidenceManageDialog").open) $("#groupEvidenceManageDialog").close(); updateUrl({ group: "all" }); state.detail = null; state.recentLoaded = false; await load();
   }
 
-  function bind() {
+  async function duplicateGroup(group = selectedGroup()) {
+    if (!group) return; const names = new Set(state.groups.map((item) => item.name.toLowerCase())); let name = `${group.name} Copy`; let index = 2; while (names.has(name.toLowerCase())) { name = `${group.name} Copy ${index}`; index += 1; } const response = await globalObject.fetch("/api/groups", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, members: group.members }) }); if (!response.ok) throw new Error("Unable to duplicate group."); const saved = await response.json(); updateUrl({ group: saved.id }); await load();
+  }
+
+  function renderManageList() {
+    const list = $("#groupEvidenceManageList"); list.replaceChildren(); state.groups.forEach((group) => { const row = node("article", "manage-group-row"); const identity = node("div", ""); identity.append(node("strong", "", group.name), node("span", "", `${group.members.length} members`)); const actions = node("div", "manage-group-actions"); const edit = node("button", "quiet-button", "Edit"); edit.type = "button"; edit.addEventListener("click", () => openEditor(group)); const remove = node("button", "danger-button", "Delete"); remove.type = "button"; remove.addEventListener("click", () => deleteGroup(group).catch((error) => setError(error.message))); actions.append(edit, remove); row.append(identity, actions); list.append(row); }); if (!state.groups.length) list.append(node("p", "evidence-empty", "No saved groups."));
+  }
+
+  function openManageAll() { closeMenu(); renderManageList(); $("#groupEvidenceManageDialog").showModal(); }
+
+  function syncAlertBadge() {
+    const source = $("#notificationUnreadBadge"); const target = $("#radarUnreadBadge"); if (!source || !target) return; target.textContent = source.textContent; target.hidden = source.hidden;
+  }
+
+  function bindEvents() {
     globalObject.document.querySelectorAll("[data-group-window]").forEach((button) => button.addEventListener("click", () => { updateUrl({ window: button.dataset.groupWindow }); state.recentLoaded = false; load(); }));
-    $("#groupEvidenceContent").addEventListener("click", (event) => {
-      const groupButton = event.target.closest("[data-open-group]");
-      if (groupButton) { updateUrl({ group: groupButton.dataset.openGroup, dimension: null, bucket: null, evidence: null }); state.recentLoaded = false; load(); return; }
-      const selection = event.target.closest("[data-selection]");
-      if (selection && state.payload?.scope === "all_groups") {
-        const values = JSON.parse(selection.dataset.selection); updateUrl({ group: values.group, dimension: values.dimension, bucket: values.bucket || null, evidence: values.evidence || null }); state.recentLoaded = false; load();
-      }
-    });
-    $("#recentTrackedEventsToggle").addEventListener("click", loadRecentEvents);
-    $("#groupEvidenceNew").addEventListener("click", () => openEditor());
-    $("#groupEvidenceEdit").addEventListener("click", () => openEditor(state.payload?.group || null));
-    $("#groupEvidenceForm").addEventListener("submit", (event) => saveGroup(event).catch((error) => setError(error.message)));
-    $("#groupEvidenceDelete").addEventListener("click", () => deleteGroup().catch((error) => setError(error.message)));
-    globalObject.addEventListener("popstate", () => { state.scope = derive.parseGroupEvidenceState(globalObject.location.search); state.recentLoaded = false; load().then(() => $("#groupEvidenceTitle").focus()); });
+    $("#groupEvidenceSearch").addEventListener("input", (event) => { state.search = event.target.value.trim().toLowerCase(); render(); });
+    $("#groupEvidenceNew").addEventListener("click", () => openEditor()); $("#groupEvidenceEdit").addEventListener("click", () => openEditor(selectedGroup()));
+    $("#groupEvidenceManage").addEventListener("click", () => { const menu = $("#groupEvidenceManageMenu"); menu.hidden = !menu.hidden; $("#groupEvidenceManage").setAttribute("aria-expanded", String(!menu.hidden)); });
+    $("#groupEvidenceManageMenu").addEventListener("click", (event) => { const action = event.target.closest("[data-manage-action]")?.dataset.manageAction; if (!action) return; if (action === "edit") openEditor(selectedGroup()); else if (action === "duplicate") duplicateGroup().catch((error) => setError(error.message)); else if (action === "delete") deleteGroup().catch((error) => setError(error.message)); else if (action === "all") openManageAll(); });
+    globalObject.document.addEventListener("click", (event) => { if (!event.target.closest(".manage-menu-wrap")) closeMenu(); });
+    $("#groupEvidenceForm").addEventListener("submit", (event) => saveGroup(event).catch((error) => { $("#groupEvidenceFormError").textContent = error.message; $("#groupEvidenceFormError").hidden = false; })); $("#groupEvidenceDelete").addEventListener("click", () => deleteGroup().catch((error) => setError(error.message))); $("#groupEvidenceSymbolSearch").addEventListener("input", renderSymbolChoices);
+    $("#groupEvidenceDialogClose").addEventListener("click", () => $("#groupEvidenceDialog").close()); $("#groupEvidenceCancel").addEventListener("click", () => $("#groupEvidenceDialog").close());
+    $("#groupEvidenceManageClose").addEventListener("click", () => $("#groupEvidenceManageDialog").close()); $("#groupEvidenceManageDone").addEventListener("click", () => $("#groupEvidenceManageDialog").close()); $("#groupEvidenceManageNew").addEventListener("click", () => openEditor());
+    $("#recentTrackedEventsToggle").addEventListener("click", () => loadRecentEvents()); $("#radarAlertsButton").addEventListener("click", () => $("#notificationInboxButton")?.click());
+    globalObject.addEventListener("popstate", () => { state.scope = derive.parseGroupEvidenceState(globalObject.location.search); state.recentLoaded = false; load(); });
+    const badge = $("#notificationUnreadBadge"); if (badge) new MutationObserver(syncAlertBadge).observe(badge, { childList: true, attributes: true, subtree: true }); syncAlertBadge();
   }
 
-  async function mount() {
-    if (state.scope.normalized) updateUrl({ group: state.scope.groupId, window: state.scope.window }, { replace: true });
-    bind();
-    await load();
-    if (state.scope.openRecentEvents) loadRecentEvents();
+  function mount() {
+    if (!globalObject.document?.querySelector('[data-route-panel="watchlists"]')) return Promise.resolve();
+    if (state.mounted) return Promise.resolve();
+    state.mounted = true;
+    bindEvents();
+    return load();
   }
 
-  const exported = { mount, state };
-  globalObject.edgeGroupEvidence = exported;
-  if (typeof module === "object" && module.exports) module.exports = exported;
-}(globalThis));
+  globalObject.edgeGroupEvidence = { mount };
+})(window);

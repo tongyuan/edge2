@@ -2676,6 +2676,8 @@ class EdgeRepository:
                         "observations": (),
                         "migration_events": (),
                         "pressure_events": (),
+                        "location_observations": (),
+                        "near_miss_episodes": (),
                     }
 
                 cursor.execute(
@@ -2728,6 +2730,26 @@ class EdgeRepository:
                     (symbols, as_of, comparison_at),
                 )
                 endpoint_rows = tuple(cursor.fetchall())
+
+                cursor.execute(
+                    """
+                    SELECT
+                        id, event_id, schema_version, symbol, route,
+                        observation_type, observation_price,
+                        observation_price_tick, ipda_20w_high, ipda_20w_low,
+                        observed_at, received_at
+                    FROM observations
+                    WHERE schema_version = '4.3'
+                      AND symbol = ANY(%s)
+                      AND observed_at > %s
+                      AND observed_at <= %s
+                    ORDER BY observed_at ASC, received_at ASC, id ASC
+                    """,
+                    (symbols, comparison_at, as_of),
+                )
+                location_observations = tuple(
+                    observation_from_row(row) for row in cursor.fetchall()
+                )
 
                 cursor.execute(
                     """
@@ -2819,6 +2841,27 @@ class EdgeRepository:
                     (symbols, comparison_at, as_of),
                 )
                 pressure_events = tuple(cursor.fetchall())
+                cursor.execute(
+                    """
+                    SELECT
+                        id, episode_key, symbol, route_owner, started_at,
+                        ended_at, ended_reason, canonical_candidate_identity,
+                        canonical_candidate_event_id,
+                        canonical_structural_location,
+                        canonical_shortfall_percentage_points,
+                        canonical_supporting_observation_count,
+                        canonical_candidate_timestamp,
+                        canonical_snapshot_reliable,
+                        canonical_updated_at
+                    FROM current_production_near_miss_episodes
+                    WHERE symbol = ANY(%s)
+                      AND started_at <= %s
+                      AND (ended_at IS NULL OR ended_at > %s)
+                    ORDER BY started_at DESC, id DESC
+                    """,
+                    (symbols, as_of, comparison_at),
+                )
+                near_miss_episodes = tuple(cursor.fetchall())
                 return {
                     "window": window,
                     "as_of": as_of,
@@ -2829,6 +2872,8 @@ class EdgeRepository:
                     "observations": observations,
                     "migration_events": migration_events,
                     "pressure_events": pressure_events,
+                    "location_observations": location_observations,
+                    "near_miss_episodes": near_miss_episodes,
                 }
         finally:
             connection.close()

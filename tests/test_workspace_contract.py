@@ -18,7 +18,7 @@ PEER_PRESSURE = (ROOT / "app/peer_pressure.py").read_text(encoding="utf-8")
 class WorkspaceContractTests(unittest.TestCase):
     def test_persistent_navigation_and_routes(self) -> None:
         for route, label in (
-            ("/mrz/watchlists", "Watchlists"),
+            ("/mrz/watchlists", "Group Opportunity"),
             ("/mrz/symbols", "Symbols"),
             ("/mrz/alert-settings", "Alert Settings"),
             ("/mrz/location-distribution", "Location Distribution"),
@@ -39,41 +39,34 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertNotIn('name: "pressure"', trading)
         self.assertNotIn('label: "Pressure"', trading)
 
-    def test_watchlist_board_exposes_current_authority_fields(self) -> None:
+    def test_group_member_board_exposes_current_authority_and_ote_fields(self) -> None:
         for label in (
-            "MRZ status",
-            "Authority",
+            "MRZ Status",
             "Route",
-            "Activated",
-            "Structural location",
-            "Current pressure",
-            "Latest selected-window event",
+            "Location",
+            "Pressure (Current)",
+            "Near Miss",
+            "OTE (1D)",
+            "OTE (1W)",
+            "Latest OTE Alert",
         ):
             self.assertIn(label, GROUP_JS)
-        self.assertIn("Symbol A–Z", GROUP_JS)
-        self.assertIn("Open symbol", GROUP_JS)
+        self.assertIn("symbolUrl(member.symbol)", GROUP_JS)
 
-    def test_watchlist_board_exposes_persistent_responsive_sorting(self) -> None:
-        for value, label in (
-            ("name", "Group name A–Z"),
-            ("latest", "Latest evidence time"),
-            ("comparable", "Structural comparable ratio"),
-            ("fresh", "Fresh-observation ratio"),
-            ("migration_contributors", "Unique migration contributors"),
-            ("migration_events", "Raw migration event count"),
-        ):
-            self.assertIn(f'["{value}", "{label}"]', GROUP_JS)
-        self.assertIn("derive.sortGroupEvidenceRows", GROUP_JS)
-        self.assertNotIn("Attention first", GROUP_JS)
+    def test_group_overview_exposes_search_selection_and_responsive_table(self) -> None:
+        self.assertIn('id="groupEvidenceSearch"', HTML)
+        self.assertIn("group.name.toLowerCase().includes(state.search)", GROUP_JS)
+        self.assertIn("row.classList.add(\"selected\")", GROUP_JS)
+        self.assertIn("openGroup(group.id)", GROUP_JS)
         mobile_rules = CSS.split("@media (max-width: 820px)", 1)[1]
-        self.assertIn(".group-evidence-card", mobile_rules)
+        self.assertIn(".radar-chart-grid", mobile_rules)
         self.assertNotIn(".group-evidence-route { display: none; }", mobile_rules)
 
     def test_attention_and_events_have_distinct_scopes(self) -> None:
         self.assertIn("Recent tracked symbol events", HTML)
         self.assertIn("Notification Event History", SHELL)
         self.assertIn("/api/mrz/events?limit=500", GROUP_JS)
-        self.assertIn("Watchlists remains available", GROUP_JS)
+        self.assertIn("Group Opportunity remains available", GROUP_JS)
 
     def test_notification_controls_cover_scope_and_all_event_types(self) -> None:
         self.assertIn('href: "/mrz/alert-settings"', SHELL)
@@ -279,7 +272,7 @@ class WorkspaceContractTests(unittest.TestCase):
         watchlists = HTML.split('data-route-panel="watchlists"', 1)[1].split(
             'data-route-panel="attention"', 1
         )[0]
-        self.assertIn("WATCHLISTS", watchlists)
+        self.assertIn("Group Opportunity Radar", watchlists)
         self.assertIn("Recent tracked symbol events", watchlists)
         self.assertNotIn('data-route-panel="pressure"', HTML)
         for target in (
@@ -292,10 +285,11 @@ class WorkspaceContractTests(unittest.TestCase):
         for window in ("24H", "5D", "20D"):
             self.assertIn(f'data-group-window="{window}"', watchlists)
         self.assertIn("/api/group-evidence", GROUP_JS)
-        self.assertIn("Current pressure", GROUP_JS)
-        self.assertIn("Cumulative lifecycle pressure event", GROUP_JS)
+        self.assertIn("Pressure (Current)", GROUP_JS)
+        self.assertIn("Group Event Timeline", GROUP_JS)
+        self.assertIn("OTE feed not connected", GROUP_JS)
         mobile_rules = CSS[CSS.index("@media (max-width: 560px)") :]
-        for selector in (".evidence-count-grid", ".evidence-facts", ".evidence-contributor-heading"):
+        for selector in (".radar-evidence-cards", ".opportunity-sheet", ".manage-group-row"):
             self.assertIn(selector, mobile_rules)
 
     def test_location_bucket_flow_exposes_accessible_symbol_drilldown(self) -> None:

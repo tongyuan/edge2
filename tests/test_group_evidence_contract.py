@@ -50,7 +50,7 @@ class GroupEvidenceContractTests(unittest.TestCase):
         self.assertIn("/mrz/watchlists?group=all&window=24H", API)
         self.assertNotIn('name: "overview"', SHELL)
         self.assertNotIn('name: "attention"', SHELL)
-        self.assertIn('label: "Watchlists"', SHELL)
+        self.assertIn('label: "Group Opportunity"', SHELL)
         self.assertIn('label: "Notification Event History"', SHELL)
 
     def test_initial_watchlist_load_is_decoupled_from_global_sources(self) -> None:
@@ -65,7 +65,7 @@ class GroupEvidenceContractTests(unittest.TestCase):
         self.assertNotIn("renderWatchlists", render_all)
 
     def test_stage_a_assets_share_a_fresh_cache_version(self) -> None:
-        version = "taxonomy-ranking-20261109"
+        version = "group-radar-20261109"
         self.assertIn(f'/static/workspace.css?v={version}', HTML)
         self.assertIn(f'/static/group-evidence.js?v={version}', HTML)
         self.assertIn(f'/static/workspace.js?v={version}', HTML)
@@ -74,7 +74,7 @@ class GroupEvidenceContractTests(unittest.TestCase):
         for key in ("group", "window", "dimension", "bucket", "evidence"):
             self.assertIn(key, JS)
         self.assertIn("AbortController", JS)
-        self.assertIn("isGroupEvidenceRequestCurrent", JS)
+        self.assertIn("requestId !== state.requestId", JS)
         self.assertIn('aria-live="polite"', HTML)
         self.assertIn('aria-pressed="true"', HTML)
         self.assertIn("aria-label", JS)
@@ -82,8 +82,35 @@ class GroupEvidenceContractTests(unittest.TestCase):
         mobile = CSS[CSS.index("@media (max-width: 560px)") :]
         self.assertNotIn(".event-row .event-open { display: none; }", mobile)
         self.assertIn(".recent-tracked-event-list .quiet-button", mobile)
-        self.assertIn(".named-group-evidence { display: grid; min-width: 0", CSS)
-        self.assertIn(".named-evidence-section .table-scroll { min-width: 0; max-width: 100%; }", CSS)
+        self.assertIn(".selected-group-workspace { display: grid", CSS)
+        self.assertIn(".radar-table-wrap { width: 100%; overflow-x: auto; }", CSS)
+
+    def test_opportunity_radar_contract_exposes_required_evidence_and_management(self) -> None:
+        for copy in (
+            "Group Opportunity Radar",
+            "Migration",
+            "Pressure",
+            "Near Miss",
+            "OTE (from EDGE_BOT)",
+            "Group Location Flow",
+            "Group Event Timeline",
+            "Group Members",
+            "OTE feed not connected",
+        ):
+            self.assertIn(copy, HTML + JS)
+        for action in ("edit", "duplicate", "delete", "all"):
+            self.assertIn(f'data-manage-action="{action}"', HTML)
+        self.assertIn("globalObject.confirm", JS)
+        self.assertIn("openManageAll", JS)
+        self.assertIn("duplicateGroup", JS)
+
+    def test_repository_snapshot_includes_near_miss_and_location_history_inputs(self) -> None:
+        method = REPOSITORY.split("def group_evidence_inputs", 1)[1].split("def saved_groups", 1)[0]
+        self.assertIn("current_production_near_miss_episodes", method)
+        self.assertIn('"near_miss_episodes"', method)
+        self.assertIn('"location_observations"', method)
+        self.assertIn('"status": "not_connected"', AGGREGATOR)
+        self.assertIn('"source": "EDGE_BOT"', AGGREGATOR)
 
     def test_no_schema_or_runtime_dependency_was_added(self) -> None:
         migration_names = {path.name for path in (ROOT / "migrations").glob("*.sql")}

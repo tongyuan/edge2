@@ -32,6 +32,14 @@ LIMITATIONS = [
     "Current pressure is a present snapshot, not a windowed historical series.",
     "No staleness, materiality, diagnosis, lifecycle, or resolution rule is applied.",
 ]
+OTE_NOT_CONNECTED = {
+    "status": "not_connected",
+    "message": "OTE feed not connected",
+    "source": "EDGE_BOT",
+    "daily": None,
+    "weekly": None,
+    "latest": None,
+}
 
 
 def _iso(value: datetime | str | None) -> str | None:
@@ -56,6 +64,141 @@ def _location(row: Mapping[str, Any] | None, prefix: str) -> str | None:
         return None
     classified = classify_ipda_location(Decimal(price), Decimal(high), Decimal(low))
     return classified.value if classified and classified.value in LOCATION_KEYS else None
+
+
+def _observation_location(observation: Observation) -> str | None:
+    classified = classify_ipda_location(
+        observation.observation_price,
+        observation.ipda_20w_high,
+        observation.ipda_20w_low,
+    )
+    return classified.value if classified and classified.value in LOCATION_KEYS else None
+
+
+def _distribution_point(
+    at: datetime,
+    members: Sequence[str],
+    locations: Mapping[str, str | None],
+    source_observation_ids: Sequence[str] = (),
+) -> dict[str, Any]:
+    buckets = {key: 0 for key in LOCATION_KEYS}
+    for symbol in members:
+        location = locations.get(symbol)
+        if location in buckets:
+            buckets[location] += 1
+    eligible = sum(buckets.values())
+    return {
+        "at": _iso(at),
+        "buckets": buckets,
+        "aggregate": {
+            "lower": buckets["deep_discount"] + buckets["shallow_discount"],
+            "neutral": buckets["at_eqm"],
+            "higher": buckets["shallow_premium"] + buckets["deep_premium"],
+            "eligible": eligible,
+            "unavailable": len(members) - eligible,
+        },
+        "source_observation_ids": list(source_observation_ids),
+    }
+
+
+def _location_history(
+    members: Sequence[str],
+    endpoint_by_symbol: Mapping[str, Mapping[str, Any]],
+    observations: Sequence[Observation],
+    comparison_at: datetime,
+    as_of: datetime,
+) -> dict[str, Any]:
+    member_set = set(members)
+    locations = {
+        symbol: _location(endpoint_by_symbol.get(symbol), "comparison")
+        for symbol in members
+    }
+    points = [_distribution_point(comparison_at, members, locations)]
+    grouped: dict[datetime, list[Observation]] = defaultdict(list)
+    for observation in observations:
+        if observation.symbol in member_set and comparison_at < observation.observed_at <= as_of:
+            grouped[observation.observed_at].append(observation)
+    for observed_at in sorted(grouped):
+        source_ids: list[str] = []
+        for observation in grouped[observed_at]:
+            locations[observation.symbol] = _observation_location(observation)
+            source_ids.append(observation.event_id)
+        points.append(_distribution_point(observed_at, members, locations, source_ids))
+    for symbol in members:
+        current = _location(endpoint_by_symbol.get(symbol), "current")
+        if current is not None:
+            locations[symbol] = current
+    if points[-1]["at"] != _iso(as_of):
+        points.append(_distribution_point(as_of, members, locations))
+    if len(points) > 60:
+        keep = {0, len(points) - 1}
+        stride = (len(points) - 1) / 58
+        keep.update(round(index * stride) for index in range(1, 59))
+        points = [point for index, point in enumerate(points) if index in keep]
+    if not any(point["aggregate"]["eligible"] for point in points):
+        return {
+            "status": "unavailable",
+            "reason": "insufficient_historical_location_data",
+            "message": "Historical location data unavailable for current members.",
+        }
+    return {
+        "status": "available",
+        "method": "last_known_canonical_observation_reconstruction",
+        "points": points,
+        "canonical_buckets": [
+            {"key": key, "label": LOCATION_LABELS[key]} for key in LOCATION_KEYS
+        ],
+    }
+
+
+def _near_misses(
+    members: Sequence[str],
+    rows: Sequence[Mapping[str, Any]],
+    comparison_at: datetime,
+    as_of: datetime,
+) -> dict[str, Any]:
+    member_set = set(members)
+    episodes = []
+    for row in rows:
+        symbol = str(row["symbol"])
+        if symbol not in member_set:
+            continue
+        started_at = row["started_at"]
+        ended_at = row.get("ended_at")
+        active = ended_at is None or ended_at > as_of
+        episodes.append({
+            "id": int(row["id"]),
+            "episode_key": str(row["episode_key"]),
+            "symbol": symbol,
+            "route_owner": str(row["route_owner"]),
+            "started_at": _iso(started_at),
+            "ended_at": _iso(ended_at),
+            "ended_reason": row.get("ended_reason"),
+            "active": active,
+            "started_in_window": started_at > comparison_at,
+            "candidate_event_id": row.get("canonical_candidate_event_id"),
+            "candidate_location": row.get("canonical_structural_location"),
+            "shortfall_percentage_points": _decimal_text(
+                row.get("canonical_shortfall_percentage_points")
+            ),
+            "supporting_observation_count": row.get(
+                "canonical_supporting_observation_count"
+            ),
+            "candidate_timestamp": _iso(row.get("canonical_candidate_timestamp")),
+            "snapshot_reliable": bool(row.get("canonical_snapshot_reliable")),
+            "updated_at": _iso(row.get("canonical_updated_at")),
+        })
+    episodes.sort(key=lambda item: (item["started_at"], item["id"]), reverse=True)
+    active_symbols = sorted({item["symbol"] for item in episodes if item["active"]})
+    historical = [item for item in episodes if not item["active"]]
+    return {
+        "status": "available",
+        "active_episode_count": sum(item["active"] for item in episodes),
+        "active_symbol_count": len(active_symbols),
+        "active_symbols": active_symbols,
+        "historical_episode_count": len(historical),
+        "episodes": episodes,
+    }
 
 
 def _snapshot(inputs: Mapping[str, Any]) -> dict[str, Any]:
@@ -440,6 +583,12 @@ def _migrations(
     latest = max(evidence_times) if evidence_times else None
     summary = {
         "unique_contributors": len(contributors),
+        "unique_higher_contributors": sum(
+            "higher" in item["directions"] for item in contributors
+        ),
+        "unique_lower_contributors": sum(
+            "lower" in item["directions"] for item in contributors
+        ),
         "event_count": len(events),
         "higher_events": sum(event["direction"] == "higher" for event in events),
         "lower_events": sum(event["direction"] == "lower" for event in events),
@@ -547,6 +696,86 @@ def build_named_group_evidence(
         status = "partial"
         migrations = {"status": "unavailable", "reason": "migration_projection_failed"}
 
+    try:
+        location_history = _location_history(
+            members,
+            endpoints,
+            inputs.get("location_observations", ()),
+            comparison_at,
+            inputs["as_of"],
+        )
+    except Exception:
+        status = "partial"
+        location_history = {
+            "status": "unavailable",
+            "reason": "location_history_projection_failed",
+            "message": "Historical location data unavailable for current members.",
+        }
+
+    try:
+        near_miss = _near_misses(
+            members,
+            inputs.get("near_miss_episodes", ()),
+            comparison_at,
+            inputs["as_of"],
+        )
+        evidence_times.extend(
+            row["started_at"] for row in inputs.get("near_miss_episodes", ())
+            if str(row["symbol"]) in member_set
+        )
+    except Exception:
+        status = "partial"
+        near_miss = {"status": "unavailable", "reason": "near_miss_projection_failed"}
+
+    active_by_symbol = {active.symbol: active for active in active_mrzs}
+    structural_by_symbol = {
+        item["symbol"]: item for item in structural.get("contributors", ())
+    }
+    unavailable_structural = {
+        item["symbol"]: item for item in structural.get("unavailable_members", ())
+    }
+    near_miss_by_symbol: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for episode in near_miss.get("episodes", ()):
+        near_miss_by_symbol[episode["symbol"]].append(episode)
+    latest_observation_by_symbol: dict[str, Observation] = {}
+    for observation in inputs.get("location_observations", ()):
+        if observation.symbol in member_set:
+            current = latest_observation_by_symbol.get(observation.symbol)
+            if current is None or observation.observed_at > current.observed_at:
+                latest_observation_by_symbol[observation.symbol] = observation
+    member_rows = []
+    for symbol in sorted(members):
+        pressure = current_by_symbol.get(symbol, {})
+        active = active_by_symbol.get(symbol)
+        movement = structural_by_symbol.get(symbol, {})
+        endpoint = endpoints.get(symbol, {})
+        current_location = movement.get("current_location") or _location(endpoint, "current")
+        latest_near_miss = next(
+            (item for item in near_miss_by_symbol.get(symbol, ()) if item["active"]),
+            near_miss_by_symbol.get(symbol, [None])[0],
+        )
+        latest_observation = latest_observation_by_symbol.get(symbol)
+        member_rows.append({
+            "symbol": symbol,
+            "route": (
+                active.route_owner.value
+                if active
+                else latest_observation.route.value if latest_observation else None
+            ),
+            "location": current_location,
+            "location_label": LOCATION_LABELS.get(current_location, "Unavailable"),
+            "mrz_status": "Active" if active else "Inactive",
+            "pressure": pressure.get("direction"),
+            "pressure_label": pressure.get("direction_label") or pressure.get("direction"),
+            "pressure_evidence_at": pressure.get("evidence", {}).get(
+                "latest_pressure_observed_at"
+            ),
+            "near_miss": latest_near_miss,
+            "ote": dict(OTE_NOT_CONNECTED),
+            "current_observed_at": _iso(endpoint.get("current_observed_at")),
+            "structural_available": symbol not in unavailable_structural,
+        })
+
     return {
         "contract_version": CONTRACT_VERSION,
         "scope": "named_group",
@@ -564,6 +793,10 @@ def build_named_group_evidence(
         "latest_relevant_evidence_at": _iso(max(evidence_times)) if evidence_times else None,
         "coverage": {**structural_coverage, **pressure_coverage},
         "structural": structural,
+        "location_history": location_history,
+        "near_miss": near_miss,
+        "ote": dict(OTE_NOT_CONNECTED),
+        "members": member_rows,
         "directional": {
             "current_pressure": current_pressure,
             "cumulative_lifecycle_pressure_events": cumulative,
@@ -587,7 +820,10 @@ def _summary_group(detail: Mapping[str, Any]) -> dict[str, Any]:
         "membership_total": group["member_count"],
         "latest_relevant_evidence_at": detail.get("latest_relevant_evidence_at"),
         "coverage": detail.get("coverage", {}),
-        "structural": structural.get("summary", {"status": "unavailable"}),
+        "structural": {
+            **structural.get("summary", {"status": "unavailable"}),
+            "current_distribution": structural.get("current_distribution"),
+        },
         "directional": {
             "current_pressure": current.get("summary", {"status": "unavailable"}),
             "latest_cumulative_event": cumulative.get("summary", {}).get(
@@ -599,6 +835,8 @@ def _summary_group(detail: Mapping[str, Any]) -> dict[str, Any]:
             "cumulative_event_count": cumulative.get("summary", {}).get("event_count"),
         },
         "migrations": migrations.get("summary", {"status": "unavailable"}),
+        "near_miss": detail.get("near_miss", {"status": "unavailable"}),
+        "ote": detail.get("ote", dict(OTE_NOT_CONNECTED)),
         "status": detail.get("status", "available"),
         "limitations": [],
     }
@@ -636,6 +874,7 @@ def build_all_groups_evidence(inputs: Mapping[str, Any]) -> dict[str, Any]:
             "canonical_migration_events": len(migration_keys),
             "group_context_migration_appearances": appearances,
         },
+        "ote": dict(OTE_NOT_CONNECTED),
         "groups": [_summary_group(detail) for detail in details],
         "empty_state": "No saved groups." if not groups else None,
         "limitations": list(LIMITATIONS),

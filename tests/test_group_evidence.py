@@ -115,6 +115,8 @@ def inputs(
     observations: list[Observation] | None = None,
     migrations: list[dict] | None = None,
     pressure_events: list[dict] | None = None,
+    location_observations: list[Observation] | None = None,
+    near_miss_episodes: list[dict] | None = None,
 ) -> dict:
     duration = {"24H": timedelta(hours=24), "5D": timedelta(days=5), "20D": timedelta(days=20)}[window]
     return {
@@ -127,6 +129,8 @@ def inputs(
         "observations": observations or [],
         "migration_events": migrations or [],
         "pressure_events": pressure_events or [],
+        "location_observations": location_observations or [],
+        "near_miss_episodes": near_miss_episodes or [],
     }
 
 
@@ -261,7 +265,9 @@ class GroupEvidenceTests(unittest.TestCase):
         migration_summary = payload["directional"]["mrz_migrations"]["summary"]
         self.assertEqual(migration_summary["unique_contributors"], fixture["migrations"]["unique_contributors"])
         self.assertEqual(migration_summary["event_count"], fixture["migrations"]["event_count"])
-        self.assertNotIn("near_miss", json.dumps(payload).lower())
+        self.assertEqual(payload["near_miss"]["active_episode_count"], 0)
+        self.assertEqual(payload["ote"]["status"], "not_connected")
+        self.assertIsNone(payload["ote"]["daily"])
 
     def test_repeat_migration_breadth_does_not_use_raw_event_count(self) -> None:
         fixture = FIXTURE["crypto_20d_repeat_migrations"]["migrations"]
@@ -284,6 +290,62 @@ class GroupEvidenceTests(unittest.TestCase):
         self.assertEqual(summary["lower_events"], fixture["lower"])
         self.assertEqual(summary["repeated_contributors"], fixture["repeated_contributors"])
         self.assertEqual(summary["both_direction_contributors"], fixture["both_direction_contributors"])
+        self.assertEqual(summary["unique_higher_contributors"], 6)
+        self.assertEqual(summary["unique_lower_contributors"], 7)
+
+    def test_near_miss_active_and_historical_episode_states_are_distinct(self) -> None:
+        group_row = group(1, "Near Miss", ["A", "B"])
+        rows = [
+            {
+                "id": 1,
+                "episode_key": "near:A:1",
+                "symbol": "A",
+                "route_owner": "BTD",
+                "started_at": AS_OF - timedelta(hours=8),
+                "ended_at": None,
+                "ended_reason": None,
+                "canonical_candidate_event_id": "a-candidate",
+                "canonical_structural_location": "shallow_discount_core_mrz",
+                "canonical_shortfall_percentage_points": Decimal("0.2"),
+                "canonical_supporting_observation_count": 4,
+                "canonical_candidate_timestamp": AS_OF - timedelta(hours=8),
+                "canonical_snapshot_reliable": True,
+                "canonical_updated_at": AS_OF - timedelta(hours=1),
+            },
+            {
+                "id": 2,
+                "episode_key": "near:B:1",
+                "symbol": "B",
+                "route_owner": "STR",
+                "started_at": AS_OF - timedelta(hours=12),
+                "ended_at": AS_OF - timedelta(hours=3),
+                "ended_reason": "NO_LONGER_CURRENT",
+                "canonical_candidate_event_id": "b-candidate",
+                "canonical_structural_location": "shallow_premium_core_mrz",
+                "canonical_shortfall_percentage_points": Decimal("0.4"),
+                "canonical_supporting_observation_count": 4,
+                "canonical_candidate_timestamp": AS_OF - timedelta(hours=12),
+                "canonical_snapshot_reliable": True,
+                "canonical_updated_at": AS_OF - timedelta(hours=3),
+            },
+        ]
+        request = inputs("24H", [group_row], near_miss_episodes=rows)
+        payload = build_named_group_evidence(request, group_row)
+        self.assertEqual(payload["near_miss"]["active_episode_count"], 1)
+        self.assertEqual(payload["near_miss"]["historical_episode_count"], 1)
+        self.assertEqual(payload["near_miss"]["active_symbols"], ["A"])
+        members = {item["symbol"]: item for item in payload["members"]}
+        self.assertTrue(members["A"]["near_miss"]["active"])
+        self.assertFalse(members["B"]["near_miss"]["active"])
+
+    def test_ote_not_connected_is_unavailable_not_zero(self) -> None:
+        group_row = group(1, "OTE", ["A"])
+        payload = build_named_group_evidence(inputs("24H", [group_row]), group_row)
+        self.assertEqual(payload["ote"]["status"], "not_connected")
+        self.assertEqual(payload["ote"]["source"], "EDGE_BOT")
+        self.assertIsNone(payload["ote"]["daily"])
+        self.assertIsNone(payload["ote"]["weekly"])
+        self.assertIsNone(payload["members"][0]["ote"]["latest"])
 
     def test_equal_midpoint_route_migration_is_not_falsely_called_lower(self) -> None:
         row = migration("A", 1, "higher")

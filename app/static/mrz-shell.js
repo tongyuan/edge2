@@ -6,7 +6,7 @@
     {
       section: "TRADING",
       routes: [
-        { name: "watchlists", label: "Watchlists", abbreviation: "WL", href: "/mrz/watchlists?group=all&window=24H", badgeId: "navAttentionCount" },
+        { name: "watchlists", label: "Group Opportunity", abbreviation: "GO", href: "/mrz/watchlists?group=all&window=24H", badgeId: "navAttentionCount" },
         { name: "symbols", label: "Symbols", abbreviation: "SY", href: "/mrz/symbols" },
         { name: "alert-settings", label: "Alert Settings", abbreviation: "AL", href: "/mrz/alert-settings" },
       ],
@@ -119,6 +119,7 @@
     const sidebar = documentRef.querySelector("[data-mrz-sidebar]");
     if (!sidebar) return null;
     const activeRoute = routeNameForPath(locationObject?.pathname);
+    documentRef.body.classList.toggle("group-opportunity-active", activeRoute === "watchlists");
     sidebar.innerHTML = sidebarMarkup(activeRoute);
     const collapsed = readCollapsedPreference(storage);
     applyCollapsedState(documentRef, collapsed);
