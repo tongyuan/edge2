@@ -40,6 +40,13 @@
     "deep_premium",
     "unavailable",
   ];
+  const LOCATION_TRANSITION_BUCKETS = [
+    { key: "deep_discount", label: "Deep Discount", shortLabel: "Deep Disc." },
+    { key: "shallow_discount", label: "Shallow Discount", shortLabel: "Shallow Disc." },
+    { key: "at_eqm", label: "At EQM", shortLabel: "At EQM" },
+    { key: "shallow_premium", label: "Shallow Premium", shortLabel: "Shallow Prem." },
+    { key: "deep_premium", label: "Deep Premium", shortLabel: "Deep Prem." },
+  ];
 
   function groupMembership(groups) {
     const membership = new Map();
@@ -70,6 +77,63 @@
     const normalized = String(query || "").trim().toUpperCase();
     if (!normalized) return [...(symbols || [])];
     return (symbols || []).filter((symbol) => String(symbol || "").toUpperCase().includes(normalized));
+  }
+
+  function deriveLocationTransitionHeatmap(history = {}) {
+    const rank = new Map(LOCATION_TRANSITION_BUCKETS.map((bucket, index) => [bucket.key, index]));
+    const cells = LOCATION_TRANSITION_BUCKETS.flatMap((source, sourceIndex) => (
+      LOCATION_TRANSITION_BUCKETS.map((destination, destinationIndex) => ({
+        key: `${source.key}:${destination.key}`,
+        fromKey: source.key,
+        fromLabel: source.label,
+        toKey: destination.key,
+        toLabel: destination.label,
+        direction: destinationIndex > sourceIndex ? "higher" : destinationIndex < sourceIndex ? "lower" : "unchanged",
+        count: 0,
+        members: [],
+      }))
+    ));
+    const cellByKey = new Map(cells.map((cell) => [cell.key, cell]));
+    const seenSymbols = new Set();
+    (history.symbol_movements || []).forEach((movement) => {
+      const symbol = String(movement.symbol || "").trim();
+      const fromIndex = rank.get(movement.start_location);
+      const toIndex = rank.get(movement.current_location);
+      if (!symbol || seenSymbols.has(symbol) || fromIndex === undefined || toIndex === undefined) return;
+      seenSymbols.add(symbol);
+      const cell = cellByKey.get(`${movement.start_location}:${movement.current_location}`);
+      const direction = toIndex > fromIndex ? "higher" : toIndex < fromIndex ? "lower" : "unchanged";
+      cell.count += 1;
+      cell.members.push({
+        ...movement,
+        symbol,
+        direction,
+        magnitude: Math.abs(toIndex - fromIndex),
+        has_new_observation: movement.has_new_observation === true,
+      });
+    });
+    cells.forEach((cell) => cell.members.sort(compareSymbol));
+    const totals = cells.reduce((result, cell) => {
+      result[cell.direction] += cell.count;
+      result.comparable += cell.count;
+      return result;
+    }, { higher: 0, lower: 0, unchanged: 0, comparable: 0 });
+    const maxima = {
+      higher: Math.max(0, ...cells.filter((cell) => cell.direction === "higher").map((cell) => cell.count)),
+      lower: Math.max(0, ...cells.filter((cell) => cell.direction === "lower").map((cell) => cell.count)),
+      unchanged: Math.max(0, ...cells.filter((cell) => cell.direction === "unchanged").map((cell) => cell.count)),
+    };
+    const expected = history.flow || {};
+    return {
+      buckets: LOCATION_TRANSITION_BUCKETS,
+      cells,
+      totals,
+      maxima,
+      reconciles: totals.comparable === Number(expected.comparable_symbols || 0)
+        && totals.higher === Number(expected.moved_higher || 0)
+        && totals.lower === Number(expected.moved_lower || 0)
+        && totals.unchanged === Number(expected.unchanged || 0),
+    };
   }
 
   function eventDirection(event) {
@@ -804,6 +868,7 @@
   }
 
   const exported = {
+    LOCATION_TRANSITION_BUCKETS,
     SYMBOL_BOARD_GROUPS,
     SYMBOL_BOARD_SORT_STORAGE_KEY,
     allGroupsRows,
@@ -811,6 +876,7 @@
     derivePeerLocation,
     derivePeerLocationFlow,
     deriveLocationFlowDetails,
+    deriveLocationTransitionHeatmap,
     deriveAttention,
     deriveBreadthLeadership,
     deriveResearchInterpretation,

@@ -155,24 +155,46 @@ class WorkspaceContractTests(unittest.TestCase):
         for window in ("24H", "5D", "20D"):
             self.assertIn(f'data-location-window="{window}"', HTML)
         for target in (
+            "locationTransitionHeading",
+            "locationTransitionSummary",
+            "locationTransitionCoverage",
+            "locationTransitionMatrix",
+            "locationTransitionDrilldown",
+            "locationTransitionDrilldownHeading",
+            "locationTransitionDrilldownClose",
+            "locationTransitionSymbols",
+        ):
+            self.assertIn(f'id="{target}"', HTML)
+        for removed_target in (
             "locationTrendRows",
             "locationUniverseDisclosure",
             "locationStructuralRead",
             "locationFlowSummary",
             "locationDominantTransitions",
+            "locationFlowFilters",
         ):
-            self.assertIn(f'id="{target}"', HTML)
+            self.assertNotIn(f'id="{removed_target}"', HTML)
         self.assertIn("/api/location-distribution/history?window=", JS)
-        self.assertIn("% of universe", JS)
-        self.assertIn("added/became eligible", JS)
-        self.assertIn("removed/became ineligible", JS)
-        self.assertIn("elapsed calendar time", JS)
-        self.assertIn("Dominant transitions", HTML)
-        for label in ("DISCOUNT SHARE", "PREMIUM SHARE", "EXTREME SHARE", "NET LOCATION FLOW"):
+        self.assertIn("derive.deriveLocationTransitionHeatmap", JS)
+        for label in (
+            "Moved Higher",
+            "Moved Lower",
+            "Same Bucket",
+            "Total eligible",
+            "Comparable",
+            "New observation",
+            "No new observation",
+            "Unavailable",
+            "Comparison timestamp",
+            "Current timestamp",
+        ):
             self.assertIn(label, JS)
-        self.assertIn("Start/end bucket per comparable symbol", HTML)
-        self.assertIn('netFlow < 0 ? "lower" : "balanced"', JS)
-        self.assertNotIn('formatSigned(flow.net_higher)} higher', JS)
+        self.assertIn("Elapsed calendar time", JS)
+        self.assertIn('role="grid"', HTML)
+        self.assertIn('aria-label="Previous structural location by current structural location"', HTML)
+        self.assertIn("Colors describe bucket movement only", HTML)
+        self.assertIn("Not a stability claim", JS)
+        self.assertNotIn("Dominant transitions", HTML)
 
     def test_breadth_leadership_page_is_removed_but_legacy_route_is_preserved(self) -> None:
         self.assertNotIn('data-route-panel="breadth-leadership"', HTML)
@@ -277,26 +299,32 @@ class WorkspaceContractTests(unittest.TestCase):
         for selector in (".evidence-count-grid", ".evidence-facts", ".evidence-contributor-heading"):
             self.assertIn(selector, mobile_rules)
 
-    def test_location_flow_cards_expose_shared_symbol_drilldown(self) -> None:
+    def test_location_transition_heatmap_exposes_accessible_symbol_drilldown(self) -> None:
         for target in (
-            "locationFlowDrilldown",
-            "locationFlowDrilldownHeading",
-            "locationFlowDrilldownClose",
-            "locationFlowFilters",
-            "locationFlowSymbols",
+            "locationTransitionDrilldown",
+            "locationTransitionDrilldownHeading",
+            "locationTransitionDrilldownClose",
+            "locationTransitionSymbols",
         ):
             self.assertIn(f'id="{target}"', HTML)
-        for direction in ("all", "higher", "lower", "neutral"):
-            self.assertIn(f'data-flow-pressure="{direction}"', HTML)
-        self.assertIn("locationFlowButton(\"higher\"", JS)
-        self.assertIn("locationFlowButton(\"lower\"", JS)
-        self.assertIn("derive.deriveLocationFlowDetails", JS)
+        self.assertIn('button.dataset.transitionCell = cell.key', JS)
+        self.assertIn('button.setAttribute("aria-controls", "locationTransitionDrilldown")', JS)
+        self.assertIn('button.setAttribute("aria-pressed"', JS)
+        self.assertIn('button.title =', JS)
         self.assertIn("item.start_location_label", JS)
         self.assertIn("item.current_location_label", JS)
-        self.assertIn("item.migrationEvents", JS)
-        self.assertIn("symbolLink(item.symbol, item.symbol)", JS)
-        self.assertIn("location-transition-button", JS)
-        self.assertIn("Loading ${window} flow", JS)
+        self.assertIn("item.magnitude", JS)
+        self.assertIn("item.comparison_observed_at", JS)
+        self.assertIn("item.current_observed_at", JS)
+        self.assertIn("item.has_new_observation", JS)
+        self.assertIn('symbolLink(item.symbol, "Open symbol details")', JS)
+        self.assertIn("Loading ${window} transitions", JS)
+        self.assertIn(".location-transition-scroll", CSS)
+        self.assertIn("overflow-x: auto", CSS)
+        self.assertIn("button.location-transition-cell:focus-visible", CSS)
+        mobile_rules = CSS[CSS.index("@media (max-width: 560px)") :]
+        self.assertIn(".location-transition-symbols", mobile_rules)
+        self.assertIn("grid-template-columns: 1fr", mobile_rules)
 
 
 if __name__ == "__main__":

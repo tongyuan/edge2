@@ -255,8 +255,10 @@ def location_distribution_history_payload(
     unchanged = 0
     added_or_became_eligible = 0
     removed_or_became_ineligible = 0
+    comparable_with_new_observation = 0
     transition_counts: dict[tuple[str, str], int] = {}
     symbol_movements: list[dict[str, Any]] = []
+    seen_symbols: set[str] = set()
 
     def location(row: Mapping[str, Any], prefix: str) -> str | None:
         price = row.get(f"{prefix}_observation_price")
@@ -268,6 +270,10 @@ def location_distribution_history_payload(
         return classified.value if classified and classified.value in rank else None
 
     for row in rows:
+        symbol = str(row["symbol"])
+        if symbol in seen_symbols:
+            continue
+        seen_symbols.add(symbol)
         now_location = location(row, "current")
         then_location = location(row, "comparison")
         if now_location is not None:
@@ -276,6 +282,13 @@ def location_distribution_history_payload(
             then_counts[then_location] += 1
 
         if now_location is not None and then_location is not None:
+            current_observed_at = row.get("current_observed_at")
+            has_new_observation = bool(
+                isinstance(current_observed_at, datetime)
+                and current_observed_at > comparison_at
+            )
+            if has_new_observation:
+                comparable_with_new_observation += 1
             direction = "unchanged"
             if rank[now_location] > rank[then_location]:
                 moved_higher += 1
@@ -287,7 +300,7 @@ def location_distribution_history_payload(
                 unchanged += 1
             symbol_movements.append(
                 {
-                    "symbol": str(row["symbol"]),
+                    "symbol": symbol,
                     "start_location": then_location,
                     "start_location_label": GROUP_LOCATION_LABELS[then_location],
                     "current_location": now_location,
@@ -295,7 +308,8 @@ def location_distribution_history_payload(
                     "direction": direction,
                     "magnitude": abs(rank[now_location] - rank[then_location]),
                     "comparison_observed_at": iso(row.get("comparison_observed_at")),
-                    "current_observed_at": iso(row.get("current_observed_at")),
+                    "current_observed_at": iso(current_observed_at),
+                    "has_new_observation": has_new_observation,
                 }
             )
             if now_location != then_location:
@@ -380,6 +394,16 @@ def location_distribution_history_payload(
             "unchanged": unchanged,
             "net_higher": moved_higher - moved_lower,
             "comparable_symbols": comparable,
+        },
+        "coverage": {
+            "total_symbols": len(seen_symbols),
+            "total_eligible": now_total,
+            "comparable_symbols": comparable,
+            "comparable_with_new_observation": comparable_with_new_observation,
+            "comparable_without_new_observation": (
+                comparable - comparable_with_new_observation
+            ),
+            "unavailable_or_incomparable": len(seen_symbols) - comparable,
         },
         "symbol_movements": symbol_movements,
         "dominant_transitions": dominant_transitions,

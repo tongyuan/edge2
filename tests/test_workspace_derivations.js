@@ -7,6 +7,7 @@ const {
   deriveResearchInterpretation,
   directionalTaxonomyDrilldown,
   deriveLocationFlowDetails,
+  deriveLocationTransitionHeatmap,
   derivePeerLocation,
   derivePeerLocationFlow,
   eventLabel,
@@ -350,6 +351,31 @@ const breadthPressure = {
   },
   pressure_map: { locations: { deep_discount: { counts: { higher: 1, neutral: 2, lower: 3 } } } },
 };
+const transitionHeatmap = deriveLocationTransitionHeatmap(breadthHistory);
+assert.equal(transitionHeatmap.cells.length, 25, "the matrix always contains all 25 transition cells");
+assert.deepEqual(transitionHeatmap.totals, { higher: 3, lower: 3, unchanged: 1, comparable: 7 });
+assert.equal(transitionHeatmap.reconciles, true, "matrix cells reconcile exactly with canonical flow totals");
+const transitionCell = (fromKey, toKey) => transitionHeatmap.cells.find((cell) => cell.fromKey === fromKey && cell.toKey === toKey);
+assert.equal(transitionCell("deep_discount", "shallow_premium").direction, "higher", "cells right of the diagonal are higher");
+assert.equal(transitionCell("deep_premium", "shallow_discount").direction, "lower", "cells left of the diagonal are lower");
+assert.equal(transitionCell("at_eqm", "at_eqm").direction, "unchanged", "diagonal cells are same-bucket");
+assert.equal(transitionCell("at_eqm", "deep_discount").count, 0, "empty cells remain explicit zeroes");
+assert.deepEqual(transitionCell("deep_discount", "shallow_premium").members.map((item) => item.symbol), ["UP_CONFIRMED"]);
+transitionHeatmap.cells.forEach((cell) => {
+  const fromIndex = transitionHeatmap.buckets.findIndex((bucket) => bucket.key === cell.fromKey);
+  const toIndex = transitionHeatmap.buckets.findIndex((bucket) => bucket.key === cell.toKey);
+  assert.equal(cell.direction, toIndex > fromIndex ? "higher" : toIndex < fromIndex ? "lower" : "unchanged");
+});
+const uniqueTransitionHeatmap = deriveLocationTransitionHeatmap({
+  flow: { moved_higher: 1, moved_lower: 0, unchanged: 0, comparable_symbols: 1 },
+  symbol_movements: [
+    { symbol: "UNIQUE", start_location: "deep_discount", current_location: "shallow_discount", has_new_observation: true },
+    { symbol: "UNIQUE", start_location: "deep_discount", current_location: "deep_premium", has_new_observation: false },
+    { symbol: "MISSING", start_location: null, current_location: "deep_premium" },
+  ],
+});
+assert.equal(uniqueTransitionHeatmap.totals.comparable, 1, "each comparable symbol is counted once");
+assert.equal(uniqueTransitionHeatmap.cells.find((cell) => cell.count === 1).members[0].has_new_observation, true, "freshness survives aggregation into the drill-down");
 const breadthReport = deriveBreadthLeadership(breadthHistory, breadthPressure);
 assert.deepEqual(breadthReport.breadth, { movedHigher: 3, movedLower: 3, unchanged: 1, netHigher: 0, comparable: 7, participationPct: 6 / 7 * 100 });
 assert.deepEqual(breadthReport.confirmation.higher, { higher: 1, neutral: 1, lower: 1 });

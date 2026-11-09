@@ -12,7 +12,14 @@ from tests.db_support import clean, migrate_and_clean, require_test_database
 NOW = datetime(2026, 10, 8, 12, 0, tzinfo=timezone.utc)
 
 
-def history_row(symbol: str, then_price: str | None, now_price: str | None):
+def history_row(
+    symbol: str,
+    then_price: str | None,
+    now_price: str | None,
+    *,
+    comparison_observed_at: datetime | None = None,
+    current_observed_at: datetime | None = None,
+):
     return {
         "symbol": symbol,
         "comparison_observation_price": then_price,
@@ -21,6 +28,8 @@ def history_row(symbol: str, then_price: str | None, now_price: str | None):
         "current_observation_price": now_price,
         "current_ipda_20w_high": "200" if now_price is not None else None,
         "current_ipda_20w_low": "100" if now_price is not None else None,
+        "comparison_observed_at": comparison_observed_at,
+        "current_observed_at": current_observed_at,
     }
 
 
@@ -115,6 +124,61 @@ class LocationDistributionHistoryPayloadTests(unittest.TestCase):
                 "premium_share": {"then_pct": 33.3, "now_pct": 66.7, "change_pp": 33.4},
                 "extreme_share": {"then_pct": 100.0, "now_pct": 33.3, "change_pp": -66.7},
             },
+        )
+
+    def test_known_24h_no_movement_case_reports_reused_observations_not_stability(self) -> None:
+        reused_at = NOW - timedelta(days=2)
+        payload = location_distribution_history_payload(
+            tuple(
+                history_row(
+                    f"SYMBOL_{index:03d}",
+                    "140",
+                    "140",
+                    comparison_observed_at=reused_at,
+                    current_observed_at=reused_at,
+                )
+                for index in range(133)
+            ),
+            window="24H",
+            current_at=NOW,
+            comparison_at=NOW - timedelta(hours=24),
+        )
+
+        self.assertEqual(payload["flow"]["comparable_symbols"], 133)
+        self.assertEqual(payload["flow"]["moved_higher"], 0)
+        self.assertEqual(payload["flow"]["moved_lower"], 0)
+        self.assertEqual(payload["flow"]["unchanged"], 133)
+        self.assertEqual(payload["coverage"]["comparable_with_new_observation"], 0)
+        self.assertEqual(payload["coverage"]["comparable_without_new_observation"], 133)
+        self.assertTrue(
+            all(not item["has_new_observation"] for item in payload["symbol_movements"])
+        )
+
+    def test_freshness_and_unique_symbol_coverage_are_explicit(self) -> None:
+        payload = location_distribution_history_payload(
+            (
+                history_row("FRESH", "110", "140", comparison_observed_at=NOW - timedelta(days=2), current_observed_at=NOW - timedelta(hours=1)),
+                history_row("REUSED", "140", "140", comparison_observed_at=NOW - timedelta(days=2), current_observed_at=NOW - timedelta(days=2)),
+                history_row("FRESH", "110", "190", comparison_observed_at=NOW - timedelta(days=2), current_observed_at=NOW),
+                history_row("INCOMPARABLE", None, "160", current_observed_at=NOW),
+            ),
+            window="24H",
+            current_at=NOW,
+            comparison_at=NOW - timedelta(hours=24),
+        )
+
+        self.assertEqual(payload["flow"]["comparable_symbols"], 2)
+        self.assertEqual(payload["coverage"], {
+            "total_symbols": 3,
+            "total_eligible": 3,
+            "comparable_symbols": 2,
+            "comparable_with_new_observation": 1,
+            "comparable_without_new_observation": 1,
+            "unavailable_or_incomparable": 1,
+        })
+        self.assertEqual(
+            {item["symbol"]: item["has_new_observation"] for item in payload["symbol_movements"]},
+            {"FRESH": True, "REUSED": False},
         )
 
 

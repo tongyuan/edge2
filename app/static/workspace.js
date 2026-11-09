@@ -12,8 +12,7 @@
     locationHistory: null,
     locationWindow: "24H",
     locationSearchQuery: "",
-    locationFlowSelection: null,
-    locationFlowPressure: "all",
+    locationTransitionSelection: null,
     pressureSelection: null,
     pressureNeutralExpanded: false,
     peerWindow: "24H",
@@ -776,139 +775,117 @@
     renderLocationHistory();
   }
 
-  function formatSigned(value, suffix = "") {
-    const numeric = Number(value || 0);
-    return `${numeric > 0 ? "+" : ""}${numeric.toFixed(suffix ? 1 : 0)}${suffix}`;
-  }
   function renderLocationHistory() {
     document.querySelectorAll("[data-location-window]").forEach((button) => {
       button.setAttribute("aria-pressed", String(button.dataset.locationWindow === state.locationWindow));
     });
     const history = state.locationHistory;
     if (!history) return;
-    $("#locationTrendHeading").textContent = `${history.window} comparison · then → now`;
-    $("#locationFlowHeading").textContent = `Location flow · last ${history.window}`;
-    $("#locationStructuralReadHeading").textContent = `Structural breadth · last ${history.window}`;
-    $("#locationHistoryStatus").textContent = `Comparison point ${exactTime(history.comparison_at)}`;
-    const universe = history.universe || {};
-    $("#locationUniverseDisclosure").textContent = `${universe.now_eligible || 0} eligible now · ${universe.then_eligible || 0} eligible then · ${universe.common_eligible || 0} comparable · ${universe.added_or_became_eligible || 0} added/became eligible · ${universe.removed_or_became_ineligible || 0} removed/became ineligible. Windows are elapsed calendar time.`;
-
-    const rows = $("#locationTrendRows"); rows.replaceChildren();
-    (history.locations || []).forEach((item) => {
-      const row = element("tr", "");
-      const thenCell = element("td", ""); thenCell.append(document.createTextNode(String(item.then_count)), element("small", "", `${Number(item.then_pct).toFixed(1)}% of then universe`));
-      const nowCell = element("td", ""); nowCell.append(document.createTextNode(String(item.now_count)), element("small", "", `${Number(item.now_pct).toFixed(1)}% of now universe`));
-      const changeClass = item.change_count > 0 ? "location-change-higher" : item.change_count < 0 ? "location-change-lower" : "";
-      const changeCell = element("td", changeClass); changeCell.append(document.createTextNode(formatSigned(item.change_count)), element("small", "", `${formatSigned(item.change_pp, " pp")}`));
-      row.append(element("td", "", item.label), thenCell, nowCell, changeCell); rows.append(row);
+    const report = derive.deriveLocationTransitionHeatmap(history);
+    const coverage = history.coverage || {};
+    $("#locationTransitionHeading").textContent = `Structural Location Movement · ${history.window}`;
+    $("#locationHistoryStatus").textContent = "Elapsed calendar time · endpoint comparison";
+    $("#locationTransitionSummary").replaceChildren(
+      transitionSummaryMetric("higher", "Moved Higher", report.totals.higher, "Unique comparable symbols"),
+      transitionSummaryMetric("lower", "Moved Lower", report.totals.lower, "Unique comparable symbols"),
+      transitionSummaryMetric("unchanged", "Same Bucket", report.totals.unchanged, "Not a stability claim"),
+    );
+    const coverageNode = $("#locationTransitionCoverage"); coverageNode.replaceChildren();
+    [
+      ["Total eligible", coverage.total_eligible ?? history.universe?.now_eligible ?? 0],
+      ["Comparable", coverage.comparable_symbols ?? report.totals.comparable],
+      ["New observation inside window", coverage.comparable_with_new_observation ?? 0],
+      ["No new observation inside window", coverage.comparable_without_new_observation ?? 0],
+      ["Unavailable / incomparable", coverage.unavailable_or_incomparable ?? 0],
+      ["Comparison timestamp", exactTime(history.comparison_at)],
+      ["Current timestamp", exactTime(history.current_at)],
+    ].forEach(([label, value]) => {
+      const item = element("div", "");
+      item.append(element("dt", "", label), element("dd", "", String(value)));
+      coverageNode.append(item);
     });
-
-    const flow = history.flow || {};
-    const read = history.structural_read || {};
-    const netFlow = Number(flow.net_higher || 0);
-    $("#locationStructuralRead").replaceChildren(
-      structuralReadMetric("DISCOUNT SHARE", read.discount_share),
-      structuralReadMetric("PREMIUM SHARE", read.premium_share),
-      structuralReadMetric("EXTREME SHARE", read.extreme_share),
-      flowMetric("NET LOCATION FLOW", formatSigned(netFlow), `${netFlow > 0 ? "higher" : netFlow < 0 ? "lower" : "balanced"} · ${flow.comparable_symbols || 0} comparable`),
-    );
-    const flowSummary = $("#locationFlowSummary"); flowSummary.replaceChildren(
-      locationFlowButton("higher", "MOVED HIGHER", flow.moved_higher || 0, `${flow.comparable_symbols || 0} comparable symbols`),
-      locationFlowButton("lower", "MOVED LOWER", flow.moved_lower || 0, `${flow.comparable_symbols || 0} comparable symbols`),
-      locationFlowButton("unchanged", "UNCHANGED", flow.unchanged || 0, `Net ${formatSigned(netFlow)} ${netFlow > 0 ? "higher" : netFlow < 0 ? "lower" : "balanced"}`),
-    );
-    const transitions = $("#locationDominantTransitions"); transitions.replaceChildren();
-    if (!(history.dominant_transitions || []).length) {
-      transitions.append(element("li", "", "No cross-bucket transitions in this window."));
-    } else {
-      history.dominant_transitions.forEach((transition) => {
-        const item = element("li", "");
-        const button = element("button", "location-transition-button", `${transition.from_label} → ${transition.to_label} · ${transition.count}`);
-        button.type = "button";
-        button.setAttribute("aria-pressed", String(state.locationFlowSelection?.fromKey === transition.from_key && state.locationFlowSelection?.toKey === transition.to_key));
-        button.addEventListener("click", () => {
-          state.locationFlowSelection = { fromKey: transition.from_key, toKey: transition.to_key, label: `${transition.from_label} → ${transition.to_label}` };
-          state.locationFlowPressure = "all";
-          renderLocationHistory();
-        });
-        item.append(button);
-        transitions.append(item);
+    const matrix = $("#locationTransitionMatrix"); matrix.replaceChildren();
+    matrix.dataset.reconciled = String(report.reconciles);
+    const headerRow = element("div", "location-transition-row"); headerRow.setAttribute("role", "row");
+    const corner = element("div", "location-transition-corner", "FROM — Previous Location"); corner.setAttribute("role", "columnheader");
+    headerRow.append(corner);
+    report.buckets.forEach((bucket) => {
+      const header = element("div", "location-transition-column-label", bucket.shortLabel);
+      header.setAttribute("role", "columnheader"); header.title = bucket.label; headerRow.append(header);
+    });
+    matrix.append(headerRow);
+    report.buckets.forEach((source) => {
+      const row = element("div", "location-transition-row"); row.setAttribute("role", "row");
+      const label = element("div", "location-transition-row-label", source.shortLabel);
+      label.setAttribute("role", "rowheader"); label.title = source.label; row.append(label);
+      report.buckets.forEach((destination) => {
+        const cell = report.cells.find((item) => item.fromKey === source.key && item.toKey === destination.key);
+        row.append(locationTransitionCell(cell, report.maxima[cell.direction]));
       });
-    }
-    renderLocationFlowDrilldown();
-  }
-  function locationFlowButton(direction, label, value, support) {
-    const button = element("button", "");
-    button.type = "button";
-    button.setAttribute("aria-controls", "locationFlowDrilldown");
-    button.setAttribute("aria-expanded", String(state.locationFlowSelection?.direction === direction));
-    button.append(element("span", "", label), element("strong", "", String(value)), element("small", "", support));
-    button.addEventListener("click", () => {
-      state.locationFlowSelection = { direction, label: label.replace("MOVED ", "Moved ").replace("UNCHANGED", "Unchanged") };
-      state.locationFlowPressure = "all";
-      renderLocationHistory();
+      matrix.append(row);
     });
-    return button;
+    renderLocationTransitionDrilldown(report);
   }
-  function renderLocationFlowDrilldown() {
-    const panel = $("#locationFlowDrilldown");
-    const selection = state.locationFlowSelection;
-    if (!selection || !state.locationHistory) {
-      panel.hidden = true;
-      $("#locationFlowSymbols").replaceChildren();
-      return;
-    }
-    const groups = derive.deriveLocationFlowDetails(state.locationHistory, state.symbolPayload?.pressure || {});
-    const allRows = selection.direction
-      ? groups[selection.direction] || []
-      : Object.values(groups).flat().filter((item) => item.start_location === selection.fromKey && item.current_location === selection.toKey);
-    const rows = state.locationFlowPressure === "all"
-      ? allRows
-      : allRows.filter((item) => item.pressure === state.locationFlowPressure);
-    panel.hidden = false;
-    $("#locationFlowDrilldownHeading").textContent = `${selection.label} · ${allRows.length}`;
-    $("#locationFlowDrilldownSupport").textContent = `${state.locationWindow} start → current · ${rows.length} shown`;
-    document.querySelectorAll("[data-flow-pressure]").forEach((button) => {
-      button.setAttribute("aria-pressed", String(button.dataset.flowPressure === state.locationFlowPressure));
-    });
-    const list = $("#locationFlowSymbols"); list.replaceChildren();
-    if (!rows.length) {
-      list.append(element("li", "flow-empty", "No symbols match this pressure filter."));
-      return;
-    }
-    rows.forEach((item) => {
-      const row = element("li", "");
-      const direction = item.direction === "higher" ? "Higher" : item.direction === "lower" ? "Lower" : "Unchanged";
-      const magnitude = item.direction === "higher" ? `+${item.magnitude}` : item.direction === "lower" ? `-${item.magnitude}` : "0";
-      const migrationDirections = new Set(item.migrationEvents.map((event) => event.direction));
-      const migration = migrationDirections.size > 1 ? "↑ + ↓" : migrationDirections.has("higher") ? "↑" : migrationDirections.has("lower") ? "↓" : "—";
-      row.append(
-        symbolLink(item.symbol, item.symbol),
-        element("span", "", `${item.start_location_label} → ${item.current_location_label}`),
-        element("span", "flow-magnitude", `${magnitude} bucket${item.magnitude === 1 ? "" : "s"} · ${direction}`),
-        element("span", `pressure-${item.pressure}`, `Pressure: ${pressureLabels[item.pressure] || pressureLabels.neutral}`),
-        element("span", "", `MRZ migration: ${migration}`),
-      );
-      list.append(row);
-    });
-  }
-  function flowMetric(label, value, support) {
-    const node = element("article", "");
+  function transitionSummaryMetric(direction, label, value, support) {
+    const node = element("article", `location-transition-summary-${direction}`);
     node.append(element("span", "", label), element("strong", "", String(value)), element("small", "", support));
     return node;
   }
-  function structuralReadMetric(label, measure = {}) {
-    const delta = Number(measure.change_pp || 0);
-    const node = flowMetric(label, `${Number(measure.now_pct || 0).toFixed(1)}%`, `${formatSigned(delta, " pp")} vs ${state.locationWindow}`);
-    if (delta > 0) node.classList.add("location-change-higher");
-    if (delta < 0) node.classList.add("location-change-lower");
-    return node;
+  function locationTransitionCell(cell, maximum) {
+    const directionLabel = cell.direction === "higher" ? "Moved higher" : cell.direction === "lower" ? "Moved lower" : "Same bucket";
+    const label = `${cell.fromLabel} to ${cell.toLabel}: ${cell.count} symbol${cell.count === 1 ? "" : "s"}. ${directionLabel}.`;
+    if (!cell.count) {
+      const emptyCell = element("span", "location-transition-cell is-empty", "—");
+      emptyCell.setAttribute("role", "gridcell"); emptyCell.setAttribute("aria-label", label); emptyCell.title = label;
+      return emptyCell;
+    }
+    const button = element("button", `location-transition-cell is-${cell.direction}`, String(cell.count));
+    button.type = "button";
+    button.dataset.transitionCell = cell.key;
+    button.setAttribute("role", "gridcell");
+    button.setAttribute("aria-label", label);
+    button.setAttribute("aria-controls", "locationTransitionDrilldown");
+    button.setAttribute("aria-pressed", String(state.locationTransitionSelection?.key === cell.key));
+    button.title = label;
+    const intensity = maximum ? 0.18 + (0.46 * cell.count / maximum) : 0.18;
+    button.style.setProperty("--transition-intensity", intensity.toFixed(3));
+    button.addEventListener("click", () => {
+      state.locationTransitionSelection = { key: cell.key, fromKey: cell.fromKey, toKey: cell.toKey };
+      renderLocationHistory();
+      $("#locationTransitionDrilldownClose")?.focus();
+    });
+    return button;
+  }
+  function renderLocationTransitionDrilldown(report) {
+    const panel = $("#locationTransitionDrilldown");
+    const selection = state.locationTransitionSelection;
+    const cell = selection ? report.cells.find((item) => item.key === selection.key) : null;
+    if (!cell?.count) {
+      panel.hidden = true;
+      $("#locationTransitionSymbols").replaceChildren();
+      return;
+    }
+    panel.hidden = false;
+    const directionLabel = cell.direction === "higher" ? "Moved higher" : cell.direction === "lower" ? "Moved lower" : "Same bucket";
+    $("#locationTransitionDrilldownHeading").textContent = `${cell.fromLabel} → ${cell.toLabel}`;
+    $("#locationTransitionDrilldownSupport").textContent = `${cell.count} symbol${cell.count === 1 ? "" : "s"} · ${directionLabel} · ${state.locationWindow}`;
+    const list = $("#locationTransitionSymbols"); list.replaceChildren();
+    cell.members.forEach((item) => {
+      const row = element("li", "");
+      const heading = element("div", "location-transition-symbol-heading");
+      heading.append(element("strong", "", item.symbol), element("span", item.has_new_observation ? "is-fresh" : "is-reused", item.has_new_observation ? "New observation" : "No new observation"));
+      const steps = item.magnitude === 0 ? "0 bucket steps · Same bucket" : `${item.magnitude} bucket step${item.magnitude === 1 ? "" : "s"} ${item.direction}`;
+      const facts = element("dl", "");
+      [["Previous bucket", item.start_location_label], ["Current bucket", item.current_location_label], ["Movement", steps], ["Previous observation", exactTime(item.comparison_observed_at)], ["Current observation", exactTime(item.current_observed_at)], ["Window freshness", item.has_new_observation ? `New observation inside ${state.locationWindow}` : `Reused endpoint; no new observation inside ${state.locationWindow}`]].forEach(([label, value]) => facts.append(element("dt", "", label), element("dd", "", value || "—")));
+      row.append(heading, facts, symbolLink(item.symbol, "Open symbol details"));
+      list.append(row);
+    });
   }
   async function loadLocationHistory(window) {
     state.locationWindow = window;
     $("#locationHistoryStatus").textContent = "Loading canonical history…";
-    $("#locationFlowSymbols").replaceChildren();
-    if (state.locationFlowSelection) $("#locationFlowDrilldownSupport").textContent = `Loading ${window} flow…`;
+    $("#locationTransitionSymbols").replaceChildren();
+    if (state.locationTransitionSelection) $("#locationTransitionDrilldownSupport").textContent = `Loading ${window} transitions…`;
     document.querySelectorAll("[data-location-window]").forEach((button) => {
       button.disabled = true;
       button.setAttribute("aria-pressed", String(button.dataset.locationWindow === window));
@@ -1092,14 +1069,12 @@
     renderLocationDistribution();
   });
   document.querySelectorAll("[data-location-window]").forEach((button) => button.addEventListener("click", () => loadLocationHistory(button.dataset.locationWindow)));
-  $("#locationFlowDrilldownClose")?.addEventListener("click", () => {
-    state.locationFlowSelection = null;
+  $("#locationTransitionDrilldownClose")?.addEventListener("click", () => {
+    const selectedKey = state.locationTransitionSelection?.key;
+    state.locationTransitionSelection = null;
     renderLocationHistory();
+    if (selectedKey) document.querySelector(`[data-transition-cell="${selectedKey}"]`)?.focus();
   });
-  document.querySelectorAll("[data-flow-pressure]").forEach((button) => button.addEventListener("click", () => {
-    state.locationFlowPressure = button.dataset.flowPressure;
-    renderLocationFlowDrilldown();
-  }));
   $("#eventTypeFilter")?.addEventListener("change", renderEvents);
   $("#alertPreferencesForm")?.addEventListener("submit", (event) => savePreferences(event).catch(showError));
   function showError(error) { $("#workspaceStatus").hidden = false; $("#workspaceStatus").textContent = error.message || "The request could not be completed."; $("#workspaceStatus").classList.add("error"); }
