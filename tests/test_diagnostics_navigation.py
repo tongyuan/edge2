@@ -25,7 +25,6 @@ class DiagnosticsNavigationContractTests(unittest.TestCase):
         expected = (
             "/mrz/watchlists",
             "/mrz/symbols",
-            "/mrz/pressure",
             "/mrz/alert-settings",
             "/mrz/location-distribution",
             "/mrz/formation-diagnostics",
@@ -36,6 +35,7 @@ class DiagnosticsNavigationContractTests(unittest.TestCase):
         self.assertNotIn('name: "overview"', SHELL)
         self.assertNotIn('name: "attention"', SHELL)
         self.assertNotIn('name: "breadth-leadership"', SHELL)
+        self.assertNotIn('name: "pressure"', SHELL)
         for name in ("monitor", "activation"):
             with self.subTest(page=name):
                 self.assertIn("data-mrz-sidebar", PAGES[name])

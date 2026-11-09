@@ -414,7 +414,6 @@
     const research = node("nav", "group-evidence-research", ""); research.setAttribute("aria-label", "Specialist research and settings");
     [
       ["Universe Location", `/mrz/location-distribution?window=${state.scope.window}&${canonicalScopeUrl()}`],
-      ["Universe Pressure", `/mrz/pressure?${canonicalScopeUrl()}`],
       ["Formation Diagnostics", `/mrz/formation-diagnostics?${canonicalScopeUrl()}`],
       ["Notification Event History", `/mrz/events?${canonicalScopeUrl()}`],
       ["Alert Settings", `/mrz/alert-settings?${canonicalScopeUrl()}`],

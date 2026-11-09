@@ -11,6 +11,8 @@ GROUP_JS = (ROOT / "app/static/group-evidence.js").read_text(encoding="utf-8")
 SHELL = (ROOT / "app/static/mrz-shell.js").read_text(encoding="utf-8")
 CSS = (ROOT / "app/static/workspace.css").read_text(encoding="utf-8")
 API = (ROOT / "app/api.py").read_text(encoding="utf-8")
+DERIVATIONS = (ROOT / "app/static/workspace-derivations.js").read_text(encoding="utf-8")
+PEER_PRESSURE = (ROOT / "app/peer_pressure.py").read_text(encoding="utf-8")
 
 
 class WorkspaceContractTests(unittest.TestCase):
@@ -18,7 +20,6 @@ class WorkspaceContractTests(unittest.TestCase):
         for route, label in (
             ("/mrz/watchlists", "Group Evidence"),
             ("/mrz/symbols", "Symbols"),
-            ("/mrz/pressure", "Pressure"),
             ("/mrz/alert-settings", "Alert Settings"),
             ("/mrz/location-distribution", "Location Distribution"),
             ("/mrz/formation-diagnostics", "Formation Diagnostics"),
@@ -34,6 +35,9 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertIn('/static/mrz-shell.js', HTML)
         self.assertNotIn(">Views <", HTML)
         self.assertNotIn("data-diagnostics-trigger", HTML)
+        trading = SHELL.split('section: "TRADING"', 1)[1].split('section: "MRZ RESEARCH"', 1)[0]
+        self.assertNotIn('name: "pressure"', trading)
+        self.assertNotIn('label: "Pressure"', trading)
 
     def test_watchlist_board_exposes_current_authority_fields(self) -> None:
         for label in (
@@ -100,19 +104,19 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertIn(".sidebar-toggle { display: none; }", mobile_rules)
         self.assertIn("body.sidebar-collapsed .workspace-sidebar", mobile_rules)
 
-    def test_pressure_deep_link_preserves_selected_symbol_context(self) -> None:
-        self.assertIn('id="pressureSelectedContext"', HTML)
-        self.assertIn('get("symbol")', JS)
-        self.assertIn('$("#pressureSelectedSymbol").textContent = selectedSymbol', JS)
+    def test_legacy_pressure_route_redirects_to_group_evidence_with_context(self) -> None:
+        self.assertIn('@application.get("/mrz/pressure"', API)
+        self.assertIn('url=f"/mrz/watchlists?{urlencode(params)}"', API)
+        self.assertIn('params = {"group": "all", "window": "24H"}', API)
+        self.assertIn("params.update(dict(request.query_params))", API)
+        self.assertIn('normalized === "/mrz/pressure"', SHELL)
+        self.assertIn('return "watchlists"', SHELL)
+        self.assertNotIn('data-route-panel="pressure"', HTML)
 
     def test_location_distribution_reuses_canonical_buckets_on_its_own_route(self) -> None:
-        pressure = HTML.split('data-route-panel="pressure"', 1)[1].split(
-            'data-route-panel="alert-settings"', 1
-        )[0]
         distribution = HTML.split('data-route-panel="location-distribution"', 1)[1].split(
             'data-route-panel="events"', 1
         )[0]
-        self.assertNotIn('id="locationHeatmap"', pressure)
         self.assertIn('id="locationHeatmap"', distribution)
         self.assertIn("function renderLocationDistribution()", JS)
         for key, label in (
@@ -229,7 +233,7 @@ class WorkspaceContractTests(unittest.TestCase):
             self.assertNotIn(f'id="{target}"', HTML)
         self.assertNotIn("derive.deriveBreadthLeadership", JS)
         self.assertNotIn("derive.deriveResearchInterpretation(report)", JS)
-        self.assertIn('<h1>Pressure</h1>', HTML)
+        self.assertNotIn('<h1>Pressure</h1>', HTML)
 
     def test_mrz_research_navigation_contains_only_supported_pages(self) -> None:
         research = SHELL.split('section: "MRZ RESEARCH"', 1)[1].split("],", 1)[0]
@@ -238,56 +242,50 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertIn('label: "Notification Event History"', research)
         self.assertNotIn("Breadth", research)
 
-    def test_pressure_sources_taxonomy_and_shared_drilldown_are_present(self) -> None:
+    def test_standalone_pressure_presentation_is_removed_but_analytics_are_preserved(self) -> None:
         for target in (
+            "pressureSelectedContext",
+            "pressureSummary",
             "pressureSources",
             "pressureAssetClasses",
             "pressureSectors",
             "pressureIndustries",
             "pressureDrilldown",
             "pressureDrilldownGroups",
+            "pressureMap",
         ):
-            self.assertIn(f'id="{target}"', HTML)
-        self.assertIn("PRESSURE SOURCES", HTML)
-        self.assertIn("PRESSURE BY ASSET CLASS", HTML)
-        self.assertIn("PRESSURE BY SECTOR", HTML)
-        self.assertIn("PRESSURE BY INDUSTRY", HTML)
-        self.assertNotIn("PRESSURE CONCENTRATION", HTML)
-        self.assertNotIn('id="pressureConcentration"', HTML)
-        self.assertNotIn("renderPressureConcentration", JS)
-        self.assertIn("CURRENT STATE ·", JS)
+            self.assertNotIn(f'id="{target}"', HTML)
+        for renderer in (
+            "renderPressure()",
+            "renderPressureSources",
+            "renderPressureAssetClasses",
+            "renderPressureTaxonomy",
+            "renderPressureDrilldown",
+        ):
+            self.assertNotIn(renderer, JS)
+        self.assertNotIn("pressureSelection", JS)
+        self.assertNotIn("pressureNeutralExpanded", JS)
+        self.assertNotIn("Universe Pressure", GROUP_JS)
+        self.assertNotIn(".pressure-taxonomy-grid", CSS)
         self.assertIn("Latest directional ·", JS)
-        self.assertNotIn("Latest pressure ·", JS)
-        self.assertIn("renderDirectionalTaxonomyDrilldown", JS)
-        self.assertIn('state.pressureNeutralExpanded ? "Hide" : "Show"', JS)
-        self.assertIn('showCurrentState: false, industryOnly: true', JS)
-        self.assertIn('["sector", "industry"].includes', JS)
-        self.assertIn(".pressure-neutral-heading", CSS)
-        self.assertIn(".pressure-directional-summary", CSS)
-        self.assertIn("renderPressureSources(taxonomy)", JS)
-        self.assertIn("derive.pressureDrilldownMembers", JS)
-        self.assertIn("derive.groupPressureSourcesByAssetClass", JS)
-        self.assertIn("type: \"map\"", JS)
-        self.assertIn("/mrz/symbols?symbol=", JS)
-        self.assertIn(".pressure-taxonomy-grid", CSS)
-        self.assertIn(".pressure-member-list", CSS)
-        mobile_rules = CSS[CSS.index("@media (max-width: 560px)") :]
-        self.assertIn(".pressure-taxonomy-grid", mobile_rules)
-        self.assertIn(".pressure-member-list", mobile_rules)
-        self.assertIn(".pressure-directional-summary-counts", mobile_rules)
-        self.assertIn(".pressure-neutral-heading .quiet-button", mobile_rules)
+        self.assertIn('id="detailPressure"', HTML)
+        self.assertIn('"taxonomy_pressure": build_taxonomy_pressure_report(', API)
+        self.assertIn("def build_taxonomy_pressure_report(", PEER_PRESSURE)
+        for helper in (
+            "groupPressureSourcesByAssetClass",
+            "pressureDrilldownMembers",
+            "directionalTaxonomyDrilldown",
+            "pressureDetailPresentation",
+        ):
+            self.assertIn(helper, DERIVATIONS)
 
     def test_group_evidence_belongs_to_watchlists_and_is_mobile_safe(self) -> None:
         watchlists = HTML.split('data-route-panel="watchlists"', 1)[1].split(
             'data-route-panel="attention"', 1
         )[0]
-        pressure = HTML.split('data-route-panel="pressure"', 1)[1].split(
-            'data-route-panel="alert-settings"', 1
-        )[0]
         self.assertIn("GROUP EVIDENCE", watchlists)
         self.assertIn("Recent tracked symbol events", watchlists)
-        self.assertNotIn("Watchlist context", pressure)
-        self.assertNotIn('id="pressureGroupSelect"', pressure)
+        self.assertNotIn('data-route-panel="pressure"', HTML)
         for target in (
             "groupEvidenceTitle",
             "groupEvidenceMeta",

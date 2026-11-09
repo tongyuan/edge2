@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
+from urllib.parse import urlencode
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
@@ -168,7 +169,6 @@ def create_app(
 
     @application.get("/mrz/watchlists", include_in_schema=False)
     @application.get("/mrz/symbols", include_in_schema=False)
-    @application.get("/mrz/pressure", include_in_schema=False)
     @application.get("/mrz/alert-settings", include_in_schema=False)
     @application.get("/mrz/location-distribution", include_in_schema=False)
     @application.get("/mrz/events", include_in_schema=False)
@@ -180,6 +180,15 @@ def create_app(
                 "Pragma": "no-cache",
                 "Expires": "0",
             },
+        )
+
+    @application.get("/mrz/pressure", include_in_schema=False)
+    def legacy_pressure(request: Request) -> RedirectResponse:
+        params = {"group": "all", "window": "24H"}
+        params.update(dict(request.query_params))
+        return RedirectResponse(
+            url=f"/mrz/watchlists?{urlencode(params)}",
+            status_code=307,
         )
 
     @application.get("/mrz/breadth-leadership", include_in_schema=False)

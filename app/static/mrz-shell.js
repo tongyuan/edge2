@@ -8,7 +8,6 @@
       routes: [
         { name: "watchlists", label: "Group Evidence", abbreviation: "GE", href: "/mrz/watchlists?group=all&window=24H", badgeId: "navAttentionCount" },
         { name: "symbols", label: "Symbols", abbreviation: "SY", href: "/mrz/symbols" },
-        { name: "pressure", label: "Pressure", abbreviation: "PR", href: "/mrz/pressure" },
         { name: "alert-settings", label: "Alert Settings", abbreviation: "AL", href: "/mrz/alert-settings" },
       ],
     },
@@ -25,6 +24,7 @@
   function routeNameForPath(pathname) {
     const normalized = String(pathname || "/").replace(/\/$/, "");
     if (normalized === "" || normalized === "/" || normalized === "/mrz" || normalized === "/mrz/overview" || normalized === "/mrz/attention") return "watchlists";
+    if (normalized === "/mrz/pressure") return "watchlists";
     if (normalized === "/mrz/breadth-leadership") return "location-distribution";
     if (
       normalized === "/mrz/formation-diagnostics"

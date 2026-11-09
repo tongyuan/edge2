@@ -63,14 +63,9 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn("detail.migration?.has_migrated", WORKSPACE)
         self.assertIn("/api/symbols/${encodeURIComponent(symbol)}", WORKSPACE)
 
-    def test_pressure_and_location_distribution_have_separate_routes(self) -> None:
-        pressure = HTML.split('data-route-panel="pressure"', 1)[1].split(
-            'data-route-panel="alert-settings"', 1
-        )[0]
-        self.assertIn("PRESSURE MAP", pressure)
-        self.assertNotIn("PEER PRESSURE", pressure)
-        self.assertNotIn("LOCATION DISTRIBUTION", pressure)
-        self.assertNotIn('id="locationHeatmap"', pressure)
+    def test_standalone_pressure_is_removed_and_location_distribution_remains(self) -> None:
+        self.assertNotIn('data-route-panel="pressure"', HTML)
+        self.assertNotIn("PRESSURE MAP", HTML)
         distribution = HTML.split('data-route-panel="location-distribution"', 1)[1].split(
             'data-route-panel="events"', 1
         )[0]
