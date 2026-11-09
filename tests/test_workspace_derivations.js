@@ -13,7 +13,6 @@ const {
   derivePeerLocation,
   derivePeerLocationFlow,
   eventLabel,
-  filterLocationTransitionMembers,
   filterGroupEvidenceContributors,
   groupPressureSourcesByAssetClass,
   isGroupEvidenceRequestCurrent,
@@ -355,7 +354,6 @@ assert.equal(transitionHeatmap.reconciles, true, "matrix cells reconcile exactly
 assert.deepEqual(transitionHeatmap.categories.higher.map((item) => item.symbol), ["UP_CONFIRMED", "UP_DIVERGENT", "UP_NEUTRAL"], "higher symbols use canonical magnitude then symbol order");
 assert.deepEqual(transitionHeatmap.categories.lower.map((item) => item.symbol), ["DOWN_CONFIRMED", "DOWN_DIVERGENT", "DOWN_NEUTRAL"], "lower symbols use canonical magnitude then symbol order");
 assert.deepEqual(transitionHeatmap.categories.unchanged.map((item) => item.symbol), ["UNCHANGED"]);
-assert.deepEqual(filterLocationTransitionMembers(transitionHeatmap.categories.higher, "div"), [transitionHeatmap.categories.higher[1]], "movement drill-down search is case-insensitive");
 const transitionCell = (fromKey, toKey) => transitionHeatmap.cells.find((cell) => cell.fromKey === fromKey && cell.toKey === toKey);
 assert.equal(transitionCell("deep_discount", "shallow_premium").direction, "higher", "cells right of the diagonal are higher");
 assert.equal(transitionCell("deep_premium", "shallow_discount").direction, "lower", "cells left of the diagonal are lower");
@@ -444,6 +442,78 @@ assert.deepEqual(allTaxonomies.groups.map((group) => group.name), ["Financials",
 assert.equal(allTaxonomies.groups.find((group) => group.name === "Utilities").unchanged, 1, "same bucket is preserved and not interpreted as missing");
 const assetClasses = deriveLocationTaxonomyOverview(breadthHistory, taxonomySymbols, { level: "asset_class", mode: "all", sort: "name" });
 assert.deepEqual(assetClasses.groups.map((group) => [group.name, group.comparable]), [["EQUITY", 7], ["ETF", 0]], "all view retains classified taxonomies with no comparable endpoint data");
+assert.equal(assetClasses.groups.find((group) => group.name === "ETF").lower_share, null, "zero-comparable taxonomies do not receive an artificial percentage");
+
+const rankingSymbols = [];
+const rankingMovements = [];
+const addRankingTaxonomy = (name, lower, higher, unchanged) => {
+  [["lower", lower], ["higher", higher], ["unchanged", unchanged]].forEach(([direction, count]) => {
+    Array.from({ length: count }, (_, index) => {
+      const symbol = `${name.replaceAll(" ", "_").toUpperCase()}_${direction}_${index}`;
+      rankingSymbols.push({ symbol, asset_class: "EQUITY", sector: name, industry: `${name} Industry` });
+      rankingMovements.push({ symbol, direction, start_location: "at_eqm", current_location: "at_eqm" });
+    });
+  });
+};
+addRankingTaxonomy("Technology", 10, 3, 21);
+addRankingTaxonomy("Financials", 7, 4, 3);
+addRankingTaxonomy("Communication Services", 2, 0, 3);
+addRankingTaxonomy("Consumer Discretionary", 1, 2, 6);
+rankingSymbols.push({ symbol: "UTILITIES_NO_HISTORY", asset_class: "EQUITY", sector: "Utilities", industry: "Electric Utilities" });
+const rankingHistory20D = { window: "20D", symbol_movements: rankingMovements };
+const countLowerRanking = deriveLocationTaxonomyOverview(rankingHistory20D, rankingSymbols, { level: "sector", mode: "all" });
+assert.equal(countLowerRanking.sort, "lower", "the default taxonomy ranking uses absolute lower-mover counts");
+assert.deepEqual(
+  countLowerRanking.groups.map((group) => group.name),
+  ["Technology", "Financials", "Communication Services", "Consumer Discretionary", "Utilities"],
+  "count-based lower ranking prioritizes the largest absolute moved-lower population",
+);
+const countHigherRanking = deriveLocationTaxonomyOverview(rankingHistory20D, rankingSymbols, { level: "sector", mode: "all", sort: "higher" });
+assert.deepEqual(
+  countHigherRanking.groups.map((group) => group.name),
+  ["Financials", "Technology", "Consumer Discretionary", "Communication Services", "Utilities"],
+  "count-based higher ranking uses moved-higher counts and alphabetical ties",
+);
+const percentLowerRanking = deriveLocationTaxonomyOverview(rankingHistory20D, rankingSymbols, { level: "sector", mode: "all", sort: "lower_pct" });
+assert.deepEqual(
+  percentLowerRanking.groups.map((group) => group.name),
+  ["Financials", "Communication Services", "Technology", "Consumer Discretionary", "Utilities"],
+  "percentage-based lower ranking uses comparable denominators and places zero-comparable taxonomies last",
+);
+const percentHigherRanking = deriveLocationTaxonomyOverview(rankingHistory20D, rankingSymbols, { level: "sector", mode: "all", sort: "higher_pct" });
+assert.deepEqual(
+  percentHigherRanking.groups.map((group) => group.name),
+  ["Financials", "Consumer Discretionary", "Technology", "Communication Services", "Utilities"],
+  "percentage-based higher ranking uses comparable denominators and deterministic ordering",
+);
+const rankedTechnology = countLowerRanking.groups.find((group) => group.name === "Technology");
+assert.equal(rankedTechnology.lower_share, 10 / 34, "lower percentage is calculated from the taxonomy comparable count");
+assert.equal(rankedTechnology.higher_share, 3 / 34, "higher percentage is calculated from the taxonomy comparable count");
+assert.equal(countLowerRanking.groups.find((group) => group.name === "Utilities").lower_share, null);
+const rankingHistory5D = {
+  window: "5D",
+  symbol_movements: rankingMovements.filter((movement) => movement.symbol.startsWith("FINANCIALS_") || movement.symbol.startsWith("TECHNOLOGY_lower_0")),
+};
+assert.deepEqual(
+  deriveLocationTaxonomyOverview(rankingHistory5D, rankingSymbols, { level: "sector", mode: "movement" }).groups.map((group) => group.name),
+  ["Financials", "Technology"],
+  "window changes derive the same count-based default from the newly selected canonical response",
+);
+assert.deepEqual(
+  deriveLocationTaxonomyOverview(rankingHistory20D, rankingSymbols, { level: "industry", mode: "movement", sort: "lower" }).groups.slice(0, 3).map((group) => group.name),
+  ["Technology Industry", "Financials Industry", "Communication Services Industry"],
+  "taxonomy-level changes retain count-based ranking semantics",
+);
+const alphabeticalTie = deriveLocationTaxonomyOverview({
+  symbol_movements: [
+    { symbol: "BETA", direction: "lower" },
+    { symbol: "ALPHA", direction: "lower" },
+  ],
+}, [
+  { symbol: "BETA", sector: "Beta" },
+  { symbol: "ALPHA", sector: "Alpha" },
+], { level: "sector", mode: "all", sort: "lower" });
+assert.deepEqual(alphabeticalTie.groups.map((group) => group.name), ["Alpha", "Beta"], "equal count rankings break ties alphabetically");
 const technologyFlow = deriveLocationTaxonomyFlow(breadthHistory, taxonomySymbols, "sector", "Technology");
 assert.deepEqual(technologyFlow.totals, { higher: 2, lower: 1, unchanged: 0, comparable: 3 }, "selected taxonomy flow reconciles its exact symbols");
 assert.deepEqual(new Set(technologyFlow.cells.flatMap((cell) => cell.members).map((member) => member.symbol)), new Set(["UP_CONFIRMED", "UP_NEUTRAL", "DOWN_CONFIRMED"]));

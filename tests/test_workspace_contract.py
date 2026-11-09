@@ -18,7 +18,7 @@ PEER_PRESSURE = (ROOT / "app/peer_pressure.py").read_text(encoding="utf-8")
 class WorkspaceContractTests(unittest.TestCase):
     def test_persistent_navigation_and_routes(self) -> None:
         for route, label in (
-            ("/mrz/watchlists", "Group Evidence"),
+            ("/mrz/watchlists", "Watchlists"),
             ("/mrz/symbols", "Symbols"),
             ("/mrz/alert-settings", "Alert Settings"),
             ("/mrz/location-distribution", "Location Distribution"),
@@ -73,7 +73,7 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertIn("Recent tracked symbol events", HTML)
         self.assertIn("Notification Event History", SHELL)
         self.assertIn("/api/mrz/events?limit=500", GROUP_JS)
-        self.assertIn("Group Evidence remains available", GROUP_JS)
+        self.assertIn("Watchlists remains available", GROUP_JS)
 
     def test_notification_controls_cover_scope_and_all_event_types(self) -> None:
         self.assertIn('href: "/mrz/alert-settings"', SHELL)
@@ -129,15 +129,12 @@ class WorkspaceContractTests(unittest.TestCase):
             with self.subTest(bucket=key):
                 self.assertIn(f'{{ key: "{key}", label: "{label}"', DERIVATIONS)
 
-    def test_location_distribution_contributor_search_filters_exact_flow_members(self) -> None:
-        self.assertIn('id="locationContributorSearch"', HTML)
-        self.assertIn('type="search"', HTML)
-        self.assertIn("derive.filterLocationTransitionMembers(cell.members", JS)
-        self.assertIn('$("#locationContributorSearch")?.addEventListener("input"', JS)
-        self.assertIn("No symbols match", JS)
+    def test_location_distribution_contributors_show_exact_flow_members(self) -> None:
+        self.assertNotIn('id="locationContributorSearch"', HTML)
+        self.assertNotIn("filterLocationTransitionMembers", DERIVATIONS)
+        self.assertIn("const members = cell.members", JS)
         self.assertIn("/mrz/symbols?symbol=", JS)
         mobile_rules = CSS.split("@media (max-width: 820px)", 1)[1]
-        self.assertIn(".location-contributors-heading label { width: 100%; }", mobile_rules)
         self.assertNotIn(".location-contributors-section { display: none; }", mobile_rules)
 
     def test_location_distribution_preserves_underlying_research_helpers(self) -> None:
@@ -158,16 +155,25 @@ class WorkspaceContractTests(unittest.TestCase):
             "locationTaxonomyLevel",
             "locationTaxonomySort",
             "locationFlowCanvas",
-            "locationContributorSearch",
             "locationContributorRows",
         ):
             self.assertIn(f'id="{target}"', HTML)
         for sort_label in (
+            "Most Symbols Moving Lower",
+            "Most Symbols Moving Higher",
             "Highest % Moving Lower",
             "Highest % Moving Higher",
             "Taxonomy A–Z",
         ):
             self.assertIn(sort_label, HTML)
+        self.assertIn('locationTaxonomySort: "lower"', JS)
+        self.assertIn('["lower", "higher", "lower_pct", "higher_pct", "name"]', JS)
+        self.assertIn('`${Math.round(share * 100)}%`', JS)
+        self.assertIn('↓ ${group.lower} lower (${percentage(group.lower_share)})', JS)
+        self.assertIn('↑ ${group.higher} higher (${percentage(group.higher_share)})', JS)
+        sort_handler = JS.split('$("#locationTaxonomySort")?.addEventListener("change"', 1)[1].split("});", 1)[0]
+        self.assertNotIn("locationTaxonomySelection = null", sort_handler)
+        self.assertNotIn("locationFlowSelection = null", sort_handler)
         for removed_target in (
             "locationTrendRows",
             "locationUniverseDisclosure",
@@ -273,7 +279,7 @@ class WorkspaceContractTests(unittest.TestCase):
         watchlists = HTML.split('data-route-panel="watchlists"', 1)[1].split(
             'data-route-panel="attention"', 1
         )[0]
-        self.assertIn("GROUP EVIDENCE", watchlists)
+        self.assertIn("WATCHLISTS", watchlists)
         self.assertIn("Recent tracked symbol events", watchlists)
         self.assertNotIn('data-route-panel="pressure"', HTML)
         for target in (
@@ -296,11 +302,10 @@ class WorkspaceContractTests(unittest.TestCase):
         for target in (
             "locationFlowCanvas",
             "locationFlowTargets",
-            "locationContributorSearch",
             "locationContributorRows",
         ):
             self.assertIn(f'id="{target}"', HTML)
-        self.assertIn("derive.filterLocationTransitionMembers", JS)
+        self.assertNotIn("filterLocationTransitionMembers", DERIVATIONS)
         self.assertIn('button.setAttribute("aria-pressed"', JS)
         self.assertIn("item.start_location_label", JS)
         self.assertIn("item.current_location_label", JS)
@@ -308,7 +313,6 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertIn("item.current_observed_at", JS)
         self.assertIn("item.has_new_observation", JS)
         self.assertIn('symbolLink(item.symbol, "Open details")', JS)
-        self.assertIn('type="search"', HTML)
         self.assertIn("Path2D", JS)
         self.assertIn("isPointInStroke", JS)
         self.assertIn(".location-flow-scroll", CSS)

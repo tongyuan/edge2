@@ -1,30 +1,37 @@
-# Location Distribution redesign — visual QA
+# EDGE 2.0 combined UI update — visual QA
 
 Date: 2026-11-09
 
-## Reference fidelity
+## References
 
-- Compared against the three approved dark-interface references supplied with the task.
-- Preserved the reference hierarchy: page identity and coverage first, compact taxonomy cards second, endpoint bucket flow third, contributing symbols last.
-- Matched the reference visual language with narrow centered content, restrained dark surfaces, red/gray/green factual movement encoding, compact typography, and selected-card treatment.
-- Used the existing EDGE shell, spacing tokens, controls, and navigation rather than introducing a parallel design system.
+- Taxonomy ranking reference: `/var/folders/dm/ctz4b4_d2yq9jbskg25nx6xw0000gn/T/codex-clipboard-1aff229b-58e5-4fbd-8030-1bccea27857a.png`
+- Watchlists navigation reference: `/var/folders/dm/ctz4b4_d2yq9jbskg25nx6xw0000gn/T/codex-clipboard-21ed918f-2053-4339-908a-f266421eb354.png`
+- Contributor-filter removal reference: `/var/folders/dm/ctz4b4_d2yq9jbskg25nx6xw0000gn/T/codex-clipboard-88d2acef-8170-4c02-8d8c-73481e22f3dd.png`
+- Implementation verified in the Codex in-app browser at the local Location Distribution route with the 20D, Sector, Financials, Deep Discount → Shallow Discount state.
 
 ## Data and interaction validation
 
-- Validated locally with read-only current `/api/symbols` data and all three canonical history windows.
-- 5D coverage displayed 133 eligible, 132 comparable, 125 with new observations, 7 without new observations, and 1 unavailable/incomparable.
-- Verified taxonomy level changes (Sector, Industry, Asset Class), With Movement / All Taxonomies, all sort modes, taxonomy selection, window changes, persistent URL state, flow selection, exact contributor membership, contributor search, and symbol detail links.
-- Verified flow widths use transition counts and flow colors use the canonical endpoint direction returned by the backend.
+- Default `Most Symbols Moving Lower` ranking showed Technology, Financials, then Communication Services for the verified 20D data.
+- `Highest % Moving Lower` showed Financials, Communication Services, then Technology.
+- Verified all five sort choices, count-and-percentage labels, taxonomy and transition selection persistence, and exact contributor membership.
+- The selected Deep Discount → Shallow Discount flow showed OWL and ZION after the filter control was removed.
+- The sidebar and page identity display `Watchlists`; underlying route and API contracts remain unchanged.
+- The contributor filter is absent from the DOM and visible page text; contributor detail links remain available.
 - Browser console: no errors or warnings.
 
 ## Responsive validation
 
 - Desktop: 1440 × 1000.
 - Mobile: 390 × 844.
-- Document width at mobile: 390 px client width and 390 px scroll width (no page-level horizontal overflow).
-- The fixed-width flow canvas remains contained in its own horizontally scrollable region.
-- Contributor rows convert from a compact table to labeled stacked cards on small screens.
+- Mobile document width: 390 px client width and 390 px scroll width, with no page-level horizontal overflow.
+- The existing flow canvas remains contained in its horizontally scrollable region and contributor rows retain their compact mobile presentation.
+
+## Findings
+
+- P0: none.
+- P1: none.
+- P2: none.
 
 ## Result
 
-Passed. The implementation is ready for operator review. It has not been deployed.
+passed

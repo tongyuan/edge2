@@ -73,12 +73,6 @@
     return (symbols || []).filter((state) => wanted.has(state.symbol));
   }
 
-  function filterLocationTransitionMembers(members, query) {
-    const normalized = String(query || "").trim().toUpperCase();
-    if (!normalized) return [...(members || [])];
-    return (members || []).filter((member) => String(member.symbol || "").toUpperCase().includes(normalized));
-  }
-
   function deriveLocationTransitionHeatmap(history = {}) {
     const rank = new Map(LOCATION_TRANSITION_BUCKETS.map((bucket, index) => [bucket.key, index]));
     const cells = LOCATION_TRANSITION_BUCKETS.flatMap((source, sourceIndex) => (
@@ -159,7 +153,7 @@
   function deriveLocationTaxonomyOverview(history = {}, symbols = [], options = {}) {
     const level = ["asset_class", "sector", "industry"].includes(options.level) ? options.level : "sector";
     const mode = options.mode === "all" ? "all" : "movement";
-    const sort = ["lower", "higher", "name"].includes(options.sort) ? options.sort : "lower";
+    const sort = ["lower", "higher", "lower_pct", "higher_pct", "name"].includes(options.sort) ? options.sort : "lower";
     const symbolByName = new Map((symbols || []).map((item) => [String(item.symbol || "").trim(), item]));
     const allNames = new Set();
     (symbols || []).forEach((item) => {
@@ -187,14 +181,22 @@
     });
     let rows = [...groups.values()].map((group) => ({
       ...group,
-      higher_share: group.comparable ? group.higher / group.comparable : 0,
-      lower_share: group.comparable ? group.lower / group.comparable : 0,
-      unchanged_share: group.comparable ? group.unchanged / group.comparable : 0,
+      higher_share: group.comparable ? group.higher / group.comparable : null,
+      lower_share: group.comparable ? group.lower / group.comparable : null,
+      unchanged_share: group.comparable ? group.unchanged / group.comparable : null,
     }));
     if (mode === "movement") rows = rows.filter((group) => group.higher + group.lower > 0);
     rows.sort((left, right) => {
-      if (sort === "lower") return right.lower_share - left.lower_share || left.name.localeCompare(right.name);
-      if (sort === "higher") return right.higher_share - left.higher_share || left.name.localeCompare(right.name);
+      if (sort === "lower") return right.lower - left.lower || left.name.localeCompare(right.name);
+      if (sort === "higher") return right.higher - left.higher || left.name.localeCompare(right.name);
+      if (sort === "lower_pct") {
+        if (Boolean(left.comparable) !== Boolean(right.comparable)) return left.comparable ? -1 : 1;
+        return (right.lower_share ?? -1) - (left.lower_share ?? -1) || left.name.localeCompare(right.name);
+      }
+      if (sort === "higher_pct") {
+        if (Boolean(left.comparable) !== Boolean(right.comparable)) return left.comparable ? -1 : 1;
+        return (right.higher_share ?? -1) - (left.higher_share ?? -1) || left.name.localeCompare(right.name);
+      }
       return left.name.localeCompare(right.name);
     });
     return {
@@ -976,7 +978,6 @@
     directionalTaxonomyDrilldown,
     eventDirection,
     eventLabel,
-    filterLocationTransitionMembers,
     groupPressureSourcesByAssetClass,
     isGroupEvidenceRequestCurrent,
     groupMembership,

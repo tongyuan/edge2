@@ -9,7 +9,7 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/static/edge-mrz-icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/static/edge-mrz-icon-180.png" />
-    <link rel="stylesheet" href="/static/workspace.css?v=location-taxonomy-flow-20261109" />
+    <link rel="stylesheet" href="/static/workspace.css?v=taxonomy-ranking-20261109" />
   </head>
   <body>
     <div class="workspace-shell">
@@ -32,10 +32,10 @@
 
         <section class="route-panel group-evidence-route" data-route-panel="watchlists" hidden>
           <header class="route-heading group-evidence-heading">
-            <div><p>GROUP EVIDENCE</p><h1 id="groupEvidenceTitle" tabindex="-1">All Groups</h1><span id="groupEvidenceScope">Historical evidence for today's members · elapsed calendar time</span></div>
+            <div><p>WATCHLISTS</p><h1 id="groupEvidenceTitle" tabindex="-1">All Groups</h1><span id="groupEvidenceScope">Historical evidence for today's members · elapsed calendar time</span></div>
             <div class="group-evidence-actions"><div class="location-window-selector" role="group" aria-label="Group evidence window"><button type="button" data-group-window="24H" aria-pressed="true">24H</button><button type="button" data-group-window="5D" aria-pressed="false">5D</button><button type="button" data-group-window="20D" aria-pressed="false">20D</button></div><button class="primary-button" id="groupEvidenceNew" type="button">+ New group</button><button class="quiet-button" id="groupEvidenceEdit" type="button" hidden>Edit group</button></div>
           </header>
-          <p class="group-evidence-live" id="groupEvidenceLive" role="status" aria-live="polite">Loading group evidence…</p>
+          <p class="group-evidence-live" id="groupEvidenceLive" role="status" aria-live="polite">Loading watchlist evidence…</p>
           <section class="group-evidence-meta" id="groupEvidenceMeta" aria-label="Evidence snapshot"></section>
           <div id="groupEvidenceContent"></div>
           <section class="panel recent-tracked-events" id="recentTrackedEvents">
@@ -79,7 +79,7 @@
             <div class="location-taxonomy-controls">
               <div class="location-segmented" role="group" aria-label="Taxonomy visibility"><button type="button" data-taxonomy-mode="movement" aria-pressed="true">With Movement</button><button type="button" data-taxonomy-mode="all" aria-pressed="false">All Taxonomies</button></div>
               <label>LEVEL<select id="locationTaxonomyLevel"><option value="sector">Sector</option><option value="industry">Industry</option><option value="asset_class">Asset Class</option></select></label>
-              <label>SORT<select id="locationTaxonomySort"><option value="lower">Highest % Moving Lower</option><option value="higher">Highest % Moving Higher</option><option value="name">Taxonomy A–Z</option></select></label>
+              <label>SORT<select id="locationTaxonomySort"><option value="lower">Most Symbols Moving Lower</option><option value="higher">Most Symbols Moving Higher</option><option value="lower_pct">Highest % Moving Lower</option><option value="higher_pct">Highest % Moving Higher</option><option value="name">Taxonomy A–Z</option></select></label>
             </div>
             <p class="location-inline-status" id="locationTaxonomyStatus" role="status"></p>
             <div class="location-taxonomy-list" id="locationTaxonomyCards"></div>
@@ -91,7 +91,7 @@
             <p class="location-flow-note">Line thickness represents symbol count; color represents structural movement direction. Same bucket does not imply stability.</p>
           </section>
           <section class="location-section location-contributors-section" aria-labelledby="locationContributorsHeading">
-            <header class="location-section-heading location-contributors-heading"><div><h2 id="locationContributorsHeading">Contributing Symbols</h2><p id="locationContributorScope">Select a flow to reveal its exact underlying symbols.</p></div><label>FILTER SYMBOLS<input id="locationContributorSearch" type="search" placeholder="e.g. NVDA" autocomplete="off" autocapitalize="characters" spellcheck="false" /></label></header>
+            <header class="location-section-heading location-contributors-heading"><div><h2 id="locationContributorsHeading">Contributing Symbols</h2><p id="locationContributorScope">Select a flow to reveal its exact underlying symbols.</p></div></header>
             <div class="location-contributors-table-wrap"><table class="location-contributors-table"><thead><tr><th>Symbol</th><th>Previous</th><th>Current</th><th>Observation freshness</th><th><span class="visually-hidden">Open details</span></th></tr></thead><tbody id="locationContributorRows"></tbody></table></div>
           </section>
         </section>
@@ -109,6 +109,6 @@
 
     <dialog class="workspace-dialog inbox-dialog" id="notificationInboxDialog" aria-labelledby="notificationInboxTitle"><section><header><div><p>DELIVERY HISTORY</p><h2 id="notificationInboxTitle">Notification Inbox</h2><span id="notificationInboxSummary">No unread notifications</span></div><button class="icon-button" id="notificationInboxClose" type="button" aria-label="Close">×</button></header><p class="notification-inbox-empty" id="notificationInboxEmpty">No active notifications.</p><ul class="notification-inbox-list" id="notificationInboxList" aria-live="polite"></ul><footer><button class="quiet-button" type="button" id="notificationMarkAllRead" disabled>Mark all read</button><button class="danger-button" type="button" id="notificationClearInbox" disabled>Clear inbox</button></footer></section></dialog>
     <div class="notification-toast-host" id="notificationToastHost" aria-live="polite"></div>
-    <script src="/static/mrz-shell.js?v=location-taxonomy-flow-20261109" defer></script><script src="/static/operator-time.js?v=mrz-workspace-20261007" defer></script><script src="/static/workspace-derivations.js?v=location-taxonomy-flow-20261109" defer></script><script src="/static/group-evidence.js?v=location-taxonomy-flow-20261109" defer></script><script src="/static/notifications.js?v=mrz-inbox-actions-20261008" defer></script><script src="/static/workspace.js?v=location-taxonomy-flow-20261109" defer></script>
+    <script src="/static/mrz-shell.js?v=taxonomy-ranking-20261109" defer></script><script src="/static/operator-time.js?v=mrz-workspace-20261007" defer></script><script src="/static/workspace-derivations.js?v=taxonomy-ranking-20261109" defer></script><script src="/static/group-evidence.js?v=taxonomy-ranking-20261109" defer></script><script src="/static/notifications.js?v=mrz-inbox-actions-20261008" defer></script><script src="/static/workspace.js?v=taxonomy-ranking-20261109" defer></script>
   </body>
 </html>

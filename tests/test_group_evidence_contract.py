@@ -50,7 +50,7 @@ class GroupEvidenceContractTests(unittest.TestCase):
         self.assertIn("/mrz/watchlists?group=all&window=24H", API)
         self.assertNotIn('name: "overview"', SHELL)
         self.assertNotIn('name: "attention"', SHELL)
-        self.assertIn('label: "Group Evidence"', SHELL)
+        self.assertIn('label: "Watchlists"', SHELL)
         self.assertIn('label: "Notification Event History"', SHELL)
 
     def test_initial_watchlist_load_is_decoupled_from_global_sources(self) -> None:
@@ -65,7 +65,7 @@ class GroupEvidenceContractTests(unittest.TestCase):
         self.assertNotIn("renderWatchlists", render_all)
 
     def test_stage_a_assets_share_a_fresh_cache_version(self) -> None:
-        version = "location-taxonomy-flow-20261109"
+        version = "taxonomy-ranking-20261109"
         self.assertIn(f'/static/workspace.css?v={version}', HTML)
         self.assertIn(f'/static/group-evidence.js?v={version}', HTML)
         self.assertIn(f'/static/workspace.js?v={version}', HTML)

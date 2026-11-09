@@ -232,8 +232,8 @@ input { padding: 0 11px; }
 .location-section-heading p { margin: 0; }
 .location-section-heading > span { color: #b9c3cf; font-size: .7rem; }
 .location-taxonomy-controls { display: grid; grid-template-columns: minmax(280px, 1fr) 150px 190px; gap: 10px; margin: 14px 0 8px; }
-.location-taxonomy-controls label, .location-contributors-heading label { display: grid; gap: 5px; color: var(--muted); font-size: .58rem; font-weight: 800; letter-spacing: .08em; }
-.location-taxonomy-controls select, .location-contributors-heading input { width: 100%; min-height: 38px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text); font-size: .7rem; }
+.location-taxonomy-controls label { display: grid; gap: 5px; color: var(--muted); font-size: .58rem; font-weight: 800; letter-spacing: .08em; }
+.location-taxonomy-controls select { width: 100%; min-height: 38px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text); font-size: .7rem; }
 .location-segmented { display: grid; grid-template-columns: repeat(2, 1fr); padding: 3px; border-radius: 9px; background: rgba(255,255,255,.045); }
 .location-segmented button { min-height: 32px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; font-size: .72rem; }
 .location-segmented button[aria-pressed="true"] { background: #2b323d; color: var(--text); }
@@ -242,7 +242,7 @@ input { padding: 0 11px; }
 .location-taxonomy-card { display: grid; gap: 9px; width: 100%; min-height: 92px; padding: 13px 14px; border: 1px solid var(--line-soft); border-radius: 11px; background: transparent; color: var(--text); cursor: pointer; text-align: left; }
 .location-taxonomy-card:hover { border-color: #3b485a; background: rgba(255,255,255,.018); }
 .location-taxonomy-card[aria-pressed="true"] { border-color: #526172; background: rgba(255,255,255,.025); }
-.location-taxonomy-card:focus-visible, .location-segmented button:focus-visible, .location-taxonomy-controls select:focus-visible, .location-contributors-heading input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.location-taxonomy-card:focus-visible, .location-segmented button:focus-visible, .location-taxonomy-controls select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .location-taxonomy-card-heading, .location-taxonomy-counts { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .location-taxonomy-card-heading strong { font-size: .78rem; }
 .location-taxonomy-card-heading small { color: #b3bdca; font-size: .67rem; font-weight: 400; }
@@ -268,8 +268,6 @@ input { padding: 0 11px; }
 .location-flow-hit-targets button { pointer-events: auto; }
 .location-flow-tooltip { position: absolute; z-index: 3; max-width: 250px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px; background: #17202b; box-shadow: 0 8px 24px rgba(0,0,0,.4); color: var(--text); font-size: .64rem; pointer-events: none; }
 .location-flow-note { margin: 10px 0 0; }
-.location-contributors-heading { align-items: flex-end; }
-.location-contributors-heading label { width: min(240px, 100%); }
 .location-contributors-table-wrap { max-width: 100%; overflow-x: auto; border: 1px solid var(--line-soft); border-radius: 10px; }
 .location-contributors-table { width: 100%; border-collapse: collapse; font-size: .68rem; }
 .location-contributors-table th, .location-contributors-table td { padding: 11px 12px; border-bottom: 1px solid var(--line-soft); text-align: left; vertical-align: middle; }
@@ -423,8 +421,6 @@ input { padding: 0 11px; }
   .location-page-header { align-items: flex-start; flex-direction: column; }
   .location-taxonomy-controls { grid-template-columns: 1fr 1fr; }
   .location-segmented { grid-column: 1 / -1; }
-  .location-contributors-heading { align-items: stretch; flex-direction: column; }
-  .location-contributors-heading label { width: 100%; }
   .symbol-board-sort { flex: 1; }
   .symbol-board-sort select { width: 100%; min-width: 0; }
   .group-evidence-heading { flex-direction: column; }

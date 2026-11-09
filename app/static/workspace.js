@@ -15,7 +15,6 @@
     locationTaxonomySort: "lower",
     locationTaxonomySelection: null,
     locationFlowSelection: null,
-    locationContributorQuery: "",
     peerWindow: "24H",
     peerLocationHistory: null,
     peerPressure: null,
@@ -497,7 +496,7 @@
     if (["24H", "5D", "20D"].includes(params.get("window"))) state.locationWindow = params.get("window");
     if (["asset_class", "sector", "industry"].includes(params.get("taxonomy_level"))) state.locationTaxonomyLevel = params.get("taxonomy_level");
     if (["movement", "all"].includes(params.get("view"))) state.locationTaxonomyMode = params.get("view");
-    if (["lower", "higher", "name"].includes(params.get("sort"))) state.locationTaxonomySort = params.get("sort");
+    if (["lower", "higher", "lower_pct", "higher_pct", "name"].includes(params.get("sort"))) state.locationTaxonomySort = params.get("sort");
     state.locationTaxonomySelection = params.get("taxonomy") || null;
     state.locationFlowSelection = params.get("transition") || null;
   }
@@ -561,14 +560,17 @@
     [["lower", group.lower], ["unchanged", group.unchanged], ["higher", group.higher]].forEach(([direction, count]) => {
       const segment = element("i", direction); segment.style.flexGrow = String(count); segment.hidden = count === 0; bar.append(segment);
     });
+    const percentage = (share) => share === null ? "—" : `${Math.round(share * 100)}%`;
     const counts = element("span", "location-taxonomy-counts");
-    counts.append(element("span", "lower", `↓ ${group.lower} lower`), element("span", "same", `${group.unchanged} same`), element("span", "higher", `↑ ${group.higher} higher`));
+    counts.append(
+      element("span", "lower", `↓ ${group.lower} lower (${percentage(group.lower_share)})`),
+      element("span", "same", `${group.unchanged} same`),
+      element("span", "higher", `↑ ${group.higher} higher (${percentage(group.higher_share)})`),
+    );
     button.append(heading, bar, counts);
     button.addEventListener("click", () => {
       state.locationTaxonomySelection = group.name;
       state.locationFlowSelection = null;
-      state.locationContributorQuery = "";
-      $("#locationContributorSearch").value = "";
       renderLocationDistribution();
     });
     return button;
@@ -625,8 +627,6 @@
 
   function selectLocationFlow(cell) {
     state.locationFlowSelection = cell.key;
-    state.locationContributorQuery = "";
-    $("#locationContributorSearch").value = "";
     renderLocationDistribution();
     $("#locationContributorsHeading")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
@@ -638,11 +638,8 @@
       $("#locationContributorScope").textContent = "Select a flow to reveal its exact underlying symbols.";
       const row = element("tr", ""); const data = element("td", "location-contributors-empty", "No flow selected."); data.colSpan = 5; row.append(data); target.append(row); return;
     }
-    const members = derive.filterLocationTransitionMembers(cell.members, state.locationContributorQuery);
-    $("#locationContributorScope").textContent = `${cell.fromLabel} → ${cell.toLabel} · ${members.length}${state.locationContributorQuery ? ` of ${cell.count}` : ""} symbol${cell.count === 1 ? "" : "s"}`;
-    if (!members.length) {
-      const row = element("tr", ""); const data = element("td", "location-contributors-empty", `No symbols match “${state.locationContributorQuery}”.`); data.colSpan = 5; row.append(data); target.append(row); return;
-    }
+    const members = cell.members;
+    $("#locationContributorScope").textContent = `${cell.fromLabel} → ${cell.toLabel} · ${cell.count} symbol${cell.count === 1 ? "" : "s"}`;
     members.forEach((item) => {
       const row = element("tr", "");
       const symbol = element("td", "", item.symbol); symbol.dataset.label = "Symbol";
@@ -837,15 +834,6 @@
   });
   $("#locationTaxonomySort")?.addEventListener("change", (event) => {
     state.locationTaxonomySort = event.target.value; renderLocationDistribution();
-  });
-  $("#locationContributorSearch")?.addEventListener("input", (event) => {
-    state.locationContributorQuery = event.target.value;
-    if (state.locationHistory && state.locationTaxonomySelection) renderLocationContributors(derive.deriveLocationTaxonomyFlow(state.locationHistory, state.symbols, state.locationTaxonomyLevel, state.locationTaxonomySelection));
-  });
-  $("#locationContributorSearch")?.addEventListener("keydown", (event) => {
-    if (event.key !== "Escape") return;
-    state.locationContributorQuery = ""; event.target.value = "";
-    if (state.locationHistory && state.locationTaxonomySelection) renderLocationContributors(derive.deriveLocationTaxonomyFlow(state.locationHistory, state.symbols, state.locationTaxonomyLevel, state.locationTaxonomySelection));
   });
   $("#locationFlowCanvas")?.addEventListener("mousemove", (event) => {
     const canvas = event.currentTarget; const bounds = canvas.getBoundingClientRect();

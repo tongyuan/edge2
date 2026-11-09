@@ -68,7 +68,7 @@
     return `/mrz/events?${params}`;
   }
 
-  function setLoading(message = "Loading group evidence…") {
+  function setLoading(message = "Loading watchlist evidence…") {
     $("#groupEvidenceLive").hidden = false;
     $("#groupEvidenceLive").className = "group-evidence-live";
     $("#groupEvidenceLive").textContent = message;
@@ -564,7 +564,7 @@
       $("#recentTrackedEventsStatus").textContent = `${events.length} raw tracked symbol events loaded.`;
       state.recentLoaded = true;
     } catch (error) {
-      $("#recentTrackedEventsStatus").textContent = `${error.message} Group Evidence remains available.`;
+      $("#recentTrackedEventsStatus").textContent = `${error.message} Watchlists remains available.`;
       $("#recentTrackedEventsStatus").classList.add("error");
     }
   }

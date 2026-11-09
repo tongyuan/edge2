@@ -6,7 +6,7 @@
     {
       section: "TRADING",
       routes: [
-        { name: "watchlists", label: "Group Evidence", abbreviation: "GE", href: "/mrz/watchlists?group=all&window=24H", badgeId: "navAttentionCount" },
+        { name: "watchlists", label: "Watchlists", abbreviation: "WL", href: "/mrz/watchlists?group=all&window=24H", badgeId: "navAttentionCount" },
         { name: "symbols", label: "Symbols", abbreviation: "SY", href: "/mrz/symbols" },
         { name: "alert-settings", label: "Alert Settings", abbreviation: "AL", href: "/mrz/alert-settings" },
       ],
@@ -50,7 +50,7 @@
 
   function sidebarMarkup(activeRoute) {
     return `
-      <a class="workspace-brand" href="/mrz/watchlists?group=all&window=24H" aria-label="EDGE 2.0 Group Evidence home"><span class="brand-mark">E</span><span class="brand-copy"><strong>EDGE 2.0</strong><small>MRZ Monitor</small></span></a>
+      <a class="workspace-brand" href="/mrz/watchlists?group=all&window=24H" aria-label="EDGE 2.0 Watchlists home"><span class="brand-mark">E</span><span class="brand-copy"><strong>EDGE 2.0</strong><small>MRZ Monitor</small></span></a>
       <nav class="workspace-navigation">${navigationMarkup(activeRoute)}</nav>
       <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-controls="mrzWorkspaceMain"><span class="sidebar-toggle-icon" aria-hidden="true">‹</span><span class="sidebar-toggle-label">Collapse</span></button>
       <div class="sidebar-foot"><span class="health-dot" id="healthState">Checking system</span><small>Canonical universe monitoring</small></div>
