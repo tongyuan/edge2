@@ -162,6 +162,12 @@ class WorkspaceContractTests(unittest.TestCase):
             "locationContributorRows",
         ):
             self.assertIn(f'id="{target}"', HTML)
+        for sort_label in (
+            "Highest % Moving Lower",
+            "Highest % Moving Higher",
+            "Taxonomy A–Z",
+        ):
+            self.assertIn(sort_label, HTML)
         for removed_target in (
             "locationTrendRows",
             "locationUniverseDisclosure",
