@@ -73,12 +73,6 @@
     return (symbols || []).filter((state) => wanted.has(state.symbol));
   }
 
-  function filterLocationSymbols(symbols, query) {
-    const normalized = String(query || "").trim().toUpperCase();
-    if (!normalized) return [...(symbols || [])];
-    return (symbols || []).filter((symbol) => String(symbol || "").toUpperCase().includes(normalized));
-  }
-
   function filterLocationTransitionMembers(members, query) {
     const normalized = String(query || "").trim().toUpperCase();
     if (!normalized) return [...(members || [])];
@@ -153,6 +147,84 @@
         && totals.lower === Number(expected.moved_lower || 0)
         && totals.unchanged === Number(expected.unchanged || 0),
     };
+  }
+
+  function locationTaxonomyName(symbol, level) {
+    const value = symbol?.[level];
+    return value === null || value === undefined || String(value).trim() === ""
+      ? null
+      : String(value).trim();
+  }
+
+  function deriveLocationTaxonomyOverview(history = {}, symbols = [], options = {}) {
+    const level = ["asset_class", "sector", "industry"].includes(options.level) ? options.level : "sector";
+    const mode = options.mode === "all" ? "all" : "movement";
+    const sort = ["lower", "higher", "name"].includes(options.sort) ? options.sort : "lower";
+    const symbolByName = new Map((symbols || []).map((item) => [String(item.symbol || "").trim(), item]));
+    const allNames = new Set();
+    (symbols || []).forEach((item) => {
+      const name = locationTaxonomyName(item, level);
+      if (name) allNames.add(name);
+    });
+    const groups = new Map([...allNames].map((name) => [name, {
+      name, comparable: 0, higher: 0, lower: 0, unchanged: 0, members: [],
+    }]));
+    const seen = new Set();
+    let unclassifiedComparable = 0;
+    let unknownDirectionComparable = 0;
+    (history.symbol_movements || []).forEach((movement) => {
+      const symbol = String(movement.symbol || "").trim();
+      if (!symbol || seen.has(symbol)) return;
+      seen.add(symbol);
+      const name = locationTaxonomyName(symbolByName.get(symbol), level);
+      if (!name) { unclassifiedComparable += 1; return; }
+      if (!["higher", "lower", "unchanged"].includes(movement.direction)) { unknownDirectionComparable += 1; return; }
+      if (!groups.has(name)) groups.set(name, { name, comparable: 0, higher: 0, lower: 0, unchanged: 0, members: [] });
+      const group = groups.get(name);
+      group.comparable += 1;
+      group[movement.direction] += 1;
+      group.members.push(movement);
+    });
+    let rows = [...groups.values()].map((group) => ({
+      ...group,
+      higher_share: group.comparable ? group.higher / group.comparable : 0,
+      lower_share: group.comparable ? group.lower / group.comparable : 0,
+      unchanged_share: group.comparable ? group.unchanged / group.comparable : 0,
+    }));
+    if (mode === "movement") rows = rows.filter((group) => group.higher + group.lower > 0);
+    rows.sort((left, right) => {
+      if (sort === "lower") return right.lower_share - left.lower_share || left.name.localeCompare(right.name);
+      if (sort === "higher") return right.higher_share - left.higher_share || left.name.localeCompare(right.name);
+      return left.name.localeCompare(right.name);
+    });
+    return {
+      level,
+      mode,
+      sort,
+      groups: rows,
+      totalTaxonomies: groups.size,
+      unclassifiedComparable,
+      unknownDirectionComparable,
+      classifiedComparable: [...groups.values()].reduce((sum, group) => sum + group.comparable, 0),
+    };
+  }
+
+  function deriveLocationTaxonomyFlow(history = {}, symbols = [], level = "sector", taxonomy = null) {
+    const symbolByName = new Map((symbols || []).map((item) => [String(item.symbol || "").trim(), item]));
+    const filteredMovements = (history.symbol_movements || []).filter((movement) => (
+      locationTaxonomyName(symbolByName.get(String(movement.symbol || "").trim()), level) === taxonomy
+      && ["higher", "lower", "unchanged"].includes(movement.direction)
+    ));
+    return deriveLocationTransitionHeatmap({
+      ...history,
+      symbol_movements: filteredMovements,
+      flow: {
+        moved_higher: filteredMovements.filter((item) => item.direction === "higher").length,
+        moved_lower: filteredMovements.filter((item) => item.direction === "lower").length,
+        unchanged: filteredMovements.filter((item) => item.direction === "unchanged").length,
+        comparable_symbols: filteredMovements.length,
+      },
+    });
   }
 
   function eventDirection(event) {
@@ -895,6 +967,8 @@
     derivePeerLocation,
     derivePeerLocationFlow,
     deriveLocationFlowDetails,
+    deriveLocationTaxonomyFlow,
+    deriveLocationTaxonomyOverview,
     deriveLocationTransitionHeatmap,
     deriveAttention,
     deriveBreadthLeadership,
@@ -902,7 +976,6 @@
     directionalTaxonomyDrilldown,
     eventDirection,
     eventLabel,
-    filterLocationSymbols,
     filterLocationTransitionMembers,
     groupPressureSourcesByAssetClass,
     isGroupEvidenceRequestCurrent,

@@ -1,35 +1,30 @@
-# Structural Location Transition Heatmap — Design QA
+# Location Distribution redesign — visual QA
 
-## Scope
+Date: 2026-11-09
 
-- Reference: `codex-clipboard-27ac0127-0724-4fb2-bf90-55e21d75ae06.png`
-- Reference: `codex-clipboard-f11ab65e-ff27-4f4f-845b-cb7654193e04.png`
-- Implementation: `/mrz/location-distribution` in the isolated EDGE 2.0 test runtime
-- Desktop viewport: 1280 × 720, full-page capture reviewed
-- Mobile viewport: 390 × 844, full-page capture and contributor drill-down reviewed
+## Reference fidelity
 
-## Comparison
+- Compared against the three approved dark-interface references supplied with the task.
+- Preserved the reference hierarchy: page identity and coverage first, compact taxonomy cards second, endpoint bucket flow third, contributing symbols last.
+- Matched the reference visual language with narrow centered content, restrained dark surfaces, red/gray/green factual movement encoding, compact typography, and selected-card treatment.
+- Used the existing EDGE shell, spacing tokens, controls, and navigation rather than introducing a parallel design system.
 
-| Area | Reference intent | Implementation result | Status |
-| --- | --- | --- | --- |
-| Movement summary | Three compact factual totals above the matrix | Moved Higher, Moved Lower, and Same Bucket appear first with distinct green, red, and grey emphasis | Passed |
-| Matrix geometry | Compact fixed 5 × 5 grid with rows as previous location and columns as current location | All 25 cells render in the required Deep Discount → Deep Premium ordering | Passed |
-| Direction color | Right of diagonal green, left red, diagonal grey, zeros dim | Direction is derived from fixed bucket indices and represented with color-independent labels and tooltips | Passed |
-| Density | Count-proportional emphasis without decorative graphics | Each directional family scales against its own maximum; zero cells remain visually quiet | Passed |
-| Data context | Clear selected window and factual support | Header, selected 24H/5D/20D control, freshness coverage, exact endpoints, and elapsed-time semantics are visible | Passed |
-| Drill-down | Populated cells reveal exact constituents | Desktop and mobile drill-downs show symbol, endpoints, movement, observation times, freshness, and symbol link | Passed |
-| Mobile | Matrix and detail remain usable at phone width | Summary and coverage stack; matrix uses a 332 px viewport over a 720 px horizontally scrollable grid; detail becomes one column | Passed |
-| Accessibility | Keyboard and non-color operation | Populated cells are native buttons with grid roles, labels, pressed state, visible focus, and focus return on close | Passed |
+## Data and interaction validation
 
-## Findings
+- Validated locally with read-only current `/api/symbols` data and all three canonical history windows.
+- 5D coverage displayed 133 eligible, 132 comparable, 125 with new observations, 7 without new observations, and 1 unavailable/incomparable.
+- Verified taxonomy level changes (Sector, Industry, Asset Class), With Movement / All Taxonomies, all sort modes, taxonomy selection, window changes, persistent URL state, flow selection, exact contributor membership, contributor search, and symbol detail links.
+- Verified flow widths use transition counts and flow colors use the canonical endpoint direction returned by the backend.
+- Browser console: no errors or warnings.
 
-- P0: none.
-- P1: none.
-- P2: none.
-- P3: none requiring a product change. The mobile full-page browser capture showed a stitching seam around the horizontally scrollable matrix; live layout metrics and interaction confirmed the component itself remains continuous and scrollable.
+## Responsive validation
 
-## Final result
+- Desktop: 1440 × 1000.
+- Mobile: 390 × 844.
+- Document width at mobile: 390 px client width and 390 px scroll width (no page-level horizontal overflow).
+- The fixed-width flow canvas remains contained in its own horizontally scrollable region.
+- Contributor rows convert from a compact table to labeled stacked cards on small screens.
 
-`passed`
+## Result
 
-The implementation matches the supplied visual direction while retaining EDGE 2.0 typography, spacing, color tokens, and the existing current-location section. No unrelated redesign was introduced.
+Passed. The implementation is ready for operator review. It has not been deployed.

@@ -413,7 +413,8 @@ class APIIntegrationTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn('data-route-panel="location-distribution"', response.text)
-        self.assertIn('id="locationHeatmap"', response.text)
+        self.assertIn('id="locationTaxonomyCards"', response.text)
+        self.assertIn('id="locationFlowCanvas"', response.text)
 
     def test_legacy_breadth_navigation_redirects_with_context(self) -> None:
         response = self.client.get(

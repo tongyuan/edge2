@@ -117,7 +117,7 @@ class WorkspaceContractTests(unittest.TestCase):
         distribution = HTML.split('data-route-panel="location-distribution"', 1)[1].split(
             'data-route-panel="events"', 1
         )[0]
-        self.assertIn('id="locationHeatmap"', distribution)
+        self.assertIn('id="locationFlowCanvas"', distribution)
         self.assertIn("function renderLocationDistribution()", JS)
         for key, label in (
             ("deep_discount", "Deep Discount"),
@@ -127,47 +127,39 @@ class WorkspaceContractTests(unittest.TestCase):
             ("deep_premium", "Deep Premium"),
         ):
             with self.subTest(bucket=key):
-                self.assertIn(f'"{key}"', JS)
-                self.assertIn(f'{key}: "{label}"', JS)
+                self.assertIn(f'{{ key: "{key}", label: "{label}"', DERIVATIONS)
 
-    def test_location_distribution_symbol_search_filters_existing_chips_responsively(self) -> None:
-        self.assertIn('id="locationSymbolSearch"', HTML)
+    def test_location_distribution_contributor_search_filters_exact_flow_members(self) -> None:
+        self.assertIn('id="locationContributorSearch"', HTML)
         self.assertIn('type="search"', HTML)
-        self.assertIn('id="locationSearchStatus"', HTML)
-        self.assertIn("derive.filterLocationSymbols(symbols, query)", JS)
-        self.assertIn('$("#locationSymbolSearch")?.addEventListener("input"', JS)
-        self.assertIn("location-search-bucket-count", JS)
+        self.assertIn("derive.filterLocationTransitionMembers(cell.members", JS)
+        self.assertIn('$("#locationContributorSearch")?.addEventListener("input"', JS)
         self.assertIn("No symbols match", JS)
         self.assertIn("/mrz/symbols?symbol=", JS)
         mobile_rules = CSS.split("@media (max-width: 820px)", 1)[1]
-        self.assertIn(".location-search-controls { width: 100%; }", mobile_rules)
-        self.assertNotIn(".location-search-controls { display: none; }", mobile_rules)
+        self.assertIn(".location-contributors-heading label { width: 100%; }", mobile_rules)
+        self.assertNotIn(".location-contributors-section { display: none; }", mobile_rules)
 
-    def test_location_distribution_restores_historical_migration_outcomes(self) -> None:
-        self.assertIn('/static/heatmap-state.js', HTML)
-        self.assertIn("migrationTendencyPresentation", JS)
-        self.assertIn("state.symbolPayload?.location_migration_tendency", JS)
-        self.assertIn("Historical migration outcomes", JS)
-        self.assertIn("migration.higherPercentageLabel", JS)
-        self.assertIn("migration.lowerPercentageLabel", JS)
-        self.assertIn("migration.higherCountLabel", JS)
-        self.assertIn("migration.lowerCountLabel", JS)
-        self.assertIn("migration.sampleLabel", JS)
-        self.assertIn("No migration history", JS)
+    def test_location_distribution_preserves_underlying_research_helpers(self) -> None:
+        self.assertNotIn('/static/heatmap-state.js', HTML)
+        self.assertTrue((ROOT / "app/static/heatmap-state.js").exists())
+        self.assertIn("deriveBreadthLeadership", DERIVATIONS)
+        self.assertIn("deriveResearchInterpretation", DERIVATIONS)
+        self.assertIn("deriveLocationTransitionHeatmap", DERIVATIONS)
+        self.assertNotIn("directional pressure", HTML.split('data-route-panel="location-distribution"', 1)[1].split('data-route-panel="events"', 1)[0].lower())
 
     def test_location_distribution_exposes_canonical_history_and_flow_windows(self) -> None:
         for window in ("24H", "5D", "20D"):
             self.assertIn(f'data-location-window="{window}"', HTML)
         for target in (
-            "locationTransitionHeading",
-            "locationTransitionSummary",
-            "locationTransitionCoverage",
-            "locationTransitionMatrix",
-            "locationTransitionDrilldown",
-            "locationTransitionDrilldownHeading",
-            "locationTransitionDrilldownClose",
-            "locationTransitionSearch",
-            "locationTransitionSymbols",
+            "locationCoverageCards",
+            "locationCoverageStrip",
+            "locationTaxonomyCards",
+            "locationTaxonomyLevel",
+            "locationTaxonomySort",
+            "locationFlowCanvas",
+            "locationContributorSearch",
+            "locationContributorRows",
         ):
             self.assertIn(f'id="{target}"', HTML)
         for removed_target in (
@@ -180,30 +172,22 @@ class WorkspaceContractTests(unittest.TestCase):
         ):
             self.assertNotIn(f'id="{removed_target}"', HTML)
         self.assertIn("/api/location-distribution/history?window=", JS)
-        self.assertIn("derive.deriveLocationTransitionHeatmap", JS)
+        self.assertIn("derive.deriveLocationTaxonomyOverview", JS)
+        self.assertIn("derive.deriveLocationTaxonomyFlow", JS)
         for label in (
-            "Moved Higher",
-            "Moved Lower",
-            "Same Bucket",
-            "Total eligible",
+            "Eligible",
             "Comparable",
-            "New observation",
-            "No new observation",
-            "Unavailable",
-            "Comparison timestamp",
-            "Current timestamp",
+            "New observations",
+            "No new observations",
+            "Unavailable / incomparable",
         ):
             self.assertIn(label, JS)
-        self.assertIn("Elapsed calendar time", JS)
-        self.assertIn('role="grid"', HTML)
-        self.assertIn('aria-label="Previous structural location by current structural location"', HTML)
-        self.assertIn("Colors describe bucket movement only", HTML)
-        self.assertIn("Not a stability claim", JS)
-        self.assertNotIn("Dominant transitions", HTML)
+        self.assertIn("Same bucket does not imply stability", HTML)
+        self.assertIn('aria-label="Scrollable structural location bucket flow"', HTML)
         route = HTML.split('data-route-panel="location-distribution"', 1)[1].split('data-route-panel="events"', 1)[0]
-        self.assertEqual(route.count('id="locationTransitionCoverage"'), 1, "coverage is repositioned, not duplicated")
-        self.assertLess(route.index('id="locationTransitionCoverage"'), route.index("STRUCTURAL LOCATION"))
-        self.assertLess(route.index('id="locationTransitionCoverage"'), route.index('id="locationTransitionSummary"'))
+        self.assertLess(route.index('id="locationCoverageCards"'), route.index('id="locationTaxonomyHeading"'))
+        self.assertLess(route.index('id="locationTaxonomyHeading"'), route.index('id="locationFlowHeading"'))
+        self.assertLess(route.index('id="locationFlowHeading"'), route.index('id="locationContributorsHeading"'))
 
     def test_breadth_leadership_page_is_removed_but_legacy_route_is_preserved(self) -> None:
         self.assertNotIn('data-route-panel="breadth-leadership"', HTML)
@@ -302,43 +286,30 @@ class WorkspaceContractTests(unittest.TestCase):
         for selector in (".evidence-count-grid", ".evidence-facts", ".evidence-contributor-heading"):
             self.assertIn(selector, mobile_rules)
 
-    def test_location_transition_heatmap_exposes_accessible_symbol_drilldown(self) -> None:
+    def test_location_bucket_flow_exposes_accessible_symbol_drilldown(self) -> None:
         for target in (
-            "locationTransitionDrilldown",
-            "locationTransitionDrilldownHeading",
-            "locationTransitionDrilldownClose",
-            "locationTransitionSearch",
-            "locationTransitionSymbols",
+            "locationFlowCanvas",
+            "locationFlowTargets",
+            "locationContributorSearch",
+            "locationContributorRows",
         ):
             self.assertIn(f'id="{target}"', HTML)
-        self.assertIn('button.dataset.transitionCell = cell.key', JS)
-        self.assertIn('node.dataset.transitionDirection = direction', JS)
-        self.assertIn('{ type: "direction", direction }', JS)
-        self.assertIn('report.categories[direction]', JS)
         self.assertIn("derive.filterLocationTransitionMembers", JS)
-        self.assertIn('button.setAttribute("aria-controls", "locationTransitionDrilldown")', JS)
         self.assertIn('button.setAttribute("aria-pressed"', JS)
-        self.assertIn('button.title =', JS)
         self.assertIn("item.start_location_label", JS)
         self.assertIn("item.current_location_label", JS)
-        self.assertIn("item.magnitude", JS)
         self.assertIn("item.comparison_observed_at", JS)
         self.assertIn("item.current_observed_at", JS)
         self.assertIn("item.has_new_observation", JS)
-        self.assertIn('symbolLink(item.symbol, "Open symbol details")', JS)
+        self.assertIn('symbolLink(item.symbol, "Open details")', JS)
         self.assertIn('type="search"', HTML)
-        self.assertIn('aria-controls="locationTransitionSymbols"', HTML)
-        self.assertIn("Structural movement only; not directional pressure or a trading signal", JS)
-        self.assertIn("Same bucket is not a stability claim", JS)
-        self.assertIn("Loading ${window} transitions", JS)
-        self.assertIn(".location-transition-scroll", CSS)
+        self.assertIn("Path2D", JS)
+        self.assertIn("isPointInStroke", JS)
+        self.assertIn(".location-flow-scroll", CSS)
         self.assertIn("overflow-x: auto", CSS)
-        self.assertIn("button.location-transition-cell:focus-visible", CSS)
         mobile_rules = CSS[CSS.index("@media (max-width: 560px)") :]
-        self.assertIn(".location-transition-symbols", mobile_rules)
-        self.assertIn("grid-template-columns: 1fr", mobile_rules)
-        self.assertIn(".location-transition-drilldown-controls", mobile_rules)
-        self.assertIn(".location-transition-summary button", mobile_rules)
+        self.assertIn(".location-contributors-table", mobile_rules)
+        self.assertIn("display: block", mobile_rules)
 
 
 if __name__ == "__main__":

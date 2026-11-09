@@ -69,8 +69,8 @@ class MonitorContractTests(unittest.TestCase):
         distribution = HTML.split('data-route-panel="location-distribution"', 1)[1].split(
             'data-route-panel="events"', 1
         )[0]
-        self.assertIn("LOCATION DISTRIBUTION", distribution)
-        self.assertIn('id="locationHeatmap"', distribution)
+        self.assertIn("Location Distribution", distribution)
+        self.assertIn('id="locationTaxonomyCards"', distribution)
         watchlists = HTML.split('data-route-panel="watchlists"', 1)[1].split(
             'data-route-panel="attention"', 1
         )[0]

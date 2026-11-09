@@ -7,11 +7,12 @@ const {
   deriveResearchInterpretation,
   directionalTaxonomyDrilldown,
   deriveLocationFlowDetails,
+  deriveLocationTaxonomyFlow,
+  deriveLocationTaxonomyOverview,
   deriveLocationTransitionHeatmap,
   derivePeerLocation,
   derivePeerLocationFlow,
   eventLabel,
-  filterLocationSymbols,
   filterLocationTransitionMembers,
   filterGroupEvidenceContributors,
   groupPressureSourcesByAssetClass,
@@ -167,11 +168,6 @@ assert.deepEqual(
   ["BTCUSDT"],
   "Pressure Map drill-down reuses the same canonical source records",
 );
-
-assert.deepEqual(filterLocationSymbols(["NVDA", "NVDL", "AAPL"], "nvd"), ["NVDA", "NVDL"], "location symbol search is case-insensitive and supports partial matches");
-assert.deepEqual(filterLocationSymbols(["NVDA", "AAPL"], "  aapl  "), ["AAPL"], "location symbol search trims operator input");
-assert.deepEqual(filterLocationSymbols(["NVDA", "AAPL"], ""), ["NVDA", "AAPL"], "empty location search preserves the existing order");
-assert.deepEqual(filterLocationSymbols(["NVDA"], "MSFT"), [], "location symbol search reports an empty result without adding symbols");
 
 const groups = [
   { id: 1, name: "Large Cap", members: ["NVDA", "META"] },
@@ -424,6 +420,42 @@ const changedWindowTransitionHeatmap = deriveLocationTransitionHeatmap({
 });
 assert.deepEqual(changedWindowTransitionHeatmap.categories.lower.map((item) => [item.symbol, item.magnitude]), [["WINDOW_CHANGE", 2]], "a window refresh derives its drill-down from that window's canonical response");
 assert.equal(changedWindowTransitionHeatmap.reconciles, true);
+
+const taxonomySymbols = [
+  { symbol: "UP_CONFIRMED", asset_class: "EQUITY", sector: "Technology", industry: "Semiconductors" },
+  { symbol: "UP_NEUTRAL", asset_class: "EQUITY", sector: "Technology", industry: "Software" },
+  { symbol: "UP_DIVERGENT", asset_class: "EQUITY", sector: "Financials", industry: "Banks" },
+  { symbol: "DOWN_CONFIRMED", asset_class: "EQUITY", sector: "Technology", industry: "Semiconductors" },
+  { symbol: "DOWN_NEUTRAL", asset_class: "EQUITY", sector: "Financials", industry: "Banks" },
+  { symbol: "DOWN_DIVERGENT", asset_class: "EQUITY", sector: "Financials", industry: "Banks" },
+  { symbol: "UNCHANGED", asset_class: "EQUITY", sector: "Utilities", industry: "Power" },
+  { symbol: "NO_HISTORY", asset_class: "ETF", sector: null, industry: null },
+];
+const taxonomyOverview = deriveLocationTaxonomyOverview(breadthHistory, taxonomySymbols, { level: "sector", mode: "movement", sort: "lower" });
+assert.deepEqual(taxonomyOverview.groups.map((group) => group.name), ["Financials", "Technology"], "movement view excludes unchanged-only taxonomies and sorts by lower share then name");
+assert.deepEqual(
+  taxonomyOverview.groups.map((group) => [group.name, group.higher, group.lower, group.unchanged, group.comparable]),
+  [["Financials", 1, 2, 0, 3], ["Technology", 2, 1, 0, 3]],
+  "taxonomy counts use exact canonical movement membership",
+);
+assert.equal(taxonomyOverview.classifiedComparable + taxonomyOverview.unclassifiedComparable, 7, "classified and unclassified comparable symbols reconcile to the history response");
+const allTaxonomies = deriveLocationTaxonomyOverview(breadthHistory, taxonomySymbols, { level: "sector", mode: "all", sort: "name" });
+assert.deepEqual(allTaxonomies.groups.map((group) => group.name), ["Financials", "Technology", "Utilities"], "all view includes unchanged-only taxonomies deterministically");
+assert.equal(allTaxonomies.groups.find((group) => group.name === "Utilities").unchanged, 1, "same bucket is preserved and not interpreted as missing");
+const assetClasses = deriveLocationTaxonomyOverview(breadthHistory, taxonomySymbols, { level: "asset_class", mode: "all", sort: "name" });
+assert.deepEqual(assetClasses.groups.map((group) => [group.name, group.comparable]), [["EQUITY", 7], ["ETF", 0]], "all view retains classified taxonomies with no comparable endpoint data");
+const technologyFlow = deriveLocationTaxonomyFlow(breadthHistory, taxonomySymbols, "sector", "Technology");
+assert.deepEqual(technologyFlow.totals, { higher: 2, lower: 1, unchanged: 0, comparable: 3 }, "selected taxonomy flow reconciles its exact symbols");
+assert.deepEqual(new Set(technologyFlow.cells.flatMap((cell) => cell.members).map((member) => member.symbol)), new Set(["UP_CONFIRMED", "UP_NEUTRAL", "DOWN_CONFIRMED"]));
+assert.equal(technologyFlow.reconciles, true, "taxonomy flow stays internally reconciled without recomputing canonical direction");
+const unknownTaxonomyDirection = deriveLocationTaxonomyOverview({
+  symbol_movements: [{ symbol: "UP_CONFIRMED", start_location: "deep_discount", current_location: "shallow_discount", direction: "unknown" }],
+}, taxonomySymbols, { level: "sector", mode: "all", sort: "name" });
+assert.equal(unknownTaxonomyDirection.groups.find((group) => group.name === "Technology").unchanged, 0, "unknown canonical direction is never converted to Same Bucket");
+assert.equal(unknownTaxonomyDirection.unknownDirectionComparable, 1, "unknown direction remains explicit for operator review");
+assert.equal(deriveLocationTaxonomyFlow({
+  symbol_movements: [{ symbol: "UP_CONFIRMED", start_location: "deep_discount", current_location: "shallow_discount", direction: "unknown" }],
+}, taxonomySymbols, "sector", "Technology").totals.comparable, 0, "unknown direction is not drawn as an inferred taxonomy flow");
 const breadthReport = deriveBreadthLeadership(breadthHistory, breadthPressure);
 assert.deepEqual(breadthReport.breadth, { movedHigher: 3, movedLower: 3, unchanged: 1, netHigher: 0, comparable: 7, participationPct: 6 / 7 * 100 });
 assert.deepEqual(breadthReport.confirmation.higher, { higher: 1, neutral: 1, lower: 1 });

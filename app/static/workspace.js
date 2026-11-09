@@ -2,7 +2,6 @@
   "use strict";
 
   const derive = globalObject.edgeWorkspaceDerivations;
-  const { migrationTendencyPresentation } = globalObject.edgeHeatmapState;
   const state = {
     symbols: [],
     symbolPayload: null,
@@ -11,9 +10,12 @@
     preferences: null,
     locationHistory: null,
     locationWindow: "24H",
-    locationSearchQuery: "",
-    locationTransitionSelection: null,
-    locationTransitionQuery: "",
+    locationTaxonomyLevel: "sector",
+    locationTaxonomyMode: "movement",
+    locationTaxonomySort: "lower",
+    locationTaxonomySelection: null,
+    locationFlowSelection: null,
+    locationContributorQuery: "",
     peerWindow: "24H",
     peerLocationHistory: null,
     peerPressure: null,
@@ -23,6 +25,7 @@
     editingGroupId: null,
     symbolBoardSort: derive.restoreSymbolBoardSort(globalObject.localStorage),
   };
+  let locationFlowPaths = [];
   const locationLabels = {
     deep_discount: "Deep Discount",
     shallow_discount: "Shallow Discount",
@@ -477,208 +480,184 @@
     );
   }
 
-  function renderLocationDistribution() {
-    const selectedSymbol = new URLSearchParams(globalObject.location.search).get("symbol") || "";
-    const searchInput = $("#locationSymbolSearch");
-    if (searchInput && searchInput.value !== state.locationSearchQuery) searchInput.value = state.locationSearchQuery;
-    const columns = new Map();
-    ["deep_discount", "shallow_discount", "at_eqm", "shallow_premium", "deep_premium"].forEach((key) => columns.set(key, []));
-    state.symbols.forEach((symbol) => { if (columns.has(symbol.current_price_location)) columns.get(symbol.current_price_location).push(symbol.symbol); });
-    const classifiedTotal = [...columns.values()].reduce((total, symbols) => total + symbols.length, 0);
-    const migrationTendency = state.symbolPayload?.location_migration_tendency || {};
-    const historyLocations = new Map((state.locationHistory?.locations || []).map((item) => [item.key, item]));
-    const query = state.locationSearchQuery.trim();
-    let matchCount = 0;
-    const heatmap = $("#locationHeatmap"); heatmap.replaceChildren();
-    columns.forEach((symbols, key) => {
-      const visibleSymbols = derive.filterLocationSymbols(symbols, query);
-      matchCount += visibleSymbols.length;
-      const column = element("section", `location-column${key === "at_eqm" ? " location-column-boundary" : ""}`);
-      column.append(element("h3", "", locationLabels[key]));
-      const current = element("div", "location-distribution-current");
-      const percentage = classifiedTotal ? ((symbols.length / classifiedTotal) * 100).toFixed(1) : "0.0";
-      current.append(element("span", "", "Current"), element("strong", "", `${symbols.length} symbol${symbols.length === 1 ? "" : "s"} · ${percentage}% of universe`));
-      if (query) current.append(element("span", "location-search-bucket-count", `${visibleSymbols.length} of ${symbols.length} shown`));
-      const historical = historyLocations.get(key);
-      if (historical) {
-        const delta = Number(historical.change_count || 0);
-        const arrow = delta > 0 ? "↑" : delta < 0 ? "↓" : "↔";
-        const deltaLabel = delta === 0 ? "0" : `${Math.abs(delta)}`;
-        current.append(element("span", `location-distribution-change${delta > 0 ? " location-change-higher" : delta < 0 ? " location-change-lower" : ""}`, `${arrow} ${deltaLabel} vs ${state.locationWindow}`));
-      }
-      column.append(current);
-      if (key === "at_eqm") {
-        column.append(element("p", "location-boundary-note", "Exact canonical IPDA 20W midpoint"));
-      } else {
-        const migration = migrationTendencyPresentation(migrationTendency[key]);
-        const history = element("details", "location-migration-history");
-        history.append(element("summary", "", "Historical migration outcomes"));
-        if (migration.hasHistory) {
-          const directions = element("div", "location-migration-directions");
-          [["↑ Higher", migration.higherPercentageLabel, migration.higherCountLabel], ["↓ Lower", migration.lowerPercentageLabel, migration.lowerCountLabel]].forEach(([label, outcome, count]) => {
-            const direction = element("div", "location-migration-direction");
-            direction.append(element("span", "migration-direction-label", label), element("strong", "", outcome), element("span", "migration-direction-count", `${count} migration${count === "1" ? "" : "s"}`));
-            directions.append(direction);
-          });
-          history.append(directions);
-        } else history.append(element("p", "location-migration-empty", "No migration history"));
-        history.append(element("p", "location-migration-sample", migration.sampleLabel));
-        column.append(history);
-      }
-      const symbolList = element("div", "location-symbol-list");
-      visibleSymbols.forEach((symbol) => { const button = element("button", "", symbol); button.type = "button"; if (symbol === selectedSymbol) button.setAttribute("aria-current", "true"); button.addEventListener("click", () => { globalObject.location.href = `/mrz/symbols?symbol=${encodeURIComponent(symbol)}`; }); symbolList.append(button); });
-      column.append(symbolList);
-      heatmap.append(column);
-    });
-    const searchStatus = $("#locationSearchStatus");
-    searchStatus.hidden = !query;
-    searchStatus.classList.toggle("no-match", Boolean(query) && matchCount === 0);
-    if (query) searchStatus.textContent = matchCount
-      ? `${matchCount} symbol${matchCount === 1 ? "" : "s"} match “${query}” across current structural locations.`
-      : `No symbols match “${query}”.`;
-    renderLocationHistory();
+  function syncLocationUrl() {
+    if (routeName() !== "location-distribution") return;
+    const url = new URL(globalObject.location.href);
+    url.searchParams.set("window", state.locationWindow);
+    url.searchParams.set("taxonomy_level", state.locationTaxonomyLevel);
+    url.searchParams.set("view", state.locationTaxonomyMode);
+    url.searchParams.set("sort", state.locationTaxonomySort);
+    if (state.locationTaxonomySelection) url.searchParams.set("taxonomy", state.locationTaxonomySelection); else url.searchParams.delete("taxonomy");
+    if (state.locationFlowSelection) url.searchParams.set("transition", state.locationFlowSelection); else url.searchParams.delete("transition");
+    globalObject.history.replaceState({}, "", url);
   }
 
-  function renderLocationHistory() {
+  function restoreLocationStateFromUrl() {
+    const params = new URLSearchParams(globalObject.location.search);
+    if (["24H", "5D", "20D"].includes(params.get("window"))) state.locationWindow = params.get("window");
+    if (["asset_class", "sector", "industry"].includes(params.get("taxonomy_level"))) state.locationTaxonomyLevel = params.get("taxonomy_level");
+    if (["movement", "all"].includes(params.get("view"))) state.locationTaxonomyMode = params.get("view");
+    if (["lower", "higher", "name"].includes(params.get("sort"))) state.locationTaxonomySort = params.get("sort");
+    state.locationTaxonomySelection = params.get("taxonomy") || null;
+    state.locationFlowSelection = params.get("transition") || null;
+  }
+
+  function renderLocationDistribution() {
     document.querySelectorAll("[data-location-window]").forEach((button) => {
       button.setAttribute("aria-pressed", String(button.dataset.locationWindow === state.locationWindow));
     });
+    if (!state.locationHistory) return;
     const history = state.locationHistory;
-    if (!history) return;
-    const report = derive.deriveLocationTransitionHeatmap(history);
     const coverage = history.coverage || {};
-    $("#locationTransitionHeading").textContent = `Structural Location Movement · ${history.window}`;
-    $("#locationHistoryStatus").textContent = "Elapsed calendar time · endpoint comparison";
-    $("#locationTransitionSummary").replaceChildren(
-      transitionSummaryMetric("higher", "Moved Higher", report.totals.higher, "Unique comparable symbols"),
-      transitionSummaryMetric("lower", "Moved Lower", report.totals.lower, "Unique comparable symbols"),
-      transitionSummaryMetric("unchanged", "Same Bucket", report.totals.unchanged, "Not a stability claim"),
-    );
-    const coverageNode = $("#locationTransitionCoverage"); coverageNode.replaceChildren();
+    const fullReport = derive.deriveLocationTransitionHeatmap(history);
+    const coverageCards = $("#locationCoverageCards"); coverageCards.replaceChildren();
     [
-      ["Total eligible", coverage.total_eligible ?? history.universe?.now_eligible ?? 0],
-      ["Comparable", coverage.comparable_symbols ?? report.totals.comparable],
-      ["New observation inside window", coverage.comparable_with_new_observation ?? 0],
-      ["No new observation inside window", coverage.comparable_without_new_observation ?? 0],
-      ["Unavailable / incomparable", coverage.unavailable_or_incomparable ?? 0],
-      ["Comparison timestamp", exactTime(history.comparison_at)],
-      ["Current timestamp", exactTime(history.current_at)],
+      ["Eligible", coverage.total_eligible ?? history.universe?.now_eligible ?? 0],
+      ["Comparable", coverage.comparable_symbols ?? fullReport.totals.comparable],
+      ["New observations", coverage.comparable_with_new_observation ?? 0],
     ].forEach(([label, value]) => {
-      const item = element("div", "");
-      item.append(element("dt", "", label), element("dd", "", String(value)));
-      coverageNode.append(item);
+      const card = element("article", ""); card.append(element("span", "", label), element("strong", "", String(value))); coverageCards.append(card);
     });
-    const matrix = $("#locationTransitionMatrix"); matrix.replaceChildren();
-    matrix.dataset.reconciled = String(report.reconciles);
-    const headerRow = element("div", "location-transition-row"); headerRow.setAttribute("role", "row");
-    const corner = element("div", "location-transition-corner", "FROM — Previous Location"); corner.setAttribute("role", "columnheader");
-    headerRow.append(corner);
-    report.buckets.forEach((bucket) => {
-      const header = element("div", "location-transition-column-label", bucket.shortLabel);
-      header.setAttribute("role", "columnheader"); header.title = bucket.label; headerRow.append(header);
+    const strip = $("#locationCoverageStrip"); strip.replaceChildren();
+    [
+      ["Comparison", exactTime(history.comparison_at)],
+      ["Current", exactTime(history.current_at)],
+      ["No new observations", coverage.comparable_without_new_observation ?? 0],
+      ["Unavailable / incomparable", coverage.unavailable_or_incomparable ?? 0],
+    ].forEach(([label, value]) => {
+      const item = element("div", ""); item.append(element("dt", "", label), element("dd", "", String(value))); strip.append(item);
     });
-    matrix.append(headerRow);
-    report.buckets.forEach((source) => {
-      const row = element("div", "location-transition-row"); row.setAttribute("role", "row");
-      const label = element("div", "location-transition-row-label", source.shortLabel);
-      label.setAttribute("role", "rowheader"); label.title = source.label; row.append(label);
-      report.buckets.forEach((destination) => {
-        const cell = report.cells.find((item) => item.fromKey === source.key && item.toKey === destination.key);
-        row.append(locationTransitionCell(cell, report.maxima[cell.direction]));
-      });
-      matrix.append(row);
+    $("#locationTaxonomyWindow").textContent = state.locationWindow;
+    $("#locationFlowWindow").textContent = state.locationWindow;
+    const levelSelect = $("#locationTaxonomyLevel"); if (levelSelect.value !== state.locationTaxonomyLevel) levelSelect.value = state.locationTaxonomyLevel;
+    const sortSelect = $("#locationTaxonomySort"); if (sortSelect.value !== state.locationTaxonomySort) sortSelect.value = state.locationTaxonomySort;
+    document.querySelectorAll("[data-taxonomy-mode]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.taxonomyMode === state.locationTaxonomyMode)));
+    const overview = derive.deriveLocationTaxonomyOverview(history, state.symbols, {
+      level: state.locationTaxonomyLevel, mode: state.locationTaxonomyMode, sort: state.locationTaxonomySort,
     });
-    renderLocationTransitionDrilldown(report);
+    const selectedExists = overview.groups.some((group) => group.name === state.locationTaxonomySelection);
+    if (!selectedExists) state.locationTaxonomySelection = overview.groups[0]?.name || null;
+    const statusBits = [`${overview.groups.length} of ${overview.totalTaxonomies} taxonomies shown`];
+    if (overview.unclassifiedComparable) statusBits.push(`${overview.unclassifiedComparable} comparable symbol${overview.unclassifiedComparable === 1 ? "" : "s"} lack ${state.locationTaxonomyLevel.replace("_", " ")} metadata`);
+    if (overview.unknownDirectionComparable) statusBits.push(`${overview.unknownDirectionComparable} comparable symbol${overview.unknownDirectionComparable === 1 ? " has" : "s have"} unknown canonical direction`);
+    $("#locationTaxonomyStatus").textContent = statusBits.join(" · ");
+    const cards = $("#locationTaxonomyCards"); cards.replaceChildren();
+    if (!overview.groups.length) cards.append(empty(state.locationTaxonomyMode === "movement" ? "No classified taxonomies moved in this window." : "No classified taxonomies are available."));
+    overview.groups.forEach((group) => cards.append(locationTaxonomyCard(group)));
+    const flowReport = derive.deriveLocationTaxonomyFlow(history, state.symbols, state.locationTaxonomyLevel, state.locationTaxonomySelection);
+    if (state.locationFlowSelection && !flowReport.cells.some((cell) => cell.key === state.locationFlowSelection && cell.count)) state.locationFlowSelection = null;
+    renderLocationFlow(flowReport);
+    renderLocationContributors(flowReport);
+    syncLocationUrl();
   }
-  function transitionSummaryMetric(direction, label, value, support) {
-    const node = element("button", `location-transition-summary-${direction}`);
-    node.type = "button";
-    node.dataset.transitionDirection = direction;
-    node.setAttribute("aria-controls", "locationTransitionDrilldown");
-    node.setAttribute("aria-pressed", String(state.locationTransitionSelection?.type === "direction" && state.locationTransitionSelection.direction === direction));
-    node.setAttribute("aria-label", `${label}: ${value} symbol${value === 1 ? "" : "s"}. Open symbol drill-down.`);
-    node.append(element("span", "", label), element("strong", "", String(value)), element("small", "", support));
-    node.addEventListener("click", () => {
-      state.locationTransitionSelection = { type: "direction", direction };
-      state.locationTransitionQuery = "";
-      renderLocationHistory();
-      $("#locationTransitionDrilldownClose")?.focus();
-    });
-    return node;
-  }
-  function locationTransitionCell(cell, maximum) {
-    const directionLabel = cell.direction === "higher" ? "Moved higher" : cell.direction === "lower" ? "Moved lower" : "Same bucket";
-    const label = `${cell.fromLabel} to ${cell.toLabel}: ${cell.count} symbol${cell.count === 1 ? "" : "s"}. ${directionLabel}.`;
-    if (!cell.count) {
-      const emptyCell = element("span", "location-transition-cell is-empty", "—");
-      emptyCell.setAttribute("role", "gridcell"); emptyCell.setAttribute("aria-label", label); emptyCell.title = label;
-      return emptyCell;
-    }
-    const button = element("button", `location-transition-cell is-${cell.direction}`, String(cell.count));
+
+  function locationTaxonomyCard(group) {
+    const button = element("button", "location-taxonomy-card");
     button.type = "button";
-    button.dataset.transitionCell = cell.key;
-    button.setAttribute("role", "gridcell");
-    button.setAttribute("aria-label", label);
-    button.setAttribute("aria-controls", "locationTransitionDrilldown");
-    button.setAttribute("aria-pressed", String(state.locationTransitionSelection?.type === "cell" && state.locationTransitionSelection.key === cell.key));
-    button.title = label;
-    const intensity = maximum ? 0.18 + (0.46 * cell.count / maximum) : 0.18;
-    button.style.setProperty("--transition-intensity", intensity.toFixed(3));
+    button.setAttribute("aria-pressed", String(group.name === state.locationTaxonomySelection));
+    button.setAttribute("aria-label", `${group.name}: ${group.comparable} comparable; ${group.lower} moved lower, ${group.unchanged} same bucket, ${group.higher} moved higher.`);
+    const heading = element("span", "location-taxonomy-card-heading"); heading.append(element("strong", "", group.name), element("small", "", `${group.comparable} comparable`));
+    const bar = element("span", "location-taxonomy-bar");
+    [["lower", group.lower], ["unchanged", group.unchanged], ["higher", group.higher]].forEach(([direction, count]) => {
+      const segment = element("i", direction); segment.style.flexGrow = String(count); segment.hidden = count === 0; bar.append(segment);
+    });
+    const counts = element("span", "location-taxonomy-counts");
+    counts.append(element("span", "lower", `↓ ${group.lower} lower`), element("span", "same", `${group.unchanged} same`), element("span", "higher", `↑ ${group.higher} higher`));
+    button.append(heading, bar, counts);
     button.addEventListener("click", () => {
-      state.locationTransitionSelection = { type: "cell", key: cell.key, fromKey: cell.fromKey, toKey: cell.toKey };
-      state.locationTransitionQuery = "";
-      renderLocationHistory();
-      $("#locationTransitionDrilldownClose")?.focus();
+      state.locationTaxonomySelection = group.name;
+      state.locationFlowSelection = null;
+      state.locationContributorQuery = "";
+      $("#locationContributorSearch").value = "";
+      renderLocationDistribution();
     });
     return button;
   }
-  function renderLocationTransitionDrilldown(report) {
-    const panel = $("#locationTransitionDrilldown");
-    const selection = state.locationTransitionSelection;
-    const cell = selection?.type === "cell" ? report.cells.find((item) => item.key === selection.key) : null;
-    const direction = selection?.type === "direction" ? selection.direction : null;
-    if ((!cell?.count && !direction) || (direction && !report.categories[direction])) {
-      panel.hidden = true;
-      $("#locationTransitionSymbols").replaceChildren();
-      return;
+
+  function renderLocationFlow(report) {
+    const name = state.locationTaxonomySelection || "No taxonomy selected";
+    $("#locationFlowScope").textContent = state.locationTaxonomySelection
+      ? `${name} · ${report.totals.comparable} comparable symbol${report.totals.comparable === 1 ? "" : "s"}`
+      : "Select a taxonomy to inspect its endpoint flow.";
+    $("#locationFlowLower").textContent = String(report.totals.lower);
+    $("#locationFlowSame").textContent = String(report.totals.unchanged);
+    $("#locationFlowHigher").textContent = String(report.totals.higher);
+    const canvas = $("#locationFlowCanvas");
+    const context = canvas.getContext("2d");
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = "#0b0f14"; context.fillRect(0, 0, canvas.width, canvas.height);
+    const displayBuckets = [...report.buckets].reverse();
+    const rowY = new Map(displayBuckets.map((bucket, index) => [bucket.key, 76 + index * 61]));
+    const leftX = 26; const rightX = 655; const nodeWidth = 178; const nodeHeight = 42;
+    context.fillStyle = "#edf3fa"; context.font = "700 12px Inter, system-ui, sans-serif";
+    context.fillText("PREVIOUS", leftX + 8, 28); context.fillText("CURRENT", rightX + 8, 28);
+    locationFlowPaths = [];
+    const visibleCells = report.cells.filter((cell) => cell.count).sort((left, right) => left.direction.localeCompare(right.direction) || right.count - left.count);
+    const maximum = Math.max(1, ...visibleCells.map((cell) => cell.count));
+    visibleCells.forEach((cell) => {
+      const startY = rowY.get(cell.fromKey); const endY = rowY.get(cell.toKey);
+      const path = new Path2D(); path.moveTo(leftX + nodeWidth, startY); path.bezierCurveTo(355, startY, 505, endY, rightX, endY);
+      const selected = state.locationFlowSelection === cell.key;
+      const colors = { lower: "#d46c7b", unchanged: "#8f99a8", higher: "#4fc6a6" };
+      const lineWidth = 4 + (cell.count / maximum) * 17;
+      context.save(); context.strokeStyle = colors[cell.direction]; context.globalAlpha = selected ? 1 : .72; context.lineCap = "round"; context.lineWidth = lineWidth; context.stroke(path); context.restore();
+      locationFlowPaths.push({ path, cell, lineWidth: lineWidth + 10 });
+    });
+    const previousCounts = new Map(); const currentCounts = new Map();
+    displayBuckets.forEach((bucket) => { previousCounts.set(bucket.key, 0); currentCounts.set(bucket.key, 0); });
+    visibleCells.forEach((cell) => { previousCounts.set(cell.fromKey, previousCounts.get(cell.fromKey) + cell.count); currentCounts.set(cell.toKey, currentCounts.get(cell.toKey) + cell.count); });
+    displayBuckets.forEach((bucket) => {
+      const y = rowY.get(bucket.key) - nodeHeight / 2;
+      [[leftX, previousCounts.get(bucket.key)], [rightX, currentCounts.get(bucket.key)]].forEach(([x, count]) => {
+        context.fillStyle = "#172231"; context.strokeStyle = "#39506d"; context.lineWidth = 1;
+        context.beginPath(); context.roundRect(x, y, nodeWidth, nodeHeight, 7); context.fill(); context.stroke();
+        context.fillStyle = "#edf3fa"; context.font = "600 12px Inter, system-ui, sans-serif"; context.fillText(bucket.label, x + 11, y + 17);
+        context.fillStyle = "#bac5d3"; context.font = "12px Inter, system-ui, sans-serif"; context.fillText(`${count} symbol${count === 1 ? "" : "s"}`, x + 11, y + 34);
+      });
+    });
+    const targets = $("#locationFlowTargets"); targets.replaceChildren();
+    visibleCells.forEach((cell) => {
+      const button = element("button", "visually-hidden", `${cell.fromLabel} to ${cell.toLabel}: ${cell.count} symbols`);
+      button.type = "button"; button.setAttribute("aria-pressed", String(state.locationFlowSelection === cell.key));
+      button.addEventListener("click", () => selectLocationFlow(cell)); targets.append(button);
+    });
+  }
+
+  function selectLocationFlow(cell) {
+    state.locationFlowSelection = cell.key;
+    state.locationContributorQuery = "";
+    $("#locationContributorSearch").value = "";
+    renderLocationDistribution();
+    $("#locationContributorsHeading")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  function renderLocationContributors(report) {
+    const cell = report.cells.find((item) => item.key === state.locationFlowSelection && item.count);
+    const target = $("#locationContributorRows"); target.replaceChildren();
+    if (!cell) {
+      $("#locationContributorScope").textContent = "Select a flow to reveal its exact underlying symbols.";
+      const row = element("tr", ""); const data = element("td", "location-contributors-empty", "No flow selected."); data.colSpan = 5; row.append(data); target.append(row); return;
     }
-    panel.hidden = false;
-    const directionLabel = (direction || cell.direction) === "higher" ? "Moved Higher" : (direction || cell.direction) === "lower" ? "Moved Lower" : "Same Bucket";
-    const members = direction ? report.categories[direction] : cell.members;
-    const visibleMembers = derive.filterLocationTransitionMembers(members, state.locationTransitionQuery);
-    $("#locationTransitionDrilldownHeading").textContent = direction ? directionLabel : `${cell.fromLabel} → ${cell.toLabel}`;
-    const resultCount = state.locationTransitionQuery ? `${visibleMembers.length} of ${members.length}` : String(members.length);
-    const caveat = (direction || cell.direction) === "unchanged"
-      ? "Same bucket is not a stability claim"
-      : "Structural movement only; not directional pressure or a trading signal";
-    $("#locationTransitionDrilldownSupport").textContent = `${resultCount} symbol${members.length === 1 ? "" : "s"} · ${state.locationWindow} · ${caveat}`;
-    const search = $("#locationTransitionSearch");
-    if (search.value !== state.locationTransitionQuery) search.value = state.locationTransitionQuery;
-    const list = $("#locationTransitionSymbols"); list.replaceChildren();
-    if (!visibleMembers.length) {
-      list.append(element("li", "location-transition-no-match", state.locationTransitionQuery ? `No symbols match “${state.locationTransitionQuery}”.` : "No comparable symbols in this movement category."));
-      return;
+    const members = derive.filterLocationTransitionMembers(cell.members, state.locationContributorQuery);
+    $("#locationContributorScope").textContent = `${cell.fromLabel} → ${cell.toLabel} · ${members.length}${state.locationContributorQuery ? ` of ${cell.count}` : ""} symbol${cell.count === 1 ? "" : "s"}`;
+    if (!members.length) {
+      const row = element("tr", ""); const data = element("td", "location-contributors-empty", `No symbols match “${state.locationContributorQuery}”.`); data.colSpan = 5; row.append(data); target.append(row); return;
     }
-    visibleMembers.forEach((item) => {
-      const row = element("li", "");
-      const heading = element("div", "location-transition-symbol-heading");
-      heading.append(element("strong", "", item.symbol), element("span", item.has_new_observation ? "is-fresh" : "is-reused", item.has_new_observation ? "New observation" : "No new observation"));
-      const steps = item.magnitude === null
-        ? "Unknown bucket-step distance"
-        : item.magnitude === 0
-          ? "0 bucket steps · Same bucket"
-          : `${item.magnitude} bucket step${item.magnitude === 1 ? "" : "s"} ${item.direction}`;
-      const facts = element("dl", "");
-      [["Previous bucket", item.start_location_label], ["Current bucket", item.current_location_label], ["Movement", steps], ["Previous observation", exactTime(item.comparison_observed_at)], ["Current observation", exactTime(item.current_observed_at)], ["Window freshness", item.has_new_observation ? `New observation inside ${state.locationWindow}` : `Reused endpoint; no new observation inside ${state.locationWindow}`]].forEach(([label, value]) => facts.append(element("dt", "", label), element("dd", "", value || "—")));
-      row.append(heading, facts, symbolLink(item.symbol, "Open symbol details"));
-      list.append(row);
+    members.forEach((item) => {
+      const row = element("tr", "");
+      const symbol = element("td", "", item.symbol); symbol.dataset.label = "Symbol";
+      const previous = element("td", "", item.start_location_label || "—"); previous.dataset.label = "Previous";
+      const current = element("td", "", item.current_location_label || "—"); current.dataset.label = "Current";
+      const freshness = element("td", ""); freshness.dataset.label = "Observation freshness";
+      freshness.append(element("strong", item.has_new_observation ? "is-fresh" : "", item.has_new_observation ? `New observation inside ${state.locationWindow}` : `No new observation inside ${state.locationWindow}`), element("small", "", `${exactTime(item.comparison_observed_at)} → ${exactTime(item.current_observed_at)}`));
+      const open = element("td", ""); open.append(symbolLink(item.symbol, "Open details"));
+      row.append(symbol, previous, current, freshness, open); target.append(row);
     });
   }
   async function loadLocationHistory(window) {
     state.locationWindow = window;
-    $("#locationHistoryStatus").textContent = "Loading canonical history…";
-    $("#locationTransitionSymbols").replaceChildren();
-    if (state.locationTransitionSelection) $("#locationTransitionDrilldownSupport").textContent = `Loading ${window} transitions…`;
+    state.locationFlowSelection = null;
+    $("#locationTaxonomyStatus").textContent = `Loading ${window} canonical history…`;
     document.querySelectorAll("[data-location-window]").forEach((button) => {
       button.disabled = true;
       button.setAttribute("aria-pressed", String(button.dataset.locationWindow === window));
@@ -689,7 +668,7 @@
       state.locationHistory = await response.json();
       renderLocationDistribution();
     } catch (error) {
-      $("#locationHistoryStatus").textContent = error.message || "Unable to load canonical location history.";
+      $("#locationTaxonomyStatus").textContent = error.message || "Unable to load canonical location history.";
     } finally {
       document.querySelectorAll("[data-location-window]").forEach((button) => { button.disabled = false; });
     }
@@ -798,6 +777,7 @@
   }
   async function initialize() {
     activateRoute();
+    if (routeName() === "location-distribution") restoreLocationStateFromUrl();
     if (routeName() === "watchlists") {
       await globalObject.edgeGroupEvidence.mount();
       $("#workspaceStatus").hidden = true;
@@ -847,35 +827,44 @@
       derive.symbolsForWatchlist(state.symbols, state.groups, state.selectedGroupId),
     );
   });
-  $("#locationSymbolSearch")?.addEventListener("input", (event) => {
-    state.locationSearchQuery = event.target.value;
-    renderLocationDistribution();
-  });
-  $("#locationSymbolSearch")?.addEventListener("keydown", (event) => {
-    if (event.key !== "Escape") return;
-    event.preventDefault();
-    state.locationSearchQuery = "";
-    renderLocationDistribution();
-  });
   document.querySelectorAll("[data-location-window]").forEach((button) => button.addEventListener("click", () => loadLocationHistory(button.dataset.locationWindow)));
-  $("#locationTransitionDrilldownClose")?.addEventListener("click", () => {
-    const selection = state.locationTransitionSelection;
-    state.locationTransitionSelection = null;
-    state.locationTransitionQuery = "";
-    renderLocationHistory();
-    if (selection?.type === "cell") document.querySelector(`[data-transition-cell="${selection.key}"]`)?.focus();
-    if (selection?.type === "direction") document.querySelector(`[data-transition-direction="${selection.direction}"]`)?.focus();
+  document.querySelectorAll("[data-taxonomy-mode]").forEach((button) => button.addEventListener("click", () => {
+    state.locationTaxonomyMode = button.dataset.taxonomyMode;
+    renderLocationDistribution();
+  }));
+  $("#locationTaxonomyLevel")?.addEventListener("change", (event) => {
+    state.locationTaxonomyLevel = event.target.value; state.locationTaxonomySelection = null; state.locationFlowSelection = null; renderLocationDistribution();
   });
-  $("#locationTransitionSearch")?.addEventListener("input", (event) => {
-    state.locationTransitionQuery = event.target.value;
-    if (state.locationHistory) renderLocationTransitionDrilldown(derive.deriveLocationTransitionHeatmap(state.locationHistory));
+  $("#locationTaxonomySort")?.addEventListener("change", (event) => {
+    state.locationTaxonomySort = event.target.value; renderLocationDistribution();
   });
-  $("#locationTransitionSearch")?.addEventListener("keydown", (event) => {
-    if (event.key !== "Escape" || !state.locationTransitionQuery) return;
-    event.preventDefault();
-    state.locationTransitionQuery = "";
-    event.target.value = "";
-    if (state.locationHistory) renderLocationTransitionDrilldown(derive.deriveLocationTransitionHeatmap(state.locationHistory));
+  $("#locationContributorSearch")?.addEventListener("input", (event) => {
+    state.locationContributorQuery = event.target.value;
+    if (state.locationHistory && state.locationTaxonomySelection) renderLocationContributors(derive.deriveLocationTaxonomyFlow(state.locationHistory, state.symbols, state.locationTaxonomyLevel, state.locationTaxonomySelection));
+  });
+  $("#locationContributorSearch")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    state.locationContributorQuery = ""; event.target.value = "";
+    if (state.locationHistory && state.locationTaxonomySelection) renderLocationContributors(derive.deriveLocationTaxonomyFlow(state.locationHistory, state.symbols, state.locationTaxonomyLevel, state.locationTaxonomySelection));
+  });
+  $("#locationFlowCanvas")?.addEventListener("mousemove", (event) => {
+    const canvas = event.currentTarget; const bounds = canvas.getBoundingClientRect();
+    const x = (event.clientX - bounds.left) * canvas.width / bounds.width; const y = (event.clientY - bounds.top) * canvas.height / bounds.height;
+    const context = canvas.getContext("2d");
+    const hit = [...locationFlowPaths].reverse().find((item) => { context.lineWidth = item.lineWidth; return context.isPointInStroke(item.path, x, y); });
+    canvas.style.cursor = hit ? "pointer" : "default";
+    const tooltip = $("#locationFlowTooltip");
+    if (!hit) { tooltip.hidden = true; return; }
+    tooltip.textContent = `${hit.cell.fromLabel} → ${hit.cell.toLabel} · ${hit.cell.count} symbol${hit.cell.count === 1 ? "" : "s"}`;
+    tooltip.style.left = `${event.clientX - bounds.left + 12}px`; tooltip.style.top = `${event.clientY - bounds.top + 12}px`; tooltip.hidden = false;
+  });
+  $("#locationFlowCanvas")?.addEventListener("mouseleave", () => { $("#locationFlowTooltip").hidden = true; });
+  $("#locationFlowCanvas")?.addEventListener("click", (event) => {
+    const canvas = event.currentTarget; const bounds = canvas.getBoundingClientRect();
+    const x = (event.clientX - bounds.left) * canvas.width / bounds.width; const y = (event.clientY - bounds.top) * canvas.height / bounds.height;
+    const context = canvas.getContext("2d");
+    const hit = [...locationFlowPaths].reverse().find((item) => { context.lineWidth = item.lineWidth; return context.isPointInStroke(item.path, x, y); });
+    if (hit) selectLocationFlow(hit.cell);
   });
   $("#eventTypeFilter")?.addEventListener("change", renderEvents);
   $("#alertPreferencesForm")?.addEventListener("submit", (event) => savePreferences(event).catch(showError));

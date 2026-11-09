@@ -9,7 +9,7 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/static/edge-mrz-icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/static/edge-mrz-icon-180.png" />
-    <link rel="stylesheet" href="/static/workspace.css?v=remove-pressure-page-20261109" />
+    <link rel="stylesheet" href="/static/workspace.css?v=location-taxonomy-flow-20261109" />
   </head>
   <body>
     <div class="workspace-shell">
@@ -65,11 +65,35 @@
           </form>
         </section>
 
-        <section class="route-panel" data-route-panel="location-distribution" hidden>
-          <header class="route-heading action-heading"><div><p>LOCATION DISTRIBUTION</p><h1>Current structural-location distribution</h1><span>Current classified symbol population inside IPDA 20W.</span></div><div class="location-window-selector" role="group" aria-label="Historical comparison window"><button type="button" data-location-window="24H" aria-pressed="true">24H</button><button type="button" data-location-window="5D" aria-pressed="false">5D</button><button type="button" data-location-window="20D" aria-pressed="false">20D</button></div></header>
-          <dl class="location-transition-coverage location-page-coverage" id="locationTransitionCoverage" aria-label="Comparison coverage and timestamps"></dl>
-          <section class="panel"><div class="panel-heading location-panel-heading"><div><p>STRUCTURAL LOCATION</p><h2>Symbols by current structural location</h2></div><div class="location-search-controls"><label for="locationSymbolSearch">SEARCH SYMBOL</label><input id="locationSymbolSearch" type="search" placeholder="e.g. NVDA" autocomplete="off" autocapitalize="characters" spellcheck="false" /></div></div><p class="location-search-status" id="locationSearchStatus" role="status" hidden></p><div class="location-heatmap" id="locationHeatmap"></div></section>
-          <section class="panel location-transition-panel"><div class="panel-heading"><div><p>STRUCTURAL MOVEMENT</p><h2 id="locationTransitionHeading">Structural Location Movement</h2></div><span id="locationHistoryStatus">Loading canonical history…</span></div><div class="location-transition-summary" id="locationTransitionSummary" aria-label="Structural movement summary"></div><div class="location-transition-visual"><p class="location-transition-axis-to">TO — Current Location</p><div class="location-transition-scroll" tabindex="0" aria-label="Scrollable structural location transition heatmap"><div class="location-transition-matrix" id="locationTransitionMatrix" role="grid" aria-label="Previous structural location by current structural location"></div></div><div class="location-transition-legend" aria-label="Movement direction legend"><span class="higher">Moved higher</span><span class="lower">Moved lower</span><span class="unchanged">Same bucket</span><small>Colors describe bucket movement only, not bullish or bearish sentiment.</small></div></div><section class="location-transition-drilldown" id="locationTransitionDrilldown" aria-live="polite" hidden><header><div><p>TRANSITION DETAIL</p><h3 id="locationTransitionDrilldownHeading">Selected symbols</h3><span id="locationTransitionDrilldownSupport"></span></div><button class="quiet-button" id="locationTransitionDrilldownClose" type="button">Close</button></header><div class="location-transition-drilldown-controls"><label for="locationTransitionSearch">FILTER SYMBOLS</label><input id="locationTransitionSearch" type="search" placeholder="e.g. NVDA" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-controls="locationTransitionSymbols" /></div><ul class="location-transition-symbols" id="locationTransitionSymbols"></ul></section></section>
+        <section class="route-panel location-distribution-route" data-route-panel="location-distribution" hidden>
+          <header class="location-page-header">
+            <div><h1>Location Distribution</h1><p>MRZ Research · Structural location</p><span>Endpoint comparison of canonical structural-location observations.</span></div>
+            <div class="location-window-selector" role="group" aria-label="Historical comparison window"><button type="button" data-location-window="24H" aria-pressed="true">24H</button><button type="button" data-location-window="5D" aria-pressed="false">5D</button><button type="button" data-location-window="20D" aria-pressed="false">20D</button></div>
+          </header>
+          <section class="location-coverage" aria-label="Comparison coverage">
+            <div class="location-coverage-cards" id="locationCoverageCards"></div>
+            <dl class="location-coverage-strip" id="locationCoverageStrip"></dl>
+          </section>
+          <section class="location-section location-taxonomy-section" aria-labelledby="locationTaxonomyHeading">
+            <header class="location-section-heading"><div><h2 id="locationTaxonomyHeading">Taxonomy Overview</h2><p>Structural movement by canonical symbol taxonomy.</p></div><span id="locationTaxonomyWindow">24H</span></header>
+            <div class="location-taxonomy-controls">
+              <div class="location-segmented" role="group" aria-label="Taxonomy visibility"><button type="button" data-taxonomy-mode="movement" aria-pressed="true">With Movement</button><button type="button" data-taxonomy-mode="all" aria-pressed="false">All Taxonomies</button></div>
+              <label>LEVEL<select id="locationTaxonomyLevel"><option value="sector">Sector</option><option value="industry">Industry</option><option value="asset_class">Asset Class</option></select></label>
+              <label>SORT<select id="locationTaxonomySort"><option value="lower">Highest lower share</option><option value="higher">Highest higher share</option><option value="name">Alphabetical</option></select></label>
+            </div>
+            <p class="location-inline-status" id="locationTaxonomyStatus" role="status"></p>
+            <div class="location-taxonomy-list" id="locationTaxonomyCards"></div>
+          </section>
+          <section class="location-section location-flow-section" aria-labelledby="locationFlowHeading">
+            <header class="location-section-heading"><div><h2 id="locationFlowHeading">Bucket Flow</h2><p id="locationFlowScope">Select a taxonomy to inspect its endpoint flow.</p></div><span id="locationFlowWindow">24H</span></header>
+            <div class="location-flow-legend" aria-label="Movement direction legend"><span class="lower">Lower <b id="locationFlowLower">0</b></span><span class="same">Same <b id="locationFlowSame">0</b></span><span class="higher">Higher <b id="locationFlowHigher">0</b></span></div>
+            <div class="location-flow-scroll" tabindex="0" aria-label="Scrollable structural location bucket flow"><div class="location-flow-canvas-wrap"><canvas id="locationFlowCanvas" width="860" height="390" aria-label="Previous to current structural location flow"></canvas><div class="location-flow-hit-targets" id="locationFlowTargets"></div><div class="location-flow-tooltip" id="locationFlowTooltip" role="status" hidden></div></div></div>
+            <p class="location-flow-note">Line thickness represents symbol count; color represents structural movement direction. Same bucket does not imply stability.</p>
+          </section>
+          <section class="location-section location-contributors-section" aria-labelledby="locationContributorsHeading">
+            <header class="location-section-heading location-contributors-heading"><div><h2 id="locationContributorsHeading">Contributing Symbols</h2><p id="locationContributorScope">Select a flow to reveal its exact underlying symbols.</p></div><label>FILTER SYMBOLS<input id="locationContributorSearch" type="search" placeholder="e.g. NVDA" autocomplete="off" autocapitalize="characters" spellcheck="false" /></label></header>
+            <div class="location-contributors-table-wrap"><table class="location-contributors-table"><thead><tr><th>Symbol</th><th>Previous</th><th>Current</th><th>Observation freshness</th><th><span class="visually-hidden">Open details</span></th></tr></thead><tbody id="locationContributorRows"></tbody></table></div>
+          </section>
         </section>
 
         <section class="route-panel" data-route-panel="events" hidden>
@@ -85,6 +109,6 @@
 
     <dialog class="workspace-dialog inbox-dialog" id="notificationInboxDialog" aria-labelledby="notificationInboxTitle"><section><header><div><p>DELIVERY HISTORY</p><h2 id="notificationInboxTitle">Notification Inbox</h2><span id="notificationInboxSummary">No unread notifications</span></div><button class="icon-button" id="notificationInboxClose" type="button" aria-label="Close">×</button></header><p class="notification-inbox-empty" id="notificationInboxEmpty">No active notifications.</p><ul class="notification-inbox-list" id="notificationInboxList" aria-live="polite"></ul><footer><button class="quiet-button" type="button" id="notificationMarkAllRead" disabled>Mark all read</button><button class="danger-button" type="button" id="notificationClearInbox" disabled>Clear inbox</button></footer></section></dialog>
     <div class="notification-toast-host" id="notificationToastHost" aria-live="polite"></div>
-    <script src="/static/mrz-shell.js?v=remove-pressure-page-20261109" defer></script><script src="/static/operator-time.js?v=mrz-workspace-20261007" defer></script><script src="/static/heatmap-state.js?v=mrz-migration-outcomes-20261008" defer></script><script src="/static/workspace-derivations.js?v=remove-pressure-page-20261109" defer></script><script src="/static/group-evidence.js?v=remove-pressure-page-20261109" defer></script><script src="/static/notifications.js?v=mrz-inbox-actions-20261008" defer></script><script src="/static/workspace.js?v=remove-pressure-page-20261109" defer></script>
+    <script src="/static/mrz-shell.js?v=location-taxonomy-flow-20261109" defer></script><script src="/static/operator-time.js?v=mrz-workspace-20261007" defer></script><script src="/static/workspace-derivations.js?v=location-taxonomy-flow-20261109" defer></script><script src="/static/group-evidence.js?v=location-taxonomy-flow-20261109" defer></script><script src="/static/notifications.js?v=mrz-inbox-actions-20261008" defer></script><script src="/static/workspace.js?v=location-taxonomy-flow-20261109" defer></script>
   </body>
 </html>
