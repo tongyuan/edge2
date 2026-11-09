@@ -13,6 +13,7 @@
     locationWindow: "24H",
     locationSearchQuery: "",
     locationTransitionSelection: null,
+    locationTransitionQuery: "",
     pressureSelection: null,
     pressureNeutralExpanded: false,
     peerWindow: "24H",
@@ -827,8 +828,19 @@
     renderLocationTransitionDrilldown(report);
   }
   function transitionSummaryMetric(direction, label, value, support) {
-    const node = element("article", `location-transition-summary-${direction}`);
+    const node = element("button", `location-transition-summary-${direction}`);
+    node.type = "button";
+    node.dataset.transitionDirection = direction;
+    node.setAttribute("aria-controls", "locationTransitionDrilldown");
+    node.setAttribute("aria-pressed", String(state.locationTransitionSelection?.type === "direction" && state.locationTransitionSelection.direction === direction));
+    node.setAttribute("aria-label", `${label}: ${value} symbol${value === 1 ? "" : "s"}. Open symbol drill-down.`);
     node.append(element("span", "", label), element("strong", "", String(value)), element("small", "", support));
+    node.addEventListener("click", () => {
+      state.locationTransitionSelection = { type: "direction", direction };
+      state.locationTransitionQuery = "";
+      renderLocationHistory();
+      $("#locationTransitionDrilldownClose")?.focus();
+    });
     return node;
   }
   function locationTransitionCell(cell, maximum) {
@@ -845,12 +857,13 @@
     button.setAttribute("role", "gridcell");
     button.setAttribute("aria-label", label);
     button.setAttribute("aria-controls", "locationTransitionDrilldown");
-    button.setAttribute("aria-pressed", String(state.locationTransitionSelection?.key === cell.key));
+    button.setAttribute("aria-pressed", String(state.locationTransitionSelection?.type === "cell" && state.locationTransitionSelection.key === cell.key));
     button.title = label;
     const intensity = maximum ? 0.18 + (0.46 * cell.count / maximum) : 0.18;
     button.style.setProperty("--transition-intensity", intensity.toFixed(3));
     button.addEventListener("click", () => {
-      state.locationTransitionSelection = { key: cell.key, fromKey: cell.fromKey, toKey: cell.toKey };
+      state.locationTransitionSelection = { type: "cell", key: cell.key, fromKey: cell.fromKey, toKey: cell.toKey };
+      state.locationTransitionQuery = "";
       renderLocationHistory();
       $("#locationTransitionDrilldownClose")?.focus();
     });
@@ -859,22 +872,39 @@
   function renderLocationTransitionDrilldown(report) {
     const panel = $("#locationTransitionDrilldown");
     const selection = state.locationTransitionSelection;
-    const cell = selection ? report.cells.find((item) => item.key === selection.key) : null;
-    if (!cell?.count) {
+    const cell = selection?.type === "cell" ? report.cells.find((item) => item.key === selection.key) : null;
+    const direction = selection?.type === "direction" ? selection.direction : null;
+    if ((!cell?.count && !direction) || (direction && !report.categories[direction])) {
       panel.hidden = true;
       $("#locationTransitionSymbols").replaceChildren();
       return;
     }
     panel.hidden = false;
-    const directionLabel = cell.direction === "higher" ? "Moved higher" : cell.direction === "lower" ? "Moved lower" : "Same bucket";
-    $("#locationTransitionDrilldownHeading").textContent = `${cell.fromLabel} → ${cell.toLabel}`;
-    $("#locationTransitionDrilldownSupport").textContent = `${cell.count} symbol${cell.count === 1 ? "" : "s"} · ${directionLabel} · ${state.locationWindow}`;
+    const directionLabel = (direction || cell.direction) === "higher" ? "Moved Higher" : (direction || cell.direction) === "lower" ? "Moved Lower" : "Same Bucket";
+    const members = direction ? report.categories[direction] : cell.members;
+    const visibleMembers = derive.filterLocationTransitionMembers(members, state.locationTransitionQuery);
+    $("#locationTransitionDrilldownHeading").textContent = direction ? directionLabel : `${cell.fromLabel} → ${cell.toLabel}`;
+    const resultCount = state.locationTransitionQuery ? `${visibleMembers.length} of ${members.length}` : String(members.length);
+    const caveat = (direction || cell.direction) === "unchanged"
+      ? "Same bucket is not a stability claim"
+      : "Structural movement only; not directional pressure or a trading signal";
+    $("#locationTransitionDrilldownSupport").textContent = `${resultCount} symbol${members.length === 1 ? "" : "s"} · ${state.locationWindow} · ${caveat}`;
+    const search = $("#locationTransitionSearch");
+    if (search.value !== state.locationTransitionQuery) search.value = state.locationTransitionQuery;
     const list = $("#locationTransitionSymbols"); list.replaceChildren();
-    cell.members.forEach((item) => {
+    if (!visibleMembers.length) {
+      list.append(element("li", "location-transition-no-match", state.locationTransitionQuery ? `No symbols match “${state.locationTransitionQuery}”.` : "No comparable symbols in this movement category."));
+      return;
+    }
+    visibleMembers.forEach((item) => {
       const row = element("li", "");
       const heading = element("div", "location-transition-symbol-heading");
       heading.append(element("strong", "", item.symbol), element("span", item.has_new_observation ? "is-fresh" : "is-reused", item.has_new_observation ? "New observation" : "No new observation"));
-      const steps = item.magnitude === 0 ? "0 bucket steps · Same bucket" : `${item.magnitude} bucket step${item.magnitude === 1 ? "" : "s"} ${item.direction}`;
+      const steps = item.magnitude === null
+        ? "Unknown bucket-step distance"
+        : item.magnitude === 0
+          ? "0 bucket steps · Same bucket"
+          : `${item.magnitude} bucket step${item.magnitude === 1 ? "" : "s"} ${item.direction}`;
       const facts = element("dl", "");
       [["Previous bucket", item.start_location_label], ["Current bucket", item.current_location_label], ["Movement", steps], ["Previous observation", exactTime(item.comparison_observed_at)], ["Current observation", exactTime(item.current_observed_at)], ["Window freshness", item.has_new_observation ? `New observation inside ${state.locationWindow}` : `Reused endpoint; no new observation inside ${state.locationWindow}`]].forEach(([label, value]) => facts.append(element("dt", "", label), element("dd", "", value || "—")));
       row.append(heading, facts, symbolLink(item.symbol, "Open symbol details"));
@@ -1070,10 +1100,23 @@
   });
   document.querySelectorAll("[data-location-window]").forEach((button) => button.addEventListener("click", () => loadLocationHistory(button.dataset.locationWindow)));
   $("#locationTransitionDrilldownClose")?.addEventListener("click", () => {
-    const selectedKey = state.locationTransitionSelection?.key;
+    const selection = state.locationTransitionSelection;
     state.locationTransitionSelection = null;
+    state.locationTransitionQuery = "";
     renderLocationHistory();
-    if (selectedKey) document.querySelector(`[data-transition-cell="${selectedKey}"]`)?.focus();
+    if (selection?.type === "cell") document.querySelector(`[data-transition-cell="${selection.key}"]`)?.focus();
+    if (selection?.type === "direction") document.querySelector(`[data-transition-direction="${selection.direction}"]`)?.focus();
+  });
+  $("#locationTransitionSearch")?.addEventListener("input", (event) => {
+    state.locationTransitionQuery = event.target.value;
+    if (state.locationHistory) renderLocationTransitionDrilldown(derive.deriveLocationTransitionHeatmap(state.locationHistory));
+  });
+  $("#locationTransitionSearch")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || !state.locationTransitionQuery) return;
+    event.preventDefault();
+    state.locationTransitionQuery = "";
+    event.target.value = "";
+    if (state.locationHistory) renderLocationTransitionDrilldown(derive.deriveLocationTransitionHeatmap(state.locationHistory));
   });
   $("#eventTypeFilter")?.addEventListener("change", renderEvents);
   $("#alertPreferencesForm")?.addEventListener("submit", (event) => savePreferences(event).catch(showError));

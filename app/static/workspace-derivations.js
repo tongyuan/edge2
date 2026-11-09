@@ -79,6 +79,12 @@
     return (symbols || []).filter((symbol) => String(symbol || "").toUpperCase().includes(normalized));
   }
 
+  function filterLocationTransitionMembers(members, query) {
+    const normalized = String(query || "").trim().toUpperCase();
+    if (!normalized) return [...(members || [])];
+    return (members || []).filter((member) => String(member.symbol || "").toUpperCase().includes(normalized));
+  }
+
   function deriveLocationTransitionHeatmap(history = {}) {
     const rank = new Map(LOCATION_TRANSITION_BUCKETS.map((bucket, index) => [bucket.key, index]));
     const cells = LOCATION_TRANSITION_BUCKETS.flatMap((source, sourceIndex) => (
@@ -95,6 +101,7 @@
     ));
     const cellByKey = new Map(cells.map((cell) => [cell.key, cell]));
     const seenSymbols = new Set();
+    const categories = { higher: [], lower: [], unchanged: [] };
     (history.symbol_movements || []).forEach((movement) => {
       const symbol = String(movement.symbol || "").trim();
       const fromIndex = rank.get(movement.start_location);
@@ -102,22 +109,33 @@
       if (!symbol || seenSymbols.has(symbol) || fromIndex === undefined || toIndex === undefined) return;
       seenSymbols.add(symbol);
       const cell = cellByKey.get(`${movement.start_location}:${movement.current_location}`);
-      const direction = toIndex > fromIndex ? "higher" : toIndex < fromIndex ? "lower" : "unchanged";
-      cell.count += 1;
-      cell.members.push({
+      const direction = ["higher", "lower", "unchanged"].includes(movement.direction)
+        ? movement.direction
+        : null;
+      const magnitude = movement.magnitude === null || movement.magnitude === undefined
+        ? null
+        : Number(movement.magnitude);
+      const member = {
         ...movement,
         symbol,
         direction,
-        magnitude: Math.abs(toIndex - fromIndex),
+        magnitude: magnitude !== null && Number.isFinite(magnitude) ? magnitude : null,
         has_new_observation: movement.has_new_observation === true,
-      });
+      };
+      cell.count += 1;
+      cell.members.push(member);
+      if (direction) categories[direction].push(member);
     });
     cells.forEach((cell) => cell.members.sort(compareSymbol));
-    const totals = cells.reduce((result, cell) => {
-      result[cell.direction] += cell.count;
-      result.comparable += cell.count;
-      return result;
-    }, { higher: 0, lower: 0, unchanged: 0, comparable: 0 });
+    categories.higher.sort((left, right) => Number(right.magnitude ?? -1) - Number(left.magnitude ?? -1) || compareSymbol(left, right));
+    categories.lower.sort((left, right) => Number(right.magnitude ?? -1) - Number(left.magnitude ?? -1) || compareSymbol(left, right));
+    categories.unchanged.sort(compareSymbol);
+    const totals = {
+      higher: categories.higher.length,
+      lower: categories.lower.length,
+      unchanged: categories.unchanged.length,
+      comparable: cells.reduce((sum, cell) => sum + cell.count, 0),
+    };
     const maxima = {
       higher: Math.max(0, ...cells.filter((cell) => cell.direction === "higher").map((cell) => cell.count)),
       lower: Math.max(0, ...cells.filter((cell) => cell.direction === "lower").map((cell) => cell.count)),
@@ -127,6 +145,7 @@
     return {
       buckets: LOCATION_TRANSITION_BUCKETS,
       cells,
+      categories,
       totals,
       maxima,
       reconciles: totals.comparable === Number(expected.comparable_symbols || 0)
@@ -884,6 +903,7 @@
     eventDirection,
     eventLabel,
     filterLocationSymbols,
+    filterLocationTransitionMembers,
     groupPressureSourcesByAssetClass,
     isGroupEvidenceRequestCurrent,
     groupMembership,

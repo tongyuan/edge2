@@ -162,6 +162,7 @@ class WorkspaceContractTests(unittest.TestCase):
             "locationTransitionDrilldown",
             "locationTransitionDrilldownHeading",
             "locationTransitionDrilldownClose",
+            "locationTransitionSearch",
             "locationTransitionSymbols",
         ):
             self.assertIn(f'id="{target}"', HTML)
@@ -195,6 +196,10 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertIn("Colors describe bucket movement only", HTML)
         self.assertIn("Not a stability claim", JS)
         self.assertNotIn("Dominant transitions", HTML)
+        route = HTML.split('data-route-panel="location-distribution"', 1)[1].split('data-route-panel="events"', 1)[0]
+        self.assertEqual(route.count('id="locationTransitionCoverage"'), 1, "coverage is repositioned, not duplicated")
+        self.assertLess(route.index('id="locationTransitionCoverage"'), route.index("STRUCTURAL LOCATION"))
+        self.assertLess(route.index('id="locationTransitionCoverage"'), route.index('id="locationTransitionSummary"'))
 
     def test_breadth_leadership_page_is_removed_but_legacy_route_is_preserved(self) -> None:
         self.assertNotIn('data-route-panel="breadth-leadership"', HTML)
@@ -304,10 +309,15 @@ class WorkspaceContractTests(unittest.TestCase):
             "locationTransitionDrilldown",
             "locationTransitionDrilldownHeading",
             "locationTransitionDrilldownClose",
+            "locationTransitionSearch",
             "locationTransitionSymbols",
         ):
             self.assertIn(f'id="{target}"', HTML)
         self.assertIn('button.dataset.transitionCell = cell.key', JS)
+        self.assertIn('node.dataset.transitionDirection = direction', JS)
+        self.assertIn('{ type: "direction", direction }', JS)
+        self.assertIn('report.categories[direction]', JS)
+        self.assertIn("derive.filterLocationTransitionMembers", JS)
         self.assertIn('button.setAttribute("aria-controls", "locationTransitionDrilldown")', JS)
         self.assertIn('button.setAttribute("aria-pressed"', JS)
         self.assertIn('button.title =', JS)
@@ -318,6 +328,10 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertIn("item.current_observed_at", JS)
         self.assertIn("item.has_new_observation", JS)
         self.assertIn('symbolLink(item.symbol, "Open symbol details")', JS)
+        self.assertIn('type="search"', HTML)
+        self.assertIn('aria-controls="locationTransitionSymbols"', HTML)
+        self.assertIn("Structural movement only; not directional pressure or a trading signal", JS)
+        self.assertIn("Same bucket is not a stability claim", JS)
         self.assertIn("Loading ${window} transitions", JS)
         self.assertIn(".location-transition-scroll", CSS)
         self.assertIn("overflow-x: auto", CSS)
@@ -325,6 +339,8 @@ class WorkspaceContractTests(unittest.TestCase):
         mobile_rules = CSS[CSS.index("@media (max-width: 560px)") :]
         self.assertIn(".location-transition-symbols", mobile_rules)
         self.assertIn("grid-template-columns: 1fr", mobile_rules)
+        self.assertIn(".location-transition-drilldown-controls", mobile_rules)
+        self.assertIn(".location-transition-summary button", mobile_rules)
 
 
 if __name__ == "__main__":

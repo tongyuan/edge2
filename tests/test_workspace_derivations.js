@@ -12,6 +12,7 @@ const {
   derivePeerLocationFlow,
   eventLabel,
   filterLocationSymbols,
+  filterLocationTransitionMembers,
   filterGroupEvidenceContributors,
   groupPressureSourcesByAssetClass,
   isGroupEvidenceRequestCurrent,
@@ -355,6 +356,10 @@ const transitionHeatmap = deriveLocationTransitionHeatmap(breadthHistory);
 assert.equal(transitionHeatmap.cells.length, 25, "the matrix always contains all 25 transition cells");
 assert.deepEqual(transitionHeatmap.totals, { higher: 3, lower: 3, unchanged: 1, comparable: 7 });
 assert.equal(transitionHeatmap.reconciles, true, "matrix cells reconcile exactly with canonical flow totals");
+assert.deepEqual(transitionHeatmap.categories.higher.map((item) => item.symbol), ["UP_CONFIRMED", "UP_DIVERGENT", "UP_NEUTRAL"], "higher symbols use canonical magnitude then symbol order");
+assert.deepEqual(transitionHeatmap.categories.lower.map((item) => item.symbol), ["DOWN_CONFIRMED", "DOWN_DIVERGENT", "DOWN_NEUTRAL"], "lower symbols use canonical magnitude then symbol order");
+assert.deepEqual(transitionHeatmap.categories.unchanged.map((item) => item.symbol), ["UNCHANGED"]);
+assert.deepEqual(filterLocationTransitionMembers(transitionHeatmap.categories.higher, "div"), [transitionHeatmap.categories.higher[1]], "movement drill-down search is case-insensitive");
 const transitionCell = (fromKey, toKey) => transitionHeatmap.cells.find((cell) => cell.fromKey === fromKey && cell.toKey === toKey);
 assert.equal(transitionCell("deep_discount", "shallow_premium").direction, "higher", "cells right of the diagonal are higher");
 assert.equal(transitionCell("deep_premium", "shallow_discount").direction, "lower", "cells left of the diagonal are lower");
@@ -369,13 +374,56 @@ transitionHeatmap.cells.forEach((cell) => {
 const uniqueTransitionHeatmap = deriveLocationTransitionHeatmap({
   flow: { moved_higher: 1, moved_lower: 0, unchanged: 0, comparable_symbols: 1 },
   symbol_movements: [
-    { symbol: "UNIQUE", start_location: "deep_discount", current_location: "shallow_discount", has_new_observation: true },
-    { symbol: "UNIQUE", start_location: "deep_discount", current_location: "deep_premium", has_new_observation: false },
+    { symbol: "UNIQUE", start_location: "deep_discount", current_location: "shallow_discount", direction: "higher", magnitude: 1, has_new_observation: true },
+    { symbol: "UNIQUE", start_location: "deep_discount", current_location: "deep_premium", direction: "higher", magnitude: 4, has_new_observation: false },
     { symbol: "MISSING", start_location: null, current_location: "deep_premium" },
   ],
 });
 assert.equal(uniqueTransitionHeatmap.totals.comparable, 1, "each comparable symbol is counted once");
 assert.equal(uniqueTransitionHeatmap.cells.find((cell) => cell.count === 1).members[0].has_new_observation, true, "freshness survives aggregation into the drill-down");
+
+const transitionBuckets = ["deep_discount", "shallow_discount", "at_eqm", "shallow_premium", "deep_premium"];
+const screenshotMovements = [
+  ...Array.from({ length: 13 }, (_, index) => {
+    const magnitude = 1 + (index % 4);
+    return { symbol: `HIGH_${String(index).padStart(2, "0")}`, start_location: transitionBuckets[0], current_location: transitionBuckets[magnitude], direction: "higher", magnitude };
+  }),
+  ...Array.from({ length: 28 }, (_, index) => {
+    const magnitude = 1 + (index % 4);
+    return { symbol: `LOW_${String(index).padStart(2, "0")}`, start_location: transitionBuckets[4], current_location: transitionBuckets[4 - magnitude], direction: "lower", magnitude };
+  }),
+  ...Array.from({ length: 91 }, (_, index) => ({ symbol: `SAME_${String(index).padStart(2, "0")}`, start_location: "at_eqm", current_location: "at_eqm", direction: "unchanged", magnitude: 0 })),
+];
+const screenshotTransitionHeatmap = deriveLocationTransitionHeatmap({
+  flow: { moved_higher: 13, moved_lower: 28, unchanged: 91, comparable_symbols: 132 },
+  symbol_movements: screenshotMovements,
+});
+assert.deepEqual(screenshotTransitionHeatmap.totals, { higher: 13, lower: 28, unchanged: 91, comparable: 132 }, "13 + 28 + 91 reconciles to 132 comparable symbols");
+assert.equal(screenshotTransitionHeatmap.reconciles, true);
+assert.deepEqual(new Set(screenshotTransitionHeatmap.categories.higher.map((item) => item.symbol)), new Set(screenshotMovements.slice(0, 13).map((item) => item.symbol)), "higher drill-down has exact canonical membership");
+for (const category of [screenshotTransitionHeatmap.categories.higher, screenshotTransitionHeatmap.categories.lower]) {
+  category.slice(1).forEach((item, index) => {
+    const previous = category[index];
+    assert.ok(previous.magnitude > item.magnitude || (previous.magnitude === item.magnitude && previous.symbol.localeCompare(item.symbol) <= 0), "directional drill-downs sort by magnitude descending and break ties by symbol");
+  });
+}
+const unknownTransitionHeatmap = deriveLocationTransitionHeatmap({
+  flow: { moved_higher: 1, moved_lower: 0, unchanged: 0, comparable_symbols: 1 },
+  symbol_movements: [
+    { symbol: "UNKNOWN_DIRECTION", start_location: "deep_discount", current_location: "shallow_discount", direction: "unknown", magnitude: 1 },
+    { symbol: "INCOMPARABLE", start_location: null, current_location: "deep_premium", direction: "higher", magnitude: 4 },
+  ],
+});
+assert.equal(unknownTransitionHeatmap.totals.comparable, 1, "missing endpoints remain incomparable");
+assert.deepEqual(unknownTransitionHeatmap.categories, { higher: [], lower: [], unchanged: [] }, "unknown canonical direction is not independently inferred from endpoint order");
+assert.equal(unknownTransitionHeatmap.reconciles, false, "unknown canonical direction surfaces as a reconciliation failure");
+const changedWindowTransitionHeatmap = deriveLocationTransitionHeatmap({
+  window: "5D",
+  flow: { moved_higher: 0, moved_lower: 1, unchanged: 0, comparable_symbols: 1 },
+  symbol_movements: [{ symbol: "WINDOW_CHANGE", start_location: "shallow_premium", current_location: "shallow_discount", direction: "lower", magnitude: 2 }],
+});
+assert.deepEqual(changedWindowTransitionHeatmap.categories.lower.map((item) => [item.symbol, item.magnitude]), [["WINDOW_CHANGE", 2]], "a window refresh derives its drill-down from that window's canonical response");
+assert.equal(changedWindowTransitionHeatmap.reconciles, true);
 const breadthReport = deriveBreadthLeadership(breadthHistory, breadthPressure);
 assert.deepEqual(breadthReport.breadth, { movedHigher: 3, movedLower: 3, unchanged: 1, netHigher: 0, comparable: 7, participationPct: 6 / 7 * 100 });
 assert.deepEqual(breadthReport.confirmation.higher, { higher: 1, neutral: 1, lower: 1 });
