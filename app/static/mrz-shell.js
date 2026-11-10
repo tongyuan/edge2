@@ -12,7 +12,7 @@
       ],
     },
     {
-      section: "MRZ RESEARCH",
+      section: "RESEARCH",
       routes: [
         { name: "location-distribution", label: "Location Distribution", abbreviation: "LD", href: "/mrz/location-distribution" },
         { name: "formation-diagnostics", label: "Formation Diagnostics", abbreviation: "FD", href: "/mrz/formation-diagnostics" },
@@ -50,7 +50,7 @@
 
   function sidebarMarkup(activeRoute) {
     return `
-      <a class="workspace-brand" href="/mrz/watchlists?group=all&window=24H" aria-label="EDGE 2.0 Group Radar home"><span class="brand-mark"><img src="/static/edge-mrz-icon-192.png" alt="" /></span><span class="brand-copy"><strong>EDGE 2.0</strong></span></a>
+      <a class="workspace-brand" href="/mrz/watchlists?group=all&window=24H" aria-label="EDGE 2.0 Group Radar home"><span class="brand-mark"><img src="/static/edge-intel-radar-icon-192.png" alt="" /></span><span class="brand-copy"><strong>EDGE 2.0</strong></span></a>
       <nav class="workspace-navigation">${navigationMarkup(activeRoute)}</nav>
       <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-controls="mrzWorkspaceMain"><span class="sidebar-toggle-icon" aria-hidden="true">‹</span><span class="sidebar-toggle-label">Collapse</span></button>
       <div class="sidebar-foot"><span class="health-dot" id="healthState">Checking system</span><small>Canonical universe monitoring</small></div>

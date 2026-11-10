@@ -1342,13 +1342,15 @@ class NotificationIntegrationTests(unittest.TestCase):
 
         root = self.client.get("/")
         self.assertEqual(root.status_code, 200)
-        self.assertIn('href="/manifest.webmanifest"', root.text)
-        self.assertIn('href="/static/edge-mrz-icon-180.png"', root.text)
+        self.assertIn(
+            'href="/manifest.webmanifest?v=edge-intel-radar-20261110"',
+            root.text,
+        )
+        self.assertIn('href="/static/edge-intel-radar-icon-180.png"', root.text)
         for icon_path, expected_type in (
-            ("/static/edge-mrz-icon-180.png", "image/png"),
-            ("/static/edge-mrz-icon-192.png", "image/png"),
-            ("/static/edge-mrz-icon-512.png", "image/png"),
-            ("/static/edge-mrz-icon.svg", "image/svg+xml"),
+            ("/static/edge-intel-radar-icon-180.png", "image/png"),
+            ("/static/edge-intel-radar-icon-192.png", "image/png"),
+            ("/static/edge-intel-radar-icon-512.png", "image/png"),
         ):
             icon = self.client.get(icon_path)
             self.assertEqual(icon.status_code, 200, icon_path)

@@ -109,7 +109,7 @@ async function testGrantedPermissionPath() {
     navigatorObject: {
       serviceWorker: {
         async register(url, options) {
-          assert.equal(url, "/service-worker.js");
+          assert.equal(url, "/service-worker.js?v=edge-intel-radar-20261110");
           assert.deepEqual(options, { scope: "/" });
           return registration;
         },

@@ -16,6 +16,7 @@ class MonitorContractTests(unittest.TestCase):
     def test_monitor_is_a_compact_routed_workspace(self) -> None:
         self.assertIn("EDGE Intel · Group Radar", HTML)
         self.assertIn("<strong>EDGE Intel</strong>", HTML)
+        self.assertIn("/static/edge-intel-radar-icon-192.png", HTML)
         self.assertIn('class="workspace-sidebar"', HTML)
         self.assertIn('class="workspace-header"', HTML)
         self.assertIn('data-route-panel="overview"', HTML)

@@ -35,7 +35,7 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertIn('/static/mrz-shell.js', HTML)
         self.assertNotIn(">Views <", HTML)
         self.assertNotIn("data-diagnostics-trigger", HTML)
-        trading = SHELL.split('section: "TRADING"', 1)[1].split('section: "MRZ RESEARCH"', 1)[0]
+        trading = SHELL.split('section: "TRADING"', 1)[1].split('section: "RESEARCH"', 1)[0]
         self.assertNotIn('name: "pressure"', trading)
         self.assertNotIn('label: "Pressure"', trading)
 
@@ -225,7 +225,9 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertNotIn('<h1>Pressure</h1>', HTML)
 
     def test_mrz_research_navigation_contains_only_supported_pages(self) -> None:
-        research = SHELL.split('section: "MRZ RESEARCH"', 1)[1].split("],", 1)[0]
+        research = SHELL.split('section: "RESEARCH"', 1)[1].split("],", 1)[0]
+        self.assertIn('section: "RESEARCH"', SHELL)
+        self.assertNotIn('section: "MRZ RESEARCH"', SHELL)
         self.assertIn('label: "Location Distribution"', research)
         self.assertIn('label: "Formation Diagnostics"', research)
         self.assertIn('label: "Events History"', research)

@@ -75,8 +75,8 @@ self.addEventListener("push", (event) => {
   const destination = safeNotificationPath(payload.destination);
   event.waitUntil(self.registration.showNotification(payload.title || "EDGE MRZ", {
     body: payload.body || "An authoritative MRZ changed.",
-    icon: "/static/edge-mrz-icon-192.png",
-    badge: "/static/edge-mrz-icon-192.png",
+    icon: "/static/edge-intel-radar-icon-192.png",
+    badge: "/static/edge-intel-radar-icon-192.png",
     tag: `edge-mrz:${eventId}`,
     renotify: false,
     data: {

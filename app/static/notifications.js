@@ -91,7 +91,7 @@
     vapidPublicKey,
   }) {
     const registration = await navigatorObject.serviceWorker.register(
-      "/service-worker.js",
+      "/service-worker.js?v=edge-intel-radar-20261110",
       { scope: "/" },
     );
     const permission = notificationObject.permission === "granted"
