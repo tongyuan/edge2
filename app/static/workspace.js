@@ -75,6 +75,11 @@
     return globalObject.formatOperatorTimestampUtcMinus4?.(value)
       || new Date(value).toLocaleString();
   }
+  function operatorDate(value) {
+    if (!value) return "—";
+    const shifted = new Date(new Date(value).getTime() - (4 * 60 * 60 * 1000));
+    return shifted.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
+  }
   function relativeTime(value) {
     const timestamp = new Date(value);
     if (!value || Number.isNaN(timestamp.getTime())) return "—";
@@ -446,7 +451,6 @@
     const response = await fetch(`/api/symbols/${encodeURIComponent(symbol)}`, { cache: "no-store" });
     if (!response.ok) throw new Error(`Unable to load ${symbol}.`);
     const detail = await response.json();
-    const event = latestEvents().get(symbol);
     const pressure = pressureBySymbol().get(symbol);
     const pressureSource = pressureSourceBySymbol().get(symbol) || {};
     const pressurePresentation = derive.pressureDetailPresentation({
@@ -465,17 +469,16 @@
     if (detail.migration?.has_migrated) {
       $("#detailPrevious").replaceChildren(element("strong", "", `${formatPrice(detail.migration.previous_lower)}–${formatPrice(detail.migration.previous_upper)}`), element("span", "", `Previous authority · ${detail.migration.direction === "UP" ? "migrated upward" : "migrated downward"}`), element("span", "", exactTime(detail.migration.previous_activated_at)));
     } else $("#detailPrevious").textContent = "No previous migrated authority for the current lifecycle.";
-    if (event) $("#detailLatestEvent").replaceChildren(element("strong", "", derive.eventLabel(event)), element("span", "", exactTime(event.occurred_at)), element("span", "", event.body || ""));
-    else $("#detailLatestEvent").textContent = "No recent canonical event.";
     const direction = pressurePresentation.current.direction;
     const latestDirectional = pressurePresentation.latest;
     $("#detailPressure").replaceChildren(
-      element("strong", `pressure-${direction}`, `Current pressure · ${pressureLabels[direction]}`),
-      element("span", "", pressure?.evidence?.label || "Canonical current pressure"),
+      element("strong", `pressure-${direction}`, `Current canonical state: ${pressureLabels[direction]}`),
       element("span", latestDirectional ? `pressure-${latestDirectional.direction}` : "", latestDirectional
-        ? `Latest directional · ${pressureLabels[latestDirectional.direction]} · ${relativeTime(latestDirectional.occurred_at)}`
-        : "Latest directional · —"),
-      ...(latestDirectional?.occurred_at ? [element("time", "", exactTime(latestDirectional.occurred_at))] : []),
+        ? `Last recorded direction: ${pressureLabels[latestDirectional.direction]}`
+        : "Last recorded direction: No directional event"),
+      element("time", "", latestDirectional?.occurred_at
+        ? `Last directional event: ${operatorDate(latestDirectional.occurred_at)}`
+        : "Last directional event: —"),
     );
   }
 

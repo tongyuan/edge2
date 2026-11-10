@@ -14,7 +14,7 @@ REPOSITORY = (ROOT / "app/repository.py").read_text(encoding="utf-8")
 
 class MonitorContractTests(unittest.TestCase):
     def test_monitor_is_a_compact_routed_workspace(self) -> None:
-        self.assertIn("MRZ Monitor", HTML)
+        self.assertIn("EDGE 2.0 · Group Radar", HTML)
         self.assertIn('class="workspace-sidebar"', HTML)
         self.assertIn('class="workspace-header"', HTML)
         self.assertIn('data-route-panel="overview"', HTML)
@@ -58,8 +58,11 @@ class MonitorContractTests(unittest.TestCase):
     def test_current_and_previous_authority_are_available_in_symbols(self) -> None:
         self.assertIn('id="detailRange"', HTML)
         self.assertIn('id="detailPrevious"', HTML)
-        self.assertIn('id="detailLatestEvent"', HTML)
+        self.assertNotIn('id="detailLatestEvent"', HTML)
         self.assertIn('id="detailPressure"', HTML)
+        self.assertIn("Open Events History", HTML)
+        self.assertIn("Current canonical state:", WORKSPACE)
+        self.assertIn("Last directional event:", WORKSPACE)
         self.assertIn("detail.migration?.has_migrated", WORKSPACE)
         self.assertIn("/api/symbols/${encodeURIComponent(symbol)}", WORKSPACE)
 

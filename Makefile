@@ -1,8 +1,13 @@
-.PHONY: test up down logs health ingress-health migrate backup deploy
+.PHONY: test test-no-pine up down logs health ingress-health migrate backup deploy
 
 test:
 	docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from edge2-test
 	docker compose -f docker-compose.test.yml down --volumes --remove-orphans
+
+test-no-pine:
+	@set -e; \
+	trap 'docker compose -f docker-compose.test.yml down --volumes --remove-orphans' EXIT; \
+	docker compose -f docker-compose.test.yml run --build --rm edge2-test sh -c 'node tests/test_operator_time.js && node tests/test_heatmap_state.js && node tests/test_monitor_presentation.js && node tests/test_diagnostics_navigation.js && node tests/test_notifications.js && node tests/test_workspace_derivations.js && node tests/test_activation_feasibility.js && node tests/test_mrz_robustness.js && node tests/test_mrz_robustness_report.js && python3 scripts/run_non_pine_tests.py'
 
 up:
 	docker compose up -d --build

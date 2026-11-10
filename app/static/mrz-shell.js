@@ -6,7 +6,7 @@
     {
       section: "TRADING",
       routes: [
-        { name: "watchlists", label: "Group Opportunity", abbreviation: "GO", href: "/mrz/watchlists?group=all&window=24H", badgeId: "navAttentionCount" },
+        { name: "watchlists", label: "Group Radar", abbreviation: "GR", href: "/mrz/watchlists?group=all&window=24H", badgeId: "navAttentionCount" },
         { name: "symbols", label: "Symbols", abbreviation: "SY", href: "/mrz/symbols" },
         { name: "alert-settings", label: "Alert Settings", abbreviation: "AL", href: "/mrz/alert-settings" },
       ],
@@ -16,7 +16,7 @@
       routes: [
         { name: "location-distribution", label: "Location Distribution", abbreviation: "LD", href: "/mrz/location-distribution" },
         { name: "formation-diagnostics", label: "Formation Diagnostics", abbreviation: "FD", href: "/mrz/formation-diagnostics" },
-        { name: "events", label: "Notification Event History", abbreviation: "EV", href: "/mrz/events" },
+        { name: "events", label: "Events History", abbreviation: "EV", href: "/mrz/events" },
       ],
     },
   ];
@@ -50,7 +50,7 @@
 
   function sidebarMarkup(activeRoute) {
     return `
-      <a class="workspace-brand" href="/mrz/watchlists?group=all&window=24H" aria-label="EDGE 2.0 Watchlists home"><span class="brand-mark">E</span><span class="brand-copy"><strong>EDGE 2.0</strong><small>MRZ Monitor</small></span></a>
+      <a class="workspace-brand" href="/mrz/watchlists?group=all&window=24H" aria-label="EDGE 2.0 Group Radar home"><span class="brand-mark"><img src="/static/edge-mrz-icon.svg" alt="" /></span><span class="brand-copy"><strong>EDGE 2.0</strong></span></a>
       <nav class="workspace-navigation">${navigationMarkup(activeRoute)}</nav>
       <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-controls="mrzWorkspaceMain"><span class="sidebar-toggle-icon" aria-hidden="true">‹</span><span class="sidebar-toggle-label">Collapse</span></button>
       <div class="sidebar-foot"><span class="health-dot" id="healthState">Checking system</span><small>Canonical universe monitoring</small></div>

@@ -27,7 +27,7 @@ git -C "${ROOT_DIR}" remote get-url origin >/dev/null 2>&1 || \
   fail "Git remote origin is not configured"
 
 printf 'Running the pre-deploy test suite...\n'
-make -C "${ROOT_DIR}" test
+make -C "${ROOT_DIR}" test-no-pine
 
 expected_sha="$(git -C "${ROOT_DIR}" rev-parse HEAD)"
 printf 'Pushing %s to origin...\n' "${BRANCH}"

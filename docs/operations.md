@@ -86,8 +86,8 @@ Deploy from clean local `main`:
 ./scripts/deploy-remote.sh
 ```
 
-The helper runs `make test`, pushes `main`, captures the intended SHA, verifies
-`origin/main`, checks that the remote checkout is clean, and pulls with:
+The helper runs `make test-no-pine`, pushes `main`, captures the intended SHA,
+verifies `origin/main`, checks that the remote checkout is clean, and pulls with:
 
 ```bash
 git pull --ff-only origin main
@@ -96,6 +96,10 @@ git pull --ff-only origin main
 It refuses to overwrite a dirty remote tree. It then rebuilds/restarts the
 actual Compose services, checks both health endpoints, and fails unless local
 HEAD, `origin/main`, and remote HEAD are identical.
+
+`test-no-pine` runs the JavaScript workspace checks and every Python test that
+does not depend on a source file under `pine/`. In mixed modules it retains the
+non-Pine behavioral cases and excludes only the Pine-backed contract classes.
 
 Do not deploy source with `rsync`, `scp`, tar archives, or SSH file heredocs.
 Remote file inspection is reserved for actual deployment discrepancies.

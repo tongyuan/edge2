@@ -115,6 +115,7 @@ def inputs(
     observations: list[Observation] | None = None,
     migrations: list[dict] | None = None,
     pressure_events: list[dict] | None = None,
+    latest_pressure_events: list[dict] | None = None,
     location_observations: list[Observation] | None = None,
     near_miss_episodes: list[dict] | None = None,
 ) -> dict:
@@ -129,6 +130,7 @@ def inputs(
         "observations": observations or [],
         "migration_events": migrations or [],
         "pressure_events": pressure_events or [],
+        "latest_pressure_events": latest_pressure_events or [],
         "location_observations": location_observations or [],
         "near_miss_episodes": near_miss_episodes or [],
     }
@@ -169,6 +171,112 @@ def pressure_event(symbol: str, index: int, direction: str, occurred_at: datetim
 
 
 class GroupEvidenceTests(unittest.TestCase):
+    def test_five_bucket_history_and_current_distribution_reconcile(self) -> None:
+        members = ["A", "B", "C", "D", "E"]
+        prices = (("10", "90"), ("30", "70"), ("50", "50"), ("70", "30"), ("90", "10"))
+        rows = [
+            endpoint(
+                symbol,
+                start_price=start,
+                current_price=current,
+                comparison_at=AS_OF - timedelta(days=5),
+                current_at=AS_OF - timedelta(hours=1),
+            )
+            for symbol, (start, current) in zip(members, prices, strict=True)
+        ]
+        group_row = group(1, "Five buckets", members)
+        payload = build_named_group_evidence(
+            inputs("5D", [group_row], endpoints=rows), group_row
+        )
+        history = payload["location_history"]
+        self.assertEqual(history["status"], "available")
+        self.assertEqual(
+            [item["key"] for item in history["canonical_buckets"]],
+            ["deep_discount", "shallow_discount", "at_eqm", "shallow_premium", "deep_premium"],
+        )
+        self.assertEqual(sum(history["points"][-1]["buckets"].values()), 5)
+        self.assertTrue(history["comparison_basis"]["same_eligible_coverage"])
+        summary = {item["key"]: item for item in history["current_distribution_summary"]}
+        self.assertEqual(summary["deep_premium"]["current_count"], 1)
+        self.assertEqual(summary["deep_premium"]["count_change"], 0)
+        self.assertEqual(summary["deep_premium"]["percentage_point_change"], 0)
+
+    def test_distribution_change_is_suppressed_when_endpoint_coverage_differs(self) -> None:
+        group_row = group(1, "Coverage", ["A", "B"])
+        rows = [
+            endpoint(
+                "A",
+                start_price="10",
+                current_price="90",
+                comparison_at=AS_OF - timedelta(days=5),
+                current_at=AS_OF - timedelta(hours=1),
+            ),
+            {
+                **endpoint(
+                    "B",
+                    start_price="30",
+                    current_price="70",
+                    comparison_at=AS_OF - timedelta(days=5),
+                    current_at=AS_OF - timedelta(hours=1),
+                ),
+                "comparison_observation_price": None,
+            },
+        ]
+        payload = build_named_group_evidence(
+            inputs("5D", [group_row], endpoints=rows), group_row
+        )
+        history = payload["location_history"]
+        self.assertFalse(history["comparison_basis"]["same_eligible_coverage"])
+        self.assertEqual(history["comparison_basis"]["start_eligible"], 1)
+        self.assertEqual(history["comparison_basis"]["current_eligible"], 2)
+        self.assertTrue(all(
+            item["count_change"] is None
+            and item["percentage_point_change"] is None
+            and item["change_status"] == "coverage_changed"
+            for item in history["current_distribution_summary"]
+        ))
+
+    def test_members_expose_frozen_mrz_levels_and_latest_directional_event(self) -> None:
+        group_row = group(1, "Members", ["A", "B"])
+        endpoints = [
+            endpoint(
+                symbol,
+                comparison_at=AS_OF - timedelta(days=2),
+                current_at=AS_OF - timedelta(hours=1),
+            )
+            for symbol in group_row["members"]
+        ]
+        request = inputs(
+            "24H",
+            [group_row],
+            endpoints=endpoints,
+            active_mrzs=[active("A")],
+            observations=pressure_observations("A", "higher"),
+            latest_pressure_events=[
+                pressure_event("A", 9, "lower", AS_OF - timedelta(days=8))
+            ],
+        )
+        payload = build_named_group_evidence(request, group_row)
+        members = {item["symbol"]: item for item in payload["members"]}
+        self.assertEqual(
+            members["A"]["mrz"],
+            {
+                "status": "active",
+                "lower": "100",
+                "upper": "101",
+                "midpoint": "100.5",
+                "activated_at": "2026-10-29T08:00:00Z",
+                "activation_event_id": "A-activation",
+                "activation_source": "PRODUCTION_QUALIFIED",
+                "route_owner": "BTD",
+            },
+        )
+        self.assertEqual(members["A"]["pressure"], "higher")
+        self.assertEqual(members["A"]["last_pressure_direction"], "lower")
+        self.assertEqual(members["A"]["last_pressure_vs_current"], "opposite_direction")
+        self.assertIsNone(members["B"]["last_pressure_direction"])
+        self.assertEqual(members["B"]["mrz"]["status"], "inactive")
+
     def test_24h_same_bucket_preserves_no_new_observation_semantics(self) -> None:
         fixture = FIXTURE["tracked_24h_no_new_observation"]
         members = [f"S{index:02d}" for index in range(51)]

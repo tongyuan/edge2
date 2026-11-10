@@ -317,6 +317,10 @@ and verify health plus SHA equality with:
 ./scripts/deploy-remote.sh
 ```
 
+The deployment gate runs the complete non-Pine test suite. Tests that read
+source under `pine/` are excluded from deployment without excluding non-Pine
+behavioral cases that share the same test module.
+
 Source is never normally copied to the server with `rsync`, `scp`, or archives.
 The remote production `.env`, database volume, observations, MRZ state, and
 backups never travel through Git.

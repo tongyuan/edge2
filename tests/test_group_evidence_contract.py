@@ -32,6 +32,8 @@ class GroupEvidenceContractTests(unittest.TestCase):
         self.assertIn("observation.observed_at >= authority.activated_at", method)
         self.assertIn("occurred_at > %s", method)
         self.assertIn("occurred_at <= %s", method)
+        self.assertIn("SELECT DISTINCT ON (symbol)", method)
+        self.assertIn('"latest_pressure_events"', method)
         for forbidden in ("INSERT INTO", "UPDATE ", "DELETE FROM", "CREATE INDEX", "ALTER TABLE"):
             self.assertNotIn(forbidden, method)
 
@@ -50,8 +52,8 @@ class GroupEvidenceContractTests(unittest.TestCase):
         self.assertIn("/mrz/watchlists?group=all&window=24H", API)
         self.assertNotIn('name: "overview"', SHELL)
         self.assertNotIn('name: "attention"', SHELL)
-        self.assertIn('label: "Group Opportunity"', SHELL)
-        self.assertIn('label: "Notification Event History"', SHELL)
+        self.assertIn('label: "Group Radar"', SHELL)
+        self.assertIn('label: "Events History"', SHELL)
 
     def test_initial_watchlist_load_is_decoupled_from_global_sources(self) -> None:
         workspace_js = (ROOT / "app/static/workspace.js").read_text(encoding="utf-8")
@@ -65,7 +67,7 @@ class GroupEvidenceContractTests(unittest.TestCase):
         self.assertNotIn("renderWatchlists", render_all)
 
     def test_stage_a_assets_share_a_fresh_cache_version(self) -> None:
-        version = "group-radar-20261109"
+        version = "group-radar-refinement-20261110"
         self.assertIn(f'/static/workspace.css?v={version}', HTML)
         self.assertIn(f'/static/group-evidence.js?v={version}', HTML)
         self.assertIn(f'/static/workspace.js?v={version}', HTML)
@@ -87,12 +89,12 @@ class GroupEvidenceContractTests(unittest.TestCase):
 
     def test_opportunity_radar_contract_exposes_required_evidence_and_management(self) -> None:
         for copy in (
-            "Group Opportunity Radar",
+            "Group Radar",
             "Migration",
             "Pressure",
             "Near Miss",
             "OTE (from EDGE_BOT)",
-            "Group Location Flow",
+            "Group IPDA Location Distribution (20W)",
             "Group Event Timeline",
             "Group Members",
             "OTE feed not connected",
@@ -109,6 +111,7 @@ class GroupEvidenceContractTests(unittest.TestCase):
         self.assertIn("current_production_near_miss_episodes", method)
         self.assertIn('"near_miss_episodes"', method)
         self.assertIn('"location_observations"', method)
+        self.assertIn('"latest_pressure_events"', method)
         self.assertIn('"status": "not_connected"', AGGREGATOR)
         self.assertIn('"source": "EDGE_BOT"', AGGREGATOR)
 

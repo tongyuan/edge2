@@ -2676,6 +2676,7 @@ class EdgeRepository:
                         "observations": (),
                         "migration_events": (),
                         "pressure_events": (),
+                        "latest_pressure_events": (),
                         "location_observations": (),
                         "near_miss_episodes": (),
                     }
@@ -2843,6 +2844,25 @@ class EdgeRepository:
                 pressure_events = tuple(cursor.fetchall())
                 cursor.execute(
                     """
+                    SELECT DISTINCT ON (symbol)
+                        id, source_event_key, symbol, occurred_at,
+                        lifecycle_activation_event_id,
+                        previous_pressure_state, current_pressure_state,
+                        route_owner, post_activation_observation_count,
+                        above_envelope_count, below_envelope_count
+                    FROM web_push_notifications
+                    WHERE deliverable = TRUE
+                      AND event_type = 'POST_ACTIVATION_PRESSURE_CHANGED'
+                      AND current_pressure_state IN ('UP', 'DOWN')
+                      AND symbol = ANY(%s)
+                      AND occurred_at <= %s
+                    ORDER BY symbol ASC, occurred_at DESC, id DESC
+                    """,
+                    (symbols, as_of),
+                )
+                latest_pressure_events = tuple(cursor.fetchall())
+                cursor.execute(
+                    """
                     SELECT
                         id, episode_key, symbol, route_owner, started_at,
                         ended_at, ended_reason, canonical_candidate_identity,
@@ -2872,6 +2892,7 @@ class EdgeRepository:
                     "observations": observations,
                     "migration_events": migration_events,
                     "pressure_events": pressure_events,
+                    "latest_pressure_events": latest_pressure_events,
                     "location_observations": location_observations,
                     "near_miss_episodes": near_miss_episodes,
                 }

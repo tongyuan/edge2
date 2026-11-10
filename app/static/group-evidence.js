@@ -1,4 +1,4 @@
-(function initializeGroupOpportunityRadar(globalObject) {
+(function initializeGroupRadar(globalObject) {
   "use strict";
 
   const derive = globalObject.edgeWorkspaceDerivations;
@@ -36,6 +36,12 @@
   function shortDate(value) {
     if (!value) return "—";
     return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+
+  function operatorDate(value) {
+    if (!value) return "—";
+    const shifted = new Date(new Date(value).getTime() - (4 * 60 * 60 * 1000));
+    return shifted.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
   }
 
   function ratio(numerator, denominator) {
@@ -79,7 +85,7 @@
     return link;
   }
 
-  function setLoading(message = "Loading Group Opportunity Radar…") {
+  function setLoading(message = "Loading Group Radar…") {
     const live = $("#groupEvidenceLive");
     live.hidden = false;
     live.className = "group-evidence-live";
@@ -116,11 +122,11 @@
   function breadthCounts(group) {
     const distribution = group.structural?.current_distribution;
     if (!distribution) return null;
-    const lower = Number(distribution.deep_discount || 0) + Number(distribution.shallow_discount || 0);
-    const neutral = Number(distribution.at_eqm || 0);
-    const higher = Number(distribution.shallow_premium || 0) + Number(distribution.deep_premium || 0);
+    const discount = Number(distribution.deep_discount || 0) + Number(distribution.shallow_discount || 0);
+    const equilibrium = Number(distribution.at_eqm || 0);
+    const premium = Number(distribution.shallow_premium || 0) + Number(distribution.deep_premium || 0);
     const unavailable = Number(distribution.unavailable || 0);
-    return { lower, neutral, higher, unavailable, eligible: lower + neutral + higher };
+    return { premium, equilibrium, discount, unavailable, eligible: premium + equilibrium + discount };
   }
 
   function renderBreadth(group) {
@@ -128,15 +134,18 @@
     if (!counts || !counts.eligible) return node("span", "radar-unavailable", "Unavailable");
     const wrap = node("div", "breadth-cell");
     const bar = node("div", "breadth-bar");
-    ["lower", "neutral", "higher"].forEach((bucket) => {
+    [["premium", "Premium"], ["equilibrium", "Equilibrium"], ["discount", "Discount"]].forEach(([bucket, label]) => {
       const segment = node("span", bucket);
       segment.style.width = `${percent(counts[bucket], counts.eligible)}%`;
-      segment.title = `${titleCase(bucket)} ${counts[bucket]} (${Math.round(percent(counts[bucket], counts.eligible))}%)`;
+      segment.title = `${label} ${counts[bucket]} (${Math.round(percent(counts[bucket], counts.eligible))}%)`;
       bar.append(segment);
     });
-    const values = node("span", "breadth-values", `${counts.higher} / ${counts.neutral} / ${counts.lower} (H / N / L)`);
-    if (counts.unavailable) values.title = `${counts.unavailable} member(s) unavailable and excluded from the breadth denominator.`;
-    wrap.append(bar, values);
+    const values = node("span", "breadth-values", `${counts.premium} / ${counts.equilibrium} / ${counts.discount} (P / E / D)`);
+    const coverage = node("small", "breadth-coverage", counts.unavailable
+      ? `${counts.eligible} eligible · ${counts.unavailable} unavailable`
+      : `${counts.eligible} / ${counts.eligible} eligible`);
+    if (counts.unavailable) wrap.title = `${counts.unavailable} member(s) unavailable and excluded from the IPDA breadth denominator.`;
+    wrap.append(bar, values, coverage);
     return wrap;
   }
 
@@ -156,7 +165,7 @@
     const tableWrap = node("div", "radar-table-wrap");
     const table = node("table", "radar-table");
     const head = node("thead", "");
-    head.innerHTML = "<tr><th>Group</th><th>Members</th><th>Breadth (H / N / L)</th><th>Migration</th><th>Pressure</th><th>Near Miss</th><th>OTE (1D)</th><th>OTE (1W)</th><th>Latest OTE Alert</th><th aria-label=\"Open\"></th></tr>";
+    head.innerHTML = "<tr><th>Group</th><th>Members</th><th>IPDA Breadth (P / E / D)</th><th>Migration</th><th>Current Pressure State</th><th>Near Miss</th><th>OTE (1D)</th><th>OTE (1W)</th><th>Latest OTE Alert</th><th aria-label=\"Open\"></th></tr>";
     const body = node("tbody", "");
     const groups = (state.overview?.groups || []).filter((group) => group.name.toLowerCase().includes(state.search));
     groups.forEach((group) => {
@@ -208,7 +217,7 @@
     const dominant = current.status === "available" ? current.summary.lower > current.summary.higher ? `Lower ${current.summary.lower}` : current.summary.higher > current.summary.lower ? `Higher ${current.summary.higher}` : `Balanced ${current.summary.higher}/${current.summary.lower}` : "Unavailable";
     cards.append(
       evidenceCard("migration", "MRZ Migration", migrationValue, migrationSupport, "migration"),
-      evidenceCard("pressure", "Pressure", dominant, current.status === "available" ? `${current.summary.neutral} neutral · current state` : "Current pressure unavailable", "pressure"),
+      evidenceCard("pressure", "Current Pressure State", dominant, current.status === "available" ? `${current.summary.neutral} neutral · retained canonical snapshot` : "Current pressure unavailable", "pressure"),
       evidenceCard("near-miss", "Near Miss", near.status === "available" ? `${near.active_episode_count} active` : "Unavailable", near.status === "available" ? `${near.historical_episode_count} historical in window` : "Episode data unavailable", "near-miss"),
       evidenceCard("ote", "OTE (from EDGE_BOT)", payload.ote.status === "not_connected" ? "Feed not connected" : `${text(payload.ote.daily)} 1D · ${text(payload.ote.weekly)} 1W`, payload.ote.status === "not_connected" ? "No counts until a supported feed exists" : `Latest ${exactTime(payload.ote.latest)}`, "ote"),
     );
@@ -244,16 +253,22 @@
   function drawLocationFlow(canvas, history) {
     if (!canvas || history?.status !== "available") return;
     const rect = canvas.getBoundingClientRect();
-    const width = Math.max(420, Math.floor(rect.width)); const height = 100; const scale = globalObject.devicePixelRatio || 1;
+    const width = Math.max(420, Math.floor(rect.width)); const height = 180; const scale = globalObject.devicePixelRatio || 1;
     canvas.width = Math.floor(width * scale); canvas.height = Math.floor(height * scale);
     const ctx = canvas.getContext("2d"); ctx.scale(scale, scale);
     const points = history.points || []; const left = 42, right = 12, top = 12, bottom = 24; const chartWidth = width - left - right, chartHeight = height - top - bottom;
     ctx.clearRect(0, 0, width, height); ctx.strokeStyle = "#263747"; ctx.fillStyle = "#8290a1"; ctx.lineWidth = 1; ctx.font = "10px Inter, sans-serif";
     [0, 25, 50, 75, 100].forEach((tick) => { const y = top + chartHeight - chartHeight * tick / 100; ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(width - right, y); ctx.stroke(); ctx.fillText(`${tick}%`, 4, y + 3); });
-    const layers = [{ key: "lower", fill: "rgba(255,83,92,.78)" }, { key: "neutral", fill: "rgba(130,144,161,.75)" }, { key: "higher", fill: "rgba(20,210,132,.72)" }];
+    const layers = [
+      { key: "deep_discount", fill: "rgba(153,38,50,.92)" },
+      { key: "shallow_discount", fill: "rgba(255,101,108,.82)" },
+      { key: "at_eqm", fill: "rgba(130,144,161,.78)" },
+      { key: "shallow_premium", fill: "rgba(73,204,139,.82)" },
+      { key: "deep_premium", fill: "rgba(11,115,78,.95)" },
+    ];
     const xAt = (index) => left + (points.length <= 1 ? 0 : chartWidth * index / (points.length - 1)); let baseline = points.map(() => 0);
     layers.forEach((layer) => {
-      const values = points.map((point) => percent(point.aggregate[layer.key], point.aggregate.eligible));
+      const values = points.map((point) => percent(point.buckets[layer.key], point.aggregate.eligible));
       ctx.beginPath(); ctx.moveTo(xAt(0), top + chartHeight - chartHeight * baseline[0] / 100);
       values.forEach((value, index) => ctx.lineTo(xAt(index), top + chartHeight - chartHeight * (baseline[index] + value) / 100));
       for (let index = values.length - 1; index >= 0; index -= 1) ctx.lineTo(xAt(index), top + chartHeight - chartHeight * baseline[index] / 100);
@@ -261,16 +276,58 @@
     });
     ctx.fillStyle = "#8290a1";
     if (points.length) { ctx.fillText(shortDate(points[0].at), left, height - 5); const end = shortDate(points[points.length - 1].at); ctx.fillText(end, width - right - ctx.measureText(end).width, height - 5); }
+    canvas._locationChart = { points, left, chartWidth };
+  }
+
+  function signed(value, suffix = "") {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return "Unavailable";
+    return `${number > 0 ? "+" : ""}${Number.isInteger(number) ? number : number.toFixed(1)}${suffix}`;
+  }
+
+  function renderDistributionSummary(history) {
+    const aside = node("aside", "location-distribution-summary");
+    aside.append(node("h4", "", "Current Distribution"));
+    const table = node("table", "location-summary-table");
+    const head = node("thead", ""); head.innerHTML = "<tr><th>Location</th><th>Current</th><th>Change</th></tr>";
+    const body = node("tbody", "");
+    (history.current_distribution_summary || []).forEach((item) => {
+      const row = node("tr", "");
+      const current = item.current_eligible
+        ? `${item.current_count}/${item.current_eligible} (${Math.round(item.current_percent)}%)`
+        : "Unavailable";
+      const change = item.change_status === "comparable"
+        ? `${signed(item.count_change)} member${Math.abs(item.count_change) === 1 ? "" : "s"} (${signed(item.percentage_point_change, " pp")})`
+        : "Coverage changed";
+      row.append(node("th", item.key, item.label), node("td", "", current), node("td", item.change_status, change));
+      body.append(row);
+    });
+    table.append(head, body);
+    aside.append(table, node("p", "comparison-basis", history.comparison_basis?.message || "Endpoint comparison unavailable."));
+    return aside;
   }
 
   function renderLocationFlow(payload) {
     const panel = node("section", "radar-panel location-flow-panel"); const header = node("header", "radar-panel-heading");
-    header.append(node("h3", "", "Group Location Flow"), node("span", "", "Canonical location distribution")); panel.append(header);
+    header.append(node("h3", "", "Group IPDA Location Distribution (20W)"), node("span", "", `Historical evidence · ${state.scope.window}`)); panel.append(header);
     if (payload.location_history?.status !== "available") { panel.append(node("div", "chart-unavailable", payload.location_history?.message || "Historical location data unavailable.")); return panel; }
-    const legend = node("div", "flow-legend"); [["higher", "Higher"], ["neutral", "Neutral"], ["lower", "Lower"]].forEach(([key, label]) => legend.append(node("span", key, label)));
+    const legend = node("div", "flow-legend five-bucket-legend"); [["deep_premium", "Deep Premium"], ["shallow_premium", "Shallow Premium"], ["at_eqm", "Equilibrium"], ["shallow_discount", "Shallow Discount"], ["deep_discount", "Deep Discount"]].forEach(([key, label]) => legend.append(node("span", key, label)));
     const canvas = node("canvas", "location-flow-canvas"); canvas.setAttribute("aria-label", "Historical group member distribution by structural location");
-    const disclosure = node("details", "bucket-disclosure"); disclosure.append(node("summary", "", "View five canonical bucket definitions")); const list = node("ul", ""); payload.location_history.canonical_buckets.forEach((bucket) => list.append(node("li", "", bucket.label))); disclosure.append(list);
-    panel.append(legend, canvas, disclosure); globalObject.requestAnimationFrame(() => drawLocationFlow(canvas, payload.location_history)); return panel;
+    const tooltip = node("div", "location-flow-tooltip"); tooltip.hidden = true;
+    canvas.addEventListener("mousemove", (event) => {
+      const chart = canvas._locationChart; if (!chart?.points?.length) return;
+      const rect = canvas.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const index = chart.points.length === 1 ? 0 : Math.max(0, Math.min(chart.points.length - 1, Math.round((x - chart.left) / chart.chartWidth * (chart.points.length - 1))));
+      const point = chart.points[index];
+      const rows = payload.location_history.canonical_buckets.slice().reverse().map((bucket) => `${bucket.label}: ${point.buckets[bucket.key]} (${Math.round(percent(point.buckets[bucket.key], point.aggregate.eligible))}%)`);
+      tooltip.textContent = `${exactTime(point.at)} · ${point.aggregate.eligible} eligible · ${rows.join(" · ")}`;
+      tooltip.style.left = `${Math.min(rect.width - 260, Math.max(8, x + 10))}px`; tooltip.style.top = `${Math.max(8, event.clientY - rect.top - 36)}px`; tooltip.hidden = false;
+    });
+    canvas.addEventListener("mouseleave", () => { tooltip.hidden = true; });
+    const chart = node("div", "location-chart-column"); chart.append(legend, canvas, tooltip);
+    const layout = node("div", "location-distribution-layout"); layout.append(chart, renderDistributionSummary(payload.location_history));
+    panel.append(layout); globalObject.requestAnimationFrame(() => drawLocationFlow(canvas, payload.location_history)); return panel;
   }
 
   function timelineEvents(payload) {
@@ -298,9 +355,25 @@
 
   function renderMembers(payload) {
     const panel = node("section", "radar-panel group-members-panel"); const header = node("header", "radar-panel-heading"); header.append(node("h3", "", `Group Members (${payload.group.member_count})`)); panel.append(header);
-    const wrap = node("div", "radar-table-wrap"); const table = node("table", "member-evidence-table"); const head = node("thead", ""); head.innerHTML = "<tr><th>Symbol</th><th>Route</th><th>Location</th><th>MRZ Status</th><th>Pressure (Current)</th><th>Near Miss</th><th>OTE (1D)</th><th>OTE (1W)</th><th>Latest OTE Alert</th><th aria-label=\"Open\"></th></tr>"; const body = node("tbody", "");
+    const wrap = node("div", "radar-table-wrap"); const table = node("table", "member-evidence-table"); const head = node("thead", ""); head.innerHTML = "<tr><th>Symbol</th><th>Route</th><th>Location</th><th>MRZ Levels</th><th>Last Pressure Direction</th><th>Near Miss</th><th>OTE (1D)</th><th>OTE (1W)</th><th>Latest OTE Alert</th><th aria-label=\"Open\"></th></tr>"; const body = node("tbody", "");
     (payload.members || []).forEach((member) => {
-      const row = node("tr", ""); const symbol = node("td", "symbol-cell"); symbol.append(detailLink(member.symbol, symbolUrl(member.symbol), "symbol-link")); const route = node("td", ""); route.append(statusPill(text(member.route), String(member.route || "").toLowerCase())); const location = node("td", ""); location.append(statusPill(member.location_label, member.location?.includes("discount") ? "lower" : member.location?.includes("premium") ? "higher" : "neutral")); const mrz = node("td", ""); mrz.append(statusPill(member.mrz_status, member.mrz_status === "Active" ? "active" : "neutral")); const pressure = node("td", ""); pressure.append(statusPill(titleCase(member.pressure), member.pressure)); const near = node("td", "near-miss-cell", member.near_miss ? (member.near_miss.active ? "Active" : "Historical") : "—"); const daily = node("td", "ote-unavailable", member.ote?.status === "not_connected" ? "Not connected" : text(member.ote?.daily)); const weekly = node("td", "ote-unavailable", member.ote?.status === "not_connected" ? "Not connected" : text(member.ote?.weekly)); const latest = node("td", "ote-unavailable", member.ote?.status === "not_connected" ? "OTE feed not connected" : text(member.ote?.latest)); const open = node("td", "radar-open-cell"); open.append(detailLink("Open", symbolUrl(member.symbol), "table-open-link")); row.append(symbol, route, location, mrz, pressure, near, daily, weekly, latest, open); body.append(row);
+      const row = node("tr", ""); const symbol = node("td", "symbol-cell"); symbol.append(detailLink(member.symbol, symbolUrl(member.symbol), "symbol-link")); const route = node("td", ""); route.append(statusPill(text(member.route), String(member.route || "").toLowerCase())); const location = node("td", ""); location.append(statusPill(member.location_label, member.location?.includes("discount") ? "lower" : member.location?.includes("premium") ? "higher" : "neutral"));
+      const mrz = node("td", "mrz-levels-cell");
+      if (member.mrz?.status === "active") {
+        const details = node("details", "member-mrz-details");
+        details.append(node("summary", "", `${member.mrz.lower} – ${member.mrz.upper}`));
+        details.append(node("span", "", `Midpoint ${member.mrz.midpoint}`), node("span", "", `Activated ${exactTime(member.mrz.activated_at)}`), node("span", "", `Route ${member.mrz.route_owner}`));
+        mrz.append(details);
+      } else mrz.append(node("span", "radar-unavailable", member.mrz?.status === "inactive" ? "No active MRZ" : "Unavailable"));
+      const pressure = node("td", "last-pressure-cell");
+      if (member.last_pressure_direction) {
+        const arrow = member.last_pressure_direction === "higher" ? "↑" : "↓";
+        const block = node("div", `pressure-event ${member.last_pressure_direction}`);
+        block.append(node("strong", "", `${arrow} ${titleCase(member.last_pressure_direction)}`), node("time", "", operatorDate(member.last_pressure_event_at)));
+        if (["opposite_direction", "current_neutral"].includes(member.last_pressure_vs_current)) block.append(node("small", "pressure-mismatch", `Current state: ${titleCase(member.pressure)}`));
+        pressure.append(block);
+      } else pressure.append(node("span", "radar-unavailable", "No directional event"));
+      const near = node("td", "near-miss-cell", member.near_miss ? (member.near_miss.active ? "Active" : "Historical") : "—"); const daily = node("td", "ote-unavailable", member.ote?.status === "not_connected" ? "Not connected" : text(member.ote?.daily)); const weekly = node("td", "ote-unavailable", member.ote?.status === "not_connected" ? "Not connected" : text(member.ote?.weekly)); const latest = node("td", "ote-unavailable", member.ote?.status === "not_connected" ? "OTE feed not connected" : text(member.ote?.latest)); const open = node("td", "radar-open-cell"); open.append(detailLink("Open", symbolUrl(member.symbol), "table-open-link")); row.append(symbol, route, location, mrz, pressure, near, daily, weekly, latest, open); body.append(row);
     });
     table.append(head, body); wrap.append(table); panel.append(wrap); return panel;
   }
@@ -346,7 +419,7 @@
     const body = $("#recentTrackedEventsBody"); const toggle = $("#recentTrackedEventsToggle"); const expanded = body.hidden; body.hidden = !expanded; toggle.setAttribute("aria-expanded", String(expanded)); toggle.textContent = expanded ? "Hide" : "Show"; if (!expanded || state.recentLoaded) return; $("#recentTrackedEventsStatus").textContent = "Loading recent tracked symbol events…";
     try {
       const members = state.detail?.group?.members || [...new Set(state.groups.flatMap((group) => group.members || []))]; const response = await globalObject.fetch("/api/mrz/events?limit=500", { cache: "no-store" }); if (!response.ok) throw new Error("Recent event history unavailable."); const cutoff = Date.now() - 24 * 60 * 60 * 1000; const memberSet = new Set(members); const events = ((await response.json()).events || []).filter((event) => memberSet.has(event.symbol) && new Date(event.occurred_at).getTime() > cutoff); const list = node("ul", "recent-tracked-event-list"); events.forEach((event) => { const row = node("li", ""); const copy = node("div", ""); copy.append(node("strong", "", `${event.symbol} · ${event.event_name || event.event_type}`), node("p", "", `${exactTime(event.occurred_at)} · ${event.body || "Canonical event"}`)); row.append(copy, detailLink("Open symbol", symbolUrl(event.symbol))); list.append(row); }); if (!events.length) list.append(node("li", "evidence-empty", "No tracked symbol event in the last 24H.")); $("#recentTrackedEventsList").replaceChildren(list); $("#recentTrackedEventsStatus").textContent = `${events.length} raw tracked symbol events loaded.`; state.recentLoaded = true;
-    } catch (error) { $("#recentTrackedEventsStatus").textContent = `${error.message} Group Opportunity remains available.`; $("#recentTrackedEventsStatus").classList.add("error"); }
+    } catch (error) { $("#recentTrackedEventsStatus").textContent = `${error.message} Group Radar remains available.`; $("#recentTrackedEventsStatus").classList.add("error"); }
   }
 
   function closeMenu() { $("#groupEvidenceManageMenu").hidden = true; $("#groupEvidenceManage").setAttribute("aria-expanded", "false"); }

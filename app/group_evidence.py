@@ -141,10 +141,61 @@ def _location_history(
             "reason": "insufficient_historical_location_data",
             "message": "Historical location data unavailable for current members.",
         }
+    first = points[0]
+    current = points[-1]
+    same_coverage = (
+        first["aggregate"]["eligible"] > 0
+        and first["aggregate"]["eligible"] == current["aggregate"]["eligible"]
+    )
+    distribution_summary = []
+    for key in reversed(LOCATION_KEYS):
+        first_count = int(first["buckets"][key])
+        current_count = int(current["buckets"][key])
+        first_eligible = int(first["aggregate"]["eligible"])
+        current_eligible = int(current["aggregate"]["eligible"])
+        first_percent = (
+            (first_count / first_eligible) * 100 if first_eligible else None
+        )
+        current_percent = (
+            (current_count / current_eligible) * 100 if current_eligible else None
+        )
+        distribution_summary.append({
+            "key": key,
+            "label": LOCATION_LABELS[key],
+            "current_count": current_count,
+            "current_eligible": current_eligible,
+            "current_percent": current_percent,
+            "start_count": first_count,
+            "start_eligible": first_eligible,
+            "start_percent": first_percent,
+            "count_change": current_count - first_count if same_coverage else None,
+            "percentage_point_change": (
+                current_percent - first_percent
+                if same_coverage
+                and current_percent is not None
+                and first_percent is not None
+                else None
+            ),
+            "change_status": "comparable" if same_coverage else "coverage_changed",
+        })
     return {
         "status": "available",
         "method": "last_known_canonical_observation_reconstruction",
         "points": points,
+        "current_distribution_summary": distribution_summary,
+        "comparison_basis": {
+            "membership": "current_saved_group_membership",
+            "same_eligible_coverage": same_coverage,
+            "start_eligible": first["aggregate"]["eligible"],
+            "current_eligible": current["aggregate"]["eligible"],
+            "message": (
+                "Change compares the same current group members with complete "
+                "location coverage at both endpoints."
+                if same_coverage
+                else "Change is unavailable because eligible location coverage "
+                "differs between interval endpoints."
+            ),
+        },
         "canonical_buckets": [
             {"key": key, "label": LOCATION_LABELS[key]} for key in LOCATION_KEYS
         ],
@@ -690,6 +741,18 @@ def build_named_group_evidence(
         cumulative = {"status": "unavailable", "reason": "cumulative_event_projection_failed"}
 
     try:
+        latest_directional, times = _pressure_events(
+            members, inputs.get("latest_pressure_events", ()), current_by_symbol
+        )
+        evidence_times.extend(times)
+    except Exception:
+        status = "partial"
+        latest_directional = {
+            "status": "unavailable",
+            "reason": "latest_directional_event_projection_failed",
+        }
+
+    try:
         migrations, times = _migrations(members, inputs.get("migration_events", ()))
         evidence_times.extend(times)
     except Exception:
@@ -737,6 +800,10 @@ def build_named_group_evidence(
     near_miss_by_symbol: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for episode in near_miss.get("episodes", ()):
         near_miss_by_symbol[episode["symbol"]].append(episode)
+    latest_pressure_by_symbol = {
+        item["symbol"]: item
+        for item in latest_directional.get("latest_by_member", ())
+    }
     latest_observation_by_symbol: dict[str, Observation] = {}
     for observation in inputs.get("location_observations", ()):
         if observation.symbol in member_set:
@@ -755,6 +822,7 @@ def build_named_group_evidence(
             near_miss_by_symbol.get(symbol, [None])[0],
         )
         latest_observation = latest_observation_by_symbol.get(symbol)
+        last_pressure = latest_pressure_by_symbol.get(symbol, {})
         member_rows.append({
             "symbol": symbol,
             "route": (
@@ -765,11 +833,38 @@ def build_named_group_evidence(
             "location": current_location,
             "location_label": LOCATION_LABELS.get(current_location, "Unavailable"),
             "mrz_status": "Active" if active else "Inactive",
+            "mrz": (
+                {
+                    "status": "active",
+                    "lower": _decimal_text(active.core_mrz_lower),
+                    "upper": _decimal_text(active.core_mrz_upper),
+                    "midpoint": _decimal_text(active.core_mrz_midpoint),
+                    "activated_at": _iso(active.activated_at),
+                    "activation_event_id": active.activation_event_id,
+                    "activation_source": active.activation_source.value,
+                    "route_owner": active.route_owner.value,
+                }
+                if active
+                else {
+                    "status": "inactive",
+                    "lower": None,
+                    "upper": None,
+                    "midpoint": None,
+                    "activated_at": None,
+                    "activation_event_id": None,
+                    "activation_source": None,
+                    "route_owner": None,
+                }
+            ),
             "pressure": pressure.get("direction"),
             "pressure_label": pressure.get("direction_label") or pressure.get("direction"),
             "pressure_evidence_at": pressure.get("evidence", {}).get(
                 "latest_pressure_observed_at"
             ),
+            "last_pressure_direction": last_pressure.get("event_direction"),
+            "last_pressure_event_at": last_pressure.get("occurred_at"),
+            "last_pressure_event_id": last_pressure.get("event_id"),
+            "last_pressure_vs_current": last_pressure.get("comparison"),
             "near_miss": latest_near_miss,
             "ote": dict(OTE_NOT_CONNECTED),
             "current_observed_at": _iso(endpoint.get("current_observed_at")),
@@ -800,6 +895,7 @@ def build_named_group_evidence(
         "directional": {
             "current_pressure": current_pressure,
             "cumulative_lifecycle_pressure_events": cumulative,
+            "latest_pressure_events": latest_directional,
             "mrz_migrations": migrations,
         },
         "limitations": limitations,
@@ -811,6 +907,7 @@ def _summary_group(detail: Mapping[str, Any]) -> dict[str, Any]:
     directional = detail.get("directional", {})
     current = directional.get("current_pressure", {})
     cumulative = directional.get("cumulative_lifecycle_pressure_events", {})
+    latest_directional = directional.get("latest_pressure_events", {})
     migrations = directional.get("mrz_migrations", {})
     group = detail["group"]
     return {
@@ -826,10 +923,10 @@ def _summary_group(detail: Mapping[str, Any]) -> dict[str, Any]:
         },
         "directional": {
             "current_pressure": current.get("summary", {"status": "unavailable"}),
-            "latest_cumulative_event": cumulative.get("summary", {}).get(
+            "latest_cumulative_event": latest_directional.get("summary", {}).get(
                 "latest_event", {"status": "unavailable"}
             ),
-            "latest_event_vs_current": cumulative.get("summary", {}).get(
+            "latest_event_vs_current": latest_directional.get("summary", {}).get(
                 "latest_event_vs_current", {"status": "unavailable"}
             ),
             "cumulative_event_count": cumulative.get("summary", {}).get("event_count"),

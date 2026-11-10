@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "EDGE MRZ",
-  "short_name": "EDGE MRZ",
-  "description": "EDGE 2.0 operational MRZ monitor",
+  "name": "EDGE 2.0 Group Radar",
+  "short_name": "EDGE 2.0",
+  "description": "EDGE 2.0 structural opportunity radar",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

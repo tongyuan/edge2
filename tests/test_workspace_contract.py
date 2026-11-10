@@ -18,12 +18,12 @@ PEER_PRESSURE = (ROOT / "app/peer_pressure.py").read_text(encoding="utf-8")
 class WorkspaceContractTests(unittest.TestCase):
     def test_persistent_navigation_and_routes(self) -> None:
         for route, label in (
-            ("/mrz/watchlists", "Group Opportunity"),
+            ("/mrz/watchlists", "Group Radar"),
             ("/mrz/symbols", "Symbols"),
             ("/mrz/alert-settings", "Alert Settings"),
             ("/mrz/location-distribution", "Location Distribution"),
             ("/mrz/formation-diagnostics", "Formation Diagnostics"),
-            ("/mrz/events", "Notification Event History"),
+            ("/mrz/events", "Events History"),
         ):
             with self.subTest(route=route):
                 self.assertIn(route, SHELL)
@@ -41,10 +41,10 @@ class WorkspaceContractTests(unittest.TestCase):
 
     def test_group_member_board_exposes_current_authority_and_ote_fields(self) -> None:
         for label in (
-            "MRZ Status",
+            "MRZ Levels",
             "Route",
             "Location",
-            "Pressure (Current)",
+            "Last Pressure Direction",
             "Near Miss",
             "OTE (1D)",
             "OTE (1W)",
@@ -64,9 +64,9 @@ class WorkspaceContractTests(unittest.TestCase):
 
     def test_attention_and_events_have_distinct_scopes(self) -> None:
         self.assertIn("Recent tracked symbol events", HTML)
-        self.assertIn("Notification Event History", SHELL)
+        self.assertIn("Events History", SHELL)
         self.assertIn("/api/mrz/events?limit=500", GROUP_JS)
-        self.assertIn("Group Opportunity remains available", GROUP_JS)
+        self.assertIn("Group Radar remains available", GROUP_JS)
 
     def test_notification_controls_cover_scope_and_all_event_types(self) -> None:
         self.assertIn('href: "/mrz/alert-settings"', SHELL)
@@ -228,7 +228,7 @@ class WorkspaceContractTests(unittest.TestCase):
         research = SHELL.split('section: "MRZ RESEARCH"', 1)[1].split("],", 1)[0]
         self.assertIn('label: "Location Distribution"', research)
         self.assertIn('label: "Formation Diagnostics"', research)
-        self.assertIn('label: "Notification Event History"', research)
+        self.assertIn('label: "Events History"', research)
         self.assertNotIn("Breadth", research)
 
     def test_standalone_pressure_presentation_is_removed_but_analytics_are_preserved(self) -> None:
@@ -272,7 +272,7 @@ class WorkspaceContractTests(unittest.TestCase):
         watchlists = HTML.split('data-route-panel="watchlists"', 1)[1].split(
             'data-route-panel="attention"', 1
         )[0]
-        self.assertIn("Group Opportunity Radar", watchlists)
+        self.assertIn("Group Radar", watchlists)
         self.assertIn("Recent tracked symbol events", watchlists)
         self.assertNotIn('data-route-panel="pressure"', HTML)
         for target in (
@@ -285,7 +285,7 @@ class WorkspaceContractTests(unittest.TestCase):
         for window in ("24H", "5D", "20D"):
             self.assertIn(f'data-group-window="{window}"', watchlists)
         self.assertIn("/api/group-evidence", GROUP_JS)
-        self.assertIn("Pressure (Current)", GROUP_JS)
+        self.assertIn("Last Pressure Direction", GROUP_JS)
         self.assertIn("Group Event Timeline", GROUP_JS)
         self.assertIn("OTE feed not connected", GROUP_JS)
         mobile_rules = CSS[CSS.index("@media (max-width: 560px)") :]
