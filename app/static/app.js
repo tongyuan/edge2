@@ -457,7 +457,7 @@ function groupMemberListItems(symbols, clickable = false) {
       const button = document.createElement("button");
       button.type = "button";
       button.textContent = symbol;
-      button.setAttribute("aria-label", `Open ${symbol} in MRZ Monitor`);
+      button.setAttribute("aria-label", `Open ${symbol} in EDGE Intel`);
       button.addEventListener("click", () => selectGroupMember(symbol).catch(showError));
       item.append(button);
     } else {
@@ -554,7 +554,7 @@ function pressureMemberItem(member) {
   const symbol = document.createElement("button");
   symbol.type = "button";
   symbol.textContent = member.symbol;
-  symbol.setAttribute("aria-label", `Open ${member.symbol} in MRZ Monitor`);
+  symbol.setAttribute("aria-label", `Open ${member.symbol} in EDGE Intel`);
   symbol.addEventListener("click", () => selectGroupMember(member.symbol).catch(showError));
   const status = document.createElement("span");
   status.className = "peer-pressure-member-status";

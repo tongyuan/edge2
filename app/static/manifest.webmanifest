@@ -1,6 +1,6 @@
 {
   "id": "/",
-  "name": "EDGE 2.0 Group Radar",
+  "name": "EDGE Intel · Group Radar",
   "short_name": "EDGE 2.0",
   "description": "EDGE 2.0 structural opportunity radar",
   "start_url": "/",
@@ -19,12 +19,6 @@
       "src": "/static/edge-mrz-icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/static/edge-mrz-icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
       "purpose": "any maskable"
     }
   ]

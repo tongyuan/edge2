@@ -50,7 +50,7 @@
 
   function sidebarMarkup(activeRoute) {
     return `
-      <a class="workspace-brand" href="/mrz/watchlists?group=all&window=24H" aria-label="EDGE 2.0 Group Radar home"><span class="brand-mark"><img src="/static/edge-mrz-icon.svg" alt="" /></span><span class="brand-copy"><strong>EDGE 2.0</strong></span></a>
+      <a class="workspace-brand" href="/mrz/watchlists?group=all&window=24H" aria-label="EDGE 2.0 Group Radar home"><span class="brand-mark"><img src="/static/edge-mrz-icon-192.png" alt="" /></span><span class="brand-copy"><strong>EDGE 2.0</strong></span></a>
       <nav class="workspace-navigation">${navigationMarkup(activeRoute)}</nav>
       <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-controls="mrzWorkspaceMain"><span class="sidebar-toggle-icon" aria-hidden="true">‹</span><span class="sidebar-toggle-label">Collapse</span></button>
       <div class="sidebar-foot"><span class="health-dot" id="healthState">Checking system</span><small>Canonical universe monitoring</small></div>
@@ -70,8 +70,8 @@
     const button = documentRef.querySelector("#sidebarToggle");
     if (!button) return;
     button.setAttribute("aria-expanded", String(!collapsed));
-    button.setAttribute("aria-label", collapsed ? "Expand MRZ navigation" : "Collapse MRZ navigation");
-    button.title = collapsed ? "Expand MRZ navigation" : "Collapse MRZ navigation";
+    button.setAttribute("aria-label", collapsed ? "Expand EDGE Intel navigation" : "Collapse EDGE Intel navigation");
+    button.title = collapsed ? "Expand EDGE Intel navigation" : "Collapse EDGE Intel navigation";
     const icon = button.querySelector(".sidebar-toggle-icon");
     const label = button.querySelector(".sidebar-toggle-label");
     if (icon) icon.textContent = collapsed ? "›" : "‹";

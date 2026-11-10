@@ -14,13 +14,21 @@ REPOSITORY = (ROOT / "app/repository.py").read_text(encoding="utf-8")
 
 class MonitorContractTests(unittest.TestCase):
     def test_monitor_is_a_compact_routed_workspace(self) -> None:
-        self.assertIn("EDGE 2.0 · Group Radar", HTML)
+        self.assertIn("EDGE Intel · Group Radar", HTML)
+        self.assertIn("<strong>EDGE Intel</strong>", HTML)
         self.assertIn('class="workspace-sidebar"', HTML)
         self.assertIn('class="workspace-header"', HTML)
         self.assertIn('data-route-panel="overview"', HTML)
         self.assertIn('data-route-panel="watchlists"', HTML)
         self.assertNotIn("Views", HTML)
         self.assertNotIn("masthead-descriptor", HTML)
+
+    def test_event_history_supports_symbol_and_type_search(self) -> None:
+        self.assertIn('id="eventSymbolSearch"', HTML)
+        self.assertIn('placeholder="Search symbol…"', HTML)
+        self.assertIn('id="eventTypeFilter"', HTML)
+        self.assertIn('String(event.symbol || "").toUpperCase().includes(symbolQuery)', WORKSPACE)
+        self.assertIn('addEventListener("input", renderEvents)', WORKSPACE)
 
     def test_notification_inbox_remains_durable_and_distinct(self) -> None:
         self.assertIn('id="notificationInboxButton"', HTML)

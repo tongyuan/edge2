@@ -117,9 +117,9 @@
   }
   function empty(message) { return element("div", "empty-inline", message); }
 
-  function eventList(events, { showGroups = true, limit = null } = {}) {
+  function eventList(events, { showGroups = true, limit = null, emptyMessage = "No current attention events in this window." } = {}) {
     const visible = limit ? events.slice(0, limit) : events;
-    if (visible.length === 0) return empty("No current attention events in this window.");
+    if (visible.length === 0) return empty(emptyMessage);
     const list = element("ul", "event-list");
     visible.forEach((event) => {
       const row = element("li", "event-row");
@@ -701,8 +701,17 @@
 
   function renderEvents() {
     const filter = $("#eventTypeFilter").value;
-    const events = filter === "all" ? state.events : state.events.filter((event) => event.event_type === filter);
-    $("#eventsList").replaceChildren(eventList(events, { showGroups: false }));
+    const symbolQuery = $("#eventSymbolSearch").value.trim().toUpperCase();
+    const events = state.events.filter((event) => (
+      (filter === "all" || event.event_type === filter)
+      && (!symbolQuery || String(event.symbol || "").toUpperCase().includes(symbolQuery))
+    ));
+    $("#eventsList").replaceChildren(eventList(events, {
+      showGroups: false,
+      emptyMessage: symbolQuery
+        ? `No events found for symbols matching “${symbolQuery}”.`
+        : "No events match the selected type.",
+    }));
   }
 
   function openWatchlistDialog(group = null) {
@@ -858,6 +867,7 @@
     if (hit) selectLocationFlow(hit.cell);
   });
   $("#eventTypeFilter")?.addEventListener("change", renderEvents);
+  $("#eventSymbolSearch")?.addEventListener("input", renderEvents);
   $("#alertPreferencesForm")?.addEventListener("submit", (event) => savePreferences(event).catch(showError));
   function showError(error) { $("#workspaceStatus").hidden = false; $("#workspaceStatus").textContent = error.message || "The request could not be completed."; $("#workspaceStatus").classList.add("error"); }
   document.addEventListener("DOMContentLoaded", initialize, { once: true });

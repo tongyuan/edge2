@@ -3,22 +3,22 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="EDGE 2.0 MRZ operator workspace" />
+    <meta name="description" content="EDGE Intel operator workspace" />
     <meta name="theme-color" content="#080b10" />
-    <title>EDGE 2.0 · Group Radar</title>
+    <title>EDGE Intel · Group Radar</title>
     <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="icon" href="/static/edge-mrz-icon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/static/edge-mrz-icon-192.png" type="image/png" />
     <link rel="apple-touch-icon" href="/static/edge-mrz-icon-180.png" />
-    <link rel="stylesheet" href="/static/workspace.css?v=group-radar-refinement-20261110" />
+    <link rel="stylesheet" href="/static/workspace.css?v=edge-intel-events-search-20261110" />
   </head>
   <body>
     <div class="workspace-shell">
-      <aside class="workspace-sidebar" data-mrz-sidebar aria-label="MRZ Monitor navigation"></aside>
+      <aside class="workspace-sidebar" data-mrz-sidebar aria-label="EDGE Intel navigation"></aside>
 
       <main class="workspace-main" id="mrzWorkspaceMain">
         <header class="workspace-header">
-          <button class="mobile-nav-button" id="mobileNavButton" type="button" aria-label="Open MRZ navigation">☰</button>
-          <div class="compact-identity"><strong>MRZ Monitor</strong><span>Operator workspace</span></div>
+          <button class="mobile-nav-button" id="mobileNavButton" type="button" aria-label="Open EDGE Intel navigation">☰</button>
+          <div class="compact-identity"><strong>EDGE Intel</strong><span>Operator workspace</span></div>
           <div class="workspace-header-actions"><span class="header-health" id="headerHealth">● Checking system</span><a class="quiet-button header-alert-status" id="alertSettingsButton" href="/mrz/alert-settings">🔔 <span id="alertScopeLabel">Alerts</span></a><button class="quiet-button" id="notificationInboxButton" type="button" aria-haspopup="dialog" aria-controls="notificationInboxDialog">Inbox <span class="notification-unread-badge" id="notificationUnreadBadge" hidden>0</span></button></div>
         </header>
         <div class="route-status" id="workspaceStatus" role="status">Loading canonical EDGE state…</div>
@@ -96,7 +96,7 @@
 
         <section class="route-panel" data-route-panel="events" hidden>
           <header class="route-heading"><p>EVENTS</p><h1>Global canonical event history</h1><span>All monitored symbols, independent of watchlists and alert interruption scope.</span></header>
-          <section class="panel"><div class="panel-heading"><div><p>MRZ HISTORY</p><h2>Recent events</h2></div><label class="event-filter">TYPE<select id="eventTypeFilter"><option value="all">All events</option><option value="MRZ_ACTIVATED">Activation</option><option value="MRZ_MIGRATED">Migration</option><option value="POST_ACTIVATION_PRESSURE_CHANGED">Pressure</option><option value="MRZ_NEAR_MISS">Near-Miss</option></select></label></div><div id="eventsList"></div></section>
+          <section class="panel"><div class="panel-heading events-panel-heading"><div><p>MRZ HISTORY</p><h2>Recent events</h2></div><div class="event-filters"><label class="event-symbol-search">SYMBOL<input id="eventSymbolSearch" type="search" placeholder="Search symbol…" autocomplete="off" spellcheck="false" /></label><label class="event-filter">TYPE<select id="eventTypeFilter"><option value="all">All events</option><option value="MRZ_ACTIVATED">Activation</option><option value="MRZ_MIGRATED">Migration</option><option value="POST_ACTIVATION_PRESSURE_CHANGED">Pressure</option><option value="MRZ_NEAR_MISS">Near-Miss</option></select></label></div></div><div id="eventsList"></div></section>
         </section>
       </main>
     </div>
@@ -108,6 +108,6 @@
 
     <dialog class="workspace-dialog inbox-dialog" id="notificationInboxDialog" aria-labelledby="notificationInboxTitle"><section><header><div><p>DELIVERY HISTORY</p><h2 id="notificationInboxTitle">Notification Inbox</h2><span id="notificationInboxSummary">No unread notifications</span></div><button class="icon-button" id="notificationInboxClose" type="button" aria-label="Close">×</button></header><p class="notification-inbox-empty" id="notificationInboxEmpty">No active notifications.</p><ul class="notification-inbox-list" id="notificationInboxList" aria-live="polite"></ul><footer><button class="quiet-button" type="button" id="notificationMarkAllRead" disabled>Mark all read</button><button class="danger-button" type="button" id="notificationClearInbox" disabled>Clear inbox</button></footer></section></dialog>
     <div class="notification-toast-host" id="notificationToastHost" aria-live="polite"></div>
-    <script src="/static/mrz-shell.js?v=group-radar-refinement-20261110" defer></script><script src="/static/operator-time.js?v=mrz-workspace-20261007" defer></script><script src="/static/workspace-derivations.js?v=group-radar-refinement-20261110" defer></script><script src="/static/group-evidence.js?v=group-radar-refinement-20261110" defer></script><script src="/static/notifications.js?v=mrz-inbox-actions-20261008" defer></script><script src="/static/workspace.js?v=group-radar-refinement-20261110" defer></script>
+    <script src="/static/mrz-shell.js?v=edge-intel-events-search-20261110" defer></script><script src="/static/operator-time.js?v=mrz-workspace-20261007" defer></script><script src="/static/workspace-derivations.js?v=edge-intel-events-search-20261110" defer></script><script src="/static/group-evidence.js?v=edge-intel-events-search-20261110" defer></script><script src="/static/notifications.js?v=mrz-inbox-actions-20261008" defer></script><script src="/static/workspace.js?v=edge-intel-events-search-20261110" defer></script>
   </body>
 </html>

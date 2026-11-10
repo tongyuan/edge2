@@ -317,7 +317,7 @@ class APIIntegrationTests(unittest.TestCase):
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["cache-control"], "no-store, max-age=0")
-        self.assertIn("MRZ Monitor", response.text)
+        self.assertIn("EDGE Intel", response.text)
         self.assertNotIn("Symbol Lab", response.text)
 
     def test_mrz_formation_diagnostics_page_keeps_compatible_route(self) -> None:

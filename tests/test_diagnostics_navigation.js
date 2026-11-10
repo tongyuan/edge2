@@ -203,12 +203,12 @@ console.log("diagnostics navigation tests passed");
   applyCollapsedState(documentRef, true);
   assert.equal(classes.has("sidebar-collapsed"), true);
   assert.equal(attributes.get("aria-expanded"), "false");
-  assert.equal(attributes.get("aria-label"), "Expand MRZ navigation");
+  assert.equal(attributes.get("aria-label"), "Expand EDGE Intel navigation");
   assert.equal(icon.textContent, "›");
   applyCollapsedState(documentRef, false);
   assert.equal(classes.has("sidebar-collapsed"), false);
   assert.equal(attributes.get("aria-expanded"), "true");
-  assert.equal(attributes.get("aria-label"), "Collapse MRZ navigation");
+  assert.equal(attributes.get("aria-label"), "Collapse EDGE Intel navigation");
   assert.equal(icon.textContent, "‹");
 }
 
