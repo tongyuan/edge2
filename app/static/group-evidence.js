@@ -15,6 +15,8 @@
     lastSuccessful: new Map(),
     recentLoaded: false,
     search: "",
+    sort: "recent",
+    activityDrawerOpen: new URLSearchParams(globalObject.location?.search || "").get("activity") === "open",
     mounted: false,
   };
   const $ = (selector) => globalObject.document.querySelector(selector);
@@ -114,9 +116,17 @@
   }
 
   function openGroup(groupId) {
+    state.activityDrawerOpen = false;
     updateUrl({ group: groupId, dimension: null, bucket: null, evidence: null });
     state.recentLoaded = false;
     load().then(() => $("#selectedGroupWorkspace")?.scrollIntoView({ block: "start", behavior: "smooth" }));
+  }
+
+  async function openActivity(groupId) {
+    state.activityDrawerOpen = true;
+    updateUrl({ group: groupId, activity: "open", dimension: null, bucket: null, evidence: null });
+    await load();
+    $("#groupActivityDrawer")?.focus();
   }
 
   function breadthCounts(group) {
@@ -160,14 +170,95 @@
     return wrap;
   }
 
+  function renderActivitySummary() {
+    const target = $("#groupActivitySummary");
+    if (!target) return;
+    target.replaceChildren();
+    const summary = state.overview?.activity_summary;
+    if (!summary) {
+      target.hidden = true;
+      return;
+    }
+    const cards = [
+      {
+        label: "Groups with activity",
+        value: `${summary.groups_with_activity} / ${summary.group_count}`,
+        detail: "Unique groups",
+        tone: "groups",
+      },
+      {
+        label: "IPDA location changes",
+        value: summary.ipda_location_change_symbols,
+        detail: `${summary.ipda_moved_lower_symbols} lower · ${summary.ipda_moved_higher_symbols} higher · unique symbols`,
+        tone: "ipda",
+      },
+      {
+        label: "New tracker events",
+        value: summary.new_tracker_events,
+        detail: `MRZ ${summary.tracker_event_breakdown.mrz} · Pressure ${summary.tracker_event_breakdown.pressure} · Near Miss ${summary.tracker_event_breakdown.near_miss} · OTE ${summary.tracker_event_breakdown.ote}`,
+        tone: "events",
+      },
+    ];
+    cards.forEach((item) => {
+      const card = node("article", `activity-summary-card ${item.tone}`);
+      card.append(node("strong", "", item.value), node("span", "", item.label), node("small", "", item.detail));
+      target.append(card);
+    });
+    target.hidden = false;
+  }
+
+  function sortedOverviewGroups(groups) {
+    const visible = groups.filter((group) => group.name.toLowerCase().includes(state.search));
+    if (state.sort === "name") {
+      return visible.sort((left, right) => left.name.localeCompare(right.name) || Number(left.id) - Number(right.id));
+    }
+    return visible.sort((left, right) => {
+      const leftChanged = left.activity?.status === "changed";
+      const rightChanged = right.activity?.status === "changed";
+      if (leftChanged !== rightChanged) return leftChanged ? -1 : 1;
+      if (leftChanged && rightChanged) {
+        const timeDifference = new Date(right.activity.latest_at).getTime() - new Date(left.activity.latest_at).getTime();
+        if (timeDifference) return timeDifference;
+      }
+      return left.name.localeCompare(right.name) || Number(left.id) - Number(right.id);
+    });
+  }
+
+  function activityCell(group) {
+    const activity = group.activity || {};
+    const summary = activity.summary || {};
+    const coverage = activity.coverage?.ipda || {};
+    const button = node("button", `group-activity-button ${activity.status || "insufficient_data"}`);
+    button.type = "button";
+    button.setAttribute("aria-label", `Open ${group.name} activity for the last ${state.scope.window}`);
+    if (activity.status === "changed") {
+      const parts = [];
+      if (summary.ipda_location_change_count) parts.push(`${summary.ipda_location_change_count} IPDA change${summary.ipda_location_change_count === 1 ? "" : "s"}`);
+      if (summary.by_tracker?.mrz) parts.push(`${summary.by_tracker.mrz} MRZ`);
+      if (summary.by_tracker?.pressure) parts.push(`${summary.by_tracker.pressure} pressure`);
+      if (summary.by_tracker?.near_miss) parts.push(`${summary.by_tracker.near_miss} Near Miss`);
+      button.append(node("strong", "", parts.slice(0, 2).join(" · ") || `${summary.record_count} recorded changes`));
+      if (parts.length > 2) button.append(node("small", "", `+ ${parts.length - 2} more tracker type${parts.length - 2 === 1 ? "" : "s"}`));
+    } else if (activity.status === "no_change") {
+      button.append(node("strong", "", "No verified change"), node("small", "", `${coverage.fresh_comparable} / ${coverage.member_total} fresh comparisons`));
+    } else {
+      button.append(node("strong", "", "Insufficient data"), node("small", "", `${coverage.fresh_comparable || 0} / ${coverage.member_total || group.membership_total} fresh comparisons`));
+    }
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openActivity(group.id).catch((error) => setError(error.message));
+    });
+    return button;
+  }
+
   function renderOverviewTable() {
     const section = node("section", "radar-overview");
     const tableWrap = node("div", "radar-table-wrap");
     const table = node("table", "radar-table");
     const head = node("thead", "");
-    head.innerHTML = "<tr><th>Group</th><th>Members</th><th>IPDA Breadth (P / E / D)</th><th>Migration</th><th>Current Pressure State</th><th>Near Miss</th><th>OTE (1D)</th><th>OTE (1W)</th><th>Latest OTE Alert</th><th aria-label=\"Open\"></th></tr>";
+    head.innerHTML = `<tr><th>Group</th><th>Members</th><th>IPDA Breadth (P / E / D)</th><th>Migration</th><th>Current Pressure State</th><th class="activity-heading">Activity (${state.scope.window})</th><th>Near Miss</th><th>OTE (1D)</th><th>OTE (1W)</th><th>Latest OTE Alert</th><th aria-label="Open"></th></tr>`;
     const body = node("tbody", "");
-    const groups = (state.overview?.groups || []).filter((group) => group.name.toLowerCase().includes(state.search));
+    const groups = sortedOverviewGroups([...(state.overview?.groups || [])]);
     groups.forEach((group) => {
       const row = node("tr", "");
       row.tabIndex = 0;
@@ -180,20 +271,21 @@
       const migrationCell = node("td", ""); migrationCell.append(directionMetric(group.migrations?.unique_higher_contributors, group.migrations?.unique_lower_contributors));
       const current = group.directional?.current_pressure || {};
       const pressureCell = node("td", ""); pressureCell.append(directionMetric(current.higher, current.lower));
+      const activity = node("td", "activity-table-cell"); activity.append(activityCell(group));
       const nearCell = node("td", "near-miss-count", group.near_miss?.status === "available" ? group.near_miss.active_episode_count : "Unavailable");
       const oteDaily = node("td", "ote-unavailable", group.ote?.status === "not_connected" ? "Not connected" : text(group.ote?.daily));
       const oteWeekly = node("td", "ote-unavailable", group.ote?.status === "not_connected" ? "Not connected" : text(group.ote?.weekly));
       const latestOte = node("td", "ote-unavailable", group.ote?.status === "not_connected" ? "OTE feed not connected" : text(group.ote?.latest));
       const open = node("td", "radar-open-cell"); open.append(node("span", "", "Open"));
-      row.append(nameCell, memberCell, breadthCell, migrationCell, pressureCell, nearCell, oteDaily, oteWeekly, latestOte, open);
+      row.append(nameCell, memberCell, breadthCell, migrationCell, pressureCell, activity, nearCell, oteDaily, oteWeekly, latestOte, open);
       row.addEventListener("click", () => openGroup(group.id));
-      row.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openGroup(group.id); } });
+      row.addEventListener("keydown", (event) => { if (event.target === row && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); openGroup(group.id); } });
       body.append(row);
     });
     if (!groups.length) {
       const row = node("tr", "");
       const cell = node("td", "radar-empty", state.overview?.groups?.length ? "No groups match this search." : "No saved groups. Create a group to begin.");
-      cell.colSpan = 10; row.append(cell); body.append(row);
+      cell.colSpan = 11; row.append(cell); body.append(row);
     }
     table.append(head, body); tableWrap.append(table); section.append(tableWrap);
     return section;
@@ -378,6 +470,140 @@
     table.append(head, body); wrap.append(table); panel.append(wrap); return panel;
   }
 
+  function activityRecordPresentation(record) {
+    if (record.tracker === "ipda") {
+      return {
+        title: "IPDA location change",
+        detail: `${record.previous_location_label} → ${record.new_location_label}`,
+        tone: record.direction,
+      };
+    }
+    if (record.tracker === "mrz") {
+      const labels = {
+        MRZ_ACTIVATED: "MRZ activation",
+        MRZ_MIGRATED: "MRZ migration",
+        ROUTE_CHANGED: "MRZ route change",
+      };
+      const direction = record.direction && record.direction !== "same_midpoint" ? ` · ${titleCase(record.direction)}` : "";
+      return {
+        title: labels[record.event_type] || "MRZ event",
+        detail: `${record.route_owner}${direction}`,
+        tone: "mrz",
+      };
+    }
+    if (record.tracker === "pressure") {
+      return {
+        title: "Directional pressure event",
+        detail: `${titleCase(record.direction)} pressure recorded`,
+        tone: record.direction,
+      };
+    }
+    if (record.tracker === "near_miss") {
+      return {
+        title: record.lifecycle === "ended" ? "Near Miss episode resolved" : "Near Miss episode started",
+        detail: record.lifecycle === "ended" ? titleCase(record.ended_reason || "Episode ended") : `${record.route_owner} route`,
+        tone: "near-miss",
+      };
+    }
+    return { title: "OTE event", detail: "EDGE_BOT", tone: "ote" };
+  }
+
+  function closeActivityDrawer() {
+    state.activityDrawerOpen = false;
+    updateUrl({ activity: null }, { replace: true });
+    render();
+  }
+
+  function renderActivityDrawer(payload) {
+    const drawer = node("aside", "group-activity-drawer");
+    drawer.id = "groupActivityDrawer";
+    drawer.tabIndex = -1;
+    drawer.setAttribute("aria-labelledby", "groupActivityDrawerTitle");
+    const header = node("header", "activity-drawer-header");
+    const identity = node("div", "");
+    identity.append(node("p", "", payload.group.name), node("h2", "", `Group Activity — Last ${state.scope.window}`));
+    identity.querySelector("h2").id = "groupActivityDrawerTitle";
+    const close = node("button", "icon-button", "×");
+    close.type = "button";
+    close.setAttribute("aria-label", "Close group activity");
+    close.addEventListener("click", closeActivityDrawer);
+    header.append(identity, close);
+    drawer.append(header);
+
+    const summary = payload.activity.summary;
+    const metrics = node("div", "activity-drawer-metrics");
+    [
+      ["IPDA moves", summary.by_tracker.ipda],
+      ["MRZ", summary.by_tracker.mrz],
+      ["Pressure", summary.by_tracker.pressure],
+      ["Near Miss", summary.by_tracker.near_miss],
+    ].forEach(([label, value]) => {
+      const item = node("div", "");
+      item.append(node("strong", "", value), node("span", "", label));
+      metrics.append(item);
+    });
+    drawer.append(metrics);
+
+    const ipdaCoverage = payload.activity.coverage.ipda;
+    const coverage = node("div", `activity-coverage ${ipdaCoverage.status}`);
+    coverage.append(
+      node("strong", "", "IPDA comparison coverage"),
+      node("span", "", `${ipdaCoverage.fresh_comparable} / ${ipdaCoverage.member_total} members with fresh, comparable observations`),
+    );
+    drawer.append(coverage);
+
+    const activitySection = node("section", "activity-records");
+    activitySection.append(node("h3", "", `Recent activity (${state.scope.window})`));
+    const list = node("div", "activity-record-list");
+    (payload.activity.records || []).forEach((record) => {
+      const presentation = activityRecordPresentation(record);
+      const link = node("a", `activity-record ${presentation.tone}`);
+      link.href = symbolUrl(record.symbol);
+      const time = node("time", "", exactTime(record.occurred_at));
+      const copy = node("div", "");
+      copy.append(node("strong", "", presentation.title), node("span", "", `${record.symbol} · ${presentation.detail}`));
+      link.append(time, copy);
+      list.append(link);
+    });
+    if (!payload.activity.records?.length) {
+      const message = payload.activity.status === "no_change"
+        ? "Fresh IPDA comparisons show no recorded bucket transition. Event-driven trackers recorded no new event; their freshness is not independently verified."
+        : "Coverage is insufficient to determine whether the group changed during this period.";
+      list.append(node("p", "activity-record-empty", message));
+    }
+    activitySection.append(list);
+    drawer.append(activitySection);
+
+    const members = node("section", "activity-member-section");
+    members.append(node("h3", "", `Group members (${payload.group.member_count})`));
+    const memberList = node("div", "activity-member-list");
+    payload.members.forEach((member) => {
+      const item = node("a", "activity-member-row");
+      item.href = symbolUrl(member.symbol);
+      const mrz = member.mrz?.status === "active" ? `${member.mrz.lower} – ${member.mrz.upper}` : "No active MRZ";
+      item.append(
+        node("strong", "", member.symbol),
+        node("span", member.location?.includes("discount") ? "lower" : member.location?.includes("premium") ? "higher" : "neutral", member.location_label),
+        node("span", "", mrz),
+        node("span", member.pressure || "neutral", member.pressure ? `${titleCase(member.pressure)} pressure` : "No pressure state"),
+      );
+      memberList.append(item);
+    });
+    members.append(memberList);
+    drawer.append(members);
+
+    const fullEvidence = node("button", "primary-button activity-full-evidence", "View full evidence");
+    fullEvidence.type = "button";
+    fullEvidence.addEventListener("click", () => {
+      state.activityDrawerOpen = false;
+      updateUrl({ activity: null }, { replace: true });
+      render();
+      $("#selectedGroupWorkspace")?.scrollIntoView({ block: "start", behavior: "smooth" });
+    });
+    drawer.append(fullEvidence);
+    return drawer;
+  }
+
   function renderNamedGroup(payload) {
     const workspace = node("section", "selected-group-workspace"); workspace.id = "selectedGroupWorkspace";
     const header = node("header", "selected-group-header"); const back = node("button", "back-button", "Back to all groups"); back.type = "button"; back.addEventListener("click", () => { updateUrl({ group: "all" }); state.detail = null; render(); globalObject.scrollTo({ top: 0, behavior: "smooth" }); }); const identity = node("div", "selected-group-identity"); identity.append(node("h2", "", payload.group.name), node("p", "", `${payload.group.member_count} members · Group evidence`)); const edit = node("button", "quiet-button", "Edit Group"); edit.type = "button"; edit.addEventListener("click", () => openEditor(selectedGroup())); header.append(back, identity, edit); workspace.append(header, renderEvidenceCards(payload));
@@ -391,7 +617,17 @@
   }
 
   function render() {
-    const wrapper = node("div", "radar-content"); wrapper.append(renderOverviewTable()); if (state.detail?.scope === "named_group") wrapper.append(renderNamedGroup(state.detail)); $("#groupEvidenceContent").replaceChildren(wrapper);
+    const wrapper = node("div", "radar-content");
+    const main = node("div", "radar-content-main");
+    main.append(renderOverviewTable());
+    if (state.detail?.scope === "named_group") main.append(renderNamedGroup(state.detail));
+    wrapper.append(main);
+    if (state.activityDrawerOpen && state.detail?.scope === "named_group") {
+      wrapper.classList.add("activity-open");
+      wrapper.append(renderActivityDrawer(state.detail));
+    }
+    $("#groupEvidenceContent").replaceChildren(wrapper);
+    renderActivitySummary();
     $("#groupEvidenceGroupCount").textContent = `Groups (${state.overview?.scope_totals?.group_count || 0})`; $("#groupEvidenceAsOf").textContent = exactTime((state.detail || state.overview)?.window?.as_of); $("#groupEvidenceEdit").hidden = true;
     globalObject.document.querySelectorAll("[data-group-window]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.groupWindow === state.scope.window)));
     const live = $("#groupEvidenceLive"); live.className = "group-evidence-live"; live.hidden = false; live.textContent = state.detail?.status === "partial" || state.overview?.status === "partial" ? "Evidence loaded with one or more unavailable dimensions." : "Canonical group evidence loaded."; renderDetails(); updateManageMenuState();
@@ -470,6 +706,7 @@
   function bindEvents() {
     globalObject.document.querySelectorAll("[data-group-window]").forEach((button) => button.addEventListener("click", () => { updateUrl({ window: button.dataset.groupWindow }); state.recentLoaded = false; load(); }));
     $("#groupEvidenceSearch").addEventListener("input", (event) => { state.search = event.target.value.trim().toLowerCase(); render(); });
+    $("#groupEvidenceSort").addEventListener("change", (event) => { state.sort = event.target.value; render(); });
     $("#groupEvidenceNew").addEventListener("click", () => openEditor()); $("#groupEvidenceEdit").addEventListener("click", () => openEditor(selectedGroup()));
     $("#groupEvidenceManage").addEventListener("click", () => { const menu = $("#groupEvidenceManageMenu"); menu.hidden = !menu.hidden; $("#groupEvidenceManage").setAttribute("aria-expanded", String(!menu.hidden)); });
     $("#groupEvidenceManageMenu").addEventListener("click", (event) => { const action = event.target.closest("[data-manage-action]")?.dataset.manageAction; if (!action) return; if (action === "edit") openEditor(selectedGroup()); else if (action === "duplicate") duplicateGroup().catch((error) => setError(error.message)); else if (action === "delete") deleteGroup().catch((error) => setError(error.message)); else if (action === "all") openManageAll(); });
@@ -478,7 +715,7 @@
     $("#groupEvidenceDialogClose").addEventListener("click", () => $("#groupEvidenceDialog").close()); $("#groupEvidenceCancel").addEventListener("click", () => $("#groupEvidenceDialog").close());
     $("#groupEvidenceManageClose").addEventListener("click", () => $("#groupEvidenceManageDialog").close()); $("#groupEvidenceManageDone").addEventListener("click", () => $("#groupEvidenceManageDialog").close()); $("#groupEvidenceManageNew").addEventListener("click", () => openEditor());
     $("#recentTrackedEventsToggle").addEventListener("click", () => loadRecentEvents()); $("#radarAlertsButton").addEventListener("click", () => $("#notificationInboxButton")?.click());
-    globalObject.addEventListener("popstate", () => { state.scope = derive.parseGroupEvidenceState(globalObject.location.search); state.recentLoaded = false; load(); });
+    globalObject.addEventListener("popstate", () => { state.scope = derive.parseGroupEvidenceState(globalObject.location.search); state.activityDrawerOpen = new URLSearchParams(globalObject.location.search).get("activity") === "open"; state.recentLoaded = false; load(); });
     const badge = $("#notificationUnreadBadge"); if (badge) new MutationObserver(syncAlertBadge).observe(badge, { childList: true, attributes: true, subtree: true }); syncAlertBadge();
   }
 

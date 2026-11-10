@@ -237,7 +237,7 @@ class APIIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(all_evidence.status_code, 200)
         self.assertEqual(named_evidence.status_code, 200)
-        self.assertEqual(all_evidence.json()["contract_version"], "stage-a-1")
+        self.assertEqual(all_evidence.json()["contract_version"], "group-activity-1")
         self.assertEqual(all_evidence.json()["scope"], "all_groups")
         self.assertEqual(named_evidence.json()["scope"], "named_group")
         self.assertEqual(named_evidence.json()["group"]["members"], group["members"])

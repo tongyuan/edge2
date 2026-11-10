@@ -2675,6 +2675,7 @@ class EdgeRepository:
                         "active_mrzs": (),
                         "observations": (),
                         "migration_events": (),
+                        "mrz_activity_events": (),
                         "pressure_events": (),
                         "latest_pressure_events": (),
                         "location_observations": (),
@@ -2826,6 +2827,24 @@ class EdgeRepository:
                 cursor.execute(
                     """
                     SELECT
+                        event_key, sequence, event_type, symbol, occurred_at,
+                        trigger_event_id, previous_route_owner, route_owner,
+                        old_core_mrz_lower, old_core_mrz_upper,
+                        new_core_mrz_lower, new_core_mrz_upper,
+                        new_core_mrz_midpoint, structural_location
+                    FROM mrz_events
+                    WHERE symbol = ANY(%s)
+                      AND occurred_at > %s
+                      AND occurred_at <= %s
+                    ORDER BY occurred_at DESC, sequence DESC, event_key ASC
+                    """,
+                    (symbols, comparison_at, as_of),
+                )
+                mrz_activity_events = tuple(cursor.fetchall())
+
+                cursor.execute(
+                    """
+                    SELECT
                         id, source_event_key, symbol, occurred_at,
                         lifecycle_activation_event_id,
                         previous_pressure_state, current_pressure_state,
@@ -2891,6 +2910,7 @@ class EdgeRepository:
                     "active_mrzs": active_mrzs,
                     "observations": observations,
                     "migration_events": migration_events,
+                    "mrz_activity_events": mrz_activity_events,
                     "pressure_events": pressure_events,
                     "latest_pressure_events": latest_pressure_events,
                     "location_observations": location_observations,

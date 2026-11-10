@@ -114,6 +114,7 @@ def inputs(
     active_mrzs: list[ActiveMRZ] | None = None,
     observations: list[Observation] | None = None,
     migrations: list[dict] | None = None,
+    mrz_activity_events: list[dict] | None = None,
     pressure_events: list[dict] | None = None,
     latest_pressure_events: list[dict] | None = None,
     location_observations: list[Observation] | None = None,
@@ -129,6 +130,7 @@ def inputs(
         "active_mrzs": active_mrzs or [],
         "observations": observations or [],
         "migration_events": migrations or [],
+        "mrz_activity_events": mrz_activity_events or [],
         "pressure_events": pressure_events or [],
         "latest_pressure_events": latest_pressure_events or [],
         "location_observations": location_observations or [],
@@ -167,6 +169,53 @@ def pressure_event(symbol: str, index: int, direction: str, occurred_at: datetim
         "post_activation_observation_count": 4,
         "above_envelope_count": 0 if direction == "lower" else 4,
         "below_envelope_count": 4 if direction == "lower" else 0,
+    }
+
+
+def location_observation(
+    symbol: str,
+    index: int,
+    price: str,
+    observed_at: datetime,
+) -> Observation:
+    return Observation(
+        id=index,
+        event_id=f"{symbol}-location-{index}",
+        schema_version="4.3",
+        symbol=symbol,
+        route=Route.BTD,
+        observation_type=ObservationType.RECLAIM,
+        observation_price=Decimal(price),
+        observation_price_tick=Decimal("0.1"),
+        ipda_20w_high=Decimal("100"),
+        ipda_20w_low=Decimal("0"),
+        observed_at=observed_at,
+        received_at=observed_at + timedelta(seconds=1),
+    )
+
+
+def mrz_activity_event(
+    symbol: str,
+    index: int,
+    event_type: str,
+    occurred_at: datetime,
+) -> dict:
+    migrated = event_type == "MRZ_MIGRATED"
+    return {
+        "event_key": f"{symbol}:{event_type}:{index}",
+        "sequence": index,
+        "event_type": event_type,
+        "symbol": symbol,
+        "occurred_at": occurred_at,
+        "trigger_event_id": f"{symbol}-trigger-{index}",
+        "previous_route_owner": "BTD" if migrated else None,
+        "route_owner": "STR" if event_type == "ROUTE_CHANGED" else "BTD",
+        "old_core_mrz_lower": Decimal("99") if migrated else None,
+        "old_core_mrz_upper": Decimal("101") if migrated else None,
+        "new_core_mrz_lower": Decimal("109") if migrated else Decimal("49"),
+        "new_core_mrz_upper": Decimal("111") if migrated else Decimal("51"),
+        "new_core_mrz_midpoint": Decimal("110") if migrated else Decimal("50"),
+        "structural_location": "shallow_premium_core_mrz",
     }
 
 
@@ -662,6 +711,169 @@ class GroupEvidenceTests(unittest.TestCase):
         one_day_payload = build_named_group_evidence(one_day, one_day["groups"][0])
         self.assertEqual(one_day_payload["directional"]["cumulative_lifecycle_pressure_events"]["summary"]["latest_event"], {"higher": 0, "lower": 0, "none": 1})
         self.assertNotIn("resolved", json.dumps(one_day_payload).lower())
+
+    def test_activity_records_each_supported_ipda_transition_at_observation_time(self) -> None:
+        group_row = group(1, "Transitions", ["A"])
+        comparison_at = AS_OF - timedelta(hours=24)
+        observations = [
+            location_observation("A", 1, "30", comparison_at),
+            location_observation("A", 2, "50", comparison_at + timedelta(hours=2)),
+            location_observation("A", 3, "90", comparison_at + timedelta(hours=4)),
+        ]
+        payload = build_named_group_evidence(
+            inputs(
+                "24H",
+                [group_row],
+                endpoints=[endpoint(
+                    "A",
+                    start_price="10",
+                    current_price="90",
+                    comparison_at=comparison_at,
+                    current_at=AS_OF - timedelta(hours=20),
+                )],
+                location_observations=observations,
+            ),
+            group_row,
+        )
+        records = payload["activity"]["records"]
+        self.assertEqual([record["tracker"] for record in records], ["ipda", "ipda"])
+        self.assertEqual(
+            [(record["previous_location"], record["new_location"]) for record in reversed(records)],
+            [("deep_discount", "at_eqm"), ("at_eqm", "deep_premium")],
+        )
+        self.assertEqual(records[0]["occurred_at"], "2026-11-07T12:00:00Z")
+        self.assertTrue(all(record["timestamp_semantics"] == "canonical_observation_timestamp" for record in records))
+        self.assertEqual(payload["activity"]["status"], "changed")
+
+    def test_no_change_requires_complete_fresh_comparable_ipda_coverage(self) -> None:
+        members = ["A", "B"]
+        group_row = group(1, "Coverage", members)
+        endpoints = [
+            endpoint(
+                symbol,
+                start_price="30",
+                current_price="30",
+                comparison_at=AS_OF - timedelta(hours=24),
+                current_at=AS_OF - timedelta(hours=1),
+            )
+            for symbol in members
+        ]
+        complete = build_named_group_evidence(
+            inputs(
+                "24H",
+                [group_row],
+                endpoints=endpoints,
+                location_observations=[
+                    location_observation("A", 1, "30", AS_OF - timedelta(hours=2)),
+                    location_observation("B", 2, "30", AS_OF - timedelta(hours=1)),
+                ],
+            ),
+            group_row,
+        )
+        self.assertEqual(complete["activity"]["status"], "no_change")
+        self.assertEqual(complete["activity"]["coverage"]["ipda"]["status"], "verified")
+
+        incomplete = build_named_group_evidence(
+            inputs(
+                "24H",
+                [group_row],
+                endpoints=endpoints,
+                location_observations=[
+                    location_observation("A", 1, "30", AS_OF - timedelta(hours=2)),
+                ],
+            ),
+            group_row,
+        )
+        self.assertEqual(incomplete["activity"]["status"], "insufficient_data")
+        self.assertEqual(incomplete["activity"]["coverage"]["ipda"]["fresh_comparable"], 1)
+        self.assertEqual(incomplete["activity"]["coverage"]["ipda"]["insufficient"], 1)
+
+    def test_persistent_pressure_is_separate_from_new_pressure_activity(self) -> None:
+        group_row = group(1, "Pressure", ["A"])
+        endpoint_row = endpoint(
+            "A",
+            start_price="30",
+            current_price="30",
+            comparison_at=AS_OF - timedelta(hours=24),
+            current_at=AS_OF - timedelta(hours=1),
+        )
+        base = inputs(
+            "24H",
+            [group_row],
+            endpoints=[endpoint_row],
+            active_mrzs=[active("A")],
+            observations=pressure_observations("A", "lower"),
+            location_observations=[
+                location_observation("A", 1, "30", AS_OF - timedelta(hours=1))
+            ],
+        )
+        without_event = build_named_group_evidence(base, group_row)
+        self.assertEqual(
+            without_event["directional"]["current_pressure"]["summary"]["lower"],
+            1,
+        )
+        self.assertEqual(without_event["activity"]["summary"]["by_tracker"]["pressure"], 0)
+        self.assertEqual(without_event["activity"]["status"], "no_change")
+
+        base["pressure_events"] = [
+            pressure_event("A", 1, "lower", AS_OF - timedelta(minutes=30))
+        ]
+        with_event = build_named_group_evidence(base, group_row)
+        self.assertEqual(with_event["activity"]["summary"]["by_tracker"]["pressure"], 1)
+        self.assertEqual(with_event["activity"]["status"], "changed")
+
+    def test_tracker_events_and_overlapping_group_membership_are_deduplicated(self) -> None:
+        groups = [group(1, "One", ["A"]), group(2, "Two", ["A", "B"])]
+        request = inputs(
+            "24H",
+            groups,
+            mrz_activity_events=[
+                mrz_activity_event("A", 1, "MRZ_ACTIVATED", AS_OF - timedelta(hours=2)),
+                mrz_activity_event("B", 1, "MRZ_MIGRATED", AS_OF - timedelta(hours=1)),
+            ],
+            pressure_events=[
+                pressure_event("A", 1, "lower", AS_OF - timedelta(minutes=30))
+            ],
+        )
+        payload = build_all_groups_evidence(request)
+        summary = payload["activity_summary"]
+        self.assertEqual(summary["groups_with_activity"], 2)
+        self.assertEqual(summary["new_tracker_events"], 3)
+        self.assertEqual(summary["tracker_event_breakdown"], {
+            "mrz": 2,
+            "pressure": 1,
+            "near_miss": 0,
+            "ote": 0,
+        })
+
+    def test_near_miss_start_and_end_share_one_episode_identity(self) -> None:
+        group_row = group(1, "Near Miss", ["A"])
+        episode = {
+            "id": 1,
+            "episode_key": "near:A:1",
+            "symbol": "A",
+            "route_owner": "BTD",
+            "started_at": AS_OF - timedelta(hours=8),
+            "ended_at": AS_OF - timedelta(hours=2),
+            "ended_reason": "NO_LONGER_CURRENT",
+            "canonical_candidate_event_id": "a-candidate",
+            "canonical_structural_location": "shallow_discount_core_mrz",
+            "canonical_shortfall_percentage_points": Decimal("0.2"),
+            "canonical_supporting_observation_count": 4,
+            "canonical_candidate_timestamp": AS_OF - timedelta(hours=8),
+            "canonical_snapshot_reliable": True,
+            "canonical_updated_at": AS_OF - timedelta(hours=2),
+        }
+        payload = build_named_group_evidence(
+            inputs("24H", [group_row], near_miss_episodes=[episode]),
+            group_row,
+        )
+        self.assertEqual(payload["activity"]["summary"]["by_tracker"]["near_miss"], 2)
+        self.assertEqual(payload["activity"]["summary"]["near_miss_episode_count"], 1)
+        self.assertEqual(
+            {record["lifecycle"] for record in payload["activity"]["records"]},
+            {"started", "ended"},
+        )
 
     def test_contract_has_no_stage_b_fields(self) -> None:
         request = inputs("24H", [group(1, "A", ["A"])])

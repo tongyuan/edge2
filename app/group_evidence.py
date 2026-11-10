@@ -11,7 +11,7 @@ from app.peer_pressure import build_peer_pressure_report
 from app.structure import classify_ipda_location
 
 
-CONTRACT_VERSION = "stage-a-1"
+CONTRACT_VERSION = "group-activity-1"
 LOCATION_KEYS = (
     "deep_discount",
     "shallow_discount",
@@ -22,7 +22,7 @@ LOCATION_KEYS = (
 LOCATION_LABELS = {
     "deep_discount": "Deep Discount",
     "shallow_discount": "Shallow Discount",
-    "at_eqm": "At EQM",
+    "at_eqm": "Equilibrium",
     "shallow_premium": "Shallow Premium",
     "deep_premium": "Deep Premium",
 }
@@ -30,7 +30,8 @@ PRESSURE_ORDER = {"higher": 0, "lower": 1, "neutral": 2}
 LIMITATIONS = [
     "Historical evidence is attributed to membership at the response snapshot.",
     "Current pressure is a present snapshot, not a windowed historical series.",
-    "No staleness, materiality, diagnosis, lifecycle, or resolution rule is applied.",
+    "No event from an event-driven tracker is not proof that its source was freshly evaluated.",
+    "OTE activity is unavailable until the supported EDGE_BOT feed is connected.",
 ]
 OTE_NOT_CONNECTED = {
     "status": "not_connected",
@@ -199,6 +200,110 @@ def _location_history(
         "canonical_buckets": [
             {"key": key, "label": LOCATION_LABELS[key]} for key in LOCATION_KEYS
         ],
+    }
+
+
+def _location_activity(
+    members: Sequence[str],
+    endpoint_by_symbol: Mapping[str, Mapping[str, Any]],
+    observations: Sequence[Observation],
+    comparison_at: datetime,
+    as_of: datetime,
+) -> dict[str, Any]:
+    """Return recorded bucket transitions and conservative comparison coverage."""
+    rank = {key: index for index, key in enumerate(LOCATION_KEYS)}
+    member_set = set(members)
+    by_symbol: dict[str, list[Observation]] = defaultdict(list)
+    for observation in observations:
+        if (
+            observation.symbol in member_set
+            and comparison_at < observation.observed_at <= as_of
+        ):
+            by_symbol[observation.symbol].append(observation)
+    for symbol_observations in by_symbol.values():
+        symbol_observations.sort(
+            key=lambda item: (item.observed_at, item.received_at, item.id)
+        )
+
+    records: list[dict[str, Any]] = []
+    coverage_members: list[dict[str, Any]] = []
+    comparable_members = fresh_comparable_members = 0
+    for symbol in members:
+        endpoint = endpoint_by_symbol.get(symbol)
+        previous = _location(endpoint, "comparison")
+        if previous is None:
+            coverage_members.append({
+                "symbol": symbol,
+                "status": "insufficient_data",
+                "reason": "comparison_location_unavailable",
+            })
+            continue
+        comparable_members += 1
+        valid_observations = [
+            (observation, _observation_location(observation))
+            for observation in by_symbol.get(symbol, ())
+        ]
+        valid_observations = [
+            (observation, location)
+            for observation, location in valid_observations
+            if location is not None
+        ]
+        if not valid_observations:
+            coverage_members.append({
+                "symbol": symbol,
+                "status": "insufficient_data",
+                "reason": "no_comparable_observation_in_window",
+                "comparison_location": previous,
+                "comparison_observed_at": _iso(
+                    endpoint.get("comparison_observed_at") if endpoint else None
+                ),
+            })
+            continue
+        fresh_comparable_members += 1
+        symbol_change_count = 0
+        for observation, current in valid_observations:
+            if current != previous:
+                direction = "higher" if rank[current] > rank[previous] else "lower"
+                records.append({
+                    "id": f"ipda:{observation.event_id}",
+                    "tracker": "ipda",
+                    "event_type": "IPDA_LOCATION_CHANGED",
+                    "symbol": symbol,
+                    "occurred_at": _iso(observation.observed_at),
+                    "recorded_at": _iso(observation.received_at),
+                    "direction": direction,
+                    "previous_location": previous,
+                    "previous_location_label": LOCATION_LABELS[previous],
+                    "new_location": current,
+                    "new_location_label": LOCATION_LABELS[current],
+                    "magnitude_steps": abs(rank[current] - rank[previous]),
+                    "source_event_id": observation.event_id,
+                    "timestamp_semantics": "canonical_observation_timestamp",
+                })
+                symbol_change_count += 1
+            previous = current
+        coverage_members.append({
+            "symbol": symbol,
+            "status": "changed" if symbol_change_count else "no_change",
+            "comparison_location": _location(endpoint, "comparison"),
+            "comparison_observed_at": _iso(
+                endpoint.get("comparison_observed_at") if endpoint else None
+            ),
+            "fresh_observation_count": len(valid_observations),
+            "latest_observed_at": _iso(valid_observations[-1][0].observed_at),
+            "transition_count": symbol_change_count,
+        })
+    records.sort(key=lambda item: (item["occurred_at"], item["id"]), reverse=True)
+    return {
+        "status": "available",
+        "records": records,
+        "coverage": {
+            "member_total": len(members),
+            "comparison_available": comparable_members,
+            "fresh_comparable": fresh_comparable_members,
+            "insufficient": len(members) - fresh_comparable_members,
+            "members": coverage_members,
+        },
     }
 
 
@@ -670,6 +775,173 @@ def _migrations(
     }, evidence_times)
 
 
+def _mrz_activity_records(
+    members: Sequence[str],
+    rows: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    member_set = set(members)
+    records: list[dict[str, Any]] = []
+    for row in rows:
+        symbol = str(row["symbol"])
+        if symbol not in member_set:
+            continue
+        event_type = str(row["event_type"])
+        direction = None
+        if event_type == "MRZ_MIGRATED" and row.get("old_core_mrz_lower") is not None:
+            direction = _migration_direction(row)
+        records.append({
+            "id": f"mrz:{row['event_key']}",
+            "tracker": "mrz",
+            "event_type": event_type,
+            "symbol": symbol,
+            "occurred_at": _iso(row["occurred_at"]),
+            "direction": direction,
+            "route_owner": str(row["route_owner"]),
+            "previous_route_owner": row.get("previous_route_owner"),
+            "route_changed": event_type == "ROUTE_CHANGED" or (
+                row.get("previous_route_owner") is not None
+                and str(row["previous_route_owner"]) != str(row["route_owner"])
+            ),
+            "source_event_id": str(row["event_key"]),
+            "trigger_observation_event_id": str(row["trigger_event_id"]),
+            "timestamp_semantics": "canonical_mrz_event_timestamp",
+        })
+    records.sort(key=lambda item: (item["occurred_at"], item["id"]), reverse=True)
+    return records
+
+
+def _activity(
+    members: Sequence[str],
+    location_activity: Mapping[str, Any],
+    mrz_records: Sequence[Mapping[str, Any]],
+    pressure: Mapping[str, Any],
+    near_miss: Mapping[str, Any],
+    comparison_at: datetime,
+    as_of: datetime,
+) -> dict[str, Any]:
+    records = [dict(item) for item in location_activity.get("records", ())]
+    records.extend(dict(item) for item in mrz_records)
+    for event in pressure.get("events", ()):
+        records.append({
+            "id": f"pressure:{event['event_id']}",
+            "tracker": "pressure",
+            "event_type": "POST_ACTIVATION_PRESSURE_CHANGED",
+            "symbol": event["symbol"],
+            "occurred_at": event["occurred_at"],
+            "direction": event["event_direction"],
+            "previous_state": event["previous_state"],
+            "route_owner": event["route_owner"],
+            "source_event_id": event["event_id"],
+            "timestamp_semantics": "canonical_pressure_event_timestamp",
+        })
+    episode_keys: set[str] = set()
+    for episode in near_miss.get("episodes", ()):
+        if episode["started_in_window"]:
+            episode_keys.add(episode["episode_key"])
+            records.append({
+                "id": f"near-miss:{episode['episode_key']}:started",
+                "tracker": "near_miss",
+                "event_type": "NEAR_MISS_EPISODE_STARTED",
+                "symbol": episode["symbol"],
+                "occurred_at": episode["started_at"],
+                "lifecycle": "started",
+                "route_owner": episode["route_owner"],
+                "source_event_id": episode["episode_key"],
+                "timestamp_semantics": "canonical_episode_start_timestamp",
+            })
+        ended_at = episode.get("ended_at")
+        if ended_at and _iso(comparison_at) < ended_at <= _iso(as_of):
+            episode_keys.add(episode["episode_key"])
+            records.append({
+                "id": f"near-miss:{episode['episode_key']}:ended",
+                "tracker": "near_miss",
+                "event_type": "NEAR_MISS_EPISODE_ENDED",
+                "symbol": episode["symbol"],
+                "occurred_at": ended_at,
+                "lifecycle": "ended",
+                "ended_reason": episode.get("ended_reason"),
+                "route_owner": episode["route_owner"],
+                "source_event_id": episode["episode_key"],
+                "timestamp_semantics": "canonical_episode_end_timestamp",
+            })
+    records.sort(key=lambda item: (item["occurred_at"], item["id"]), reverse=True)
+    unique_records = {item["id"]: item for item in records}
+    records = sorted(
+        unique_records.values(),
+        key=lambda item: (item["occurred_at"], item["id"]),
+        reverse=True,
+    )
+    by_tracker = {
+        tracker: sum(item["tracker"] == tracker for item in records)
+        for tracker in ("ipda", "mrz", "pressure", "near_miss", "ote")
+    }
+    location_records = [item for item in records if item["tracker"] == "ipda"]
+    tracker_records = [item for item in records if item["tracker"] != "ipda"]
+    coverage = location_activity.get("coverage", {})
+    full_ipda_coverage = bool(members) and coverage.get("fresh_comparable") == len(members)
+    if records:
+        classification = "changed"
+    elif full_ipda_coverage:
+        classification = "no_change"
+    else:
+        classification = "insufficient_data"
+    return {
+        "status": classification,
+        "window": {
+            "comparison_at": _iso(comparison_at),
+            "as_of": _iso(as_of),
+        },
+        "latest_at": records[0]["occurred_at"] if records else None,
+        "records": records,
+        "summary": {
+            "record_count": len(records),
+            "unique_symbol_count": len({item["symbol"] for item in records}),
+            "ipda_location_change_count": len(location_records),
+            "ipda_unique_symbol_count": len({item["symbol"] for item in location_records}),
+            "tracker_event_count": len(tracker_records),
+            "near_miss_episode_count": len(episode_keys),
+            "by_tracker": by_tracker,
+            "moved_higher_symbols": len({
+                item["symbol"] for item in location_records
+                if item.get("direction") == "higher"
+            }),
+            "moved_lower_symbols": len({
+                item["symbol"] for item in location_records
+                if item.get("direction") == "lower"
+            }),
+        },
+        "coverage": {
+            "ipda": {
+                **coverage,
+                "status": "verified" if full_ipda_coverage else (
+                    "partial" if coverage.get("fresh_comparable") else "unavailable"
+                ),
+                "semantics": "baseline_plus_fresh_comparable_observation",
+            },
+            "mrz": {
+                "status": "event_history_available",
+                "semantics": "event_presence_only_no_independent_freshness_heartbeat",
+            },
+            "pressure": {
+                "status": "event_history_available",
+                "semantics": "event_presence_only_no_independent_freshness_heartbeat",
+            },
+            "near_miss": {
+                "status": "episode_history_available",
+                "semantics": "episode_lifecycle_records",
+            },
+            "ote": dict(OTE_NOT_CONNECTED),
+        },
+        "classification_basis": (
+            "qualifying_recorded_change"
+            if classification == "changed"
+            else "complete_fresh_ipda_comparison_no_transition"
+            if classification == "no_change"
+            else "incomplete_fresh_comparison_coverage"
+        ),
+    }
+
+
 def build_named_group_evidence(
     inputs: Mapping[str, Any],
     group: Mapping[str, Any],
@@ -776,6 +1048,28 @@ def build_named_group_evidence(
         }
 
     try:
+        location_activity = _location_activity(
+            members,
+            endpoints,
+            inputs.get("location_observations", ()),
+            comparison_at,
+            inputs["as_of"],
+        )
+    except Exception:
+        status = "partial"
+        location_activity = {
+            "status": "unavailable",
+            "records": [],
+            "coverage": {
+                "member_total": len(members),
+                "comparison_available": 0,
+                "fresh_comparable": 0,
+                "insufficient": len(members),
+                "members": [],
+            },
+        }
+
+    try:
         near_miss = _near_misses(
             members,
             inputs.get("near_miss_episodes", ()),
@@ -789,6 +1083,44 @@ def build_named_group_evidence(
     except Exception:
         status = "partial"
         near_miss = {"status": "unavailable", "reason": "near_miss_projection_failed"}
+
+    try:
+        mrz_activity_records = _mrz_activity_records(
+            members, inputs.get("mrz_activity_events", ())
+        )
+        activity = _activity(
+            members,
+            location_activity,
+            mrz_activity_records,
+            cumulative,
+            near_miss,
+            comparison_at,
+            inputs["as_of"],
+        )
+        for record in activity["records"]:
+            occurred_at = datetime.fromisoformat(record["occurred_at"].replace("Z", "+00:00"))
+            evidence_times.append(occurred_at)
+    except Exception:
+        status = "partial"
+        activity = {
+            "status": "insufficient_data",
+            "latest_at": None,
+            "records": [],
+            "summary": {
+                "record_count": None,
+                "unique_symbol_count": None,
+                "ipda_location_change_count": None,
+                "ipda_unique_symbol_count": None,
+                "tracker_event_count": None,
+                "near_miss_episode_count": None,
+                "by_tracker": {},
+            },
+            "coverage": {
+                "ipda": location_activity.get("coverage", {}),
+                "ote": dict(OTE_NOT_CONNECTED),
+            },
+            "classification_basis": "activity_projection_failed",
+        }
 
     active_by_symbol = {active.symbol: active for active in active_mrzs}
     structural_by_symbol = {
@@ -889,6 +1221,7 @@ def build_named_group_evidence(
         "coverage": {**structural_coverage, **pressure_coverage},
         "structural": structural,
         "location_history": location_history,
+        "activity": activity,
         "near_miss": near_miss,
         "ote": dict(OTE_NOT_CONNECTED),
         "members": member_rows,
@@ -917,6 +1250,11 @@ def _summary_group(detail: Mapping[str, Any]) -> dict[str, Any]:
         "membership_total": group["member_count"],
         "latest_relevant_evidence_at": detail.get("latest_relevant_evidence_at"),
         "coverage": detail.get("coverage", {}),
+        "activity": {
+            key: value
+            for key, value in detail.get("activity", {}).items()
+            if key != "records"
+        },
         "structural": {
             **structural.get("summary", {"status": "unavailable"}),
             "current_distribution": structural.get("current_distribution"),
@@ -957,6 +1295,17 @@ def build_all_groups_evidence(inputs: Mapping[str, Any]) -> dict[str, Any]:
         len(detail.get("directional", {}).get("mrz_migrations", {}).get("events", ()))
         for detail in details
     )
+    activity_records = {
+        record["id"]: record
+        for detail in details
+        for record in detail.get("activity", {}).get("records", ())
+    }
+    location_records = [
+        record for record in activity_records.values() if record["tracker"] == "ipda"
+    ]
+    tracker_records = [
+        record for record in activity_records.values() if record["tracker"] != "ipda"
+    ]
     status = "partial" if any(detail.get("status") == "partial" for detail in details) else "available"
     return {
         "contract_version": CONTRACT_VERSION,
@@ -970,6 +1319,42 @@ def build_all_groups_evidence(inputs: Mapping[str, Any]) -> dict[str, Any]:
             "unique_members": len(unique_members),
             "canonical_migration_events": len(migration_keys),
             "group_context_migration_appearances": appearances,
+        },
+        "activity_summary": {
+            "groups_with_activity": sum(
+                detail.get("activity", {}).get("status") == "changed"
+                for detail in details
+            ),
+            "group_count": len(groups),
+            "ipda_location_change_symbols": len({
+                record["symbol"] for record in location_records
+            }),
+            "ipda_location_change_records": len(location_records),
+            "ipda_moved_higher_symbols": len({
+                record["symbol"] for record in location_records
+                if record.get("direction") == "higher"
+            }),
+            "ipda_moved_lower_symbols": len({
+                record["symbol"] for record in location_records
+                if record.get("direction") == "lower"
+            }),
+            "new_tracker_events": len(tracker_records),
+            "tracker_event_breakdown": {
+                tracker: sum(record["tracker"] == tracker for record in tracker_records)
+                for tracker in ("mrz", "pressure", "near_miss", "ote")
+            },
+            "changed_groups": sum(
+                detail.get("activity", {}).get("status") == "changed"
+                for detail in details
+            ),
+            "no_change_groups": sum(
+                detail.get("activity", {}).get("status") == "no_change"
+                for detail in details
+            ),
+            "insufficient_data_groups": sum(
+                detail.get("activity", {}).get("status") == "insufficient_data"
+                for detail in details
+            ),
         },
         "ote": dict(OTE_NOT_CONNECTED),
         "groups": [_summary_group(detail) for detail in details],
