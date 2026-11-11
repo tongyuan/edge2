@@ -35,6 +35,8 @@ def clean(database_url: str) -> None:
                     web_push_notifications,
                     web_push_subscriptions,
                     post_activation_pressure_states,
+                    current_pressure_events,
+                    current_pressure_states,
                     current_production_near_miss_episodes,
                     mrz_production_confirmations,
                     mrz_events,

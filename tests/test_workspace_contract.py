@@ -44,7 +44,7 @@ class WorkspaceContractTests(unittest.TestCase):
             "MRZ Levels",
             "Route",
             "Location",
-            "Last Pressure Direction",
+            "Current Pressure (Latest 4 Obs)",
             "Near Miss",
             "OTE (1D)",
             "OTE (1W)",
@@ -287,7 +287,7 @@ class WorkspaceContractTests(unittest.TestCase):
         for window in ("24H", "5D", "20D"):
             self.assertIn(f'data-group-window="{window}"', watchlists)
         self.assertIn("/api/group-evidence", GROUP_JS)
-        self.assertIn("Last Pressure Direction", GROUP_JS)
+        self.assertIn("currentPressureGauge", GROUP_JS)
         self.assertIn("Group Event Timeline", GROUP_JS)
         self.assertIn("OTE feed not connected", GROUP_JS)
         mobile_rules = CSS[CSS.index("@media (max-width: 560px)") :]

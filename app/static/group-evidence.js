@@ -40,6 +40,16 @@
     return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric" });
   }
 
+  function relativeTime(value) {
+    const timestamp = new Date(value);
+    if (!value || Number.isNaN(timestamp.getTime())) return "—";
+    const seconds = Math.max(0, Math.round((Date.now() - timestamp.getTime()) / 1000));
+    if (seconds < 60) return "now";
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    return `${Math.floor(seconds / 86400)}d ago`;
+  }
+
   function operatorDate(value) {
     if (!value) return "—";
     const shifted = new Date(new Date(value).getTime() - (4 * 60 * 60 * 1000));
@@ -445,9 +455,39 @@
 
   function statusPill(value, tone) { return node("span", `radar-pill ${tone || ""}`, value); }
 
+  function currentPressureGauge(member) {
+    const current = member.current_pressure || {};
+    const evidence = current.evidence || {};
+    const sequence = evidence.recent_sequence || [];
+    const wrap = node("div", `current-pressure-gauge ${member.pressure || "neutral"}`);
+    const cells = node("div", "pressure-sequence");
+    sequence.forEach((item) => {
+      const tone = item.direction === "UP" ? "higher" : "lower";
+      const type = item.observation_type === "reclaim" ? "R" : item.observation_type === "rejection" ? "X" : "•";
+      const cell = node("span", `pressure-sequence-cell ${tone}`, `${tone === "higher" ? "↑" : "↓"}${type}`);
+      cell.title = `${item.direction_label || titleCase(tone)} · ${item.route || "—"} ${item.observation_type || "observation"} · ${item.observation_price || "—"} · ${exactTime(item.observed_at)}`;
+      cells.append(cell);
+    });
+    const count = sequence.length;
+    const higher = Number(evidence.recent_higher_observation_count || 0);
+    const lower = Number(evidence.recent_lower_observation_count || 0);
+    const label = !member.current_pressure ? "Unavailable"
+      : member.mrz?.status !== "active" ? "No active MRZ"
+      : evidence.status === "NO_EVIDENCE" ? "No evidence"
+      : evidence.status === "INSUFFICIENT_EVIDENCE" ? `Insufficient (${count}/${evidence.confirmation_count || 3})`
+      : member.pressure === "higher" ? `↑ Higher (${higher}/${count})`
+      : member.pressure === "lower" ? `↓ Lower (${lower}/${count})`
+        : count ? `— Neutral (${higher}↑/${lower}↓)` : "No evidence";
+    const summary = node("span", "pressure-gauge-summary");
+    summary.append(node("strong", "pressure-gauge-label", label));
+    if (member.pressure_evidence_at) summary.append(node("small", "", `${shortDate(member.pressure_evidence_at)} · ${relativeTime(member.pressure_evidence_at)}`));
+    wrap.append(cells, summary);
+    return wrap;
+  }
+
   function renderMembers(payload) {
     const panel = node("section", "radar-panel group-members-panel"); const header = node("header", "radar-panel-heading"); header.append(node("h3", "", `Group Members (${payload.group.member_count})`)); panel.append(header);
-    const wrap = node("div", "radar-table-wrap"); const table = node("table", "member-evidence-table"); const head = node("thead", ""); head.innerHTML = "<tr><th>Symbol</th><th>Route</th><th>Location</th><th>MRZ Levels</th><th>Last Pressure Direction</th><th>Near Miss</th><th>OTE (1D)</th><th>OTE (1W)</th><th>Latest OTE Alert</th><th aria-label=\"Open\"></th></tr>"; const body = node("tbody", "");
+    const wrap = node("div", "radar-table-wrap"); const table = node("table", "member-evidence-table"); const head = node("thead", ""); head.innerHTML = "<tr><th>Symbol</th><th>Route</th><th>Location</th><th>MRZ Levels</th><th>Current Pressure (Latest 4 Obs)</th><th>Near Miss</th><th>OTE (1D)</th><th>OTE (1W)</th><th>Latest OTE Alert</th><th>Status</th><th aria-label=\"Open\"></th></tr>"; const body = node("tbody", "");
     (payload.members || []).forEach((member) => {
       const row = node("tr", ""); const symbol = node("td", "symbol-cell"); symbol.append(detailLink(member.symbol, symbolUrl(member.symbol), "symbol-link")); const route = node("td", ""); route.append(statusPill(text(member.route), String(member.route || "").toLowerCase())); const location = node("td", ""); location.append(statusPill(member.location_label, member.location?.includes("discount") ? "lower" : member.location?.includes("premium") ? "higher" : "neutral"));
       const mrz = node("td", "mrz-levels-cell");
@@ -457,15 +497,8 @@
         details.append(node("span", "", `Midpoint ${member.mrz.midpoint}`), node("span", "", `Activated ${exactTime(member.mrz.activated_at)}`), node("span", "", `Route ${member.mrz.route_owner}`));
         mrz.append(details);
       } else mrz.append(node("span", "radar-unavailable", member.mrz?.status === "inactive" ? "No active MRZ" : "Unavailable"));
-      const pressure = node("td", "last-pressure-cell");
-      if (member.last_pressure_direction) {
-        const arrow = member.last_pressure_direction === "higher" ? "↑" : "↓";
-        const block = node("div", `pressure-event ${member.last_pressure_direction}`);
-        block.append(node("strong", "", `${arrow} ${titleCase(member.last_pressure_direction)}`), node("time", "", operatorDate(member.last_pressure_event_at)));
-        if (["opposite_direction", "current_neutral"].includes(member.last_pressure_vs_current)) block.append(node("small", "pressure-mismatch", `Current state: ${titleCase(member.pressure)}`));
-        pressure.append(block);
-      } else pressure.append(node("span", "radar-unavailable", "No directional event"));
-      const near = node("td", "near-miss-cell", member.near_miss ? (member.near_miss.active ? "Active" : "Historical") : "—"); const daily = node("td", "ote-unavailable", member.ote?.status === "not_connected" ? "Not connected" : text(member.ote?.daily)); const weekly = node("td", "ote-unavailable", member.ote?.status === "not_connected" ? "Not connected" : text(member.ote?.weekly)); const latest = node("td", "ote-unavailable", member.ote?.status === "not_connected" ? "OTE feed not connected" : text(member.ote?.latest)); const open = node("td", "radar-open-cell"); open.append(detailLink("Open", symbolUrl(member.symbol), "table-open-link")); row.append(symbol, route, location, mrz, pressure, near, daily, weekly, latest, open); body.append(row);
+      const pressure = node("td", "current-pressure-cell"); const pressureLink = node("a", "current-pressure-link"); pressureLink.href = symbolUrl(member.symbol); pressureLink.setAttribute("aria-label", `Inspect ${member.symbol} current pressure evidence`); pressureLink.append(currentPressureGauge(member)); pressure.append(pressureLink);
+      const near = node("td", "near-miss-cell", member.near_miss ? (member.near_miss.active ? "Active" : "Historical") : "—"); const daily = node("td", "ote-unavailable", member.ote?.status === "not_connected" ? "Not connected" : text(member.ote?.daily)); const weekly = node("td", "ote-unavailable", member.ote?.status === "not_connected" ? "Not connected" : text(member.ote?.weekly)); const latest = node("td", "ote-unavailable", member.ote?.status === "not_connected" ? "OTE feed not connected" : text(member.ote?.latest)); const status = node("td", ""); status.append(statusPill(member.mrz_status, member.mrz_status === "Active" ? "active" : "neutral")); const open = node("td", "radar-open-cell"); open.append(detailLink("Open", symbolUrl(member.symbol), "table-open-link")); row.append(symbol, route, location, mrz, pressure, near, daily, weekly, latest, status, open); body.append(row);
     });
     table.append(head, body); wrap.append(table); panel.append(wrap); return panel;
   }

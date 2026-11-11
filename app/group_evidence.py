@@ -1190,6 +1190,7 @@ def build_named_group_evidence(
             ),
             "pressure": pressure.get("direction"),
             "pressure_label": pressure.get("direction_label") or pressure.get("direction"),
+            "current_pressure": pressure,
             "pressure_evidence_at": pressure.get("evidence", {}).get(
                 "latest_pressure_observed_at"
             ),

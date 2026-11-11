@@ -114,6 +114,8 @@ def create_app(
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         LOGGER.info("EDGE 2.0 application started")
+        pressure_recovery = repository.reconcile_current_pressure_states()
+        LOGGER.info("Current-pressure state recovery complete: %s", pressure_recovery)
         run_notification_recovery(notification_service)
         yield
         LOGGER.info("EDGE 2.0 application stopped")

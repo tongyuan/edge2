@@ -446,6 +446,81 @@
       loadSymbolDetail(symbol);
     }
   }
+  function currentPressureLabel(direction, evidence = {}) {
+    const count = Number(evidence.recent_pressure_observation_count
+      ?? (evidence.recent_sequence || []).length);
+    const higher = Number(evidence.recent_higher_observation_count || 0);
+    const lower = Number(evidence.recent_lower_observation_count || 0);
+    if (direction === "higher") return `↑ Higher (${higher}/${count})`;
+    if (direction === "lower") return `↓ Lower (${lower}/${count})`;
+    return count ? `— Neutral (${higher} above / ${lower} below)` : "— Neutral · no evidence";
+  }
+  function renderPressureEvidence(pressure) {
+    const container = $("#detailPressureEvidence");
+    container.replaceChildren();
+    const sequence = pressure?.evidence?.recent_sequence || [];
+    if (!sequence.length) {
+      container.append(element("p", "pressure-evidence-empty", "No qualifying outside-envelope observations for this MRZ lifecycle."));
+      return;
+    }
+    sequence.forEach((item) => {
+      const direction = item.direction === "UP" ? "higher" : "lower";
+      const type = item.observation_type === "reclaim" ? "R" : item.observation_type === "rejection" ? "X" : "•";
+      const card = element("article", `pressure-observation ${direction}`);
+      card.title = `${item.direction_label || direction} · ${item.route || "—"} ${item.observation_type || "observation"} · ${exactTime(item.observed_at)}`;
+      card.append(
+        element("strong", "", `${direction === "higher" ? "↑" : "↓"}${type}`),
+        element("b", "", formatPrice(item.observation_price)),
+        element("time", "", operatorDate(item.observed_at)),
+      );
+      container.append(card);
+    });
+    container.append(element("p", "pressure-evidence-legend", "R = Reclaim · X = Rejection · ↑ above envelope · ↓ below envelope"));
+  }
+  function renderPressureTimeline(symbol, pressure) {
+    const container = $("#detailPressureTimeline");
+    container.replaceChildren();
+    const transitions = state.events
+      .filter((event) => event.symbol === symbol && event.event_type === "CURRENT_PRESSURE_CHANGED")
+      .map((event) => ({
+        at: event.supporting_observed_at || event.occurred_at,
+        state: event.current_state,
+        label: `Transition → ${event.current_state_label || event.current_state}`,
+        detail: event.details || event.body,
+        kind: "transition",
+      }));
+    const latestEvidence = pressure?.evidence?.recent_sequence?.at(-1);
+    const latestTransitionAt = transitions.reduce((latest, item) => (
+      new Date(item.at).getTime() > new Date(latest || 0).getTime() ? item.at : latest
+    ), null);
+    if (latestEvidence && (!latestTransitionAt || new Date(latestEvidence.observed_at) > new Date(latestTransitionAt))) {
+      const currentState = pressure.direction === "higher" ? "UP" : pressure.direction === "lower" ? "DOWN" : "NEUTRAL";
+      transitions.push({
+        at: latestEvidence.observed_at,
+        state: currentState,
+        label: state.events.some((event) => event.symbol === symbol && event.event_type === "CURRENT_PRESSURE_CHANGED")
+          ? `Maintained ${pressure.direction_label || pressure.direction}`
+          : `Current evidence · ${pressure.direction_label || pressure.direction}`,
+        detail: `${latestEvidence.direction_label} · ${latestEvidence.route} ${latestEvidence.observation_type} · ${formatPrice(latestEvidence.observation_price)}`,
+        kind: "maintained",
+      });
+    }
+    transitions.sort((left, right) => new Date(left.at) - new Date(right.at));
+    if (!transitions.length) {
+      container.append(element("p", "pressure-timeline-empty", "No current-pressure transitions have been recorded since this feature was activated."));
+      return;
+    }
+    const track = element("ol", "pressure-timeline-track");
+    transitions.slice(-8).forEach((item) => {
+      const direction = item.state === "UP" ? "higher" : item.state === "DOWN" ? "lower" : "neutral";
+      const point = element("li", `${direction} ${item.kind}`);
+      const marker = element("span", "pressure-timeline-marker", "");
+      marker.setAttribute("aria-hidden", "true");
+      point.append(marker, element("time", "", operatorDate(item.at)), element("strong", "", item.label), element("small", "", item.detail || "Canonical transition"));
+      track.append(point);
+    });
+    container.append(track);
+  }
   async function loadSymbolDetail(symbol) {
     if (!symbol) { $("#symbolEmpty").hidden = false; $("#symbolDetail").hidden = true; return; }
     const response = await fetch(`/api/symbols/${encodeURIComponent(symbol)}`, { cache: "no-store" });
@@ -453,7 +528,7 @@
     const detail = await response.json();
     const pressure = pressureBySymbol().get(symbol);
     const pressureSource = pressureSourceBySymbol().get(symbol) || {};
-    const pressurePresentation = derive.pressureDetailPresentation({
+    derive.pressureDetailPresentation({
       ...pressureSource,
       direction: pressure?.direction || "neutral",
     });
@@ -468,18 +543,26 @@
     );
     if (detail.migration?.has_migrated) {
       $("#detailPrevious").replaceChildren(element("strong", "", `${formatPrice(detail.migration.previous_lower)}–${formatPrice(detail.migration.previous_upper)}`), element("span", "", `Previous authority · ${detail.migration.direction === "UP" ? "migrated upward" : "migrated downward"}`), element("span", "", exactTime(detail.migration.previous_activated_at)));
-    } else $("#detailPrevious").textContent = "No previous migrated authority for the current lifecycle.";
-    const direction = pressurePresentation.current.direction;
-    const latestDirectional = pressurePresentation.latest;
+    } else $("#detailPrevious").textContent = "No previous MRZ migration for the current lifecycle.";
+    const direction = pressure?.direction || "neutral";
+    const evidence = pressure?.evidence || {};
     $("#detailPressure").replaceChildren(
-      element("strong", `pressure-${direction}`, `Current canonical state: ${pressureLabels[direction]}`),
-      element("span", latestDirectional ? `pressure-${latestDirectional.direction}` : "", latestDirectional
-        ? `Last recorded direction: ${pressureLabels[latestDirectional.direction]}`
-        : "Last recorded direction: No directional event"),
-      element("time", "", latestDirectional?.occurred_at
-        ? `Last directional event: ${operatorDate(latestDirectional.occurred_at)}`
-        : "Last directional event: —"),
+      element("strong", `pressure-${direction} current-pressure-headline`, currentPressureLabel(direction, evidence)),
+      element("span", "", evidence.reason || "Canonical current-pressure evidence is unavailable."),
+      element("time", "", evidence.latest_pressure_observed_at
+        ? `Latest qualifying observation · ${exactTime(evidence.latest_pressure_observed_at)} · ${relativeTime(evidence.latest_pressure_observed_at)}`
+        : "Latest qualifying observation · —"),
     );
+    renderPressureEvidence(pressure);
+    const active = pressure?.active_mrz || {};
+    $("#detailMrzContext").replaceChildren(
+      element("strong", "", active.status === "active" ? `${formatPrice(active.lower)}–${formatPrice(active.upper)}` : "No active MRZ"),
+      element("span", "", `Migration envelope · ${formatPrice(active.lower_migration_boundary)}–${formatPrice(active.upper_migration_boundary)}`),
+      element("span", "", `MRZ width · ${formatPrice(active.effective_width)} · ${evidence.post_activation_observation_count || 0} post-activation observations`),
+      element("span", "", `Lifecycle · ${active.lifecycle_activation_event_id || "—"}`),
+    );
+    $("#detailEventHistoryLink").href = `/mrz/events?symbol=${encodeURIComponent(symbol)}`;
+    renderPressureTimeline(symbol, pressure);
   }
 
   function syncLocationUrl() {
@@ -706,12 +789,41 @@
       (filter === "all" || event.event_type === filter)
       && (!symbolQuery || String(event.symbol || "").toUpperCase().includes(symbolQuery))
     ));
-    $("#eventsList").replaceChildren(eventList(events, {
-      showGroups: false,
-      emptyMessage: symbolQuery
+    if (!events.length) {
+      $("#eventsList").replaceChildren(empty(symbolQuery
         ? `No events found for symbols matching “${symbolQuery}”.`
-        : "No events match the selected type.",
-    }));
+        : "No events match the selected type."));
+      return;
+    }
+    const table = element("table", "event-history-table");
+    const head = element("thead", "");
+    head.innerHTML = "<tr><th>Date (UTC−4)</th><th>Symbol</th><th>Event</th><th>Details</th><th aria-label=\"Open\"></th></tr>";
+    const body = element("tbody", "");
+    events.forEach((event) => {
+      const row = element("tr", "");
+      const eventCell = element("td", "");
+      const tone = event.event_type === "CURRENT_PRESSURE_CHANGED"
+        ? (event.current_state === "UP" ? "higher" : event.current_state === "DOWN" ? "lower" : "neutral")
+        : event.event_type === "POST_ACTIVATION_PRESSURE_CHANGED" ? "cumulative"
+          : event.event_type === "MRZ_NEAR_MISS" ? "near-miss" : "authority";
+      eventCell.append(element("span", `event-type-chip ${tone}`, derive.eventLabel(event)));
+      const details = event.event_type === "CURRENT_PRESSURE_CHANGED"
+        ? `${event.details || event.body} · ${event.previous_state_label || event.previous_state} → ${event.current_state_label || event.current_state}`
+        : event.event_type === "POST_ACTIVATION_PRESSURE_CHANGED"
+          ? `Historical cumulative bias · ${event.body}`
+          : event.body;
+      const time = element("time", "", exactTime(event.occurred_at));
+      time.dateTime = event.occurred_at || "";
+      const timeCell = element("td", ""); timeCell.append(time);
+      const detailCell = element("td", "event-history-details");
+      detailCell.append(element("span", "", details || "Canonical event"));
+      if (event.event_type === "CURRENT_PRESSURE_CHANGED") detailCell.append(element("small", "", `Trigger ${event.source_trigger_event_id} · Lifecycle ${event.lifecycle_activation_event_id}`));
+      const open = element("td", ""); open.append(symbolLink(event.symbol, "Open"));
+      row.append(timeCell, element("td", "event-symbol", event.symbol), eventCell, detailCell, open);
+      body.append(row);
+    });
+    table.append(head, body);
+    $("#eventsList").replaceChildren(table);
   }
 
   function openWatchlistDialog(group = null) {
@@ -786,6 +898,10 @@
   }
   async function initialize() {
     activateRoute();
+    if (routeName() === "events") {
+      const requestedSymbol = new URLSearchParams(globalObject.location.search).get("symbol");
+      if (requestedSymbol) $("#eventSymbolSearch").value = requestedSymbol;
+    }
     if (routeName() === "location-distribution") restoreLocationStateFromUrl();
     if (routeName() === "watchlists") {
       await globalObject.edgeGroupEvidence.mount();

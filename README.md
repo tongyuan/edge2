@@ -155,6 +155,24 @@ python3 scripts/reconcile_derived_state.py --apply --expected-plan-digest <dry-r
 
 The dry run is read-only. Apply replays canonical observations through the production state engine, takes per-symbol advisory locks, replaces only differing `active_mrz` and `mrz_events` state in one verified transaction, and never modifies observations. This command is not called by startup, deployment, scheduling, or the UI.
 
+## Current pressure events
+
+Operator-facing current pressure reuses the canonical post-activation classifier:
+the latest four qualifying observations outside the active migration envelope,
+with three observations on one side required for Higher or Lower. It remains
+independent of cumulative lifecycle pressure, whose calculations and persisted
+events are unchanged.
+
+Every accepted observation reconciles one lifecycle-scoped
+`current_pressure_states` row in the ingestion transaction. A genuine state
+change writes one idempotent `CURRENT_PRESSURE_CHANGED` record, including
+transitions into Neutral, its trigger, ordered supporting evidence, migration
+boundaries, and lifecycle identity. A new lifecycle and an existing deployment
+are baselined without inventing historical transitions. These events are
+available to global Events History but are deliberately excluded from the Web
+Push outbox and notification inbox; enabling new push behavior requires a
+separate operator-approved change.
+
 ## API and MRZ Monitor
 
 ```text
@@ -267,18 +285,21 @@ The PostgreSQL 16 database revolves around:
 - `web_push_subscriptions` — single-operator browser Push subscriptions.
 - `current_production_near_miss_episodes` — durable current-list episode identity, replay baseline, and canonical final eligible candidate for diagnosis.
 - `post_activation_pressure_states` — downstream lifecycle-scoped pressure comparison state.
+- `current_pressure_states` — lifecycle-scoped latest-four classifier checkpoints.
+- `current_pressure_events` — independent future-only latest-four state transitions.
 - `web_push_notifications` — deduplicated near-miss, activation, migration, and pressure notifications.
 - `web_push_delivery_attempts` — isolated per-subscription delivery outcomes.
 - `web_push_notification_cutovers` — replay-safe migration and pressure notification cutovers.
 - `saved_symbol_groups` — named canonical symbol cohorts only; analytics remain derived.
 
 Migration `001_initial.sql` builds the isolated schema. Additive migrations
-`002–010` add the overview index, supporting count, nullable immutable
+`002–019` add the overview index, supporting count, nullable immutable
 formation evidence, downstream Web Push tables, migration-notification
 provenance/cutover state, saved cohort definitions, operator-promotion
 provenance, Production Confirmation, near-miss episodes, and downstream
-post-activation pressure notification state, and trustworthy final-candidate
-near-miss history. No 4.2 table or
+post-activation pressure notification state, trustworthy final-candidate
+near-miss history, instrument taxonomy, and independent current-pressure
+transition state. No 4.2 table or
 historical record is read. See [`docs/web-push.md`](docs/web-push.md) for
 notification configuration, safety, deployment, and iPhone verification.
 See [`docs/near-miss-diagnosis.md`](docs/near-miss-diagnosis.md) for the

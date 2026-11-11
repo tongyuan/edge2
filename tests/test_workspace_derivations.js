@@ -13,6 +13,7 @@ const {
   derivePeerLocation,
   derivePeerLocationFlow,
   eventLabel,
+  eventDirection,
   filterGroupEvidenceContributors,
   groupPressureSourcesByAssetClass,
   isGroupEvidenceRequestCurrent,
@@ -211,6 +212,10 @@ assert.deepEqual(symbolsForWatchlist(symbols, groups, 1).map((item) => item.symb
 const attention = deriveAttention(events, groups, { now: "2026-10-07T12:00:00Z" });
 assert.deepEqual(attention.map((event) => event.symbol), ["NVDA", "META"]);
 assert.equal(eventLabel(events[2]), "MIGRATED ↑");
+assert.equal(eventLabel({ event_type: "CURRENT_PRESSURE_CHANGED", current_state: "UP" }), "CURRENT PRESSURE → HIGHER");
+assert.equal(eventDirection({ event_type: "CURRENT_PRESSURE_CHANGED", current_state: "UP" }), "UP");
+assert.equal(eventLabel({ event_type: "CURRENT_PRESSURE_CHANGED", current_state: "NEUTRAL" }), "CURRENT PRESSURE → NEUTRAL");
+assert.equal(eventLabel({ event_type: "POST_ACTIVATION_PRESSURE_CHANGED", current_state: "DOWN" }), "CUMULATIVE PRESSURE ↓");
 
 const recentEvents = events.map((event) => ({
   ...event,

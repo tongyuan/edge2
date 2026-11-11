@@ -2,8 +2,9 @@
   "use strict";
 
   const EVENT_PRIORITY = {
-    MRZ_ACTIVATED: 4,
-    MRZ_MIGRATED: 3,
+    MRZ_ACTIVATED: 5,
+    MRZ_MIGRATED: 4,
+    CURRENT_PRESSURE_CHANGED: 3,
     POST_ACTIVATION_PRESSURE_CHANGED: 2,
     MRZ_NEAR_MISS: 1,
   };
@@ -230,7 +231,7 @@
   }
 
   function eventDirection(event) {
-    if (event.event_type === "POST_ACTIVATION_PRESSURE_CHANGED") {
+    if (["CURRENT_PRESSURE_CHANGED", "POST_ACTIVATION_PRESSURE_CHANGED"].includes(event.event_type)) {
       return event.current_state === "UP" ? "UP" : event.current_state === "DOWN" ? "DOWN" : null;
     }
     if (event.event_type !== "MRZ_MIGRATED") return null;
@@ -244,8 +245,12 @@
     const direction = eventDirection(event);
     if (event.event_type === "MRZ_ACTIVATED") return "MRZ ACTIVATED";
     if (event.event_type === "MRZ_MIGRATED") return `MIGRATED ${direction === "UP" ? "↑" : direction === "DOWN" ? "↓" : ""}`.trim();
+    if (event.event_type === "CURRENT_PRESSURE_CHANGED") {
+      const label = event.current_state === "UP" ? "HIGHER" : event.current_state === "DOWN" ? "LOWER" : "NEUTRAL";
+      return `CURRENT PRESSURE → ${label}`;
+    }
     if (event.event_type === "POST_ACTIVATION_PRESSURE_CHANGED") {
-      return `PRESSURE ${direction === "UP" ? "↑" : direction === "DOWN" ? "↓" : "↔"}`;
+      return `CUMULATIVE PRESSURE ${direction === "UP" ? "↑" : direction === "DOWN" ? "↓" : "↔"}`;
     }
     if (event.event_type === "MRZ_NEAR_MISS") return "NEAR-MISS";
     return event.event_name || event.event_type || "EVENT";

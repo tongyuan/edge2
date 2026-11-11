@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from decimal import Decimal
 from typing import Any
 
 from app.domain import ActiveMRZ, Observation
-from app.mrz_robustness import post_activation_snapshot
+from app.mrz_robustness import (
+    CURRENT_PRESSURE_CONFIRMATION_COUNT,
+    CURRENT_PRESSURE_RECENT_WINDOW,
+    post_activation_snapshot,
+)
 
 
 PRESSURE_DIRECTIONS = ("higher", "lower", "neutral")
@@ -35,6 +40,13 @@ def _iso(value: Any) -> str | None:
     if value is None:
         return None
     return value.isoformat().replace("+00:00", "Z")
+
+
+def _decimal_text(value: Decimal) -> str:
+    text = format(value, "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text or "0"
 
 
 def _location_label(value: object) -> str:
@@ -93,6 +105,8 @@ def _symbol_pressure_state(
             "current_pressure_since": None,
             "latest_pressure_observed_at": None,
             "recent_sequence": [],
+            "recent_window_size": CURRENT_PRESSURE_RECENT_WINDOW,
+            "confirmation_count": CURRENT_PRESSURE_CONFIRMATION_COUNT,
             "recent_higher_observation_count": 0,
             "recent_lower_observation_count": 0,
             "post_activation_observation_count": 0,
@@ -105,6 +119,12 @@ def _symbol_pressure_state(
             "location": None,
             "location_label": "Unavailable",
             "activated_at": None,
+            "lifecycle_activation_event_id": None,
+            "lower": None,
+            "upper": None,
+            "effective_width": None,
+            "lower_migration_boundary": None,
+            "upper_migration_boundary": None,
         }
     else:
         snapshot = post_activation_snapshot(
@@ -130,10 +150,22 @@ def _symbol_pressure_state(
             "recent_sequence": [
                 {
                     "direction": item.direction,
+                    "direction_label": (
+                        "Higher" if item.direction == "UP" else "Lower"
+                    ),
+                    "event_id": item.observation.event_id,
+                    "route": item.observation.route.value,
+                    "observation_type": item.observation.observation_type.value,
+                    "observation_price": _decimal_text(
+                        item.observation.observation_price
+                    ),
                     "observed_at": _iso(item.observation.observed_at),
+                    "received_at": _iso(item.observation.received_at),
                 }
                 for item in current_pressure.recent_evidence
             ],
+            "recent_window_size": CURRENT_PRESSURE_RECENT_WINDOW,
+            "confirmation_count": CURRENT_PRESSURE_CONFIRMATION_COUNT,
             "recent_higher_observation_count": (
                 current_pressure.recent_higher_count
             ),
@@ -150,6 +182,16 @@ def _symbol_pressure_state(
             "location": active.structural_location.value,
             "location_label": _location_label(active.structural_location.value),
             "activated_at": _iso(active.activated_at),
+            "lifecycle_activation_event_id": active.activation_event_id,
+            "lower": _decimal_text(active.core_mrz_lower),
+            "upper": _decimal_text(active.core_mrz_upper),
+            "effective_width": _decimal_text(active.effective_width),
+            "lower_migration_boundary": _decimal_text(
+                active.lower_migration_boundary
+            ),
+            "upper_migration_boundary": _decimal_text(
+                active.upper_migration_boundary
+            ),
         }
 
     return {

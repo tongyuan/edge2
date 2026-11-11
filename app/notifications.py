@@ -683,10 +683,31 @@ class NotificationRepository:
                     """,
                     (limit,),
                 )
-                return [
+                alert_items = [
                     notification_inbox_item(row)
                     for row in cursor.fetchall()
                 ]
+                cursor.execute(
+                    """
+                    SELECT *
+                    FROM current_pressure_events
+                    ORDER BY occurred_at DESC, id DESC
+                    LIMIT %s
+                    """,
+                    (limit,),
+                )
+                pressure_items = [
+                    current_pressure_history_item(row)
+                    for row in cursor.fetchall()
+                ]
+                return sorted(
+                    (*alert_items, *pressure_items),
+                    key=lambda item: (
+                        str(item["occurred_at"]),
+                        str(item.get("history_id", f"alert:{item['id']}")),
+                    ),
+                    reverse=True,
+                )[:limit]
         finally:
             connection.close()
 
@@ -1258,6 +1279,77 @@ def notification_inbox_item(row: Mapping[str, Any]) -> dict[str, Any]:
         "is_read": read_at is not None,
         "read_at": iso(read_at) if read_at is not None else None,
         "dismissed_at": iso(dismissed_at) if dismissed_at is not None else None,
+    }
+
+
+def current_pressure_history_item(row: Mapping[str, Any]) -> dict[str, Any]:
+    current_state = str(row["current_state"])
+    previous_state = str(row["previous_state"])
+    direction_label = {
+        "UP": "Higher",
+        "DOWN": "Lower",
+        "NEUTRAL": "Neutral",
+    }[current_state]
+    previous_label = {
+        "UP": "Higher",
+        "DOWN": "Lower",
+        "NEUTRAL": "Neutral",
+    }[previous_state]
+    higher = int(row["recent_higher_observation_count"])
+    lower = int(row["recent_lower_observation_count"])
+    count = int(row["recent_pressure_observation_count"])
+    if current_state == "UP":
+        detail = f"{higher}/{count} above envelope"
+    elif current_state == "DOWN":
+        detail = f"{lower}/{count} below envelope"
+    else:
+        detail = f"{higher} above / {lower} below envelope"
+    event_key = str(row["event_key"])
+    return {
+        "id": f"current-pressure:{int(row['id'])}",
+        "history_id": f"current-pressure:{int(row['id'])}",
+        "version": 2,
+        "event_type": "CURRENT_PRESSURE_CHANGED",
+        "event_id": event_key,
+        "source_event_key": event_key,
+        "source_trigger_event_id": str(row["trigger_event_id"]),
+        "title": f"{row['symbol']} · Current Pressure → {direction_label}",
+        "event_name": "Current Pressure Changed",
+        "body": detail,
+        "details": detail,
+        "symbol": str(row["symbol"]),
+        "route_owner": str(row["route_owner"]),
+        "previous_state": previous_state,
+        "previous_state_label": previous_label,
+        "current_state": current_state,
+        "current_state_label": direction_label,
+        "pressure_state_label": str(row["state_label"]),
+        "lifecycle_activation_event_id": str(
+            row["lifecycle_activation_event_id"]
+        ),
+        "occurred_at": iso(row["occurred_at"]),
+        "supporting_observed_at": (
+            iso(row["supporting_observed_at"])
+            if row["supporting_observed_at"] is not None
+            else None
+        ),
+        "recent_pressure_observation_count": count,
+        "recent_higher_observation_count": higher,
+        "recent_lower_observation_count": lower,
+        "recent_window_size": int(row["recent_window_size"]),
+        "confirmation_count": int(row["confirmation_count"]),
+        "lower_migration_boundary": decimal_text(
+            row["lower_migration_boundary"]
+        ),
+        "upper_migration_boundary": decimal_text(
+            row["upper_migration_boundary"]
+        ),
+        "recent_sequence": list(row["supporting_observations"]),
+        "destination": f"/mrz/symbols?symbol={quote(str(row['symbol']), safe='')}",
+        "url": f"/mrz/symbols?symbol={quote(str(row['symbol']), safe='')}",
+        "is_read": True,
+        "read_at": None,
+        "dismissed_at": None,
     }
 
 

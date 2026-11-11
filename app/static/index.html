@@ -9,7 +9,7 @@
     <link rel="manifest" href="/manifest.webmanifest?v=edge-intel-radar-20261110" />
     <link rel="icon" href="/static/edge-intel-radar-icon-192.png" type="image/png" />
     <link rel="apple-touch-icon" href="/static/edge-intel-radar-icon-180.png" />
-    <link rel="stylesheet" href="/static/workspace.css?v=group-activity-20261111" />
+    <link rel="stylesheet" href="/static/workspace.css?v=current-pressure-20261111" />
   </head>
   <body>
     <div class="workspace-shell">
@@ -51,7 +51,12 @@
         <section class="route-panel" data-route-panel="symbols" hidden>
           <header class="route-heading symbol-route-heading"><div><p>SYMBOLS</p><h1>Canonical symbol inspection</h1><span>MRZ authority identifies context; Trade Desk remains responsible for entries and exits.</span></div><label class="symbol-picker">SELECT SYMBOL<select id="symbolSelect"><option value="">Select a symbol</option></select></label></header>
           <section class="symbol-empty panel" id="symbolEmpty">Select a symbol from this page, a watchlist, or Attention.</section>
-          <div class="symbol-detail-grid" id="symbolDetail" hidden><section class="panel current-authority-panel"><div class="panel-heading"><div><p>SELECTED SYMBOL</p><h2 id="detailSymbol">—</h2></div><span class="status-pill" id="detailStatus">—</span></div><div class="authority-range" id="detailRange">—</div><div class="authority-meta" id="detailMeta"></div></section><section class="panel"><p class="panel-kicker">PREVIOUS MRZ</p><div id="detailPrevious" class="detail-block">—</div></section><section class="panel"><p class="panel-kicker">PRESSURE</p><div id="detailPressure" class="detail-block">—</div><a class="detail-event-history-link" href="/mrz/events">Open Events History</a></section></div>
+          <div class="symbol-detail-grid" id="symbolDetail" hidden>
+            <section class="panel current-authority-panel"><div class="panel-heading"><div><p>SELECTED SYMBOL</p><h2 id="detailSymbol">—</h2></div><span class="status-pill" id="detailStatus">—</span></div><div class="authority-range" id="detailRange">—</div><div class="authority-meta" id="detailMeta"></div></section>
+            <section class="panel pressure-intelligence-panel"><p class="panel-kicker">CURRENT PRESSURE</p><div id="detailPressure" class="detail-block">—</div><div id="detailPressureEvidence" class="pressure-evidence-grid"></div></section>
+            <section class="panel"><p class="panel-kicker">MRZ CONTEXT</p><div id="detailMrzContext" class="detail-block">—</div><div id="detailPrevious" class="detail-block previous-authority">—</div><a class="detail-event-history-link" id="detailEventHistoryLink" href="/mrz/events">Open Events History</a></section>
+            <section class="panel pressure-timeline-panel"><div class="panel-heading"><div><p>CURRENT STATE</p><h2>Pressure Timeline</h2></div><div class="pressure-timeline-legend"><span class="higher">Higher</span><span class="lower">Lower</span><span class="neutral">Neutral</span></div></div><div id="detailPressureTimeline"></div></section>
+          </div>
         </section>
 
         <section class="route-panel" data-route-panel="alert-settings" hidden>
@@ -97,7 +102,7 @@
 
         <section class="route-panel" data-route-panel="events" hidden>
           <header class="route-heading"><p>EVENTS</p><h1>Global canonical event history</h1><span>All monitored symbols, independent of watchlists and alert interruption scope.</span></header>
-          <section class="panel"><div class="panel-heading events-panel-heading"><div><p>MRZ HISTORY</p><h2>Recent events</h2></div><div class="event-filters"><label class="event-symbol-search">SYMBOL<input id="eventSymbolSearch" type="search" placeholder="Search symbol…" autocomplete="off" spellcheck="false" /></label><label class="event-filter">TYPE<select id="eventTypeFilter"><option value="all">All events</option><option value="MRZ_ACTIVATED">Activation</option><option value="MRZ_MIGRATED">Migration</option><option value="POST_ACTIVATION_PRESSURE_CHANGED">Pressure</option><option value="MRZ_NEAR_MISS">Near-Miss</option></select></label></div></div><div id="eventsList"></div></section>
+          <section class="panel"><div class="panel-heading events-panel-heading"><div><p>CANONICAL HISTORY</p><h2>Recent events</h2></div><div class="event-filters"><label class="event-symbol-search">SYMBOL<input id="eventSymbolSearch" type="search" placeholder="Search symbol…" autocomplete="off" spellcheck="false" /></label><label class="event-filter">TYPE<select id="eventTypeFilter"><option value="all">All events</option><option value="CURRENT_PRESSURE_CHANGED">Current Pressure Changes</option><option value="POST_ACTIVATION_PRESSURE_CHANGED">Historical Cumulative Pressure</option><option value="MRZ_ACTIVATED">Activation</option><option value="MRZ_MIGRATED">Migration</option><option value="MRZ_NEAR_MISS">Near-Miss</option></select></label></div></div><div id="eventsList" class="event-history-wrap"></div></section>
         </section>
       </main>
     </div>
@@ -109,6 +114,6 @@
 
     <dialog class="workspace-dialog inbox-dialog" id="notificationInboxDialog" aria-labelledby="notificationInboxTitle"><section><header><div><p>DELIVERY HISTORY</p><h2 id="notificationInboxTitle">Notification Inbox</h2><span id="notificationInboxSummary">No unread notifications</span></div><button class="icon-button" id="notificationInboxClose" type="button" aria-label="Close">×</button></header><p class="notification-inbox-empty" id="notificationInboxEmpty">No active notifications.</p><ul class="notification-inbox-list" id="notificationInboxList" aria-live="polite"></ul><footer><button class="quiet-button" type="button" id="notificationMarkAllRead" disabled>Mark all read</button><button class="danger-button" type="button" id="notificationClearInbox" disabled>Clear inbox</button></footer></section></dialog>
     <div class="notification-toast-host" id="notificationToastHost" aria-live="polite"></div>
-    <script src="/static/mrz-shell.js?v=group-activity-20261111" defer></script><script src="/static/operator-time.js?v=mrz-workspace-20261007" defer></script><script src="/static/workspace-derivations.js?v=group-activity-20261111" defer></script><script src="/static/group-evidence.js?v=group-activity-20261111" defer></script><script src="/static/notifications.js?v=group-activity-20261111" defer></script><script src="/static/workspace.js?v=group-activity-20261111" defer></script>
+    <script src="/static/mrz-shell.js?v=current-pressure-20261111" defer></script><script src="/static/operator-time.js?v=mrz-workspace-20261007" defer></script><script src="/static/workspace-derivations.js?v=current-pressure-20261111" defer></script><script src="/static/group-evidence.js?v=current-pressure-20261111" defer></script><script src="/static/notifications.js?v=current-pressure-20261111" defer></script><script src="/static/workspace.js?v=current-pressure-20261111" defer></script>
   </body>
 </html>
