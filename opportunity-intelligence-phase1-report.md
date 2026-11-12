@@ -94,12 +94,22 @@ None. The implementation reads existing canonical records and creates no opportu
 
 ## Verification results
 
-- Deployment-gate suite: 497 non-Pine tests passed.
+- Deployment-gate suite: 498 non-Pine tests passed.
 - Opportunity and Group Radar focused suite: 18 Python tests passed.
 - Opportunity Map, workspace derivation, and navigation JavaScript suites passed.
 - PostgreSQL API integration test passed, including group filtering and historical replay.
-- Full repository run executed 563 tests. The new opportunity, API, database, Group Radar, MRZ, Pressure, notification, and Trade Desk application tests passed. The run retained 21 failures and 20 errors in pre-existing legacy Trade Desk Pine contract tests whose expected script surface does not match the current baseline Pine source; these were not modified or hidden.
+- An earlier full repository run executed 563 tests before the final endpoint integration test was added. The new opportunity, API, database, Group Radar, MRZ, Pressure, notification, and Trade Desk application tests passed. The run retained 21 failures and 20 errors in pre-existing legacy Trade Desk Pine contract tests whose expected script surface does not match the current baseline Pine source; these were not modified or hidden.
 - Visual QA passed at 1600 × 1000 and 390 × 844. Candidate selection and replay were exercised with no browser console errors.
+
+Production smoke verification after the explicitly approved rollout confirmed:
+
+- application and database health are `ok`;
+- NBIS reconstructs simultaneous STR Reassessment and BTD Near Miss hypotheses;
+- the authoritative STR MRZ is 242.19–243.73;
+- production exposes 19 qualifying historical Pressure observations for NBIS;
+- an 11 Sep replay exposes zero MRZ lifecycles and zero Pressure observations;
+- OTE remains `not_connected` and entry verification remains false;
+- the production overview contains 11 groups and 74 deduplicated candidate symbols.
 
 ## Known limitations
 
