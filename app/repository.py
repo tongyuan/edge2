@@ -2620,6 +2620,155 @@ class EdgeRepository:
         finally:
             connection.close()
 
+    def opportunity_intelligence_inputs(
+        self,
+        *,
+        symbols: Sequence[str] | None = None,
+    ) -> dict[str, Any]:
+        """Capture canonical opportunity inputs in one read-only snapshot.
+
+        Opportunity Intelligence is deliberately a projection.  It does not own or
+        mutate tracker state, and every historical reconstruction uses the original
+        effective and received timestamps from this repeatable-read snapshot.
+        """
+        normalized_symbols = sorted(
+            {normalize_symbol(symbol) for symbol in (symbols or ())}
+        )
+        connection = connect(self.database_url)
+        try:
+            connection.set_session(
+                readonly=True,
+                isolation_level="REPEATABLE READ",
+            )
+            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute("SELECT transaction_timestamp() AS as_of")
+                as_of = cursor.fetchone()["as_of"]
+                cursor.execute(
+                    """
+                    SELECT id, name, member_symbols, created_at, updated_at
+                    FROM saved_symbol_groups
+                    ORDER BY lower(name) ASC, id ASC
+                    """
+                )
+                groups = [saved_group_payload(row) for row in cursor.fetchall()]
+                selected = normalized_symbols or sorted(
+                    {
+                        str(symbol)
+                        for group in groups
+                        for symbol in group["members"]
+                    }
+                )
+                if not selected:
+                    cursor.execute(
+                        """
+                        SELECT DISTINCT symbol
+                        FROM observations
+                        WHERE schema_version = '4.3'
+                        ORDER BY symbol ASC
+                        """
+                    )
+                    selected = [str(row["symbol"]) for row in cursor.fetchall()]
+                if not selected:
+                    return {
+                        "as_of": as_of,
+                        "groups": groups,
+                        "observations": (),
+                        "mrz_events": (),
+                        "near_miss_episodes": (),
+                        "current_pressure_events": (),
+                    }
+                cursor.execute(
+                    """
+                    SELECT
+                        id, event_id, schema_version, symbol, route,
+                        observation_type, observation_price,
+                        observation_price_tick, ipda_20w_high, ipda_20w_low,
+                        observed_at, received_at
+                    FROM observations
+                    WHERE schema_version = '4.3'
+                      AND symbol = ANY(%s)
+                    ORDER BY symbol ASC, observed_at ASC, received_at ASC, id ASC
+                    """,
+                    (selected,),
+                )
+                observations = tuple(
+                    observation_from_row(row) for row in cursor.fetchall()
+                )
+                cursor.execute(
+                    """
+                    SELECT
+                        event.event_key, event.sequence, event.event_type,
+                        event.symbol, event.route_owner,
+                        event.previous_route_owner, event.occurred_at,
+                        event.trigger_event_id, trigger.received_at AS trigger_received_at,
+                        event.old_core_mrz_lower, event.old_core_mrz_upper,
+                        event.new_core_mrz_lower, event.new_core_mrz_upper,
+                        event.new_core_mrz_midpoint, event.structural_location,
+                        event.confirming_observation_count,
+                        event.new_supporting_observation_count,
+                        event.activation_source,
+                        trigger.observation_price_tick AS instrument_tick,
+                        event.details
+                    FROM mrz_events AS event
+                    INNER JOIN observations AS trigger
+                        ON trigger.event_id = event.trigger_event_id
+                    WHERE event.symbol = ANY(%s)
+                    ORDER BY event.symbol ASC, event.sequence ASC,
+                             event.occurred_at ASC, event.event_key ASC
+                    """,
+                    (selected,),
+                )
+                mrz_events = tuple(cursor.fetchall())
+                cursor.execute(
+                    """
+                    SELECT
+                        id, episode_key, symbol, route_owner, started_at,
+                        ended_at, ended_reason, canonical_candidate_identity,
+                        canonical_candidate_event_id, canonical_candidate_lower,
+                        canonical_candidate_upper, canonical_candidate_midpoint,
+                        canonical_structural_location,
+                        canonical_minimum_required_allowance_pct,
+                        canonical_shortfall_percentage_points,
+                        canonical_supporting_observation_count,
+                        canonical_supporting_observation_ids,
+                        canonical_candidate_timestamp,
+                        canonical_snapshot_reliable, canonical_updated_at
+                    FROM current_production_near_miss_episodes
+                    WHERE symbol = ANY(%s)
+                    ORDER BY symbol ASC, started_at ASC, id ASC
+                    """,
+                    (selected,),
+                )
+                near_miss_episodes = tuple(cursor.fetchall())
+                cursor.execute(
+                    """
+                    SELECT
+                        event_key, symbol, lifecycle_activation_event_id,
+                        trigger_event_id, route_owner, previous_state,
+                        current_state, state_status, state_label, occurred_at,
+                        supporting_observed_at,
+                        recent_pressure_observation_count,
+                        recent_higher_observation_count,
+                        recent_lower_observation_count,
+                        supporting_observations
+                    FROM current_pressure_events
+                    WHERE symbol = ANY(%s)
+                    ORDER BY symbol ASC, occurred_at ASC, id ASC
+                    """,
+                    (selected,),
+                )
+                current_pressure_events = tuple(cursor.fetchall())
+                return {
+                    "as_of": as_of,
+                    "groups": groups,
+                    "observations": observations,
+                    "mrz_events": mrz_events,
+                    "near_miss_episodes": near_miss_episodes,
+                    "current_pressure_events": current_pressure_events,
+                }
+        finally:
+            connection.close()
+
     def activation_feasibility_inputs(
         self,
     ) -> tuple[

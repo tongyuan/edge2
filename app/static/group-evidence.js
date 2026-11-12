@@ -6,6 +6,7 @@
     scope: derive.parseGroupEvidenceState(globalObject.location?.search || ""),
     overview: null,
     detail: null,
+    opportunity: null,
     groups: [],
     allSymbols: [],
     editingGroup: null,
@@ -217,6 +218,33 @@
     target.hidden = false;
   }
 
+  function renderOpportunityUniverseOverview() {
+    const payload = state.opportunity;
+    const section = node("section", "opportunity-overview opportunity-universe-overview");
+    const selectedSummary = state.detail?.scope === "named_group"
+      ? (payload?.groups || []).find((item) => String(item.id) === String(state.detail.group.id))
+      : null;
+    const counts = selectedSummary
+      ? {
+          context_or_developing: selectedSummary.context_or_developing_count,
+          near_miss: selectedSummary.near_miss_count,
+          structure_established: selectedSummary.structure_established_count,
+          needs_reassessment: selectedSummary.reassessment_count,
+        }
+      : (payload?.counts || {});
+    [
+      ["Developing context", counts.context_or_developing || 0, "Observable context · no invented threshold", "context"],
+      ["Near Miss", counts.near_miss || 0, "Canonical structural candidates", "near"],
+      ["Structure established", counts.structure_established || 0, "Authoritative MRZ", "structure"],
+      ["Needs reassessment", counts.needs_reassessment || 0, "Latest-four or structural change", "reassessment"],
+    ].forEach(([label, value, supporting, tone]) => {
+      const card = node("article", `opportunity-overview-card ${tone}`);
+      card.append(node("strong", "", value), node("span", "", label), node("small", "", supporting));
+      section.append(card);
+    });
+    return section;
+  }
+
   function sortedOverviewGroups(groups) {
     const visible = groups.filter((group) => group.name.toLowerCase().includes(state.search));
     if (state.sort === "name") {
@@ -266,7 +294,7 @@
     const tableWrap = node("div", "radar-table-wrap");
     const table = node("table", "radar-table");
     const head = node("thead", "");
-    head.innerHTML = `<tr><th>Group</th><th>Members</th><th>IPDA Breadth (P / E / D)</th><th>Migration</th><th>Current Pressure State</th><th class="activity-heading">Activity (${state.scope.window})</th><th>Near Miss</th><th>OTE (1D)</th><th>OTE (1W)</th><th>Latest OTE Alert</th><th aria-label="Open"></th></tr>`;
+    head.innerHTML = `<tr><th>Group</th><th>Members</th><th>Opportunity research</th><th>IPDA Breadth (P / E / D)</th><th>Migration</th><th>Current Pressure State</th><th class="activity-heading">Activity (${state.scope.window})</th><th>Near Miss</th><th>OTE (1D)</th><th>OTE (1W)</th><th>Latest OTE Alert</th><th aria-label="Open"></th></tr>`;
     const body = node("tbody", "");
     const groups = sortedOverviewGroups([...(state.overview?.groups || [])]);
     groups.forEach((group) => {
@@ -277,6 +305,15 @@
       const nameCell = node("td", "group-name-cell");
       nameCell.append(node("span", "group-initial", group.name.slice(0, 2).toUpperCase()), node("strong", "", group.name));
       const memberCell = node("td", "", group.membership_total);
+      const opportunityGroup = (state.opportunity?.groups || []).find((item) => String(item.id) === String(group.id));
+      const opportunityCell = node("td", "opportunity-group-cell");
+      if (opportunityGroup?.latest_material_event) {
+        const latest = opportunityGroup.latest_material_event;
+        opportunityCell.append(
+          node("strong", `opportunity-stage ${String(latest.state).toLowerCase().replaceAll("_", "-")}`, latest.state_label),
+          node("small", "", `${opportunityGroup.candidate_symbol_count} symbol${opportunityGroup.candidate_symbol_count === 1 ? "" : "s"} · ${latest.symbol}`),
+        );
+      } else opportunityCell.append(node("span", "radar-unavailable", "No context"));
       const breadthCell = node("td", ""); breadthCell.append(renderBreadth(group));
       const migrationCell = node("td", ""); migrationCell.append(directionMetric(group.migrations?.unique_higher_contributors, group.migrations?.unique_lower_contributors));
       const current = group.directional?.current_pressure || {};
@@ -287,7 +324,7 @@
       const oteWeekly = node("td", "ote-unavailable", group.ote?.status === "not_connected" ? "Not connected" : text(group.ote?.weekly));
       const latestOte = node("td", "ote-unavailable", group.ote?.status === "not_connected" ? "OTE feed not connected" : text(group.ote?.latest));
       const open = node("td", "radar-open-cell"); open.append(node("span", "", "Open"));
-      row.append(nameCell, memberCell, breadthCell, migrationCell, pressureCell, activity, nearCell, oteDaily, oteWeekly, latestOte, open);
+      row.append(nameCell, memberCell, opportunityCell, breadthCell, migrationCell, pressureCell, activity, nearCell, oteDaily, oteWeekly, latestOte, open);
       row.addEventListener("click", () => openGroup(group.id));
       row.addEventListener("keydown", (event) => { if (event.target === row && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); openGroup(group.id); } });
       body.append(row);
@@ -295,7 +332,7 @@
     if (!groups.length) {
       const row = node("tr", "");
       const cell = node("td", "radar-empty", state.overview?.groups?.length ? "No groups match this search." : "No saved groups. Create a group to begin.");
-      cell.colSpan = 11; row.append(cell); body.append(row);
+      cell.colSpan = 12; row.append(cell); body.append(row);
     }
     table.append(head, body); tableWrap.append(table); section.append(tableWrap);
     return section;
@@ -639,7 +676,8 @@
 
   function renderNamedGroup(payload) {
     const workspace = node("section", "selected-group-workspace"); workspace.id = "selectedGroupWorkspace";
-    const header = node("header", "selected-group-header"); const back = node("button", "back-button", "Back to all groups"); back.type = "button"; back.addEventListener("click", () => { updateUrl({ group: "all" }); state.detail = null; render(); globalObject.scrollTo({ top: 0, behavior: "smooth" }); }); const identity = node("div", "selected-group-identity"); identity.append(node("h2", "", payload.group.name), node("p", "", `${payload.group.member_count} members · Group evidence`)); const edit = node("button", "quiet-button", "Edit Group"); edit.type = "button"; edit.addEventListener("click", () => openEditor(selectedGroup())); header.append(back, identity, edit); workspace.append(header, renderEvidenceCards(payload));
+    const header = node("header", "selected-group-header"); const back = node("button", "back-button", "Back to all groups"); back.type = "button"; back.addEventListener("click", () => { updateUrl({ group: "all" }); state.detail = null; render(); globalObject.scrollTo({ top: 0, behavior: "smooth" }); }); const identity = node("div", "selected-group-identity"); identity.append(node("h2", "", payload.group.name), node("p", "", `${payload.group.member_count} members · Opportunity workspace`)); const edit = node("button", "quiet-button", "Edit Group"); edit.type = "button"; edit.addEventListener("click", () => openEditor(selectedGroup())); header.append(back, identity, edit); workspace.append(header);
+    const opportunity = node("section", "opportunity-intelligence"); opportunity.id = "groupOpportunityIntelligence"; opportunity.setAttribute("aria-label", `${payload.group.name} Opportunity Intelligence`); opportunity.append(node("div", "opportunity-loading", "Loading opportunity reconstruction…")); workspace.append(opportunity, renderEvidenceCards(payload));
     const inspector = node("section", "radar-evidence-inspector"); inspector.id = "radarEvidenceInspector"; inspector.hidden = true; workspace.append(inspector); const charts = node("div", "radar-chart-grid"); charts.append(renderLocationFlow(payload), renderTimeline(payload)); workspace.append(charts, renderMembers(payload)); workspace.querySelectorAll("[data-inspect]").forEach((button) => button.addEventListener("click", () => renderInspector(payload, button.dataset.inspect))); return workspace;
   }
 
@@ -652,6 +690,8 @@
   function render() {
     const wrapper = node("div", "radar-content");
     const main = node("div", "radar-content-main");
+    main.append(renderOpportunityUniverseOverview());
+    if (state.detail?.scope === "named_group") main.classList.add("named-group-mode");
     main.append(renderOverviewTable());
     if (state.detail?.scope === "named_group") main.append(renderNamedGroup(state.detail));
     wrapper.append(main);
@@ -660,6 +700,13 @@
       wrapper.append(renderActivityDrawer(state.detail));
     }
     $("#groupEvidenceContent").replaceChildren(wrapper);
+    if (state.detail?.scope === "named_group" && globalObject.edgeOpportunityMap) {
+      const groupSummary = (state.opportunity?.groups || []).find((item) => String(item.id) === String(state.detail.group.id));
+      const target = $("#groupOpportunityIntelligence");
+      if (target && groupSummary) {
+        globalObject.edgeOpportunityMap.renderGroup(target, { ...state.opportunity, groups: [groupSummary] }).catch((error) => target.replaceChildren(node("section", "panel opportunity-error", error.message)));
+      } else if (target) target.replaceChildren(node("section", "panel opportunity-empty", "No canonical opportunity context is available for this group."));
+    }
     renderActivitySummary();
     $("#groupEvidenceGroupCount").textContent = `Groups (${state.overview?.scope_totals?.group_count || 0})`; $("#groupEvidenceAsOf").textContent = exactTime((state.detail || state.overview)?.window?.as_of); $("#groupEvidenceEdit").hidden = true;
     globalObject.document.querySelectorAll("[data-group-window]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.groupWindow === state.scope.window)));
@@ -673,14 +720,15 @@
   async function load() {
     state.controller?.abort(); const controller = new AbortController(); state.controller = controller; const requestId = ++state.requestId; const scope = { ...state.scope }; setLoading();
     try {
-      const requests = [globalObject.fetch(`/api/group-evidence?window=${encodeURIComponent(scope.window)}`, { cache: "no-store", signal: controller.signal }), loadGroups()];
+      const requests = [globalObject.fetch(`/api/group-evidence?window=${encodeURIComponent(scope.window)}`, { cache: "no-store", signal: controller.signal }), loadGroups(), globalObject.fetch("/api/opportunities", { cache: "no-store", signal: controller.signal })];
       if (scope.groupId !== "all") requests.push(globalObject.fetch(`/api/group-evidence/${encodeURIComponent(scope.groupId)}?window=${encodeURIComponent(scope.window)}`, { cache: "no-store", signal: controller.signal }));
       const results = await Promise.all(requests); if (requestId !== state.requestId || scope.window !== state.scope.window || scope.groupId !== state.scope.groupId) return;
       const overviewResponse = results[0]; if (!overviewResponse.ok) throw new Error("Group evidence service unavailable."); state.overview = await overviewResponse.json();
-      if (scope.groupId !== "all") { const detailResponse = results[2]; if (detailResponse.status === 404) { updateUrl({ group: "all" }, { replace: true }); state.detail = null; } else if (!detailResponse.ok) throw new Error("Selected group evidence unavailable."); else state.detail = await detailResponse.json(); } else state.detail = null;
-      state.lastSuccessful.set(`${scope.groupId}:${scope.window}`, { overview: state.overview, detail: state.detail }); render();
+      const opportunityResponse = results[2]; if (!opportunityResponse.ok) throw new Error("Opportunity Intelligence unavailable."); state.opportunity = await opportunityResponse.json();
+      if (scope.groupId !== "all") { const detailResponse = results[3]; if (detailResponse.status === 404) { updateUrl({ group: "all" }, { replace: true }); state.detail = null; } else if (!detailResponse.ok) throw new Error("Selected group evidence unavailable."); else state.detail = await detailResponse.json(); } else state.detail = null;
+      state.lastSuccessful.set(`${scope.groupId}:${scope.window}`, { overview: state.overview, detail: state.detail, opportunity: state.opportunity }); render();
     } catch (error) {
-      if (error.name === "AbortError") return; const previous = state.lastSuccessful.get(`${scope.groupId}:${scope.window}`); if (previous) { state.overview = previous.overview; state.detail = previous.detail; render(); $("#groupEvidenceLive").textContent = "Showing the last successfully loaded snapshot."; $("#groupEvidenceLive").classList.add("error"); } else setError(error.message || "Group evidence service unavailable.");
+      if (error.name === "AbortError") return; const previous = state.lastSuccessful.get(`${scope.groupId}:${scope.window}`); if (previous) { state.overview = previous.overview; state.detail = previous.detail; state.opportunity = previous.opportunity; render(); $("#groupEvidenceLive").textContent = "Showing the last successfully loaded snapshot."; $("#groupEvidenceLive").classList.add("error"); } else setError(error.message || "Group evidence service unavailable.");
     }
   }
 

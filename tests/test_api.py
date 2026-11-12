@@ -130,6 +130,40 @@ class APIIntegrationTests(unittest.TestCase):
             "group_context_migration_appearances": 0,
         })
 
+    def test_opportunity_intelligence_endpoints_are_read_only_and_replayable(self) -> None:
+        observation = self.client.post(
+            "/webhook/tradingview", json=webhook_payload()
+        )
+        self.assertEqual(observation.status_code, 201)
+        group_response = self.client.post(
+            "/api/groups",
+            json={"name": "Opportunity Test", "members": ["SPXUSDT"]},
+        )
+        self.assertEqual(group_response.status_code, 201)
+        group_id = group_response.json()["id"]
+
+        overview = self.client.get(f"/api/opportunities?group_id={group_id}")
+        self.assertEqual(overview.status_code, 200)
+        self.assertEqual(overview.headers["cache-control"], "no-store, max-age=0")
+        self.assertEqual(overview.json()["counts"]["candidate_symbols"], 1)
+        self.assertEqual(overview.json()["candidates"][0]["symbol"], "SPXUSDT")
+        self.assertEqual(
+            overview.json()["candidates"][0]["state"], "CONTEXT_OBSERVED"
+        )
+
+        detail = self.client.get("/api/opportunities/SPXUSDT")
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.headers["cache-control"], "no-store, max-age=0")
+        self.assertEqual(detail.json()["symbol"], "SPXUSDT")
+        self.assertEqual(detail.json()["ote"]["status"], "not_connected")
+        self.assertFalse(detail.json()["assessment"]["entry_verified"])
+
+        before_evidence = self.client.get(
+            "/api/opportunities/SPXUSDT",
+            params={"as_known_at": "2026-08-20T11:59:59Z"},
+        )
+        self.assertEqual(before_evidence.status_code, 404)
+
     def test_location_distribution_history_defaults_to_24h_and_rejects_unknown_windows(self) -> None:
         response = self.client.get("/api/location-distribution/history")
 

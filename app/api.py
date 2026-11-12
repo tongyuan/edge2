@@ -33,6 +33,10 @@ from app.notifications import (
     PushSubscriptionDelete,
     PushSubscriptionPayload,
 )
+from app.opportunity_intelligence import (
+    build_opportunity_overview,
+    build_symbol_opportunity,
+)
 from app.peer_pressure import (
     build_peer_pressure_report,
     build_recent_peer_pressure_report,
@@ -490,6 +494,72 @@ def create_app(
             )
             return JSONResponse(
                 {"detail": "group_evidence_unavailable"},
+                status_code=503,
+                headers={"Cache-Control": "no-store, max-age=0"},
+            )
+        return JSONResponse(
+            payload,
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
+    @application.get("/api/opportunities")
+    def opportunity_overview(
+        group_id: int | None = Query(None, ge=1),
+        as_known_at: datetime | None = Query(None),
+    ) -> JSONResponse:
+        """Return deterministic research episodes derived from canonical evidence."""
+        try:
+            inputs = repository.opportunity_intelligence_inputs()
+            if group_id is not None and not any(
+                int(group["id"]) == group_id for group in inputs["groups"]
+            ):
+                raise HTTPException(status_code=404, detail="group_not_found")
+            payload = build_opportunity_overview(
+                inputs,
+                group_id=group_id,
+                as_known_at=as_known_at,
+            )
+        except HTTPException:
+            raise
+        except Exception:
+            LOGGER.exception(
+                "Opportunity Intelligence overview failed",
+                extra={"group_id": group_id},
+            )
+            return JSONResponse(
+                {"detail": "opportunity_intelligence_unavailable"},
+                status_code=503,
+                headers={"Cache-Control": "no-store, max-age=0"},
+            )
+        return JSONResponse(
+            payload,
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
+    @application.get("/api/opportunities/{symbol}")
+    def symbol_opportunity(
+        symbol: str,
+        as_known_at: datetime | None = Query(None),
+    ) -> JSONResponse:
+        """Return one symbol's as-known-at opportunity reconstruction."""
+        try:
+            inputs = repository.opportunity_intelligence_inputs(symbols=[symbol])
+            payload = build_symbol_opportunity(
+                inputs,
+                symbol,
+                as_known_at=as_known_at,
+            )
+            if payload is None:
+                raise HTTPException(status_code=404, detail="opportunity_not_found")
+        except HTTPException:
+            raise
+        except Exception:
+            LOGGER.exception(
+                "Symbol Opportunity Intelligence failed",
+                extra={"symbol": symbol},
+            )
+            return JSONResponse(
+                {"detail": "opportunity_intelligence_unavailable"},
                 status_code=503,
                 headers={"Cache-Control": "no-store, max-age=0"},
             )
