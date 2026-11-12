@@ -154,7 +154,7 @@
     return { minimum: minimum - padding, maximum: maximum + padding };
   }
 
-  function drawTriangle(context, xPosition, yPosition, direction, size, fill) {
+  function drawTriangle(context, xPosition, yPosition, direction, size, fill, stroke = "#0b1119", strokeWidth = 2) {
     const upward = direction === "HIGHER";
     context.beginPath();
     context.moveTo(xPosition, yPosition + (upward ? -size : size));
@@ -163,8 +163,19 @@
     context.closePath();
     context.fillStyle = fill;
     context.fill();
+    context.strokeStyle = stroke;
+    context.lineWidth = strokeWidth;
+    context.stroke();
+  }
+
+  function drawCombinedMarker(context, xPosition, yPosition, direction, routeColor, pressureColor) {
+    drawTriangle(context, xPosition, yPosition, direction, 8, "#0b1119", pressureColor, 2.5);
+    context.beginPath();
+    context.arc(xPosition, yPosition, 3, 0, Math.PI * 2);
+    context.fillStyle = routeColor;
+    context.fill();
     context.strokeStyle = "#0b1119";
-    context.lineWidth = 2;
+    context.lineWidth = 1;
     context.stroke();
   }
 
@@ -256,14 +267,22 @@
         : item;
       if (pressureItem) {
         combinedPressureIds.add(identity);
-        drawTriangle(context, xPosition, yPosition, pressureItem.direction, 8, pressureItem.direction === "LOWER" ? COLORS.lower : COLORS.higher);
+        drawCombinedMarker(
+          context,
+          xPosition,
+          yPosition,
+          pressureItem.direction,
+          routeColor,
+          pressureItem.direction === "LOWER" ? COLORS.lower : COLORS.higher,
+        );
+      } else {
+        context.beginPath(); context.arc(xPosition, yPosition, 5, 0, Math.PI * 2);
+        context.fillStyle = routeColor;
+        context.fill();
+        context.strokeStyle = "#0b1119";
+        context.lineWidth = 1.5;
+        context.stroke();
       }
-      context.beginPath(); context.arc(xPosition, yPosition, pressureItem ? 3.25 : 5, 0, Math.PI * 2);
-      context.fillStyle = routeColor;
-      context.fill();
-      context.strokeStyle = pressureItem ? "#eaf2f8" : "#0b1119";
-      context.lineWidth = pressureItem ? 1 : 1.5;
-      context.stroke();
       if (eventIdentity(item) === selectedEventId) {
         context.beginPath(); context.arc(xPosition, yPosition, 10, 0, Math.PI * 2);
         context.strokeStyle = "#ffffff"; context.lineWidth = 2; context.stroke();
@@ -274,12 +293,17 @@
       if (combinedPressureIds.has(eventIdentity(item))) return;
       const xPosition = x(item.effective_at);
       const yPosition = y(item.price);
-      drawTriangle(context, xPosition, yPosition, item.direction, 8, item.direction === "LOWER" ? COLORS.lower : COLORS.higher);
       if (item.route === "BTD" || item.route === "STR") {
-        context.beginPath(); context.arc(xPosition, yPosition, 3.25, 0, Math.PI * 2);
-        context.fillStyle = item.route === "BTD" ? COLORS.btd : COLORS.str;
-        context.fill();
-        context.strokeStyle = "#eaf2f8"; context.lineWidth = 1; context.stroke();
+        drawCombinedMarker(
+          context,
+          xPosition,
+          yPosition,
+          item.direction,
+          item.route === "BTD" ? COLORS.btd : COLORS.str,
+          item.direction === "LOWER" ? COLORS.lower : COLORS.higher,
+        );
+      } else {
+        drawTriangle(context, xPosition, yPosition, item.direction, 8, item.direction === "LOWER" ? COLORS.lower : COLORS.higher);
       }
       if (eventIdentity(item) === selectedEventId) {
         context.beginPath(); context.arc(xPosition, yPosition, 12, 0, Math.PI * 2);
@@ -405,6 +429,7 @@
 
   function renderTimeline(detail, onSelect, expanded = false) {
     const wrap = node("div", "opportunity-timeline-wrap");
+    wrap.classList.toggle("expanded", expanded);
     const table = node("table", "opportunity-timeline-table");
     const head = node("thead", "");
     head.innerHTML = "<tr><th>Observed / known</th><th>Tracker</th><th>Event</th><th>Price / structural zone</th><th>Evidence details</th></tr>";
@@ -582,7 +607,7 @@
     const timelineWrap = renderTimeline(detail, selectEvidence, componentState.timelineExpanded);
     timeline.append(timelineHeader, timelineWrap);
     if (recordCount > 8) {
-      const expansion = node("button", "opportunity-timeline-toggle", componentState.timelineExpanded ? "Show fewer" : `View all ${recordCount} events`);
+      const expansion = node("button", "opportunity-timeline-toggle", componentState.timelineExpanded ? "Show first 8 events" : `View all ${recordCount} events`);
       expansion.type = "button";
       expansion.setAttribute("aria-expanded", String(Boolean(componentState.timelineExpanded)));
       expansion.addEventListener("click", () => {
@@ -590,7 +615,8 @@
         const rows = timelineRows(detail);
         const body = timelineBody(componentState.timelineExpanded ? rows : rows.slice(0, 8), selectEvidence);
         timelineWrap.querySelector("tbody").replaceWith(body);
-        expansion.textContent = componentState.timelineExpanded ? "Show fewer" : `View all ${recordCount} events`;
+        timelineWrap.classList.toggle("expanded", componentState.timelineExpanded);
+        expansion.textContent = componentState.timelineExpanded ? "Show first 8 events" : `View all ${recordCount} events`;
         expansion.setAttribute("aria-expanded", String(componentState.timelineExpanded));
       });
       timeline.append(expansion);

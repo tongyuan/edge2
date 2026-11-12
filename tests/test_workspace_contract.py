@@ -52,9 +52,10 @@ class WorkspaceContractTests(unittest.TestCase):
             self.assertNotIn(removed, GROUP_JS)
         self.assertIn("symbolUrl(member.symbol)", GROUP_JS)
 
-    def test_group_overview_exposes_search_selection_and_responsive_table(self) -> None:
-        self.assertIn('id="groupEvidenceSearch"', HTML)
-        self.assertIn("group.name.toLowerCase().includes(state.search)", GROUP_JS)
+    def test_group_overview_exposes_selection_sorting_and_responsive_table(self) -> None:
+        self.assertNotIn('id="groupEvidenceSearch"', HTML)
+        self.assertNotIn("state.search", GROUP_JS)
+        self.assertIn('id="groupEvidenceSort"', HTML)
         self.assertIn("row.classList.add(\"selected\")", GROUP_JS)
         self.assertIn("openGroup(group.id)", GROUP_JS)
         mobile_rules = CSS.split("@media (max-width: 820px)", 1)[1]

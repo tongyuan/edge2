@@ -1,63 +1,61 @@
-# Opportunity Intelligence UI Cleanup — design QA
+# Opportunity Intelligence UI Follow-up — design QA
 
 Date: 2026-11-12
 
 ## Visual truth and implementation evidence
 
-- Source visual truth: the existing corrected EDGE workspace captured at `qa-opportunity-intelligence/symbol-opportunity-desktop-final.png`, plus the operator cleanup and Opportunity Map refinement briefs attached on 2026-11-12.
-- Baseline implementation screenshot: `qa-opportunity-intelligence/symbol-opportunity-desktop-final.png` at a 1600 × 1000 CSS viewport and 1× density.
-- Browser-rendered implementation: local staging at `http://127.0.0.1:8792`, checked in the Codex in-app browser at 1440 × 1000, 1024 × 900, and 390 × 844 CSS viewports.
-- Current implementation captures were inspected inline during browser QA. Browser security prevented persisting those capture bytes as new project files; this does not affect the rendered comparison or interaction checks.
-- State: dark theme with canonical seeded AAPL evidence. Group Overview, Symbols, normal Opportunity History, expanded timeline, historical replay, maximized map, restored map, tablet, and mobile states were inspected.
+- Source visual truth:
+  - `/var/folders/dm/ctz4b4_d2yq9jbskg25nx6xw0000gn/T/codex-clipboard-64cfc346-d65c-48a2-9343-3b9ead419a96.png` — Group Overview search field to remove.
+  - `/var/folders/dm/ctz4b4_d2yq9jbskg25nx6xw0000gn/T/codex-clipboard-f78b5d6c-6f3c-4430-a099-5a01afe17d28.png` — combined marker legibility issue.
+  - `/var/folders/dm/ctz4b4_d2yq9jbskg25nx6xw0000gn/T/codex-clipboard-a9186571-e8a7-46b8-94d0-93fd19552e9f.png` — eight-row timeline with inaccessible full-record presentation.
+- Source pixels: 1916 × 175, 1595 × 771, and 1588 × 545 respectively, at the supplied capture density.
+- Browser-rendered implementation: local staging at `http://127.0.0.1:8792`, checked in the Codex in-app browser at the default 1440 × 1000 CSS viewport and 390 × 844 CSS viewport.
+- Current implementation captures were inspected inline during browser QA. The in-app browser does not expose capture bytes as writable project files, so no new screenshot file was persisted.
+- State: dark theme with Group Overview and AAPL Opportunity History using canonical seeded evidence. Collapsed and fully expanded timeline states were inspected.
 
 ## Full-view comparison
 
-- The existing EDGE layout, sidebar, typography, panel treatment, and navigation hierarchy are unchanged.
-- OTE-only columns, cards, legend content, empty messages, and timeline lane are removed; remaining content reclaims the width without empty containers.
-- Symbols now uses the selected-symbol, Current Pressure, and MRZ Context panels only. Current Pressure retains the latest qualifying observations and Events History remains available.
-- The Opportunity Map retains its dominant position and now has compact chronological replay controls plus Maximize/Restore without introducing a new route.
-- Tablet and mobile document widths equal their viewports. The chart remains internally pannable at mobile width rather than causing page-level overflow.
+- Group Overview now moves directly from the group count to sorting and management actions; the search field and its reserved width are gone.
+- The existing EDGE sidebar, typography, panel treatment, activity summary, sort control, New Group action, and group table remain unchanged.
+- Opportunity Map geometry, axes, structural bands, event timing, and canonical data are unchanged.
+- Timeline expansion retains one table, replaces its body with the complete canonical record set, and removes the vertical height cap so the page exposes every row.
+- At 390 px, the document width remains exactly 390 px. Dense table content stays horizontally pannable inside its own region.
 
 ## Focused comparison
 
-- Replay: the native range control exposes a visible thumb, exact chronological minimum/maximum, keyboard semantics, pointer/touch dragging, Previous/Play/Next controls, a selected timestamp, and Latest.
-- Replay correctness: dragging AAPL from latest to 10 Nov reduced the visible assessment from 11 to 8 canonical route/IPDA observations and the unique timeline count from 13 to 10; Latest restored the current evidence.
-- Map markers: BTD is blue, STR violet, Higher Pressure an upward green triangle, Lower Pressure a downward coral triangle, MRZ a teal band, and Near Miss a dashed purple band. Shared route/Pressure observations render as one combined marker and one canonical timeline row.
-- Maximize: the map fills the application viewport, preserves axes, structural bands, markers, legend, selected-event details, range state, replay state, and selected event. Restore and Escape both work.
-- Timeline: one table renders eight rows when collapsed and all 13 unique AAPL records when expanded. The toggle becomes Show fewer and restores eight rows. Observed and known times are both visible.
-- Price axis: AAPL ticks use two decimals while exact canonical prices remain available in selected-event details.
+- Combined marker: a pressure-colored triangle outline now encloses a route-colored center dot. The two classifications read as one canonical marker without the filled-triangle/white-ring stacking seen in the source screenshot.
+- Route-only observations remain blue or violet filled circles. Pressure-only observations remain filled directional triangles.
+- Timeline: AAPL renders 8 of 13 records while collapsed. Activating View all renders all 13 rows, applies the expanded state, and produces `clientHeight === scrollHeight` (588 px), proving there is no hidden internal vertical record area. The control changes to `Show first 8 events`.
+- Group toolbar: DOM verification reports zero `#groupEvidenceSearch` or `.radar-search` elements while retaining one sort control and both group-management actions.
 
 ## Required fidelity surfaces
 
-- Fonts and typography: existing EDGE system-sans family, weights, compact headers, readable metadata, and hierarchy are retained with no new clipping.
-- Spacing and layout rhythm: removed panels collapse cleanly; three evidence cards and the narrower tables redistribute available width consistently.
-- Colors and visual tokens: existing dark surfaces and borders are retained. Only evidence colors were changed to the operator-specified blue, violet, green, coral, teal, and light-purple values.
-- Image quality and assets: the existing EDGE logo remains unchanged; no new raster, illustration, logo, or placeholder asset was introduced.
-- Copy and content: OTE-specific presentation is absent. Research-only language and the Not verified execution boundary remain intact.
-- Accessibility and interaction: replay uses a native labelled range input, timeline rows remain keyboard-selectable, Maximize exposes pressed state and an accessible Restore label, Escape restores the map, and touch targets remain usable at 390 px.
+- Fonts and typography: existing EDGE font family, compact weights, header hierarchy, table type, and metadata sizing are retained.
+- Spacing and layout rhythm: removal of the search track closes the large empty middle field; sort and group actions align naturally without a placeholder gap.
+- Colors and visual tokens: existing dark surfaces and evidence colors are retained. The combined marker uses the exact route and Pressure colors already established by the legend.
+- Image quality and assets: no raster, illustration, logo, or placeholder asset was added or changed.
+- Copy and content: only the expansion label changed from `Show fewer` to the more explicit `Show first 8 events`; canonical event copy and record counts are unchanged.
+- Accessibility and interaction: the expansion control retains `aria-expanded`; every expanded timeline row remains keyboard-selectable; mobile document overflow remains contained.
 
 ## Comparison history
 
-- Pass 1 [P1]: timeline expansion mounted the eight-row preview and a second full table, duplicating the preview records.
-  - Fix: one canonical event array is deduplicated by stable canonical identity and rendered through one table body that switches between `slice(0, 8)` and the full set.
-  - Post-fix evidence: one table / 8 rows collapsed, one table / 13 rows expanded, and one table / 8 rows after Show fewer.
-- Pass 1 [P2]: replay used discrete selection and an ornamental progress bar, so direct chronological movement was unavailable.
-  - Fix: replaced it with a native draggable range using epoch-time bounds, debounced as-known-at loading, visible timestamp, checkpoint precision controls, and Latest.
-  - Post-fix evidence: pointer drag changed the cursor, chart evidence, assessment, and timeline count without reloading the page.
-- Pass 1 [P2]: route observations and Pressure classifications were plotted as unrelated overlapping circles.
-  - Fix: canonical identities are merged; combined events use a Pressure triangle with a route-colored center and one selected-event record.
-  - Post-fix evidence: AAPL combined rows show `IPDA_ROUTE + PRESSURE` once and combined markers remain individually selectable.
-- Pass 2: checked normal/maximized/restored map states and 1024 px / 390 px layouts. No actionable P0/P1/P2 findings remain.
+- Pass 1 [P1]: full-record mode remained inside a 420 px internally scrolling region, making the additional rows easy to miss and preventing a true all-record page view.
+  - Fix: expanded mode removes the height cap and renders the full canonical row set in the single table.
+  - Post-fix evidence: 13 rows, expanded class present, 588 px client height, 588 px scroll height.
+- Pass 1 [P1]: combined route/Pressure markers read as a filled triangle and separately stacked circle with a bright white separator.
+  - Fix: use a pressure-colored triangle outline with a dark interior and route-colored center dot.
+  - Post-fix evidence: the desktop AAPL chart visibly presents one coherent outlined marker per shared classification.
+- Pass 1 [P2]: removing only the search element would have left a wide empty grid track.
+  - Fix: change the toolbar to three tracks and realign its tablet/mobile rules.
+  - Post-fix evidence: default and 390 px Group Overview captures show a compact toolbar with no empty search gap or page overflow.
+- Pass 2: repeated desktop and mobile checks. No actionable P0/P1/P2 findings remain.
 
 ## Primary interactions tested
 
-- Dragged the replay slider and returned with Latest.
-- Selected a timeline row and verified the map selection plus exact canonical details.
-- Switched to 90D, maximized the map, restored with Escape, and verified the 90D range and selected event persisted.
-- Expanded 13 unique AAPL events, verified one table, then collapsed to eight rows.
-- Opened Symbols for AAPL and verified exactly three upper evidence panels with Current Pressure observations intact.
-- Opened Group Overview and verified no OTE labels or empty OTE space remain.
-- Checked page overflow at 1024 px and 390 px; document widths matched the viewport.
+- Opened Group Overview and verified the search field is absent.
+- Opened AAPL Opportunity History and inspected the revised combined markers.
+- Expanded the timeline from 8 to all 13 records and verified the full table is not vertically capped.
+- Checked the same Group Overview and expanded timeline at 390 × 844.
 - Browser console: zero errors.
 
 ## Findings
@@ -65,7 +63,7 @@ Date: 2026-11-12
 - P0: none.
 - P1: none remaining.
 - P2: none remaining.
-- P3: maximized portrait/mobile layouts necessarily leave vertical breathing room because the wide chart preserves its aspect ratio; horizontal panning keeps every price/time detail available.
+- P3: dense event tables still require horizontal panning on mobile, intentionally contained within the table region.
 
 ## Final result
 

@@ -15,7 +15,6 @@
     controller: null,
     lastSuccessful: new Map(),
     recentLoaded: false,
-    search: "",
     sort: "recent",
     activityDrawerOpen: new URLSearchParams(globalObject.location?.search || "").get("activity") === "open",
     mounted: false,
@@ -257,11 +256,10 @@
   }
 
   function sortedOverviewGroups(groups) {
-    const visible = groups.filter((group) => group.name.toLowerCase().includes(state.search));
     if (state.sort === "name") {
-      return visible.sort((left, right) => left.name.localeCompare(right.name) || Number(left.id) - Number(right.id));
+      return groups.sort((left, right) => left.name.localeCompare(right.name) || Number(left.id) - Number(right.id));
     }
-    return visible.sort((left, right) => {
+    return groups.sort((left, right) => {
       const leftChanged = left.activity?.status === "changed";
       const rightChanged = right.activity?.status === "changed";
       if (leftChanged !== rightChanged) return leftChanged ? -1 : 1;
@@ -823,7 +821,6 @@
 
   function bindEvents() {
     globalObject.document.querySelectorAll("[data-group-window]").forEach((button) => button.addEventListener("click", () => { updateUrl({ window: button.dataset.groupWindow }); state.recentLoaded = false; load(); }));
-    $("#groupEvidenceSearch").addEventListener("input", (event) => { state.search = event.target.value.trim().toLowerCase(); render(); });
     $("#groupEvidenceSort").addEventListener("change", (event) => { state.sort = event.target.value; render(); });
     $("#groupEvidenceNew").addEventListener("click", () => openEditor()); $("#groupEvidenceEdit").addEventListener("click", () => openEditor(selectedGroup()));
     $("#groupEvidenceManage").addEventListener("click", () => { const menu = $("#groupEvidenceManageMenu"); menu.hidden = !menu.hidden; $("#groupEvidenceManage").setAttribute("aria-expanded", String(!menu.hidden)); });

@@ -81,11 +81,14 @@ class OpportunityIntelligenceContractTests(unittest.TestCase):
             "selectedEventId",
             "timelineExpanded",
             "setMaximized",
+            "drawCombinedMarker",
         ):
             self.assertIn(required, MAP_JS + MAP_CSS)
         self.assertIn("Symbol Opportunity Candidates", MAP_JS)
         self.assertIn("Price / structural zone", MAP_JS)
         self.assertIn("Observed / known", MAP_JS)
+        self.assertIn('timelineWrap.classList.toggle("expanded"', MAP_JS)
+        self.assertIn(".opportunity-timeline-wrap.expanded", MAP_CSS)
         self.assertEqual(MAP_JS.count('node("table", "opportunity-timeline-table")'), 1)
 
 

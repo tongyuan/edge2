@@ -107,6 +107,7 @@
 
 .opportunity-bottom-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(280px, .65fr); gap: 12px; }
 .opportunity-timeline-wrap { max-height: 420px; overflow: auto; }
+.opportunity-timeline-wrap.expanded { max-height: none; overflow-x: auto; overflow-y: visible; }
 .opportunity-timeline-table { width: 100%; border-collapse: collapse; min-width: 760px; }
 .opportunity-timeline-table th, .opportunity-timeline-table td { padding: 9px 10px; border-bottom: 1px solid var(--line-soft); text-align: left; }
 .opportunity-timeline-table th { position: sticky; z-index: 1; top: 0; background: #101922; color: #66788a; font-size: .53rem; letter-spacing: .05em; text-transform: uppercase; }
