@@ -49,4 +49,23 @@ const lastPosition = map.proportionalPosition(last, bounds.minimum, bounds.maxim
 assert.ok(activationPosition - firstPosition > lastPosition - activationPosition,
   "time axis must use elapsed time rather than equal event spacing");
 
+assert.equal(map.axisPrice(224.512345, "AAPL", 30), "224.51");
+assert.equal(map.axisPrice(0.004321, "TOKENUSDT", 0.01), "0.004321");
+
+const duplicateIdentityDetail = {
+  observations: [{
+    canonical_event_id: "shared-event", source_tracker: "IPDA_ROUTE", event_type: "BTD_OBSERVATION",
+    route: "BTD", price: "100.25", effective_at: "2026-11-01T00:00:00Z", known_at: "2026-11-01T00:00:01Z",
+  }],
+  pressure_observations: [{
+    canonical_event_id: "shared-event", source_tracker: "PRESSURE", event_type: "PRESSURE_HIGHER",
+    direction: "HIGHER", price: "100.25", effective_at: "2026-11-01T00:00:00Z", known_at: "2026-11-01T00:00:01Z",
+  }],
+  near_miss_events: [], mrz_lifecycles: [],
+};
+const canonicalRows = map.timelineRows(duplicateIdentityDetail);
+assert.equal(canonicalRows.length, 1, "one canonical observation must render as one timeline row");
+assert.deepEqual(canonicalRows[0]._classifications, ["BTD", "Pressure"]);
+assert.deepEqual(canonicalRows[0]._trackers, ["IPDA_ROUTE", "PRESSURE"]);
+
 console.log("Opportunity Map tests passed");

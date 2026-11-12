@@ -1,77 +1,71 @@
-# Group Radar Opportunity Intelligence UI Correction — design QA
+# Opportunity Intelligence UI Cleanup — design QA
 
 Date: 2026-11-12
 
 ## Visual truth and implementation evidence
 
-- Source visual truth: `/var/folders/dm/ctz4b4_d2yq9jbskg25nx6xw0000gn/T/codex-clipboard-85caf0ed-c29e-4509-822d-2eb77be20dc0.png`.
-- Source pixels: 1568 × 1003, RGB PNG.
-- Browser-rendered implementation:
-  - `qa-opportunity-intelligence/group-radar-overview-correction.png` — 1600 px desktop overview capture.
-  - `qa-opportunity-intelligence/group-workspace-correction.png` — 1600 px selected-group capture.
-  - `qa-opportunity-intelligence/symbol-opportunity-desktop-final.png` — 1600 × 1000 CSS viewport, 1× capture.
-  - `qa-opportunity-intelligence/symbol-opportunity-tablet-final.png` — 1024 × 900 CSS viewport, 1× capture.
-  - `qa-opportunity-intelligence/symbol-opportunity-mobile-final.png` — 390 × 844 CSS viewport, full-page capture, 1×.
-- Combined comparison inputs:
-  - `qa-opportunity-intelligence/opportunity-ui-comparison-final.png` — equal-height side-by-side full-view comparison.
-  - `qa-opportunity-intelligence/opportunity-ui-comparison-focused.png` — full-width stacked comparison for readable typography, spacing, chart, assessment, and timeline inspection.
-- Density normalization: both desktop captures are 1× CSS-pixel captures. The 1568 × 1003 source and 1600 × 1000 implementation were scaled proportionally in the comparison board; no density-only finding was filed.
-- State: dark theme. The source uses the requested NBIS historical example; the local verified build uses canonical seeded AMZN data. Data-shape and layout were compared, but data-dependent marker quantity and labels were not treated as fidelity defects.
+- Source visual truth: the existing corrected EDGE workspace captured at `qa-opportunity-intelligence/symbol-opportunity-desktop-final.png`, plus the operator cleanup and Opportunity Map refinement briefs attached on 2026-11-12.
+- Baseline implementation screenshot: `qa-opportunity-intelligence/symbol-opportunity-desktop-final.png` at a 1600 × 1000 CSS viewport and 1× density.
+- Browser-rendered implementation: local staging at `http://127.0.0.1:8792`, checked in the Codex in-app browser at 1440 × 1000, 1024 × 900, and 390 × 844 CSS viewports.
+- Current implementation captures were inspected inline during browser QA. Browser security prevented persisting those capture bytes as new project files; this does not affect the rendered comparison or interaction checks.
+- State: dark theme with canonical seeded AAPL evidence. Group Overview, Symbols, normal Opportunity History, expanded timeline, historical replay, maximized map, restored map, tablet, and mobile states were inspected.
 
 ## Full-view comparison
 
-- The corrected symbol state preserves the supplied hierarchy: unchanged EDGE sidebar, Opportunity Intelligence header, breadcrumb, compact structural facts, historical replay, dominant full-width time–price map, readable assessment, and chronological timeline.
-- The implementation intentionally places replay directly above the map and assessment below it, matching the written brief's permitted layout while preserving more map width than the source's two-column lower region.
-- Group Overview, Selected Group Workspace, and Symbol Opportunity Workspace are now mutually exclusive states. No narrow group table or duplicate group dashboard remains beside the symbol analysis.
-- Desktop, tablet, and mobile use the same navigation hierarchy. At 1024 px and 390 px, the document width equals the viewport width; wide chart and table content scrolls inside its own region.
+- The existing EDGE layout, sidebar, typography, panel treatment, and navigation hierarchy are unchanged.
+- OTE-only columns, cards, legend content, empty messages, and timeline lane are removed; remaining content reclaims the width without empty containers.
+- Symbols now uses the selected-symbol, Current Pressure, and MRZ Context panels only. Current Pressure retains the latest qualifying observations and Events History remains available.
+- The Opportunity Map retains its dominant position and now has compact chronological replay controls plus Maximize/Restore without introducing a new route.
+- Tablet and mobile document widths equal their viewports. The chart remains internally pannable at mobile width rather than causing page-level overflow.
 
-## Focused region comparison
+## Focused comparison
 
-- Header and breadcrumb: compact title, selected group, selected symbol, hypothesis, first-observed date, research state, IPDA location, and unverified entry state are visible without clipping.
-- Time–price map: proportional time axis, actual price axis, route observations, MRZ bands, Near Miss treatment, Pressure observations, OTE unavailable legend, range controls, and canonical evidence selection are preserved.
-- Replay: previous/play/next/latest and as-known-at selection remain adjacent to the chart; event and knowledge time remain explicit.
-- Assessment: the five required questions are presented as short evidence-derived rows at full width.
-- Timeline: compact rows include date/time, tracker, event, price/zone, and evidence detail. Rows are keyboard-selectable and highlight the corresponding map evidence. Histories longer than eight rows expose a native expandable full list with observed and known time retained in accessible row labels.
-- Group Evidence: IPDA, MRZ Migration, Current Pressure, Near Miss, Group Event Timeline, members, and canonical drilldowns remain available in one expandable section in the group workspace.
+- Replay: the native range control exposes a visible thumb, exact chronological minimum/maximum, keyboard semantics, pointer/touch dragging, Previous/Play/Next controls, a selected timestamp, and Latest.
+- Replay correctness: dragging AAPL from latest to 10 Nov reduced the visible assessment from 11 to 8 canonical route/IPDA observations and the unique timeline count from 13 to 10; Latest restored the current evidence.
+- Map markers: BTD is blue, STR violet, Higher Pressure an upward green triangle, Lower Pressure a downward coral triangle, MRZ a teal band, and Near Miss a dashed purple band. Shared route/Pressure observations render as one combined marker and one canonical timeline row.
+- Maximize: the map fills the application viewport, preserves axes, structural bands, markers, legend, selected-event details, range state, replay state, and selected event. Restore and Escape both work.
+- Timeline: one table renders eight rows when collapsed and all 13 unique AAPL records when expanded. The toggle becomes Show fewer and restores eight rows. Observed and known times are both visible.
+- Price axis: AAPL ticks use two decimals while exact canonical prices remain available in selected-event details.
 
 ## Required fidelity surfaces
 
-- Fonts and typography: the existing EDGE system-sans stack, display weight, compact table headers, muted metadata, and operator hierarchy are retained. No unintended wrapping or truncation was observed in the final desktop, tablet, or mobile captures.
-- Spacing and layout rhythm: full-width workspaces replace the former split-pane composition. Panel padding, border density, radii, and vertical rhythm remain consistent with the existing EDGE shell.
-- Colors and visual tokens: the existing near-black surfaces, mint accent, purple Near Miss, red Lower Pressure, cyan Higher Pressure, amber structure, and muted borders are reused.
-- Image quality and assets: the existing EDGE logo is preserved. The source contains no new photographic or illustrative assets, so no placeholder, custom SVG, CSS illustration, or generated asset was introduced.
-- Copy and content: research language remains evidence-derived. OTE stays unavailable and entry remains explicitly not verified.
-- Accessibility and interaction: native buttons, tables, details/summary expansion, focus states, keyboard row activation, reduced-motion behavior, labelled replay/map controls, and responsive internal scrolling are retained.
+- Fonts and typography: existing EDGE system-sans family, weights, compact headers, readable metadata, and hierarchy are retained with no new clipping.
+- Spacing and layout rhythm: removed panels collapse cleanly; three evidence cards and the narrower tables redistribute available width consistently.
+- Colors and visual tokens: existing dark surfaces and borders are retained. Only evidence colors were changed to the operator-specified blue, violet, green, coral, teal, and light-purple values.
+- Image quality and assets: the existing EDGE logo remains unchanged; no new raster, illustration, logo, or placeholder asset was introduced.
+- Copy and content: OTE-specific presentation is absent. Research-only language and the Not verified execution boundary remain intact.
+- Accessibility and interaction: replay uses a native labelled range input, timeline rows remain keyboard-selectable, Maximize exposes pressed state and an accessible Restore label, Escape restores the map, and touch targets remain usable at 390 px.
 
 ## Comparison history
 
-- Pass 1 finding [P1]: the original implementation displayed the full group table, candidate rail, symbol analysis, and full group evidence simultaneously.
-  - Fix: introduced URL-backed Overview, Group Workspace, and Symbol Workspace states with explicit breadcrumb/back navigation.
-  - Post-fix evidence: the three state-specific desktop captures listed above.
-- Pass 1 finding [P2]: replay and chart range controls inherited the generic panel-title grid rule and stacked vertically, creating excess empty height.
-  - Fix: gave both control groups an explicit horizontal flex layout.
-  - Post-fix evidence: `symbol-opportunity-desktop-correction-v2.png`.
-- Pass 2 finding [P2]: the initial desktop chart height pushed the assessment entirely below the 1000 px viewport.
-  - Fix: reduced the desktop canvas height while preserving a taller, horizontally pannable mobile canvas.
-  - Post-fix evidence: `symbol-opportunity-desktop-final.png` and `symbol-opportunity-mobile-final.png`.
-- Pass 3: compared the final 1600 px build with the source in the combined comparison inputs, exercised replay, event selection, group back navigation, and Group Evidence expansion, then checked 1024 px and 390 px layouts. No actionable P0/P1/P2 findings remain.
+- Pass 1 [P1]: timeline expansion mounted the eight-row preview and a second full table, duplicating the preview records.
+  - Fix: one canonical event array is deduplicated by stable canonical identity and rendered through one table body that switches between `slice(0, 8)` and the full set.
+  - Post-fix evidence: one table / 8 rows collapsed, one table / 13 rows expanded, and one table / 8 rows after Show fewer.
+- Pass 1 [P2]: replay used discrete selection and an ornamental progress bar, so direct chronological movement was unavailable.
+  - Fix: replaced it with a native draggable range using epoch-time bounds, debounced as-known-at loading, visible timestamp, checkpoint precision controls, and Latest.
+  - Post-fix evidence: pointer drag changed the cursor, chart evidence, assessment, and timeline count without reloading the page.
+- Pass 1 [P2]: route observations and Pressure classifications were plotted as unrelated overlapping circles.
+  - Fix: canonical identities are merged; combined events use a Pressure triangle with a route-colored center and one selected-event record.
+  - Post-fix evidence: AAPL combined rows show `IPDA_ROUTE + PRESSURE` once and combined markers remain individually selectable.
+- Pass 2: checked normal/maximized/restored map states and 1024 px / 390 px layouts. No actionable P0/P1/P2 findings remain.
 
 ## Primary interactions tested
 
-- Opened AI Clouds from Group Overview and verified the overview disappeared.
-- Opened AMZN from the full-width candidate table and verified the group dashboard disappeared.
-- Used the group breadcrumb to return without losing the selected group.
-- Selected a timeline event and verified one selected row plus populated canonical event detail and chart highlighting.
-- Moved Historical Replay to the previous cursor and verified the as-known-at note changed.
-- Expanded Group Evidence and verified MRZ Migration content became visible.
-- Browser console: zero errors in the final symbol pass.
+- Dragged the replay slider and returned with Latest.
+- Selected a timeline row and verified the map selection plus exact canonical details.
+- Switched to 90D, maximized the map, restored with Escape, and verified the 90D range and selected event persisted.
+- Expanded 13 unique AAPL events, verified one table, then collapsed to eight rows.
+- Opened Symbols for AAPL and verified exactly three upper evidence panels with Current Pressure observations intact.
+- Opened Group Overview and verified no OTE labels or empty OTE space remain.
+- Checked page overflow at 1024 px and 390 px; document widths matched the viewport.
+- Browser console: zero errors.
 
 ## Findings
 
 - P0: none.
 - P1: none remaining.
 - P2: none remaining.
-- P3: source and local verification use different canonical symbols, so exact marker density was validated structurally rather than pixel-for-pixel.
+- P3: maximized portrait/mobile layouts necessarily leave vertical breathing room because the wide chart preserves its aspect ratio; horizontal panning keeps every price/time detail available.
 
 ## Final result
 

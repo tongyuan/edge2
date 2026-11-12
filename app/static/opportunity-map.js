@@ -12,12 +12,12 @@
   const COLORS = {
     grid: "#223242",
     text: "#91a1b3",
-    btd: "#22d7bd",
-    str: "#a879ef",
-    higher: "#36d6c1",
-    lower: "#ff6873",
-    mrz: "#18d9a5",
-    near: "#ae82ef",
+    btd: "#3B82F6",
+    str: "#A78BFA",
+    higher: "#22C55E",
+    lower: "#F87171",
+    mrz: "#14B8A6",
+    near: "#C084FC",
   };
 
   function node(tag, className, content) {
@@ -51,6 +51,21 @@
     return numeric.toLocaleString(undefined, {
       minimumFractionDigits: 2,
       maximumFractionDigits: 6,
+    });
+  }
+
+  function axisPrice(value, symbol, span) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return String(value);
+    const upperSymbol = String(symbol || "").toUpperCase();
+    const isCrypto = upperSymbol.endsWith("USDT") || upperSymbol.endsWith("USDC");
+    let digits = 2;
+    if (isCrypto && Math.abs(numeric) < 1) digits = Math.abs(numeric) < 0.01 ? 6 : 4;
+    else if (isCrypto && Math.abs(numeric) < 100) digits = 4;
+    else if (Number(span) > 0 && Number(span) < 0.01) digits = 4;
+    return numeric.toLocaleString(undefined, {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
     });
   }
 
@@ -139,6 +154,20 @@
     return { minimum: minimum - padding, maximum: maximum + padding };
   }
 
+  function drawTriangle(context, xPosition, yPosition, direction, size, fill) {
+    const upward = direction === "HIGHER";
+    context.beginPath();
+    context.moveTo(xPosition, yPosition + (upward ? -size : size));
+    context.lineTo(xPosition - size, yPosition + (upward ? size : -size));
+    context.lineTo(xPosition + size, yPosition + (upward ? size : -size));
+    context.closePath();
+    context.fillStyle = fill;
+    context.fill();
+    context.strokeStyle = "#0b1119";
+    context.lineWidth = 2;
+    context.stroke();
+  }
+
   function drawChart(canvas, detail, rangeDays, selectedEventId, onSelect) {
     const context = canvas.getContext("2d");
     const width = canvas.width;
@@ -164,7 +193,7 @@
       context.beginPath(); context.moveTo(margin.left, yPosition); context.lineTo(width - margin.right, yPosition); context.stroke();
       context.fillStyle = COLORS.text;
       context.textAlign = "right";
-      context.fillText(price(priceValue), margin.left - 10, yPosition + 4);
+      context.fillText(axisPrice(priceValue, detail.symbol, prices.maximum - prices.minimum), margin.left - 10, yPosition + 4);
     }
     for (let index = 0; index <= 6; index += 1) {
       const ratio = index / 6;
@@ -199,14 +228,14 @@
       const end = Math.min(width - margin.right, x(item.ended_known_at || detail.as_known_at));
       const top = y(item.upper_bound);
       const bottom = y(item.lower_bound);
-      context.fillStyle = "rgba(24,217,165,.14)";
+      context.fillStyle = "rgba(20,184,166,.16)";
       context.fillRect(start, top, Math.max(2, end - start), Math.max(3, bottom - top));
       context.strokeStyle = eventIdentity(item) === selectedEventId ? "#d8fff4" : COLORS.mrz;
       context.lineWidth = eventIdentity(item) === selectedEventId ? 3 : 1;
       context.strokeRect(start, top, Math.max(2, end - start), Math.max(3, bottom - top));
       context.save();
       context.setLineDash([5, 4]);
-      context.strokeStyle = "rgba(24,217,165,.45)";
+      context.strokeStyle = "rgba(20,184,166,.48)";
       [item.lower_migration_boundary, item.upper_migration_boundary].forEach((boundary) => {
         context.beginPath(); context.moveTo(start, y(boundary)); context.lineTo(end, y(boundary)); context.stroke();
       });
@@ -214,25 +243,44 @@
     });
 
     const hits = [];
+    const pressureByIdentity = new Map(items.pressure.map((item) => [eventIdentity(item), item]));
+    const combinedPressureIds = new Set();
     items.observations.forEach((item) => {
       const xPosition = x(item.effective_at);
       const yPosition = y(item.price);
-      context.beginPath(); context.arc(xPosition, yPosition, 4, 0, Math.PI * 2);
-      context.fillStyle = item.route === "BTD" ? COLORS.btd : COLORS.str;
+      const identity = eventIdentity(item);
+      const pressureItem = pressureByIdentity.get(identity);
+      const routeColor = item.route === "BTD" ? COLORS.btd : COLORS.str;
+      const visualItem = pressureItem
+        ? { ...pressureItem, ...item, direction: pressureItem.direction, _classifications: [item.route, `${pressureItem.direction} Pressure`] }
+        : item;
+      if (pressureItem) {
+        combinedPressureIds.add(identity);
+        drawTriangle(context, xPosition, yPosition, pressureItem.direction, 8, pressureItem.direction === "LOWER" ? COLORS.lower : COLORS.higher);
+      }
+      context.beginPath(); context.arc(xPosition, yPosition, pressureItem ? 3.25 : 5, 0, Math.PI * 2);
+      context.fillStyle = routeColor;
       context.fill();
+      context.strokeStyle = pressureItem ? "#eaf2f8" : "#0b1119";
+      context.lineWidth = pressureItem ? 1 : 1.5;
+      context.stroke();
       if (eventIdentity(item) === selectedEventId) {
         context.beginPath(); context.arc(xPosition, yPosition, 10, 0, Math.PI * 2);
         context.strokeStyle = "#ffffff"; context.lineWidth = 2; context.stroke();
       }
-      hits.push({ x: xPosition, y: yPosition, radius: 10, item });
+      hits.push({ x: xPosition, y: yPosition, radius: 12, item: visualItem });
     });
     items.pressure.forEach((item) => {
+      if (combinedPressureIds.has(eventIdentity(item))) return;
       const xPosition = x(item.effective_at);
       const yPosition = y(item.price);
-      context.beginPath(); context.arc(xPosition, yPosition, 7, 0, Math.PI * 2);
-      context.fillStyle = item.direction === "LOWER" ? COLORS.lower : COLORS.higher;
-      context.fill();
-      context.strokeStyle = "#0b1119"; context.lineWidth = 2; context.stroke();
+      drawTriangle(context, xPosition, yPosition, item.direction, 8, item.direction === "LOWER" ? COLORS.lower : COLORS.higher);
+      if (item.route === "BTD" || item.route === "STR") {
+        context.beginPath(); context.arc(xPosition, yPosition, 3.25, 0, Math.PI * 2);
+        context.fillStyle = item.route === "BTD" ? COLORS.btd : COLORS.str;
+        context.fill();
+        context.strokeStyle = "#eaf2f8"; context.lineWidth = 1; context.stroke();
+      }
       if (eventIdentity(item) === selectedEventId) {
         context.beginPath(); context.arc(xPosition, yPosition, 12, 0, Math.PI * 2);
         context.strokeStyle = "#ffffff"; context.lineWidth = 2; context.stroke();
@@ -258,7 +306,6 @@
       ["btd", "BTD observation"], ["str", "STR observation"],
       ["mrz", "MRZ zone"], ["near", "Near Miss candidate"],
       ["lower", "Lower Pressure"], ["higher", "Higher Pressure"],
-      ["ote", "OTE unavailable"],
     ].forEach(([tone, label]) => {
       const item = node("span", tone);
       item.append(node("i", ""), node("b", "", label));
@@ -287,6 +334,7 @@
       ["Route", item.route || item.mrz_route || "—"],
       ["IPDA location", item.ipda_location_label || item.structural_location || "—"],
       ["MRZ lifecycle", item.mrz_lifecycle_event_id || "—"],
+      ["Chart marker", item._classifications?.join(" + ") || item.route || item.direction || item.source_tracker || "Canonical evidence"],
       ["Relationship", item.relationship || "Canonical chart evidence"],
     ].forEach(([term, value]) => {
       grid.append(node("dt", "", term), node("dd", "", value));
@@ -295,22 +343,37 @@
   }
 
   function timelineRows(detail) {
-    return [
-      ...(detail.observations || []),
-      ...(detail.near_miss_events || []),
-      ...(detail.mrz_lifecycles || []),
-      ...(detail.pressure_observations || []),
-    ].sort((left, right) => parseTime(left.effective_at) - parseTime(right.effective_at) || parseTime(left.known_at) - parseTime(right.known_at));
+    const records = new Map();
+    const sources = [
+      [detail.observations || [], "Route observation"],
+      [detail.near_miss_events || [], "Near Miss"],
+      [detail.mrz_lifecycles || [], "MRZ"],
+      [detail.pressure_observations || [], "Pressure"],
+    ];
+    sources.forEach(([items, classification]) => items.forEach((item) => {
+      const identity = eventIdentity(item);
+      const existing = records.get(identity);
+      if (!existing) {
+        records.set(identity, {
+          ...item,
+          _classifications: [classification === "Route observation" ? (item.route || classification) : classification],
+          _trackers: [item.source_tracker].filter(Boolean),
+        });
+        return;
+      }
+      Object.entries(item).forEach(([key, value]) => {
+        if ((existing[key] === null || existing[key] === undefined || existing[key] === "") && value !== null && value !== undefined) existing[key] = value;
+      });
+      const visualClassification = classification === "Route observation" ? (item.route || classification) : classification;
+      if (!existing._classifications.includes(visualClassification)) existing._classifications.push(visualClassification);
+      if (item.source_tracker && !existing._trackers.includes(item.source_tracker)) existing._trackers.push(item.source_tracker);
+    }));
+    return [...records.values()].sort((left, right) => parseTime(left.effective_at) - parseTime(right.effective_at) || parseTime(left.known_at) - parseTime(right.known_at) || eventIdentity(left).localeCompare(eventIdentity(right)));
   }
 
-  function renderTimeline(detail, onSelect, limit = null) {
-    const wrap = node("div", "opportunity-timeline-wrap");
-    const table = node("table", "opportunity-timeline-table");
-    const head = node("thead", "");
-    head.innerHTML = "<tr><th>Date / time</th><th>Tracker</th><th>Event</th><th>Price / structural zone</th><th>Evidence details</th></tr>";
-    const rows = timelineRows(detail);
+  function timelineBody(rows, onSelect) {
     const body = node("tbody", "");
-    (limit ? rows.slice(0, limit) : rows).forEach((item) => {
+    rows.forEach((item) => {
       const row = node("tr", "");
       row.tabIndex = 0;
       row.dataset.eventId = eventIdentity(item);
@@ -318,10 +381,15 @@
         || item.ipda_location_label
         || item.structural_location
         || (item.current_pressure_state ? `${item.current_pressure_label} ${item.recent_higher_observation_count}/${item.recent_lower_observation_count}` : "Canonical observed evidence");
-      [
-        exactTime(item.effective_at), item.source_tracker,
-        item.event_type, item.price ? price(item.price) : rangeText(item), evidence,
-      ].forEach((value) => row.append(node("td", "", value)));
+      const observedKnown = node("td", "opportunity-event-time");
+      observedKnown.append(node("time", "", exactTime(item.effective_at)), node("small", "", `Known ${exactTime(item.known_at)}`));
+      row.append(
+        observedKnown,
+        node("td", "", item._trackers?.join(" + ") || item.source_tracker),
+        node("td", "", item.event_type),
+        node("td", "", item.price ? price(item.price) : rangeText(item)),
+        node("td", "", evidence),
+      );
       row.setAttribute("aria-label", `${item.event_type}; observed ${exactTime(item.effective_at)}; known ${exactTime(item.known_at)}`);
       row.addEventListener("click", () => onSelect(item));
       row.addEventListener("keydown", (event) => {
@@ -332,7 +400,17 @@
     if (!rows.length) {
       const row = node("tr", ""); const cell = node("td", "opportunity-empty", "No evidence is known at this replay cursor."); cell.colSpan = 5; row.append(cell); body.append(row);
     }
-    table.append(head, body); wrap.append(table); return wrap;
+    return body;
+  }
+
+  function renderTimeline(detail, onSelect, expanded = false) {
+    const wrap = node("div", "opportunity-timeline-wrap");
+    const table = node("table", "opportunity-timeline-table");
+    const head = node("thead", "");
+    head.innerHTML = "<tr><th>Observed / known</th><th>Tracker</th><th>Event</th><th>Price / structural zone</th><th>Evidence details</th></tr>";
+    const rows = timelineRows(detail);
+    const visibleRows = expanded ? rows : rows.slice(0, 8);
+    table.append(head, timelineBody(visibleRows, onSelect)); wrap.append(table); return wrap;
   }
 
   function renderAssessment(detail) {
@@ -388,17 +466,51 @@
     const play = node("button", "primary-button", componentState.playing ? "Pause" : "Play"); play.type = "button";
     const next = node("button", "quiet-button", "Next"); next.type = "button";
     const latest = node("button", "quiet-button", "Latest"); latest.type = "button";
-    const select = node("select", "");
-    componentState.cursors.forEach((value, index) => { const option = node("option", "", exactTime(value)); option.value = String(index); if (index === componentState.cursorIndex) option.selected = true; select.append(option); });
+    const replaySlider = node("input", "opportunity-replay-slider");
+    replaySlider.type = "range";
+    replaySlider.setAttribute("aria-label", "Historical replay timestamp");
+    const minimumReplayTime = parseTime(componentState.cursors[0]);
+    const maximumReplayTime = parseTime(componentState.cursors.at(-1));
+    const currentReplayTime = parseTime(componentState.replayTimestamp || detail.as_known_at || componentState.cursors.at(-1));
+    replaySlider.min = String(minimumReplayTime);
+    replaySlider.max = String(maximumReplayTime);
+    replaySlider.step = "any";
+    replaySlider.value = String(Math.max(minimumReplayTime, Math.min(maximumReplayTime, currentReplayTime)));
+    replaySlider.disabled = componentState.cursors.length <= 1;
+    const selectedTime = node("output", "opportunity-replay-selected", exactTime(new Date(Number(replaySlider.value)).toISOString()));
+    selectedTime.htmlFor = replaySlider.id = `opportunityReplaySlider-${detail.symbol}`;
+    const cursorAtOrBefore = (timestamp) => {
+      let index = 0;
+      componentState.cursors.forEach((value, candidate) => { if (parseTime(value) <= timestamp) index = candidate; });
+      return index;
+    };
     const moveTo = (index) => {
       const bounded = Math.max(0, Math.min(componentState.cursors.length - 1, index));
       componentState.cursorIndex = bounded;
+      componentState.replayTimestamp = componentState.cursors[bounded];
       componentState.loadCursor(componentState.cursors[bounded]);
     };
     previous.addEventListener("click", () => moveTo(componentState.cursorIndex - 1));
     next.addEventListener("click", () => moveTo(componentState.cursorIndex + 1));
     latest.addEventListener("click", () => moveTo(componentState.cursors.length - 1));
-    select.addEventListener("change", () => moveTo(Number(select.value)));
+    const loadSliderTime = () => {
+      const timestamp = Number(replaySlider.value);
+      componentState.cursorIndex = cursorAtOrBefore(timestamp);
+      componentState.replayTimestamp = new Date(timestamp).toISOString();
+      componentState.loadCursor(componentState.replayTimestamp);
+    };
+    replaySlider.addEventListener("input", () => {
+      const timestamp = Number(replaySlider.value);
+      selectedTime.textContent = exactTime(new Date(timestamp).toISOString());
+      componentState.cursorIndex = cursorAtOrBefore(timestamp);
+      componentState.replayTimestamp = new Date(timestamp).toISOString();
+      globalObject.clearTimeout(componentState.sliderTimer);
+      componentState.sliderTimer = globalObject.setTimeout(loadSliderTime, 160);
+    });
+    replaySlider.addEventListener("change", () => {
+      globalObject.clearTimeout(componentState.sliderTimer);
+      loadSliderTime();
+    });
     play.addEventListener("click", () => {
       componentState.playing = !componentState.playing;
       if (!componentState.playing) { globalObject.clearTimeout(componentState.playTimer); renderOpportunityWorkspace(target, detail, componentState, options); return; }
@@ -406,31 +518,49 @@
         if (!componentState.playing) return;
         if (componentState.cursorIndex >= componentState.cursors.length - 1) componentState.cursorIndex = 0;
         else componentState.cursorIndex += 1;
+        componentState.replayTimestamp = componentState.cursors[componentState.cursorIndex];
         componentState.loadCursor(componentState.cursors[componentState.cursorIndex]).finally(() => {
           if (componentState.playing) componentState.playTimer = globalObject.setTimeout(advance, 900);
         });
       };
       advance();
     });
-    controls.append(previous, play, next, latest, select); replayHeading.append(replayTitle, controls); replay.append(replayHeading);
-    const track = node("div", "opportunity-replay-track");
-    const progress = node("span", ""); progress.style.width = `${componentState.cursors.length <= 1 ? 100 : componentState.cursorIndex / (componentState.cursors.length - 1) * 100}%`; track.append(progress);
-    replay.append(track, node("p", "opportunity-replay-note", `Visible evidence known by ${exactTime(detail.as_known_at)}. Event time and knowledge time remain separate.`)); target.append(replay);
+    controls.append(previous, play, next); replayHeading.append(replayTitle, controls); replay.append(replayHeading);
+    const sliderRow = node("div", "opportunity-replay-slider-row");
+    sliderRow.append(replaySlider, selectedTime, latest);
+    replay.append(sliderRow, node("p", "opportunity-replay-note", `Visible evidence known by ${exactTime(detail.as_known_at)}. Event time and knowledge time remain separate.`)); target.append(replay);
 
     const mapPanel = node("section", "opportunity-map-panel panel");
     const mapHeader = node("header", "opportunity-panel-heading");
     const title = node("div", ""); title.append(node("strong", "", "Opportunity Map (Time × Price)"), node("small", "", "Actual event time · linear instrument price"));
+    const mapTools = node("div", "opportunity-map-tools");
     const ranges = node("div", "opportunity-range-controls");
     [[0, "All"], [90, "90D"], [30, "30D"]].forEach(([days, label]) => {
       const button = node("button", "", label); button.type = "button"; button.setAttribute("aria-pressed", String(componentState.rangeDays === days));
       button.addEventListener("click", () => { componentState.rangeDays = days; renderOpportunityWorkspace(target, detail, componentState, options); }); ranges.append(button);
     });
-    mapHeader.append(title, ranges); mapPanel.append(mapHeader);
+    const maximize = node("button", "opportunity-maximize-button", componentState.maximized ? "Restore" : "Maximize");
+    maximize.type = "button";
+    maximize.setAttribute("aria-pressed", String(Boolean(componentState.maximized)));
+    maximize.setAttribute("aria-label", componentState.maximized ? "Restore Opportunity Map" : "Maximize Opportunity Map");
+    const setMaximized = (value) => {
+      componentState.maximized = value;
+      mapPanel.classList.toggle("maximized", value);
+      globalObject.document.body.classList.toggle("opportunity-map-maximized", value);
+      maximize.textContent = value ? "Restore" : "Maximize";
+      maximize.setAttribute("aria-pressed", String(value));
+      maximize.setAttribute("aria-label", value ? "Restore Opportunity Map" : "Maximize Opportunity Map");
+      globalObject.requestAnimationFrame(() => drawChart(canvas, detail, componentState.rangeDays, componentState.selectedEventId, selectEvidence));
+    };
+    maximize.addEventListener("click", () => setMaximized(!componentState.maximized));
+    mapTools.append(ranges, maximize);
+    mapHeader.append(title, mapTools); mapPanel.append(mapHeader);
     const scroll = node("div", "opportunity-chart-scroll");
     const canvas = node("canvas", "opportunity-map-canvas"); canvas.width = 1120; canvas.height = 280; canvas.setAttribute("aria-label", `Time-price opportunity map for ${detail.symbol}`); canvas.tabIndex = 0;
     scroll.append(canvas); mapPanel.append(scroll, renderLegend());
     const details = node("div", "opportunity-selected-event");
-    mapPanel.append(details); renderEventDetails(details, null);
+    const previouslySelected = timelineRows(detail).find((item) => eventIdentity(item) === componentState.selectedEventId) || null;
+    mapPanel.append(details); renderEventDetails(details, previouslySelected);
     target.append(mapPanel);
     const selectEvidence = (item) => {
       componentState.selectedEventId = eventIdentity(item);
@@ -439,16 +569,30 @@
       target.querySelectorAll(".opportunity-timeline-table tr[data-event-id]").forEach((row) => row.classList.toggle("selected", row.dataset.eventId === componentState.selectedEventId));
       mapPanel.scrollIntoView({ block: "nearest", behavior: "smooth" });
     };
+    if (componentState.escapeHandler) globalObject.document.removeEventListener("keydown", componentState.escapeHandler);
+    componentState.escapeHandler = (event) => { if (event.key === "Escape" && componentState.maximized) setMaximized(false); };
+    globalObject.document.addEventListener("keydown", componentState.escapeHandler);
+    if (componentState.maximized) setMaximized(true);
     globalObject.requestAnimationFrame(() => drawChart(canvas, detail, componentState.rangeDays, componentState.selectedEventId, selectEvidence));
 
     target.append(renderAssessment(detail));
     const timeline = node("section", "opportunity-event-timeline panel");
     const recordCount = timelineRows(detail).length;
     const timelineHeader = node("header", "opportunity-panel-heading"); timelineHeader.append(node("div", "", `Opportunity Event Timeline (${detail.symbol})`), node("span", "", `${recordCount} records`));
-    timeline.append(timelineHeader, renderTimeline(detail, selectEvidence, 8));
+    const timelineWrap = renderTimeline(detail, selectEvidence, componentState.timelineExpanded);
+    timeline.append(timelineHeader, timelineWrap);
     if (recordCount > 8) {
-      const expansion = node("details", "opportunity-timeline-expander");
-      expansion.append(node("summary", "", `View all ${recordCount} events · observed time and known time preserved`), renderTimeline(detail, selectEvidence));
+      const expansion = node("button", "opportunity-timeline-toggle", componentState.timelineExpanded ? "Show fewer" : `View all ${recordCount} events`);
+      expansion.type = "button";
+      expansion.setAttribute("aria-expanded", String(Boolean(componentState.timelineExpanded)));
+      expansion.addEventListener("click", () => {
+        componentState.timelineExpanded = !componentState.timelineExpanded;
+        const rows = timelineRows(detail);
+        const body = timelineBody(componentState.timelineExpanded ? rows : rows.slice(0, 8), selectEvidence);
+        timelineWrap.querySelector("tbody").replaceWith(body);
+        expansion.textContent = componentState.timelineExpanded ? "Show fewer" : `View all ${recordCount} events`;
+        expansion.setAttribute("aria-expanded", String(componentState.timelineExpanded));
+      });
       timeline.append(expansion);
     }
     target.append(timeline);
@@ -507,7 +651,11 @@
   async function renderSymbol(target, symbol, options = {}) {
     target.replaceChildren(node("section", "panel opportunity-loading", `Reconstructing ${symbol}…`));
     let fullDetail = null;
-    const componentState = { cursors: [], cursorIndex: 0, rangeDays: 0, playing: false, playTimer: null, loadCursor: null, selectedEventId: null };
+    const componentState = {
+      cursors: [], cursorIndex: 0, replayTimestamp: null, rangeDays: 0,
+      playing: false, playTimer: null, sliderTimer: null, loadCursor: null,
+      selectedEventId: null, timelineExpanded: false, maximized: false, escapeHandler: null,
+    };
     const loadSymbol = async (symbol, asKnownAt = null) => {
       const params = new URLSearchParams(); if (asKnownAt) params.set("as_known_at", asKnownAt);
       const response = await globalObject.fetch(`/api/opportunities/${encodeURIComponent(symbol)}${params.size ? `?${params}` : ""}`, { cache: "no-store" });
@@ -517,8 +665,10 @@
         fullDetail = detail;
         componentState.cursors = collectReplayCursors(detail);
         componentState.cursorIndex = componentState.cursors.length - 1;
+        componentState.replayTimestamp = componentState.cursors.at(-1);
       } else {
-        componentState.cursorIndex = Math.max(0, componentState.cursors.findIndex((item) => item === asKnownAt));
+        componentState.replayTimestamp = asKnownAt;
+        componentState.cursorIndex = componentState.cursors.reduce((current, item, index) => (parseTime(item) <= parseTime(asKnownAt) ? index : current), 0);
       }
       componentState.loadCursor = (cursor) => loadSymbol(symbol, cursor).catch((error) => {
         target.replaceChildren(node("section", "panel opportunity-error", error.message));
@@ -530,10 +680,12 @@
   }
 
   globalObject.edgeOpportunityMap = {
+    axisPrice,
     collectReplayCursors,
     proportionalPosition,
     renderGroup,
     renderSymbol,
+    timelineRows,
     timeBounds,
   };
 })(window);

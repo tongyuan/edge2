@@ -39,18 +39,17 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertNotIn('name: "pressure"', trading)
         self.assertNotIn('label: "Pressure"', trading)
 
-    def test_group_member_board_exposes_current_authority_and_ote_fields(self) -> None:
+    def test_group_member_board_exposes_current_authority_without_deferred_ote_ui(self) -> None:
         for label in (
             "MRZ Levels",
             "Route",
             "Location",
             "Current Pressure (Latest 4 Obs)",
             "Near Miss",
-            "OTE (1D)",
-            "OTE (1W)",
-            "Latest OTE Alert",
         ):
             self.assertIn(label, GROUP_JS)
+        for removed in ("OTE (1D)", "OTE (1W)", "Latest OTE Alert", "OTE feed not connected"):
+            self.assertNotIn(removed, GROUP_JS)
         self.assertIn("symbolUrl(member.symbol)", GROUP_JS)
 
     def test_group_overview_exposes_search_selection_and_responsive_table(self) -> None:
@@ -289,7 +288,7 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertIn("/api/group-evidence", GROUP_JS)
         self.assertIn("currentPressureGauge", GROUP_JS)
         self.assertIn("Group Event Timeline", GROUP_JS)
-        self.assertIn("OTE feed not connected", GROUP_JS)
+        self.assertNotIn("OTE feed not connected", GROUP_JS)
         mobile_rules = CSS[CSS.index("@media (max-width: 560px)") :]
         for selector in (".radar-evidence-cards", ".opportunity-sheet", ".manage-group-row"):
             self.assertIn(selector, mobile_rules)

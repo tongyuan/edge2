@@ -477,50 +477,6 @@
     });
     container.append(element("p", "pressure-evidence-legend", "R = Reclaim · X = Rejection · ↑ above envelope · ↓ below envelope"));
   }
-  function renderPressureTimeline(symbol, pressure) {
-    const container = $("#detailPressureTimeline");
-    container.replaceChildren();
-    const transitions = state.events
-      .filter((event) => event.symbol === symbol && event.event_type === "CURRENT_PRESSURE_CHANGED")
-      .map((event) => ({
-        at: event.supporting_observed_at || event.occurred_at,
-        state: event.current_state,
-        label: `Transition → ${event.current_state_label || event.current_state}`,
-        detail: event.details || event.body,
-        kind: "transition",
-      }));
-    const latestEvidence = pressure?.evidence?.recent_sequence?.at(-1);
-    const latestTransitionAt = transitions.reduce((latest, item) => (
-      new Date(item.at).getTime() > new Date(latest || 0).getTime() ? item.at : latest
-    ), null);
-    if (latestEvidence && (!latestTransitionAt || new Date(latestEvidence.observed_at) > new Date(latestTransitionAt))) {
-      const currentState = pressure.direction === "higher" ? "UP" : pressure.direction === "lower" ? "DOWN" : "NEUTRAL";
-      transitions.push({
-        at: latestEvidence.observed_at,
-        state: currentState,
-        label: state.events.some((event) => event.symbol === symbol && event.event_type === "CURRENT_PRESSURE_CHANGED")
-          ? `Maintained ${pressure.direction_label || pressure.direction}`
-          : `Current evidence · ${pressure.direction_label || pressure.direction}`,
-        detail: `${latestEvidence.direction_label} · ${latestEvidence.route} ${latestEvidence.observation_type} · ${formatPrice(latestEvidence.observation_price)}`,
-        kind: "maintained",
-      });
-    }
-    transitions.sort((left, right) => new Date(left.at) - new Date(right.at));
-    if (!transitions.length) {
-      container.append(element("p", "pressure-timeline-empty", "No current-pressure transitions have been recorded since this feature was activated."));
-      return;
-    }
-    const track = element("ol", "pressure-timeline-track");
-    transitions.slice(-8).forEach((item) => {
-      const direction = item.state === "UP" ? "higher" : item.state === "DOWN" ? "lower" : "neutral";
-      const point = element("li", `${direction} ${item.kind}`);
-      const marker = element("span", "pressure-timeline-marker", "");
-      marker.setAttribute("aria-hidden", "true");
-      point.append(marker, element("time", "", operatorDate(item.at)), element("strong", "", item.label), element("small", "", item.detail || "Canonical transition"));
-      track.append(point);
-    });
-    container.append(track);
-  }
   async function loadSymbolDetail(symbol) {
     if (!symbol) { $("#symbolEmpty").hidden = false; $("#symbolDetail").hidden = true; return; }
     const response = await fetch(`/api/symbols/${encodeURIComponent(symbol)}`, { cache: "no-store" });
@@ -562,7 +518,6 @@
       element("span", "", `Lifecycle · ${active.lifecycle_activation_event_id || "—"}`),
     );
     $("#detailEventHistoryLink").href = `/mrz/events?symbol=${encodeURIComponent(symbol)}`;
-    renderPressureTimeline(symbol, pressure);
   }
 
   function syncLocationUrl() {

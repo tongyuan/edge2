@@ -58,10 +58,16 @@ class OpportunityIntelligenceContractTests(unittest.TestCase):
             "Historical Replay — As Known At",
             "Opportunity Assessment",
             "Is an entry verified?",
-            "OTE unavailable",
+            "opportunity-replay-slider",
+            "opportunity-maximize-button",
         ):
             self.assertIn(copy, MAP_JS)
+        self.assertNotIn("OTE unavailable", MAP_JS)
         self.assertIn("proportionalPosition", MAP_JS)
+        self.assertIn('btd: "#3B82F6"', MAP_JS)
+        self.assertIn('str: "#A78BFA"', MAP_JS)
+        self.assertIn('higher: "#22C55E"', MAP_JS)
+        self.assertIn('lower: "#F87171"', MAP_JS)
         self.assertIn("@media (max-width: 560px)", MAP_CSS)
         self.assertIn("overflow-x: auto", MAP_CSS)
 
@@ -70,14 +76,17 @@ class OpportunityIntelligenceContractTests(unittest.TestCase):
             "renderCandidateTable",
             "renderSymbol",
             "opportunity-breadcrumb",
-            "opportunity-timeline-expander",
+            "opportunity-timeline-toggle",
             "eventIdentity",
             "selectedEventId",
+            "timelineExpanded",
+            "setMaximized",
         ):
             self.assertIn(required, MAP_JS + MAP_CSS)
         self.assertIn("Symbol Opportunity Candidates", MAP_JS)
         self.assertIn("Price / structural zone", MAP_JS)
-        self.assertIn("observed time and known time preserved", MAP_JS)
+        self.assertIn("Observed / known", MAP_JS)
+        self.assertEqual(MAP_JS.count('node("table", "opportunity-timeline-table")'), 1)
 
 
 if __name__ == "__main__":

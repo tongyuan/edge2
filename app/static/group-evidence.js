@@ -217,7 +217,7 @@
       {
         label: "New tracker events",
         value: summary.new_tracker_events,
-        detail: `MRZ ${summary.tracker_event_breakdown.mrz} · Pressure ${summary.tracker_event_breakdown.pressure} · Near Miss ${summary.tracker_event_breakdown.near_miss} · OTE ${summary.tracker_event_breakdown.ote}`,
+        detail: `MRZ ${summary.tracker_event_breakdown.mrz} · Pressure ${summary.tracker_event_breakdown.pressure} · Near Miss ${summary.tracker_event_breakdown.near_miss}`,
         tone: "events",
       },
     ];
@@ -305,7 +305,7 @@
     const tableWrap = node("div", "radar-table-wrap");
     const table = node("table", "radar-table");
     const head = node("thead", "");
-    head.innerHTML = `<tr><th>Group</th><th>Members</th><th>Opportunity research</th><th>IPDA Breadth (P / E / D)</th><th>Migration</th><th>Current Pressure State</th><th class="activity-heading">Activity (${state.scope.window})</th><th>Near Miss</th><th>OTE (1D)</th><th>OTE (1W)</th><th>Latest OTE Alert</th><th aria-label="Open"></th></tr>`;
+    head.innerHTML = `<tr><th>Group</th><th>Members</th><th>Opportunity research</th><th>IPDA Breadth (P / E / D)</th><th>Migration</th><th>Current Pressure State</th><th class="activity-heading">Activity (${state.scope.window})</th><th>Near Miss</th><th aria-label="Open"></th></tr>`;
     const body = node("tbody", "");
     const groups = sortedOverviewGroups([...(state.overview?.groups || [])]);
     groups.forEach((group) => {
@@ -331,11 +331,8 @@
       const pressureCell = node("td", ""); pressureCell.append(directionMetric(current.higher, current.lower));
       const activity = node("td", "activity-table-cell"); activity.append(activityCell(group));
       const nearCell = node("td", "near-miss-count", group.near_miss?.status === "available" ? group.near_miss.active_episode_count : "Unavailable");
-      const oteDaily = node("td", "ote-unavailable", group.ote?.status === "not_connected" ? "Not connected" : text(group.ote?.daily));
-      const oteWeekly = node("td", "ote-unavailable", group.ote?.status === "not_connected" ? "Not connected" : text(group.ote?.weekly));
-      const latestOte = node("td", "ote-unavailable", group.ote?.status === "not_connected" ? "OTE feed not connected" : text(group.ote?.latest));
       const open = node("td", "radar-open-cell"); open.append(node("span", "", "Open"));
-      row.append(nameCell, memberCell, opportunityCell, breadthCell, migrationCell, pressureCell, activity, nearCell, oteDaily, oteWeekly, latestOte, open);
+      row.append(nameCell, memberCell, opportunityCell, breadthCell, migrationCell, pressureCell, activity, nearCell, open);
       row.addEventListener("click", () => openGroup(group.id));
       row.addEventListener("keydown", (event) => { if (event.target === row && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); openGroup(group.id); } });
       body.append(row);
@@ -343,7 +340,7 @@
     if (!groups.length) {
       const row = node("tr", "");
       const cell = node("td", "radar-empty", state.overview?.groups?.length ? "No groups match this search." : "No saved groups. Create a group to begin.");
-      cell.colSpan = 12; row.append(cell); body.append(row);
+      cell.colSpan = 9; row.append(cell); body.append(row);
     }
     table.append(head, body); tableWrap.append(table); section.append(tableWrap);
     return section;
@@ -369,7 +366,6 @@
       evidenceCard("migration", "MRZ Migration", migrationValue, migrationSupport, "migration"),
       evidenceCard("pressure", "Current Pressure State", dominant, current.status === "available" ? `${current.summary.neutral} neutral · retained canonical snapshot` : "Current pressure unavailable", "pressure"),
       evidenceCard("near-miss", "Near Miss", near.status === "available" ? `${near.active_episode_count} active` : "Unavailable", near.status === "available" ? `${near.historical_episode_count} historical in window` : "Episode data unavailable", "near-miss"),
-      evidenceCard("ote", "OTE (from EDGE_BOT)", payload.ote.status === "not_connected" ? "Feed not connected" : `${text(payload.ote.daily)} 1D · ${text(payload.ote.weekly)} 1W`, payload.ote.status === "not_connected" ? "No counts until a supported feed exists" : `Latest ${exactTime(payload.ote.latest)}`, "ote"),
     );
     return cards;
   }
@@ -392,10 +388,8 @@
     } else if (kind === "near-miss") {
       title = "Near Miss episodes"; rows = payload.near_miss.episodes || [];
       rows.forEach((item) => { const row = node("a", "inspector-row"); row.href = symbolUrl(item.symbol); row.append(node("strong", item.active ? "active" : "", item.symbol), node("span", "", `${item.route_owner} · ${item.active ? "Active episode" : `Ended ${exactTime(item.ended_at)}`} · started ${exactTime(item.started_at)}`)); list.append(row); });
-    } else {
-      title = "OTE integration"; list.append(node("div", "inspector-empty", "OTE feed not connected. EDGE 2.0 is ready to present supported EDGE_BOT events without recreating OTE calculations."));
     }
-    if (!rows.length && kind !== "ote") list.append(node("div", "inspector-empty", "No contributing symbols or events in the selected window."));
+    if (!rows.length) list.append(node("div", "inspector-empty", "No contributing symbols or events in the selected window."));
     header.append(node("h3", "", title), close); inspector.append(header, list); inspector.hidden = false;
     inspector.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }
@@ -485,17 +479,16 @@
       migration: (payload.directional.mrz_migrations.events || []).map((event) => ({ ...event, at: event.occurred_at, label: `${event.symbol} · ${titleCase(event.direction)}`, tone: event.direction })),
       pressure: (payload.directional.cumulative_lifecycle_pressure_events.events || []).map((event) => ({ ...event, at: event.occurred_at, label: `${event.symbol} · ${titleCase(event.event_direction)}`, tone: event.event_direction })),
       "near-miss": (payload.near_miss.episodes || []).flatMap((episode) => { const events = [{ ...episode, at: episode.started_at, label: `${episode.symbol} · Started`, tone: "near-miss" }]; if (episode.ended_at) events.push({ ...episode, at: episode.ended_at, label: `${episode.symbol} · Ended`, tone: "near-miss-ended" }); return events; }),
-      ote: [],
     };
   }
 
   function renderTimeline(payload) {
     const panel = node("section", "radar-panel event-timeline-panel"); const header = node("header", "radar-panel-heading"); header.append(node("h3", "", "Group Event Timeline"), node("span", "", `Last ${state.scope.window}`)); panel.append(header);
     const lanes = node("div", "timeline-lanes"); const events = timelineEvents(payload); const start = new Date(payload.window.comparison_at).getTime(); const end = new Date(payload.window.as_of).getTime();
-    [["migration", "Migration"], ["pressure", "Pressure"], ["near-miss", "Near Miss"], ["ote", "OTE"]].forEach(([key, label]) => {
+    [["migration", "Migration"], ["pressure", "Pressure"], ["near-miss", "Near Miss"]].forEach(([key, label]) => {
       const lane = node("div", "timeline-lane"); lane.append(node("span", `lane-label ${key}`, label)); const track = node("div", "timeline-track");
       (events[key] || []).forEach((event) => { const marker = node("button", `timeline-marker ${event.tone || key}`); marker.type = "button"; marker.title = `${event.label} · ${exactTime(event.at)}`; marker.style.left = `${percent(new Date(event.at).getTime() - start, end - start)}%`; marker.setAttribute("aria-label", marker.title); marker.addEventListener("click", () => { const details = $("#timelineEventDetails"); details.textContent = `${event.label} · ${exactTime(event.at)} · ${text(event.event_key || event.episode_key || event.source_event_key, "Canonical event")}`; details.hidden = false; }); track.append(marker); });
-      if (key === "ote" && payload.ote.status === "not_connected") track.append(node("span", "timeline-unavailable", "Feed not connected")); lane.append(track); lanes.append(lane);
+      lane.append(track); lanes.append(lane);
     });
     const axis = node("div", "timeline-axis"); axis.append(node("span", "", shortDate(payload.window.comparison_at)), node("span", "", shortDate(payload.window.as_of))); const detail = node("div", "timeline-event-details"); detail.id = "timelineEventDetails"; detail.hidden = true;
     panel.append(lanes, axis, detail); return panel;
@@ -535,7 +528,7 @@
 
   function renderMembers(payload) {
     const panel = node("section", "radar-panel group-members-panel"); const header = node("header", "radar-panel-heading"); header.append(node("h3", "", `Group Members (${payload.group.member_count})`)); panel.append(header);
-    const wrap = node("div", "radar-table-wrap"); const table = node("table", "member-evidence-table"); const head = node("thead", ""); head.innerHTML = "<tr><th>Symbol</th><th>Route</th><th>Location</th><th>MRZ Levels</th><th>Current Pressure (Latest 4 Obs)</th><th>Near Miss</th><th>OTE (1D)</th><th>OTE (1W)</th><th>Latest OTE Alert</th><th>Status</th><th aria-label=\"Open\"></th></tr>"; const body = node("tbody", "");
+    const wrap = node("div", "radar-table-wrap"); const table = node("table", "member-evidence-table"); const head = node("thead", ""); head.innerHTML = "<tr><th>Symbol</th><th>Route</th><th>Location</th><th>MRZ Levels</th><th>Current Pressure (Latest 4 Obs)</th><th>Near Miss</th><th>Status</th><th aria-label=\"Open\"></th></tr>"; const body = node("tbody", "");
     (payload.members || []).forEach((member) => {
       const row = node("tr", ""); const symbol = node("td", "symbol-cell"); symbol.append(detailLink(member.symbol, symbolUrl(member.symbol), "symbol-link")); const route = node("td", ""); route.append(statusPill(text(member.route), String(member.route || "").toLowerCase())); const location = node("td", ""); location.append(statusPill(member.location_label, member.location?.includes("discount") ? "lower" : member.location?.includes("premium") ? "higher" : "neutral"));
       const mrz = node("td", "mrz-levels-cell");
@@ -546,7 +539,7 @@
         mrz.append(details);
       } else mrz.append(node("span", "radar-unavailable", member.mrz?.status === "inactive" ? "No active MRZ" : "Unavailable"));
       const pressure = node("td", "current-pressure-cell"); const pressureLink = node("a", "current-pressure-link"); pressureLink.href = symbolUrl(member.symbol); pressureLink.setAttribute("aria-label", `Inspect ${member.symbol} current pressure evidence`); pressureLink.append(currentPressureGauge(member)); pressure.append(pressureLink);
-      const near = node("td", "near-miss-cell", member.near_miss ? (member.near_miss.active ? "Active" : "Historical") : "—"); const daily = node("td", "ote-unavailable", member.ote?.status === "not_connected" ? "Not connected" : text(member.ote?.daily)); const weekly = node("td", "ote-unavailable", member.ote?.status === "not_connected" ? "Not connected" : text(member.ote?.weekly)); const latest = node("td", "ote-unavailable", member.ote?.status === "not_connected" ? "OTE feed not connected" : text(member.ote?.latest)); const status = node("td", ""); status.append(statusPill(member.mrz_status, member.mrz_status === "Active" ? "active" : "neutral")); const open = node("td", "radar-open-cell"); open.append(detailLink("Open", symbolUrl(member.symbol), "table-open-link")); row.append(symbol, route, location, mrz, pressure, near, daily, weekly, latest, status, open); body.append(row);
+      const near = node("td", "near-miss-cell", member.near_miss ? (member.near_miss.active ? "Active" : "Historical") : "—"); const status = node("td", ""); status.append(statusPill(member.mrz_status, member.mrz_status === "Active" ? "active" : "neutral")); const open = node("td", "radar-open-cell"); open.append(detailLink("Open", symbolUrl(member.symbol), "table-open-link")); row.append(symbol, route, location, mrz, pressure, near, status, open); body.append(row);
     });
     table.append(head, body); wrap.append(table); panel.append(wrap); return panel;
   }
@@ -586,7 +579,7 @@
         tone: "near-miss",
       };
     }
-    return { title: "OTE event", detail: "EDGE_BOT", tone: "ote" };
+    return { title: "Tracked event", detail: "Canonical source", tone: "neutral" };
   }
 
   function closeActivityDrawer() {
