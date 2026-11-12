@@ -67,7 +67,7 @@ class GroupEvidenceContractTests(unittest.TestCase):
         self.assertNotIn("renderWatchlists", render_all)
 
     def test_stage_a_assets_share_a_fresh_cache_version(self) -> None:
-        version = "opportunity-intelligence-20261112"
+        version = "opportunity-ui-correction-20261112"
         self.assertIn(f'/static/workspace.css?v={version}', HTML)
         self.assertIn(f'/static/group-evidence.js?v={version}', HTML)
         self.assertIn(f'/static/workspace.js?v={version}', HTML)
@@ -105,6 +105,19 @@ class GroupEvidenceContractTests(unittest.TestCase):
         self.assertIn("globalObject.confirm", JS)
         self.assertIn("openManageAll", JS)
         self.assertIn("duplicateGroup", JS)
+
+    def test_group_radar_uses_three_exclusive_workspace_states(self) -> None:
+        for required in (
+            'view === "overview"',
+            'view === "group"',
+            'view === "symbol"',
+            "openOpportunitySymbol",
+            "group-canonical-evidence",
+            "symbol-opportunity-intelligence",
+        ):
+            self.assertIn(required, JS + CSS)
+        self.assertIn("Candidate symbols · Expandable canonical evidence", JS)
+        self.assertIn("Time · Price · Structural evidence", JS)
 
     def test_repository_snapshot_includes_near_miss_and_location_history_inputs(self) -> None:
         method = REPOSITORY.split("def group_evidence_inputs", 1)[1].split("def saved_groups", 1)[0]

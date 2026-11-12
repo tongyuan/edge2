@@ -126,11 +126,22 @@
     return state.groups.find((group) => String(group.id) === String(state.scope.groupId)) || null;
   }
 
+  function selectedOpportunitySymbol() {
+    return new URLSearchParams(globalObject.location.search).get("symbol") || "";
+  }
+
   function openGroup(groupId) {
     state.activityDrawerOpen = false;
-    updateUrl({ group: groupId, dimension: null, bucket: null, evidence: null });
+    updateUrl({ group: groupId, symbol: null, dimension: null, bucket: null, evidence: null });
     state.recentLoaded = false;
     load().then(() => $("#selectedGroupWorkspace")?.scrollIntoView({ block: "start", behavior: "smooth" }));
+  }
+
+  function openOpportunitySymbol(symbol) {
+    updateUrl({ symbol, activity: null, dimension: null, bucket: null, evidence: null });
+    state.activityDrawerOpen = false;
+    render();
+    globalObject.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function openActivity(groupId) {
@@ -676,9 +687,29 @@
 
   function renderNamedGroup(payload) {
     const workspace = node("section", "selected-group-workspace"); workspace.id = "selectedGroupWorkspace";
-    const header = node("header", "selected-group-header"); const back = node("button", "back-button", "Back to all groups"); back.type = "button"; back.addEventListener("click", () => { updateUrl({ group: "all" }); state.detail = null; render(); globalObject.scrollTo({ top: 0, behavior: "smooth" }); }); const identity = node("div", "selected-group-identity"); identity.append(node("h2", "", payload.group.name), node("p", "", `${payload.group.member_count} members · Opportunity workspace`)); const edit = node("button", "quiet-button", "Edit Group"); edit.type = "button"; edit.addEventListener("click", () => openEditor(selectedGroup())); header.append(back, identity, edit); workspace.append(header);
-    const opportunity = node("section", "opportunity-intelligence"); opportunity.id = "groupOpportunityIntelligence"; opportunity.setAttribute("aria-label", `${payload.group.name} Opportunity Intelligence`); opportunity.append(node("div", "opportunity-loading", "Loading opportunity reconstruction…")); workspace.append(opportunity, renderEvidenceCards(payload));
-    const inspector = node("section", "radar-evidence-inspector"); inspector.id = "radarEvidenceInspector"; inspector.hidden = true; workspace.append(inspector); const charts = node("div", "radar-chart-grid"); charts.append(renderLocationFlow(payload), renderTimeline(payload)); workspace.append(charts, renderMembers(payload)); workspace.querySelectorAll("[data-inspect]").forEach((button) => button.addEventListener("click", () => renderInspector(payload, button.dataset.inspect))); return workspace;
+    const header = node("header", "selected-group-header");
+    const back = node("button", "back-button", "← Back to Groups"); back.type = "button"; back.addEventListener("click", () => { updateUrl({ group: "all", symbol: null }); state.detail = null; render(); globalObject.scrollTo({ top: 0, behavior: "smooth" }); });
+    const identity = node("div", "selected-group-identity"); identity.append(node("p", "", "GROUP WORKSPACE"), node("h2", "", payload.group.name), node("span", "", `${payload.group.member_count} members · Candidate research and canonical group evidence`));
+    const edit = node("button", "quiet-button", "Edit Group"); edit.type = "button"; edit.addEventListener("click", () => openEditor(selectedGroup()));
+    header.append(back, identity, edit); workspace.append(header);
+    const opportunity = node("section", "opportunity-intelligence"); opportunity.id = "groupOpportunityIntelligence"; opportunity.setAttribute("aria-label", `${payload.group.name} Opportunity Intelligence`); opportunity.append(node("div", "opportunity-loading", "Loading opportunity candidates…")); workspace.append(opportunity);
+
+    const evidence = node("details", "group-canonical-evidence panel");
+    const summary = node("summary", ""); summary.append(node("strong", "", "Group Evidence"), node("span", "", "IPDA · MRZ Migration · Current Pressure · Near Miss · Group Event Timeline · Members"));
+    const body = node("div", "group-canonical-evidence-body");
+    body.append(renderEvidenceCards(payload));
+    const inspector = node("section", "radar-evidence-inspector"); inspector.id = "radarEvidenceInspector"; inspector.hidden = true; body.append(inspector);
+    const charts = node("div", "radar-chart-grid"); charts.append(renderLocationFlow(payload), renderTimeline(payload));
+    body.append(charts, renderMembers(payload)); evidence.append(summary, body); workspace.append(evidence);
+    workspace.querySelectorAll("[data-inspect]").forEach((button) => button.addEventListener("click", () => renderInspector(payload, button.dataset.inspect)));
+    return workspace;
+  }
+
+  function renderSymbolWorkspace(payload, symbol) {
+    const workspace = node("section", "selected-symbol-workspace"); workspace.id = "selectedSymbolWorkspace";
+    const opportunity = node("section", "opportunity-intelligence symbol-opportunity-intelligence"); opportunity.id = "symbolOpportunityIntelligence"; opportunity.setAttribute("aria-label", `${symbol} Opportunity Intelligence`); opportunity.append(node("div", "opportunity-loading", `Loading ${symbol} opportunity history…`));
+    workspace.append(opportunity);
+    return workspace;
   }
 
   function renderDetails() {
@@ -690,27 +721,40 @@
   function render() {
     const wrapper = node("div", "radar-content");
     const main = node("div", "radar-content-main");
-    main.append(renderOpportunityUniverseOverview());
-    if (state.detail?.scope === "named_group") main.classList.add("named-group-mode");
-    main.append(renderOverviewTable());
-    if (state.detail?.scope === "named_group") main.append(renderNamedGroup(state.detail));
+    const namedGroup = state.detail?.scope === "named_group";
+    const selectedSymbol = namedGroup ? selectedOpportunitySymbol() : "";
+    const view = selectedSymbol ? "symbol" : namedGroup ? "group" : "overview";
+    main.classList.add(`${view}-workspace-mode`);
+    if (view === "overview") main.append(renderOpportunityUniverseOverview(), renderOverviewTable());
+    else if (view === "group") main.append(renderNamedGroup(state.detail));
+    else main.append(renderSymbolWorkspace(state.detail, selectedSymbol));
     wrapper.append(main);
-    if (state.activityDrawerOpen && state.detail?.scope === "named_group") {
+    if (state.activityDrawerOpen && namedGroup && view === "group") {
       wrapper.classList.add("activity-open");
       wrapper.append(renderActivityDrawer(state.detail));
     }
     $("#groupEvidenceContent").replaceChildren(wrapper);
-    if (state.detail?.scope === "named_group" && globalObject.edgeOpportunityMap) {
+    if (namedGroup && globalObject.edgeOpportunityMap) {
       const groupSummary = (state.opportunity?.groups || []).find((item) => String(item.id) === String(state.detail.group.id));
-      const target = $("#groupOpportunityIntelligence");
-      if (target && groupSummary) {
-        globalObject.edgeOpportunityMap.renderGroup(target, { ...state.opportunity, groups: [groupSummary] }).catch((error) => target.replaceChildren(node("section", "panel opportunity-error", error.message)));
-      } else if (target) target.replaceChildren(node("section", "panel opportunity-empty", "No canonical opportunity context is available for this group."));
+      if (view === "group") {
+        const target = $("#groupOpportunityIntelligence");
+        if (target && groupSummary) globalObject.edgeOpportunityMap.renderGroup(target, { ...state.opportunity, groups: [groupSummary] }, { onSelectSymbol: openOpportunitySymbol });
+        else if (target) target.replaceChildren(node("section", "panel opportunity-empty", "No canonical opportunity context is available for this group."));
+      } else if (view === "symbol") {
+        const target = $("#symbolOpportunityIntelligence");
+        const backToGroup = () => { updateUrl({ symbol: null }); render(); globalObject.scrollTo({ top: 0, behavior: "smooth" }); };
+        const backToGroups = () => { updateUrl({ group: "all", symbol: null }); state.detail = null; render(); globalObject.scrollTo({ top: 0, behavior: "smooth" }); };
+        globalObject.edgeOpportunityMap.renderSymbol(target, selectedSymbol, { groupName: state.detail.group.name, onBackToGroup: backToGroup, onBackToGroups: backToGroups }).catch((error) => target.replaceChildren(node("section", "panel opportunity-error", error.message)));
+      }
     }
-    renderActivitySummary();
+    if (view === "overview") renderActivitySummary(); else $("#groupActivitySummary").hidden = true;
+    const toolbar = $(".radar-toolbar"); if (toolbar) toolbar.hidden = view !== "overview";
+    const details = $("#groupEvidenceDetails"); if (details) details.hidden = view !== "overview";
+    $("#groupEvidenceTitle").textContent = view === "symbol" ? "Opportunity Intelligence" : view === "group" ? "Group Workspace" : "Group Radar";
+    $("#groupEvidenceScope").textContent = view === "symbol" ? "Time · Price · Structural evidence" : view === "group" ? "Candidate symbols · Expandable canonical evidence" : "Opportunity discovery · Group evidence · Event evolution";
     $("#groupEvidenceGroupCount").textContent = `Groups (${state.overview?.scope_totals?.group_count || 0})`; $("#groupEvidenceAsOf").textContent = exactTime((state.detail || state.overview)?.window?.as_of); $("#groupEvidenceEdit").hidden = true;
     globalObject.document.querySelectorAll("[data-group-window]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.groupWindow === state.scope.window)));
-    const live = $("#groupEvidenceLive"); live.className = "group-evidence-live"; live.hidden = false; live.textContent = state.detail?.status === "partial" || state.overview?.status === "partial" ? "Evidence loaded with one or more unavailable dimensions." : "Canonical group evidence loaded."; renderDetails(); updateManageMenuState();
+    const live = $("#groupEvidenceLive"); live.className = "group-evidence-live"; live.hidden = false; live.textContent = state.detail?.status === "partial" || state.overview?.status === "partial" ? "Evidence loaded with one or more unavailable dimensions." : "Canonical group evidence loaded."; if (view === "overview") renderDetails(); updateManageMenuState();
   }
 
   async function loadGroups() {

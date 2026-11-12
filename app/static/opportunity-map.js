@@ -63,6 +63,13 @@
     return String(value || "context").toLowerCase().replaceAll("_", "-");
   }
 
+  function eventIdentity(item) {
+    return item?.canonical_event_id
+      || item?.event_id
+      || item?.mrz_lifecycle_event_id
+      || [item?.source_tracker, item?.event_type, item?.effective_at, item?.known_at].join(":");
+  }
+
   function collectReplayCursors(detail) {
     const values = new Set([detail.as_of]);
     [
@@ -132,7 +139,7 @@
     return { minimum: minimum - padding, maximum: maximum + padding };
   }
 
-  function drawChart(canvas, detail, rangeDays, onSelect) {
+  function drawChart(canvas, detail, rangeDays, selectedEventId, onSelect) {
     const context = canvas.getContext("2d");
     const width = canvas.width;
     const height = canvas.height;
@@ -181,7 +188,8 @@
       const top = y(item.upper_bound);
       const bottom = y(item.lower_bound);
       context.save();
-      context.strokeStyle = COLORS.near;
+      context.strokeStyle = eventIdentity(item) === selectedEventId ? "#f0dcff" : COLORS.near;
+      context.lineWidth = eventIdentity(item) === selectedEventId ? 3 : 1;
       context.setLineDash([6, 4]);
       context.strokeRect(start, top, Math.max(2, end - start), Math.max(2, bottom - top));
       context.restore();
@@ -193,7 +201,8 @@
       const bottom = y(item.lower_bound);
       context.fillStyle = "rgba(24,217,165,.14)";
       context.fillRect(start, top, Math.max(2, end - start), Math.max(3, bottom - top));
-      context.strokeStyle = COLORS.mrz;
+      context.strokeStyle = eventIdentity(item) === selectedEventId ? "#d8fff4" : COLORS.mrz;
+      context.lineWidth = eventIdentity(item) === selectedEventId ? 3 : 1;
       context.strokeRect(start, top, Math.max(2, end - start), Math.max(3, bottom - top));
       context.save();
       context.setLineDash([5, 4]);
@@ -211,6 +220,10 @@
       context.beginPath(); context.arc(xPosition, yPosition, 4, 0, Math.PI * 2);
       context.fillStyle = item.route === "BTD" ? COLORS.btd : COLORS.str;
       context.fill();
+      if (eventIdentity(item) === selectedEventId) {
+        context.beginPath(); context.arc(xPosition, yPosition, 10, 0, Math.PI * 2);
+        context.strokeStyle = "#ffffff"; context.lineWidth = 2; context.stroke();
+      }
       hits.push({ x: xPosition, y: yPosition, radius: 10, item });
     });
     items.pressure.forEach((item) => {
@@ -220,6 +233,10 @@
       context.fillStyle = item.direction === "LOWER" ? COLORS.lower : COLORS.higher;
       context.fill();
       context.strokeStyle = "#0b1119"; context.lineWidth = 2; context.stroke();
+      if (eventIdentity(item) === selectedEventId) {
+        context.beginPath(); context.arc(xPosition, yPosition, 12, 0, Math.PI * 2);
+        context.strokeStyle = "#ffffff"; context.lineWidth = 2; context.stroke();
+      }
       hits.push({ x: xPosition, y: yPosition, radius: 13, item });
     });
     canvas._opportunityHits = hits;
@@ -277,31 +294,43 @@
     target.append(heading, grid);
   }
 
-  function renderTimeline(detail) {
-    const wrap = node("div", "opportunity-timeline-wrap");
-    const table = node("table", "opportunity-timeline-table");
-    const head = node("thead", "");
-    head.innerHTML = "<tr><th>Event time</th><th>Known at</th><th>Tracker</th><th>Event</th><th>Price / zone</th><th>State after</th></tr>";
-    const rows = [
+  function timelineRows(detail) {
+    return [
       ...(detail.observations || []),
       ...(detail.near_miss_events || []),
       ...(detail.mrz_lifecycles || []),
       ...(detail.pressure_observations || []),
     ].sort((left, right) => parseTime(left.effective_at) - parseTime(right.effective_at) || parseTime(left.known_at) - parseTime(right.known_at));
+  }
+
+  function renderTimeline(detail, onSelect, limit = null) {
+    const wrap = node("div", "opportunity-timeline-wrap");
+    const table = node("table", "opportunity-timeline-table");
+    const head = node("thead", "");
+    head.innerHTML = "<tr><th>Date / time</th><th>Tracker</th><th>Event</th><th>Price / structural zone</th><th>Evidence details</th></tr>";
+    const rows = timelineRows(detail);
     const body = node("tbody", "");
-    rows.forEach((item) => {
+    (limit ? rows.slice(0, limit) : rows).forEach((item) => {
       const row = node("tr", "");
-      const state = item.current_pressure_state
-        ? `${item.current_pressure_label} ${item.recent_higher_observation_count}/${item.recent_lower_observation_count}`
-        : "—";
+      row.tabIndex = 0;
+      row.dataset.eventId = eventIdentity(item);
+      const evidence = item.relationship
+        || item.ipda_location_label
+        || item.structural_location
+        || (item.current_pressure_state ? `${item.current_pressure_label} ${item.recent_higher_observation_count}/${item.recent_lower_observation_count}` : "Canonical observed evidence");
       [
-        exactTime(item.effective_at), exactTime(item.known_at), item.source_tracker,
-        item.event_type, item.price ? price(item.price) : rangeText(item), state,
+        exactTime(item.effective_at), item.source_tracker,
+        item.event_type, item.price ? price(item.price) : rangeText(item), evidence,
       ].forEach((value) => row.append(node("td", "", value)));
+      row.setAttribute("aria-label", `${item.event_type}; observed ${exactTime(item.effective_at)}; known ${exactTime(item.known_at)}`);
+      row.addEventListener("click", () => onSelect(item));
+      row.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelect(item); }
+      });
       body.append(row);
     });
     if (!rows.length) {
-      const row = node("tr", ""); const cell = node("td", "opportunity-empty", "No evidence is known at this replay cursor."); cell.colSpan = 6; row.append(cell); body.append(row);
+      const row = node("tr", ""); const cell = node("td", "opportunity-empty", "No evidence is known at this replay cursor."); cell.colSpan = 5; row.append(cell); body.append(row);
     }
     table.append(head, body); wrap.append(table); return wrap;
   }
@@ -309,7 +338,9 @@
   function renderAssessment(detail) {
     const panel = node("section", "opportunity-assessment panel");
     const header = node("header", "opportunity-panel-heading");
-    header.append(node("div", "", "Opportunity Assessment"), node("span", "", "Evidence-derived"));
+    const evidenceLink = node("a", "opportunity-canonical-link", "Open canonical evidence →");
+    evidenceLink.href = `/mrz/symbols?${new URLSearchParams({ symbol: detail.symbol, from: "watchlists" })}`;
+    header.append(node("div", "", "Opportunity Assessment"), evidenceLink);
     panel.append(header);
     const list = node("dl", "opportunity-assessment-list");
     [
@@ -326,9 +357,15 @@
     panel.append(list); return panel;
   }
 
-  function renderOpportunityWorkspace(target, detail, componentState) {
+  function renderOpportunityWorkspace(target, detail, componentState, options = {}) {
     target.replaceChildren();
     const selectedEpisode = detail.episodes.find((item) => item.episode_id === detail.selected_episode_id) || detail.episodes[0];
+    const breadcrumb = node("nav", "opportunity-breadcrumb");
+    breadcrumb.setAttribute("aria-label", "Opportunity workspace breadcrumb");
+    const groups = node("button", "", "Group Radar"); groups.type = "button"; groups.addEventListener("click", options.onBackToGroups || (() => {}));
+    const group = node("button", "", options.groupName || "Selected group"); group.type = "button"; group.addEventListener("click", options.onBackToGroup || (() => {}));
+    breadcrumb.append(groups, node("span", "", "/"), group, node("span", "", "/"), node("strong", "", detail.symbol));
+    target.append(breadcrumb);
     const header = node("header", "opportunity-symbol-header");
     const identity = node("div", "");
     identity.append(node("p", "", `${selectedEpisode.hypothesis} RESEARCH HYPOTHESIS`), node("h3", "", `${detail.symbol} — Opportunity History`));
@@ -342,23 +379,6 @@
       const fact = node("span", ""); fact.append(node("small", "", label), node("strong", "", value)); facts.append(fact);
     });
     header.append(identity, facts); target.append(header);
-
-    const mapPanel = node("section", "opportunity-map-panel panel");
-    const mapHeader = node("header", "opportunity-panel-heading");
-    const title = node("div", ""); title.append(node("strong", "", "Opportunity Map (Time × Price)"), node("small", "", "Actual event time · linear instrument price"));
-    const ranges = node("div", "opportunity-range-controls");
-    [[0, "All"], [90, "90D"], [30, "30D"]].forEach(([days, label]) => {
-      const button = node("button", "", label); button.type = "button"; button.setAttribute("aria-pressed", String(componentState.rangeDays === days));
-      button.addEventListener("click", () => { componentState.rangeDays = days; renderOpportunityWorkspace(target, detail, componentState); }); ranges.append(button);
-    });
-    mapHeader.append(title, ranges); mapPanel.append(mapHeader);
-    const scroll = node("div", "opportunity-chart-scroll");
-    const canvas = node("canvas", "opportunity-map-canvas"); canvas.width = 1120; canvas.height = 460; canvas.setAttribute("aria-label", `Time-price opportunity map for ${detail.symbol}`); canvas.tabIndex = 0;
-    scroll.append(canvas); mapPanel.append(scroll, renderLegend());
-    const details = node("div", "opportunity-selected-event");
-    mapPanel.append(details); renderEventDetails(details, null);
-    target.append(mapPanel);
-    globalObject.requestAnimationFrame(() => drawChart(canvas, detail, componentState.rangeDays, (item) => renderEventDetails(details, item)));
 
     const replay = node("section", "opportunity-replay panel");
     const replayHeading = node("header", "opportunity-panel-heading");
@@ -381,7 +401,7 @@
     select.addEventListener("change", () => moveTo(Number(select.value)));
     play.addEventListener("click", () => {
       componentState.playing = !componentState.playing;
-      if (!componentState.playing) { globalObject.clearTimeout(componentState.playTimer); renderOpportunityWorkspace(target, detail, componentState); return; }
+      if (!componentState.playing) { globalObject.clearTimeout(componentState.playTimer); renderOpportunityWorkspace(target, detail, componentState, options); return; }
       const advance = () => {
         if (!componentState.playing) return;
         if (componentState.cursorIndex >= componentState.cursors.length - 1) componentState.cursorIndex = 0;
@@ -397,33 +417,75 @@
     const progress = node("span", ""); progress.style.width = `${componentState.cursors.length <= 1 ? 100 : componentState.cursorIndex / (componentState.cursors.length - 1) * 100}%`; track.append(progress);
     replay.append(track, node("p", "opportunity-replay-note", `Visible evidence known by ${exactTime(detail.as_known_at)}. Event time and knowledge time remain separate.`)); target.append(replay);
 
-    const bottom = node("div", "opportunity-bottom-grid");
+    const mapPanel = node("section", "opportunity-map-panel panel");
+    const mapHeader = node("header", "opportunity-panel-heading");
+    const title = node("div", ""); title.append(node("strong", "", "Opportunity Map (Time × Price)"), node("small", "", "Actual event time · linear instrument price"));
+    const ranges = node("div", "opportunity-range-controls");
+    [[0, "All"], [90, "90D"], [30, "30D"]].forEach(([days, label]) => {
+      const button = node("button", "", label); button.type = "button"; button.setAttribute("aria-pressed", String(componentState.rangeDays === days));
+      button.addEventListener("click", () => { componentState.rangeDays = days; renderOpportunityWorkspace(target, detail, componentState, options); }); ranges.append(button);
+    });
+    mapHeader.append(title, ranges); mapPanel.append(mapHeader);
+    const scroll = node("div", "opportunity-chart-scroll");
+    const canvas = node("canvas", "opportunity-map-canvas"); canvas.width = 1120; canvas.height = 280; canvas.setAttribute("aria-label", `Time-price opportunity map for ${detail.symbol}`); canvas.tabIndex = 0;
+    scroll.append(canvas); mapPanel.append(scroll, renderLegend());
+    const details = node("div", "opportunity-selected-event");
+    mapPanel.append(details); renderEventDetails(details, null);
+    target.append(mapPanel);
+    const selectEvidence = (item) => {
+      componentState.selectedEventId = eventIdentity(item);
+      renderEventDetails(details, item);
+      drawChart(canvas, detail, componentState.rangeDays, componentState.selectedEventId, selectEvidence);
+      target.querySelectorAll(".opportunity-timeline-table tr[data-event-id]").forEach((row) => row.classList.toggle("selected", row.dataset.eventId === componentState.selectedEventId));
+      mapPanel.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    };
+    globalObject.requestAnimationFrame(() => drawChart(canvas, detail, componentState.rangeDays, componentState.selectedEventId, selectEvidence));
+
+    target.append(renderAssessment(detail));
     const timeline = node("section", "opportunity-event-timeline panel");
-    const timelineHeader = node("header", "opportunity-panel-heading"); timelineHeader.append(node("div", "", `Opportunity Event Timeline (${detail.symbol})`), node("span", "", `${detail.observations.length + detail.near_miss_events.length + detail.mrz_lifecycles.length + detail.pressure_observations.length} records`)); timeline.append(timelineHeader, renderTimeline(detail));
-    bottom.append(timeline, renderAssessment(detail)); target.append(bottom);
+    const recordCount = timelineRows(detail).length;
+    const timelineHeader = node("header", "opportunity-panel-heading"); timelineHeader.append(node("div", "", `Opportunity Event Timeline (${detail.symbol})`), node("span", "", `${recordCount} records`));
+    timeline.append(timelineHeader, renderTimeline(detail, selectEvidence, 8));
+    if (recordCount > 8) {
+      const expansion = node("details", "opportunity-timeline-expander");
+      expansion.append(node("summary", "", `View all ${recordCount} events · observed time and known time preserved`), renderTimeline(detail, selectEvidence));
+      timeline.append(expansion);
+    }
+    target.append(timeline);
   }
 
-  function renderCandidateList(target, summary, selectedSymbol, onSelect) {
+  function renderCandidateTable(target, summary, onSelect) {
     target.replaceChildren();
     const header = node("header", "opportunity-candidate-heading");
-    header.append(node("div", "", "Symbol Candidates"), node("span", "", `${summary.candidates.length} hypotheses`)); target.append(header);
-    const list = node("div", "opportunity-candidate-list");
+    header.append(node("div", "", "Symbol Opportunity Candidates"), node("span", "", `${summary.candidates.length} research hypotheses`)); target.append(header);
+    const wrap = node("div", "opportunity-candidate-table-wrap");
+    const table = node("table", "opportunity-candidate-table");
+    const head = node("thead", "");
+    head.innerHTML = "<tr><th>Symbol</th><th>Hypothesis</th><th>IPDA location</th><th>MRZ levels</th><th>Current pressure</th><th>Opportunity state</th><th>Latest development</th><th aria-label=\"Open\"></th></tr>";
+    const body = node("tbody", "");
     summary.candidates
       .slice()
       .sort((left, right) => (STAGE_ORDER[right.state] || 0) - (STAGE_ORDER[left.state] || 0) || left.symbol.localeCompare(right.symbol))
       .forEach((candidate) => {
-        const button = node("button", `opportunity-candidate ${candidate.symbol === selectedSymbol ? "selected" : ""}`); button.type = "button";
-        const top = node("span", "opportunity-candidate-top"); top.append(node("strong", "", candidate.symbol), node("b", `route ${candidate.hypothesis.toLowerCase()}`, candidate.hypothesis));
-        const state = node("span", `opportunity-stage ${stageClass(candidate.state)}`, candidate.state_label);
-        const evidence = node("small", "", `${candidate.ipda_location || "IPDA unavailable"} · ${candidate.latest_event_type}`);
-        const monitor = node("em", "", candidate.next_observable_condition);
-        button.append(top, state, evidence, monitor); button.addEventListener("click", () => onSelect(candidate.symbol)); list.append(button);
+        const row = node("tr", ""); row.tabIndex = 0;
+        const symbol = node("td", "opportunity-candidate-symbol", candidate.symbol);
+        const hypothesis = node("td", ""); hypothesis.append(node("b", `route ${candidate.hypothesis.toLowerCase()}`, candidate.hypothesis));
+        const location = node("td", "", candidate.ipda_location || "Unavailable");
+        const mrz = node("td", "", candidate.mrz ? `${price(candidate.mrz.lower)}–${price(candidate.mrz.upper)}` : "No active MRZ");
+        const pressure = node("td", candidate.current_pressure?.state === "LOWER" ? "lower" : candidate.current_pressure?.state === "HIGHER" ? "higher" : "", candidate.current_pressure ? `${candidate.current_pressure.label} ${candidate.current_pressure.higher}/${candidate.current_pressure.lower}` : "Neutral");
+        const stage = node("td", ""); stage.append(node("span", `opportunity-stage ${stageClass(candidate.state)}`, candidate.state_label));
+        const latest = node("td", "opportunity-candidate-development", `${candidate.latest_event_type} · ${shortTime(candidate.latest_event_at)}`);
+        const open = node("td", "opportunity-candidate-open", "Open →");
+        row.append(symbol, hypothesis, location, mrz, pressure, stage, latest, open);
+        row.addEventListener("click", () => onSelect(candidate.symbol));
+        row.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelect(candidate.symbol); } });
+        body.append(row);
       });
-    if (!summary.candidates.length) list.append(node("p", "opportunity-empty", "No canonical opportunity context is available for this group."));
-    target.append(list);
+    if (!summary.candidates.length) { const row = node("tr", ""); const cell = node("td", "opportunity-empty", "No canonical opportunity context is available for this group."); cell.colSpan = 8; row.append(cell); body.append(row); }
+    table.append(head, body); wrap.append(table); target.append(wrap);
   }
 
-  async function renderGroup(target, payload) {
+  function renderGroup(target, payload, options = {}) {
     target.replaceChildren();
     const summary = payload.groups[0] || { candidates: [] };
     const overview = node("section", "opportunity-overview");
@@ -437,18 +499,16 @@
       const card = node("article", `opportunity-overview-card ${tone}`); card.append(node("strong", "", value), node("span", "", label), node("small", "", detail)); overview.append(card);
     });
     target.append(overview);
-    const layout = node("div", "opportunity-workspace-layout");
-    const candidatePanel = node("aside", "opportunity-candidates panel");
-    const workspace = node("section", "opportunity-symbol-workspace");
-    layout.append(candidatePanel, workspace); target.append(layout);
-    if (!summary.candidates.length) { renderCandidateList(candidatePanel, summary, null, () => {}); workspace.append(node("section", "panel opportunity-empty", "Select a group with observable opportunity evidence.")); return; }
-    let selectedSymbol = summary.candidates[0].symbol;
+    const candidatePanel = node("section", "opportunity-candidates panel");
+    renderCandidateTable(candidatePanel, summary, options.onSelectSymbol || (() => {}));
+    target.append(candidatePanel);
+  }
+
+  async function renderSymbol(target, symbol, options = {}) {
+    target.replaceChildren(node("section", "panel opportunity-loading", `Reconstructing ${symbol}…`));
     let fullDetail = null;
-    const componentState = { cursors: [], cursorIndex: 0, rangeDays: 0, playing: false, playTimer: null, loadCursor: null };
+    const componentState = { cursors: [], cursorIndex: 0, rangeDays: 0, playing: false, playTimer: null, loadCursor: null, selectedEventId: null };
     const loadSymbol = async (symbol, asKnownAt = null) => {
-      selectedSymbol = symbol;
-      renderCandidateList(candidatePanel, summary, selectedSymbol, (next) => loadSymbol(next));
-      workspace.replaceChildren(node("section", "panel opportunity-loading", `Reconstructing ${symbol}…`));
       const params = new URLSearchParams(); if (asKnownAt) params.set("as_known_at", asKnownAt);
       const response = await globalObject.fetch(`/api/opportunities/${encodeURIComponent(symbol)}${params.size ? `?${params}` : ""}`, { cache: "no-store" });
       if (!response.ok) throw new Error("Opportunity history is unavailable.");
@@ -461,19 +521,19 @@
         componentState.cursorIndex = Math.max(0, componentState.cursors.findIndex((item) => item === asKnownAt));
       }
       componentState.loadCursor = (cursor) => loadSymbol(symbol, cursor).catch((error) => {
-        workspace.replaceChildren(node("section", "panel opportunity-error", error.message));
+        target.replaceChildren(node("section", "panel opportunity-error", error.message));
       });
-      renderOpportunityWorkspace(workspace, detail, componentState);
+      renderOpportunityWorkspace(target, detail, componentState, options);
       return detail;
     };
-    renderCandidateList(candidatePanel, summary, selectedSymbol, (symbol) => loadSymbol(symbol).catch((error) => workspace.replaceChildren(node("section", "panel opportunity-error", error.message))));
-    await loadSymbol(selectedSymbol);
+    await loadSymbol(symbol);
   }
 
   globalObject.edgeOpportunityMap = {
     collectReplayCursors,
     proportionalPosition,
     renderGroup,
+    renderSymbol,
     timeBounds,
   };
 })(window);

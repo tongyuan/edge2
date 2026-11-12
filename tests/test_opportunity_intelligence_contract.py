@@ -65,6 +65,20 @@ class OpportunityIntelligenceContractTests(unittest.TestCase):
         self.assertIn("@media (max-width: 560px)", MAP_CSS)
         self.assertIn("overflow-x: auto", MAP_CSS)
 
+    def test_group_and_symbol_workspaces_are_progressive_and_interactive(self) -> None:
+        for required in (
+            "renderCandidateTable",
+            "renderSymbol",
+            "opportunity-breadcrumb",
+            "opportunity-timeline-expander",
+            "eventIdentity",
+            "selectedEventId",
+        ):
+            self.assertIn(required, MAP_JS + MAP_CSS)
+        self.assertIn("Symbol Opportunity Candidates", MAP_JS)
+        self.assertIn("Price / structural zone", MAP_JS)
+        self.assertIn("observed time and known time preserved", MAP_JS)
+
 
 if __name__ == "__main__":
     unittest.main()
