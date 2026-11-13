@@ -641,7 +641,19 @@ def create_app(
                 as_known_at=as_known_at,
             )
             if payload is None:
-                raise HTTPException(status_code=404, detail="opportunity_not_found")
+                normalized_symbol = str(symbol).strip().upper()
+                has_canonical_history = any(
+                    observation.symbol == normalized_symbol
+                    for observation in inputs.get("observations", ())
+                )
+                if as_known_at is not None and has_canonical_history:
+                    payload = build_empty_symbol_opportunity(
+                        inputs,
+                        normalized_symbol,
+                        as_known_at=as_known_at,
+                    )
+                else:
+                    raise HTTPException(status_code=404, detail="opportunity_not_found")
         except HTTPException:
             raise
         except Exception:

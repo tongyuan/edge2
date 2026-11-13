@@ -162,7 +162,16 @@ class APIIntegrationTests(unittest.TestCase):
             "/api/opportunities/SPXUSDT",
             params={"as_known_at": "2026-08-20T11:59:59Z"},
         )
-        self.assertEqual(before_evidence.status_code, 404)
+        self.assertEqual(before_evidence.status_code, 200)
+        self.assertEqual(before_evidence.json()["symbol"], "SPXUSDT")
+        self.assertEqual(before_evidence.json()["observations"], [])
+        self.assertEqual(before_evidence.json()["episodes"], [])
+
+        unknown_before_evidence = self.client.get(
+            "/api/opportunities/UNKNOWN",
+            params={"as_known_at": "2026-08-20T11:59:59Z"},
+        )
+        self.assertEqual(unknown_before_evidence.status_code, 404)
 
     def test_opportunity_comparison_is_group_bounded_and_replayable(self) -> None:
         for index, symbol in enumerate(("AMD", "NVDA"), start=1):

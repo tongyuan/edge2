@@ -38,6 +38,14 @@ assert.deepEqual(cursors, [
   "2026-10-13T14:11:04Z",
   "2026-11-12T00:00:00Z",
 ]);
+assert.equal(
+  map.cursorIndexAtOrBefore(
+    ["2026-11-09T11:14:05.375308Z", "2026-11-09T11:14:05.900000Z"],
+    "2026-11-09T11:14:05.375308Z",
+  ),
+  0,
+  "individual replay selection preserves an exact microsecond canonical checkpoint",
+);
 
 const bounds = map.timeBounds(detail, 0);
 const first = new Date("2026-08-21T15:48:00Z").getTime();

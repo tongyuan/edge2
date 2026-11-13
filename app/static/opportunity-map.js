@@ -115,6 +115,16 @@
     return [...values].sort((left, right) => parseTime(left) - parseTime(right));
   }
 
+  function cursorIndexAtOrBefore(cursors, target) {
+    const exact = cursors.indexOf(target);
+    if (exact >= 0) return exact;
+    const targetTime = parseTime(target);
+    return cursors.reduce(
+      (current, cursor, index) => (parseTime(cursor) <= targetTime ? index : current),
+      0,
+    );
+  }
+
   function proportionalPosition(value, minimum, maximum) {
     if (!(maximum > minimum)) return 0.5;
     return Math.max(0, Math.min(1, (Number(value) - minimum) / (maximum - minimum)));
@@ -519,7 +529,11 @@
 
   function renderOpportunityWorkspace(target, detail, componentState, options = {}) {
     target.replaceChildren();
-    const selectedEpisode = detail.episodes.find((item) => item.episode_id === detail.selected_episode_id) || detail.episodes[0];
+    const selectedEpisode = detail.episodes.find((item) => item.episode_id === detail.selected_episode_id) || detail.episodes[0] || {
+      hypothesis: "NO KNOWN",
+      origin_effective_at: null,
+      state_label: "No evidence",
+    };
     const breadcrumb = node("nav", "opportunity-breadcrumb");
     breadcrumb.setAttribute("aria-label", "Opportunity workspace breadcrumb");
     const groups = node("button", "", "Group Radar"); groups.type = "button"; groups.addEventListener("click", options.onBackToGroups || (() => {}));
@@ -556,21 +570,17 @@
     const replaySlider = node("input", "opportunity-replay-slider");
     replaySlider.type = "range";
     replaySlider.setAttribute("aria-label", "Historical replay timestamp");
-    const minimumReplayTime = parseTime(componentState.cursors[0]);
-    const maximumReplayTime = parseTime(componentState.cursors.at(-1));
-    const currentReplayTime = parseTime(componentState.replayTimestamp || detail.as_known_at || componentState.cursors.at(-1));
-    replaySlider.min = String(minimumReplayTime);
-    replaySlider.max = String(maximumReplayTime);
-    replaySlider.step = "any";
-    replaySlider.value = String(Math.max(minimumReplayTime, Math.min(maximumReplayTime, currentReplayTime)));
+    const currentReplayIndex = cursorIndexAtOrBefore(
+      componentState.cursors,
+      componentState.replayTimestamp || detail.as_known_at || componentState.cursors.at(-1),
+    );
+    replaySlider.min = "0";
+    replaySlider.max = String(Math.max(0, componentState.cursors.length - 1));
+    replaySlider.step = "1";
+    replaySlider.value = String(currentReplayIndex);
     replaySlider.disabled = componentState.cursors.length <= 1;
-    const selectedTime = node("output", "opportunity-replay-selected", exactTime(new Date(Number(replaySlider.value)).toISOString()));
+    const selectedTime = node("output", "opportunity-replay-selected", exactTime(componentState.cursors[currentReplayIndex]));
     selectedTime.htmlFor = replaySlider.id = `opportunityReplaySlider-${detail.symbol}`;
-    const cursorAtOrBefore = (timestamp) => {
-      let index = 0;
-      componentState.cursors.forEach((value, candidate) => { if (parseTime(value) <= timestamp) index = candidate; });
-      return index;
-    };
     const moveTo = (index) => {
       const bounded = Math.max(0, Math.min(componentState.cursors.length - 1, index));
       componentState.cursorIndex = bounded;
@@ -581,16 +591,14 @@
     next.addEventListener("click", () => moveTo(componentState.cursorIndex + 1));
     latest.addEventListener("click", () => moveTo(componentState.cursors.length - 1));
     const loadSliderTime = () => {
-      const timestamp = Number(replaySlider.value);
-      componentState.cursorIndex = cursorAtOrBefore(timestamp);
-      componentState.replayTimestamp = new Date(timestamp).toISOString();
+      componentState.cursorIndex = Number(replaySlider.value);
+      componentState.replayTimestamp = componentState.cursors[componentState.cursorIndex];
       componentState.loadCursor(componentState.replayTimestamp);
     };
     replaySlider.addEventListener("input", () => {
-      const timestamp = Number(replaySlider.value);
-      selectedTime.textContent = exactTime(new Date(timestamp).toISOString());
-      componentState.cursorIndex = cursorAtOrBefore(timestamp);
-      componentState.replayTimestamp = new Date(timestamp).toISOString();
+      componentState.cursorIndex = Number(replaySlider.value);
+      componentState.replayTimestamp = componentState.cursors[componentState.cursorIndex];
+      selectedTime.textContent = exactTime(componentState.replayTimestamp);
       globalObject.clearTimeout(componentState.sliderTimer);
       componentState.sliderTimer = globalObject.setTimeout(loadSliderTime, 160);
     });
@@ -764,7 +772,7 @@
         componentState.replayTimestamp = componentState.cursors.at(-1);
       } else {
         componentState.replayTimestamp = asKnownAt;
-        componentState.cursorIndex = componentState.cursors.reduce((current, item, index) => (parseTime(item) <= parseTime(asKnownAt) ? index : current), 0);
+        componentState.cursorIndex = cursorIndexAtOrBefore(componentState.cursors, asKnownAt);
       }
       componentState.loadCursor = (cursor) => loadSymbol(symbol, cursor).catch((error) => {
         target.replaceChildren(node("section", "panel opportunity-error", error.message));
@@ -778,6 +786,7 @@
   globalObject.edgeOpportunityMap = {
     axisPrice,
     collectReplayCursors,
+    cursorIndexAtOrBefore,
     comparisonTimeBounds,
     drawChart,
     eventIdentity,
