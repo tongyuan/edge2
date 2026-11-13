@@ -9,8 +9,8 @@
     <link rel="manifest" href="/manifest.webmanifest?v=edge-intel-radar-20261110" />
     <link rel="icon" href="/static/edge-intel-radar-icon-192.png" type="image/png" />
     <link rel="apple-touch-icon" href="/static/edge-intel-radar-icon-180.png" />
-    <link rel="stylesheet" href="/static/workspace.css?v=opportunity-consistency-20261113" />
-    <link rel="stylesheet" href="/static/opportunity-map.css?v=opportunity-consistency-20261113" />
+    <link rel="stylesheet" href="/static/workspace.css?v=evidence-return-navigation-20261113" />
+    <link rel="stylesheet" href="/static/opportunity-map.css?v=evidence-return-navigation-20261113" />
   </head>
   <body>
     <div class="workspace-shell">
@@ -50,7 +50,7 @@
         </section>
 
         <section class="route-panel" data-route-panel="symbols" hidden>
-          <header class="route-heading symbol-route-heading"><div><p>SYMBOLS</p><h1>Canonical symbol inspection</h1><span>MRZ authority identifies context; Trade Desk remains responsible for entries and exits.</span></div><label class="symbol-picker">SELECT SYMBOL<select id="symbolSelect"><option value="">Select a symbol</option></select></label></header>
+          <header class="route-heading symbol-route-heading"><div><a class="symbol-context-back-link" id="symbolContextBackLink" href="/mrz/watchlists" hidden>← Back to Opportunity History</a><p>SYMBOLS</p><h1>Canonical symbol inspection</h1><span>MRZ authority identifies context; Trade Desk remains responsible for entries and exits.</span></div><label class="symbol-picker">SELECT SYMBOL<select id="symbolSelect"><option value="">Select a symbol</option></select></label></header>
           <section class="symbol-empty panel" id="symbolEmpty">Select a symbol from this page, a watchlist, or Attention.</section>
           <div class="symbol-detail-grid" id="symbolDetail" hidden>
             <section class="panel current-authority-panel"><div class="panel-heading"><div><p>SELECTED SYMBOL</p><h2 id="detailSymbol">—</h2></div><span class="status-pill" id="detailStatus">—</span></div><div class="authority-range" id="detailRange">—</div><div class="authority-meta" id="detailMeta"></div></section>
@@ -114,6 +114,6 @@
 
     <dialog class="workspace-dialog inbox-dialog" id="notificationInboxDialog" aria-labelledby="notificationInboxTitle"><section><header><div><p>DELIVERY HISTORY</p><h2 id="notificationInboxTitle">Notification Inbox</h2><span id="notificationInboxSummary">No unread notifications</span></div><button class="icon-button" id="notificationInboxClose" type="button" aria-label="Close">×</button></header><p class="notification-inbox-empty" id="notificationInboxEmpty">No active notifications.</p><ul class="notification-inbox-list" id="notificationInboxList" aria-live="polite"></ul><footer><button class="quiet-button" type="button" id="notificationMarkAllRead" disabled>Mark all read</button><button class="danger-button" type="button" id="notificationClearInbox" disabled>Clear inbox</button></footer></section></dialog>
     <div class="notification-toast-host" id="notificationToastHost" aria-live="polite"></div>
-    <script src="/static/mrz-shell.js?v=opportunity-consistency-20261113" defer></script><script src="/static/operator-time.js?v=mrz-workspace-20261007" defer></script><script src="/static/workspace-derivations.js?v=opportunity-consistency-20261113" defer></script><script src="/static/opportunity-map.js?v=opportunity-consistency-20261113" defer></script><script src="/static/opportunity-comparison.js?v=opportunity-consistency-20261113" defer></script><script src="/static/group-evidence.js?v=opportunity-consistency-20261113" defer></script><script src="/static/notifications.js?v=opportunity-consistency-20261113" defer></script><script src="/static/workspace.js?v=opportunity-consistency-20261113" defer></script>
+    <script src="/static/mrz-shell.js?v=evidence-return-navigation-20261113" defer></script><script src="/static/operator-time.js?v=mrz-workspace-20261007" defer></script><script src="/static/workspace-derivations.js?v=evidence-return-navigation-20261113" defer></script><script src="/static/opportunity-map.js?v=evidence-return-navigation-20261113" defer></script><script src="/static/opportunity-comparison.js?v=evidence-return-navigation-20261113" defer></script><script src="/static/group-evidence.js?v=evidence-return-navigation-20261113" defer></script><script src="/static/notifications.js?v=evidence-return-navigation-20261113" defer></script><script src="/static/workspace.js?v=evidence-return-navigation-20261113" defer></script>
   </body>
 </html>

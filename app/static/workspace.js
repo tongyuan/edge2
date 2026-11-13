@@ -56,6 +56,45 @@
     if (path === "" || path === "/") return "overview";
     return path.split("/").pop() || "overview";
   }
+  function symbolReturnNavigation() {
+    const params = new URLSearchParams(globalObject.location.search);
+    const requestedReturn = params.get("return");
+    if (requestedReturn) {
+      try {
+        const target = new URL(requestedReturn, globalObject.location.origin);
+        if (target.origin === globalObject.location.origin && target.pathname.startsWith("/mrz/")) {
+          return {
+            href: `${target.pathname}${target.search}${target.hash}`,
+            label: target.searchParams.get("compare") === "maps"
+              ? "← Back to Opportunity Comparison"
+              : "← Back to Opportunity History",
+          };
+        }
+      } catch (_error) {
+        // Ignore malformed return targets and use the contextual fallback below.
+      }
+    }
+    if (params.get("from") !== "watchlists") return null;
+    const target = new URL("/mrz/watchlists", globalObject.location.origin);
+    target.searchParams.set("group", params.get("group") || "all");
+    target.searchParams.set("window", params.get("window") || "24H");
+    const symbol = params.get("symbol");
+    const replayTimestamp = params.get("as_known_at");
+    if (symbol) target.searchParams.set("symbol", symbol);
+    if (replayTimestamp) target.searchParams.set("as_known_at", replayTimestamp);
+    return { href: `${target.pathname}${target.search}`, label: "← Back to Opportunity History" };
+  }
+  function configureSymbolReturnNavigation() {
+    const link = $("#symbolContextBackLink");
+    if (!link || routeName() !== "symbols") return;
+    const navigation = symbolReturnNavigation();
+    link.hidden = !navigation;
+    if (!navigation) return;
+    link.href = navigation.href;
+    link.textContent = navigation.label;
+    link.setAttribute("aria-label", navigation.label.replace("← ", ""));
+    link.title = navigation.label.replace("← ", "");
+  }
   function activateRoute() {
     const route = routeName();
     document.querySelectorAll("[data-route-panel]").forEach((panel) => {
@@ -853,6 +892,7 @@
   }
   async function initialize() {
     activateRoute();
+    configureSymbolReturnNavigation();
     if (routeName() === "events") {
       const requestedSymbol = new URLSearchParams(globalObject.location.search).get("symbol");
       if (requestedSymbol) $("#eventSymbolSearch").value = requestedSymbol;

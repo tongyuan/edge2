@@ -52,6 +52,19 @@ class WorkspaceContractTests(unittest.TestCase):
             self.assertNotIn(removed, GROUP_JS)
         self.assertIn("symbolUrl(member.symbol)", GROUP_JS)
 
+    def test_canonical_evidence_has_contextual_return_navigation(self) -> None:
+        self.assertIn('id="symbolContextBackLink"', HTML)
+        self.assertIn("function symbolReturnNavigation()", JS)
+        self.assertIn('params.get("return")', JS)
+        self.assertIn('target.origin === globalObject.location.origin', JS)
+        self.assertIn('target.pathname.startsWith("/mrz/")', JS)
+        self.assertIn("Back to Opportunity History", JS)
+        self.assertIn("Back to Opportunity Comparison", JS)
+        self.assertIn("configureSymbolReturnNavigation();", JS)
+        self.assertIn(".symbol-context-back-link", CSS)
+        mobile_rules = CSS.split("@media (max-width: 820px)", 1)[1]
+        self.assertIn(".symbol-context-back-link { min-height: 44px;", mobile_rules)
+
     def test_group_overview_exposes_selection_sorting_and_responsive_table(self) -> None:
         self.assertNotIn('id="groupEvidenceSearch"', HTML)
         self.assertNotIn("state.search", GROUP_JS)
