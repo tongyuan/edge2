@@ -93,6 +93,11 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertIn('body.classList.toggle("sidebar-collapsed", collapsed)', SHELL)
         self.assertIn('body.classList.toggle("nav-open")', SHELL)
         self.assertIn('body.sidebar-collapsed .workspace-shell', CSS)
+        self.assertIn('body.group-opportunity-active.sidebar-collapsed .workspace-shell', CSS)
+        self.assertIn('class="nav-icon"', SHELL)
+        self.assertNotIn('nav-abbreviation', SHELL + CSS)
+        for abbreviation in (">GR<", ">SY<", ">AL<", ">LD<", ">FD<", ">EV<"):
+            self.assertNotIn(abbreviation, SHELL)
         mobile_rules = CSS.split("@media (max-width: 820px)", 1)[1]
         self.assertIn(".sidebar-toggle { display: none; }", mobile_rules)
         self.assertIn("body.sidebar-collapsed .workspace-sidebar", mobile_rules)

@@ -763,13 +763,22 @@
         const target = $("#symbolOpportunityIntelligence");
         const backToGroup = () => { updateUrl({ symbol: null }); render(); globalObject.scrollTo({ top: 0, behavior: "smooth" }); };
         const backToGroups = () => { updateUrl({ group: "all", symbol: null }); state.detail = null; render(); globalObject.scrollTo({ top: 0, behavior: "smooth" }); };
-        globalObject.edgeOpportunityMap.renderSymbol(target, selectedSymbol, { groupName: state.detail.group.name, onBackToGroup: backToGroup, onBackToGroups: backToGroups }).catch((error) => target.replaceChildren(node("section", "panel opportunity-error", error.message)));
+        globalObject.edgeOpportunityMap.renderSymbol(target, selectedSymbol, {
+          groupId: state.detail.group.id,
+          groupName: state.detail.group.name,
+          window: state.scope.window,
+          returnUrl: `${globalObject.location.pathname}${globalObject.location.search}`,
+          onBackToGroup: backToGroup,
+          onBackToGroups: backToGroups,
+        }).catch((error) => target.replaceChildren(node("section", "panel opportunity-error", error.message)));
       } else if (view === "comparison" && globalObject.edgeOpportunityComparison) {
         const target = $("#groupOpportunityComparison");
         const backToGroup = () => { updateUrl({ compare: null, symbol_a: null, symbol_b: null }); render(); globalObject.scrollTo({ top: 0, behavior: "smooth" }); };
         globalObject.edgeOpportunityComparison.renderComparison(target, {
           groupId: state.detail.group.id,
           groupName: state.detail.group.name,
+          window: state.scope.window,
+          returnUrl: `${globalObject.location.pathname}${globalObject.location.search}`,
           members: state.detail.group.members,
           symbolA: comparison.symbolA,
           symbolB: comparison.symbolB,

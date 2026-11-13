@@ -34,6 +34,7 @@ from app.notifications import (
     PushSubscriptionPayload,
 )
 from app.opportunity_intelligence import (
+    build_empty_symbol_opportunity,
     build_opportunity_overview,
     build_symbol_opportunity,
 )
@@ -583,11 +584,21 @@ def create_app(
                 )
                 for symbol, cursor in zip(normalized, cursors, strict=True)
             ]
-            if any(detail is None for detail in details):
-                raise HTTPException(
-                    status_code=404,
-                    detail="opportunity_not_found",
+            details = [
+                detail
+                if detail is not None
+                else build_empty_symbol_opportunity(
+                    inputs,
+                    symbol,
+                    as_known_at=cursor,
                 )
+                for detail, symbol, cursor in zip(
+                    details,
+                    normalized,
+                    cursors,
+                    strict=True,
+                )
+            ]
             payload = {
                 "schema_version": "opportunity-intelligence.comparison.v1",
                 "group": group,

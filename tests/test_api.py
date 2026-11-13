@@ -196,6 +196,40 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual([item["symbol"] for item in payload["details"]], ["AMD", "NVDA"])
         self.assertTrue(payload["synchronised"])
 
+        known_times = sorted(
+            item["known_at"]
+            for detail in payload["details"]
+            for item in detail["observations"]
+        )
+        earliest = self.client.get(
+            "/api/opportunities/compare",
+            params={
+                "group_id": group["id"],
+                "symbol_a": "AMD",
+                "symbol_b": "NVDA",
+                "as_known_at": known_times[0],
+            },
+        )
+        self.assertEqual(earliest.status_code, 200)
+        self.assertEqual(
+            sorted(len(detail["observations"]) for detail in earliest.json()["details"]),
+            [0, 1],
+        )
+        before_both = self.client.get(
+            "/api/opportunities/compare",
+            params={
+                "group_id": group["id"],
+                "symbol_a": "AMD",
+                "symbol_b": "NVDA",
+                "as_known_at": "2026-08-20T11:59:59Z",
+            },
+        )
+        self.assertEqual(before_both.status_code, 200)
+        self.assertEqual(
+            [len(detail["observations"]) for detail in before_both.json()["details"]],
+            [0, 0],
+        )
+
         duplicate = self.client.get(
             "/api/opportunities/compare",
             params={"group_id": group["id"], "symbol_a": "AMD", "symbol_b": "AMD"},

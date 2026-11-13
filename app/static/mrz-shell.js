@@ -6,20 +6,32 @@
     {
       section: "TRADING",
       routes: [
-        { name: "watchlists", label: "Group Radar", abbreviation: "GR", href: "/mrz/watchlists?group=all&window=24H", badgeId: "navAttentionCount" },
-        { name: "symbols", label: "Symbols", abbreviation: "SY", href: "/mrz/symbols" },
-        { name: "alert-settings", label: "Alert Settings", abbreviation: "AL", href: "/mrz/alert-settings" },
+        { name: "watchlists", label: "Group Radar", href: "/mrz/watchlists?group=all&window=24H", badgeId: "navAttentionCount" },
+        { name: "symbols", label: "Symbols", href: "/mrz/symbols" },
+        { name: "alert-settings", label: "Alert Settings", href: "/mrz/alert-settings" },
       ],
     },
     {
       section: "RESEARCH",
       routes: [
-        { name: "location-distribution", label: "Location Distribution", abbreviation: "LD", href: "/mrz/location-distribution" },
-        { name: "formation-diagnostics", label: "Formation Diagnostics", abbreviation: "FD", href: "/mrz/formation-diagnostics" },
-        { name: "events", label: "Events History", abbreviation: "EV", href: "/mrz/events" },
+        { name: "location-distribution", label: "Location Distribution", href: "/mrz/location-distribution" },
+        { name: "formation-diagnostics", label: "Formation Diagnostics", href: "/mrz/formation-diagnostics" },
+        { name: "events", label: "Events History", href: "/mrz/events" },
       ],
     },
   ];
+  const NAVIGATION_ICON_PATHS = {
+    watchlists: '<circle cx="12" cy="12" r="8"></circle><circle cx="12" cy="12" r="2"></circle><path d="M12 2v3M22 12h-3M12 22v-3M2 12h3"></path>',
+    symbols: '<path d="M4 6h16M4 12h16M4 18h16"></path><circle cx="8" cy="6" r="2"></circle><circle cx="15" cy="12" r="2"></circle><circle cx="10" cy="18" r="2"></circle>',
+    "alert-settings": '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path>',
+    "location-distribution": '<path d="M12 21s6-5.2 6-11a6 6 0 1 0-12 0c0 5.8 6 11 6 11"></path><circle cx="12" cy="10" r="2"></circle>',
+    "formation-diagnostics": '<path d="M3 12h4l2-6 4 12 2-6h6"></path>',
+    events: '<circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path>',
+  };
+
+  function navigationIcon(routeName) {
+    return `<span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false">${NAVIGATION_ICON_PATHS[routeName] || NAVIGATION_ICON_PATHS.events}</svg></span>`;
+  }
 
   function routeNameForPath(pathname) {
     const normalized = String(pathname || "/").replace(/\/$/, "");
@@ -43,7 +55,7 @@
       ${group.routes.map((route) => {
         const current = route.name === activeRoute ? ' aria-current="page"' : "";
         const badge = route.badgeId ? `<b id="${route.badgeId}" hidden>0</b>` : "";
-        return `<a href="${route.href}" data-route="${route.name}" aria-label="${route.label}" title="${route.label}"${current}><span class="nav-abbreviation" aria-hidden="true">${route.abbreviation}</span><span class="nav-label">${route.label}</span>${badge}</a>`;
+        return `<a href="${route.href}" data-route="${route.name}" aria-label="${route.label}" title="${route.label}"${current}>${navigationIcon(route.name)}<span class="nav-label">${route.label}</span>${badge}</a>`;
       }).join("")}
     `).join("");
   }
@@ -145,6 +157,7 @@
     applyCollapsedState,
     mountMrzShell,
     navigationMarkup,
+    navigationIcon,
     readCollapsedPreference,
     routeNameForPath,
     sidebarMarkup,

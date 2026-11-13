@@ -94,5 +94,13 @@ const checkpoints = comparison.unifiedCheckpoints([
   },
 ]);
 assert.deepEqual(checkpoints.slice(0, 2).map((item) => item.symbol), ["AMD", "NVDA"], "replay checkpoints follow knowledge time across both symbols");
+assert.equal(
+  comparison.cursorIndexAtOrBefore(
+    ["2026-11-09T11:14:05.375308Z", "2026-11-09T11:14:05.900000Z"],
+    "2026-11-09T11:14:05.375308Z",
+  ),
+  0,
+  "replay selection preserves an exact microsecond canonical checkpoint",
+);
 
 console.log("Opportunity Map tests passed");

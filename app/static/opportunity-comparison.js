@@ -20,6 +20,14 @@
   };
   const eventId = (item) => map.eventIdentity(item);
 
+  function cursorIndexAtOrBefore(cursors, value) {
+    const timestamp = parseTime(value);
+    return Math.max(0, (cursors || []).reduce(
+      (current, item, index) => parseTime(item) <= timestamp ? index : current,
+      0,
+    ));
+  }
+
   function detailCursors(detail) {
     return map.collectReplayCursors(detail).filter((value) => Number.isFinite(parseTime(value)));
   }
@@ -247,12 +255,12 @@
     const renderReplaySlider = (label, value, cursors, onCommit) => {
       const row = $node("label", "comparison-independent-replay");
       row.append($node("span", "", label));
-      const input = $node("input", ""); input.type = "range"; input.step = "any";
-      input.min = String(parseTime(cursors[0])); input.max = String(parseTime(cursors.at(-1)));
-      input.value = String(parseTime(value)); input.setAttribute("aria-label", `${label} replay cutoff`);
+      const input = $node("input", ""); input.type = "range"; input.step = "1";
+      input.min = "0"; input.max = String(Math.max(0, cursors.length - 1));
+      input.value = String(cursorIndexAtOrBefore(cursors, value)); input.setAttribute("aria-label", `${label} replay cutoff`);
       const output = $node("output", "", exactTime(value));
-      input.addEventListener("input", () => { output.textContent = exactTime(new Date(Number(input.value)).toISOString()); });
-      input.addEventListener("change", () => onCommit(new Date(Number(input.value)).toISOString()));
+      input.addEventListener("input", () => { output.textContent = exactTime(cursors[Number(input.value)]); });
+      input.addEventListener("change", () => onCommit(cursors[Number(input.value)]));
       row.append(input, output); return row;
     };
 
@@ -280,27 +288,29 @@
         button.setAttribute("aria-pressed", String(state.rangeDays === days));
         button.addEventListener("click", () => { state.rangeDays = days; render(); }); ranges.append(button);
       });
-      const sync = $node("label", "comparison-sync");
-      const checkbox = $node("input", ""); checkbox.type = "checkbox"; checkbox.checked = state.synchronised;
-      checkbox.addEventListener("change", () => {
-        state.synchronised = checkbox.checked;
-        if (state.synchronised) state.replayB = state.replayA;
-        load().catch(showError);
-      });
-      sync.append(checkbox, $node("span", "", "Synchronise Replay"));
       const maximize = $node("button", "opportunity-maximize-button", state.maximized ? "Restore" : "Maximize");
       maximize.type = "button"; maximize.addEventListener("click", () => {
         state.maximized = !state.maximized;
         globalObject.document.body.classList.toggle("opportunity-map-maximized", state.maximized);
         render();
       });
-      toolbar.append(selectors, ranges, sync, maximize); workspace.append(toolbar);
+      toolbar.append(selectors, ranges, maximize); workspace.append(toolbar);
 
       const replay = $node("section", "comparison-replay panel");
       const replayHeader = $node("header", "opportunity-panel-heading");
       const newlyReached = state.checkpoints[state.checkpointIndex];
       const replayIdentity = $node("div", "");
       replayIdentity.append($node("strong", "", "Historical Replay — As Known At"), $node("small", "", newlyReached?.event ? `${newlyReached.symbol} generated the reached ${newlyReached.event.event_type} checkpoint` : "Unified canonical evidence checkpoints"));
+      const replayActions = $node("div", "comparison-replay-actions");
+      const sync = $node("label", "comparison-sync");
+      const checkbox = $node("input", ""); checkbox.type = "checkbox"; checkbox.checked = state.synchronised;
+      checkbox.setAttribute("aria-label", "Sync Replay");
+      checkbox.addEventListener("change", () => {
+        state.synchronised = checkbox.checked;
+        if (state.synchronised) state.replayB = state.replayA;
+        load().catch(showError);
+      });
+      sync.append(checkbox, $node("span", "", "Sync Replay"));
       const controls = $node("div", "opportunity-replay-controls");
       const previous = $node("button", "quiet-button", "Previous"); previous.type = "button"; previous.disabled = !state.synchronised; previous.addEventListener("click", () => moveShared(state.checkpointIndex - 1));
       const play = $node("button", "primary-button", state.playing ? "Pause" : "Play"); play.type = "button"; play.disabled = !state.synchronised;
@@ -321,20 +331,21 @@
         if (state.synchronised) moveShared(state.checkpoints.length - 1);
         else { state.replayA = state.fullDetails[0].as_known_at; state.replayB = state.fullDetails[1].as_known_at; load().catch(showError); }
       });
-      controls.append(previous, play, next, latest); replayHeader.append(replayIdentity, controls); replay.append(replayHeader);
+      controls.append(previous, play, next, latest);
+      replayActions.append(sync, controls);
+      replayHeader.append(replayIdentity, replayActions); replay.append(replayHeader);
       if (state.synchronised) {
         const sliderRow = $node("div", "opportunity-replay-slider-row");
-        const slider = $node("input", "opportunity-replay-slider"); slider.type = "range"; slider.step = "any";
-        slider.min = String(parseTime(state.checkpoints[0].at)); slider.max = String(parseTime(state.checkpoints.at(-1).at)); slider.value = String(parseTime(state.replayA));
+        const slider = $node("input", "opportunity-replay-slider"); slider.type = "range"; slider.step = "1";
+        slider.min = "0"; slider.max = String(Math.max(0, state.checkpoints.length - 1)); slider.value = String(state.checkpointIndex);
         slider.setAttribute("aria-label", "Synchronized historical replay timestamp");
         const output = $node("output", "opportunity-replay-selected", exactTime(state.replayA));
         const commit = () => {
-          const timestamp = Number(slider.value);
-          state.checkpointIndex = state.checkpoints.reduce((current, item, index) => parseTime(item.at) <= timestamp ? index : current, 0);
-          state.replayA = new Date(timestamp).toISOString(); state.replayB = state.replayA; load().catch(showError);
+          state.checkpointIndex = Math.max(0, Math.min(state.checkpoints.length - 1, Number(slider.value)));
+          state.replayA = state.checkpoints[state.checkpointIndex].at; state.replayB = state.replayA; load().catch(showError);
         };
         slider.addEventListener("input", () => {
-          output.textContent = exactTime(new Date(Number(slider.value)).toISOString());
+          output.textContent = exactTime(state.checkpoints[Number(slider.value)].at);
           globalObject.clearTimeout(state.sliderTimer); state.sliderTimer = globalObject.setTimeout(commit, 160);
         });
         slider.addEventListener("change", () => { globalObject.clearTimeout(state.sliderTimer); commit(); });
@@ -362,10 +373,21 @@
       details.forEach((detail) => {
         const panel = $node("section", "comparison-chart panel");
         const chartHeader = $node("header", "opportunity-panel-heading");
-        chartHeader.append($node("div", "", `${detail.symbol} — Opportunity Map`), $node("span", "", `Cutoff ${exactTime(detail.as_known_at)}`)); panel.append(chartHeader);
+        const chartActions = $node("div", "comparison-chart-actions");
+        chartActions.append(
+          $node("span", "", `Cutoff ${exactTime(detail.as_known_at)}`),
+          map.renderCanonicalEvidenceLink(detail, {
+            groupId: config.groupId,
+            window: config.window,
+            returnUrl: config.returnUrl,
+          }),
+        );
+        chartHeader.append($node("div", "", `${detail.symbol} — Opportunity Map`), chartActions); panel.append(chartHeader);
         const scroll = $node("div", "opportunity-chart-scroll");
         const canvas = $node("canvas", "opportunity-map-canvas comparison-map-canvas"); canvas.width = 920; canvas.height = 340; canvas.tabIndex = 0; canvas.setAttribute("aria-label", `Time-price opportunity map for ${detail.symbol}`);
-        scroll.append(canvas); panel.append(scroll, map.renderLegend({ pressureStyle: "circle" })); charts.append(panel);
+        scroll.append(canvas); panel.append(scroll);
+        if (!map.timelineRows(detail).length) panel.append($node("p", "comparison-empty-evidence", "No evidence available at this timestamp"));
+        panel.append(map.renderLegend({ pressureStyle: "circle" })); charts.append(panel);
         globalObject.requestAnimationFrame(() => map.drawChart(
           canvas,
           detail,
@@ -394,5 +416,5 @@
     return load({ latest: true }).catch(showError);
   }
 
-  globalObject.edgeOpportunityComparison = { renderComparison, structuralStatements, unifiedCheckpoints };
+  globalObject.edgeOpportunityComparison = { cursorIndexAtOrBefore, renderComparison, structuralStatements, unifiedCheckpoints };
 })(window);

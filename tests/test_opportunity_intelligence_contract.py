@@ -66,6 +66,7 @@ class OpportunityIntelligenceContractTests(unittest.TestCase):
         self.assertNotIn("What happened?", MAP_JS)
         self.assertNotIn("renderAssessment", MAP_JS)
         self.assertIn("Open Canonical Evidence", MAP_JS)
+        self.assertIn('node("span", "", "Evidence")', MAP_JS)
         self.assertIn("as_known_at: detail.as_known_at", MAP_JS)
         self.assertNotIn("OTE unavailable", MAP_JS)
         self.assertIn("proportionalPosition", MAP_JS)
@@ -87,6 +88,8 @@ class OpportunityIntelligenceContractTests(unittest.TestCase):
             "timelineExpanded",
             "setMaximized",
             "drawCombinedMarker",
+            'pressureStyle: "circle"',
+            "opportunity-back-to-group",
         ):
             self.assertIn(required, MAP_JS + MAP_CSS)
         self.assertIn("Symbol Opportunity Candidates", MAP_JS)
@@ -107,14 +110,17 @@ class OpportunityIntelligenceContractTests(unittest.TestCase):
             self.assertIn(required, GROUP_JS + MAP_JS + COMPARISON_JS)
         for required in (
             "Relative Structural Comparison",
-            "Synchronise Replay",
+            "Sync Replay",
             "unifiedCheckpoints",
             "comparisonTimeBounds",
             'pressureStyle: "circle"',
             "comparison_symbols_must_differ",
             "comparison_symbol_not_in_group",
+            "No evidence available at this timestamp",
+            "build_empty_symbol_opportunity",
         ):
             self.assertIn(required, COMPARISON_JS + MAP_JS + API)
+        self.assertNotIn("Synchronise Replay", COMPARISON_JS)
         self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr))", MAP_CSS)
         self.assertIn(".opportunity-comparison-workspace.maximized", MAP_CSS)
 

@@ -598,6 +598,47 @@ def build_symbol_opportunity(
     }
 
 
+def build_empty_symbol_opportunity(
+    inputs: Mapping[str, Any],
+    symbol: str,
+    *,
+    as_known_at: datetime | None = None,
+) -> dict[str, Any]:
+    """Represent a valid replay cutoff before a group member has known evidence."""
+    snapshot_at = _utc(inputs["as_of"])
+    cursor = _as_known_at(as_known_at, snapshot_at)
+    return {
+        "schema_version": "opportunity-intelligence.phase1",
+        "symbol": symbol.upper(),
+        "as_of": iso(snapshot_at),
+        "as_known_at": iso(cursor),
+        "latest_ipda_location": None,
+        "episodes": [],
+        "selected_episode_id": None,
+        "observations": [],
+        "near_miss_events": [],
+        "mrz_lifecycles": [],
+        "pressure_observations": [],
+        "persisted_current_pressure_events": [],
+        "current_pressure_persistence_note": (
+            "No canonical observation is known for this symbol at the selected replay cursor."
+        ),
+        "ote": {
+            "status": "not_connected",
+            "source": "EDGE_BOT",
+            "message": "OTE feed not connected (planned); no OTE price markers are shown.",
+        },
+        "assessment": {
+            "what_happened": "No canonical evidence is known at this replay cursor.",
+            "what_changed": "No historical change is available at this replay cursor.",
+            "conflicting_evidence": "No evidence is available for comparison.",
+            "next_condition": "Replay forward to the first canonical known-time checkpoint.",
+            "entry_verified": False,
+            "entry_message": "Not verified. No canonical evidence is known at this replay cursor.",
+        },
+    }
+
+
 def _candidate_summary(detail: Mapping[str, Any]) -> dict[str, Any]:
     episode = detail["episodes"][0]
     mrz = next(

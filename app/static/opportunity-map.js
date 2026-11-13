@@ -37,6 +37,25 @@
       || new Date(value).toLocaleString();
   }
 
+  function renderCanonicalEvidenceLink(detail, options = {}) {
+    const params = new URLSearchParams({
+      symbol: detail.symbol,
+      from: "watchlists",
+      as_known_at: detail.as_known_at,
+    });
+    if (options.groupId !== undefined && options.groupId !== null) params.set("group", String(options.groupId));
+    if (options.window) params.set("window", String(options.window));
+    if (options.returnUrl) params.set("return", String(options.returnUrl));
+    const link = node("a", "opportunity-canonical-link");
+    link.href = `/mrz/symbols?${params}`;
+    link.setAttribute("aria-label", "Open Canonical Evidence");
+    link.title = "Open Canonical Evidence";
+    const icon = node("span", "opportunity-evidence-icon", "◎");
+    icon.setAttribute("aria-hidden", "true");
+    link.append(icon, node("span", "", "Evidence"));
+    return link;
+  }
+
   function shortTime(value) {
     if (!value) return "—";
     return new Date(value).toLocaleDateString(undefined, {
@@ -509,7 +528,12 @@
     target.append(breadcrumb);
     const header = node("header", "opportunity-symbol-header");
     const identity = node("div", "");
-    identity.append(node("p", "", `${selectedEpisode.hypothesis} RESEARCH HYPOTHESIS`), node("h3", "", `${detail.symbol} — Opportunity History`));
+    const headerActions = node("div", "opportunity-symbol-actions");
+    const backToGroup = node("button", "quiet-button opportunity-back-to-group", "← Back to Group");
+    backToGroup.type = "button";
+    backToGroup.addEventListener("click", options.onBackToGroup || (() => {}));
+    headerActions.append(backToGroup, renderCanonicalEvidenceLink(detail, options));
+    identity.append(headerActions, node("p", "", `${selectedEpisode.hypothesis} RESEARCH HYPOTHESIS`), node("h3", "", `${detail.symbol} — Opportunity History`));
     const facts = node("div", "opportunity-symbol-facts");
     [
       ["First observed", shortTime(selectedEpisode.origin_effective_at)],
@@ -597,12 +621,6 @@
     const mapHeader = node("header", "opportunity-panel-heading");
     const title = node("div", ""); title.append(node("strong", "", "Opportunity Map (Time × Price)"), node("small", "", "Actual event time · linear instrument price"));
     const mapTools = node("div", "opportunity-map-tools");
-    const evidenceLink = node("a", "opportunity-canonical-link", "Open Canonical Evidence →");
-    evidenceLink.href = `/mrz/symbols?${new URLSearchParams({
-      symbol: detail.symbol,
-      from: "watchlists",
-      as_known_at: detail.as_known_at,
-    })}`;
     const ranges = node("div", "opportunity-range-controls");
     [[0, "All"], [90, "90D"], [30, "30D"]].forEach(([days, label]) => {
       const button = node("button", "", label); button.type = "button"; button.setAttribute("aria-pressed", String(componentState.rangeDays === days));
@@ -619,14 +637,14 @@
       maximize.textContent = value ? "Restore" : "Maximize";
       maximize.setAttribute("aria-pressed", String(value));
       maximize.setAttribute("aria-label", value ? "Restore Opportunity Map" : "Maximize Opportunity Map");
-      globalObject.requestAnimationFrame(() => drawChart(canvas, detail, componentState.rangeDays, componentState.selectedEventId, selectEvidence));
+      globalObject.requestAnimationFrame(() => drawChart(canvas, detail, componentState.rangeDays, componentState.selectedEventId, selectEvidence, { pressureStyle: "circle" }));
     };
     maximize.addEventListener("click", () => setMaximized(!componentState.maximized));
-    mapTools.append(ranges, evidenceLink, maximize);
+    mapTools.append(ranges, maximize);
     mapHeader.append(title, mapTools); mapPanel.append(mapHeader);
     const scroll = node("div", "opportunity-chart-scroll");
     const canvas = node("canvas", "opportunity-map-canvas"); canvas.width = 1120; canvas.height = 280; canvas.setAttribute("aria-label", `Time-price opportunity map for ${detail.symbol}`); canvas.tabIndex = 0;
-    scroll.append(canvas); mapPanel.append(scroll, renderLegend());
+    scroll.append(canvas); mapPanel.append(scroll, renderLegend({ pressureStyle: "circle" }));
     const details = node("div", "opportunity-selected-event");
     const previouslySelected = timelineRows(detail).find((item) => eventIdentity(item) === componentState.selectedEventId) || null;
     mapPanel.append(details); renderEventDetails(details, previouslySelected);
@@ -634,7 +652,7 @@
     const selectEvidence = (item) => {
       componentState.selectedEventId = eventIdentity(item);
       renderEventDetails(details, item);
-      drawChart(canvas, detail, componentState.rangeDays, componentState.selectedEventId, selectEvidence);
+      drawChart(canvas, detail, componentState.rangeDays, componentState.selectedEventId, selectEvidence, { pressureStyle: "circle" });
       target.querySelectorAll(".opportunity-timeline-table tr[data-event-id]").forEach((row) => row.classList.toggle("selected", row.dataset.eventId === componentState.selectedEventId));
       mapPanel.scrollIntoView({ block: "nearest", behavior: "smooth" });
     };
@@ -642,7 +660,7 @@
     componentState.escapeHandler = (event) => { if (event.key === "Escape" && componentState.maximized) setMaximized(false); };
     globalObject.document.addEventListener("keydown", componentState.escapeHandler);
     if (componentState.maximized) setMaximized(true);
-    globalObject.requestAnimationFrame(() => drawChart(canvas, detail, componentState.rangeDays, componentState.selectedEventId, selectEvidence));
+    globalObject.requestAnimationFrame(() => drawChart(canvas, detail, componentState.rangeDays, componentState.selectedEventId, selectEvidence, { pressureStyle: "circle" }));
 
     const timeline = node("section", "opportunity-event-timeline panel");
     const recordCount = timelineRows(detail).length;
@@ -765,6 +783,7 @@
     eventIdentity,
     proportionalPosition,
     renderEventDetails,
+    renderCanonicalEvidenceLink,
     renderGroup,
     renderLegend,
     renderSymbol,
