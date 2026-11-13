@@ -68,4 +68,31 @@ assert.equal(canonicalRows.length, 1, "one canonical observation must render as 
 assert.deepEqual(canonicalRows[0]._classifications, ["BTD", "Pressure"]);
 assert.deepEqual(canonicalRows[0]._trackers, ["IPDA_ROUTE", "PRESSURE"]);
 
+const comparisonBounds = map.comparisonTimeBounds([
+  { ...detail, as_known_at: "2026-11-12T00:00:00Z" },
+  {
+    as_known_at: "2026-11-12T00:00:00Z",
+    observations: [{ effective_at: "2026-09-01T00:00:00Z" }],
+    near_miss_events: [], mrz_lifecycles: [], pressure_observations: [],
+  },
+], 0);
+assert.equal(comparisonBounds.minimum, first, "comparison uses the earliest event from either symbol");
+assert.equal(comparisonBounds.maximum, new Date("2026-11-12T00:00:00Z").getTime(), "comparison uses one shared latest timestamp");
+
+require("../app/static/opportunity-comparison.js");
+const comparison = global.edgeOpportunityComparison;
+const checkpoints = comparison.unifiedCheckpoints([
+  {
+    symbol: "AMD", as_of: "2026-11-12T00:00:00Z",
+    observations: [{ canonical_event_id: "amd-1", source_tracker: "IPDA_ROUTE", event_type: "BTD_OBSERVATION", effective_at: "2026-09-01T00:00:00Z", known_at: "2026-09-01T00:00:01Z" }],
+    near_miss_events: [], mrz_lifecycles: [], pressure_observations: [],
+  },
+  {
+    symbol: "NVDA", as_of: "2026-11-12T00:00:00Z",
+    observations: [{ canonical_event_id: "nvda-1", source_tracker: "IPDA_ROUTE", event_type: "STR_OBSERVATION", effective_at: "2026-08-31T00:00:00Z", known_at: "2026-09-02T00:00:01Z" }],
+    near_miss_events: [], mrz_lifecycles: [], pressure_observations: [],
+  },
+]);
+assert.deepEqual(checkpoints.slice(0, 2).map((item) => item.symbol), ["AMD", "NVDA"], "replay checkpoints follow knowledge time across both symbols");
+
 console.log("Opportunity Map tests passed");

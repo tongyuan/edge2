@@ -536,6 +536,86 @@ def create_app(
             headers={"Cache-Control": "no-store, max-age=0"},
         )
 
+    @application.get("/api/opportunities/compare")
+    def opportunity_comparison(
+        group_id: int = Query(..., ge=1),
+        symbol_a: str = Query(..., min_length=1),
+        symbol_b: str = Query(..., min_length=1),
+        as_known_at: datetime | None = Query(None),
+        as_known_at_a: datetime | None = Query(None),
+        as_known_at_b: datetime | None = Query(None),
+    ) -> JSONResponse:
+        """Return two group members reconstructed from one canonical snapshot."""
+        try:
+            requested = [symbol_a, symbol_b]
+            inputs = repository.opportunity_intelligence_inputs(symbols=requested)
+            group = next(
+                (
+                    item
+                    for item in inputs["groups"]
+                    if int(item["id"]) == group_id
+                ),
+                None,
+            )
+            if group is None:
+                raise HTTPException(status_code=404, detail="group_not_found")
+            members = {str(symbol).upper() for symbol in group["members"]}
+            normalized = [str(symbol).strip().upper() for symbol in requested]
+            if normalized[0] == normalized[1]:
+                raise HTTPException(
+                    status_code=422,
+                    detail="comparison_symbols_must_differ",
+                )
+            if any(symbol not in members for symbol in normalized):
+                raise HTTPException(
+                    status_code=422,
+                    detail="comparison_symbol_not_in_group",
+                )
+            cursors = [
+                as_known_at_a or as_known_at,
+                as_known_at_b or as_known_at,
+            ]
+            details = [
+                build_symbol_opportunity(
+                    inputs,
+                    symbol,
+                    as_known_at=cursor,
+                )
+                for symbol, cursor in zip(normalized, cursors, strict=True)
+            ]
+            if any(detail is None for detail in details):
+                raise HTTPException(
+                    status_code=404,
+                    detail="opportunity_not_found",
+                )
+            payload = {
+                "schema_version": "opportunity-intelligence.comparison.v1",
+                "group": group,
+                "as_of": inputs["as_of"].isoformat(),
+                "synchronised": as_known_at_a is None and as_known_at_b is None,
+                "details": details,
+            }
+        except HTTPException:
+            raise
+        except Exception:
+            LOGGER.exception(
+                "Opportunity comparison failed",
+                extra={
+                    "group_id": group_id,
+                    "symbol_a": symbol_a,
+                    "symbol_b": symbol_b,
+                },
+            )
+            return JSONResponse(
+                {"detail": "opportunity_comparison_unavailable"},
+                status_code=503,
+                headers={"Cache-Control": "no-store, max-age=0"},
+            )
+        return JSONResponse(
+            payload,
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
     @application.get("/api/opportunities/{symbol}")
     def symbol_opportunity(
         symbol: str,

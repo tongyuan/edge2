@@ -113,6 +113,23 @@
     return { minimum: Math.max(earliest, latest - rangeDays * 86400000), maximum: latest };
   }
 
+  function comparisonTimeBounds(details, rangeDays) {
+    const all = (details || []).flatMap((detail) => {
+      const values = [];
+      (detail.observations || []).forEach((item) => values.push(parseTime(item.effective_at)));
+      (detail.near_miss_events || []).forEach((item) => values.push(parseTime(item.known_at), parseTime(item.ended_at)));
+      (detail.mrz_lifecycles || []).forEach((item) => values.push(parseTime(item.known_at), parseTime(item.ended_known_at)));
+      (detail.pressure_observations || []).forEach((item) => values.push(parseTime(item.effective_at)));
+      values.push(parseTime(detail.as_known_at || detail.as_of));
+      return values.filter(Number.isFinite);
+    });
+    const maximum = all.length ? Math.max(...all) : Date.now();
+    const minimum = all.length ? Math.min(...all) : maximum - 86400000;
+    return rangeDays
+      ? { minimum: Math.max(minimum, maximum - rangeDays * 86400000), maximum }
+      : { minimum, maximum };
+  }
+
   function visibleChartItems(detail, bounds) {
     const within = (value) => {
       const time = parseTime(value);
@@ -179,14 +196,24 @@
     context.stroke();
   }
 
-  function drawChart(canvas, detail, rangeDays, selectedEventId, onSelect) {
+  function drawPressureCircle(context, xPosition, yPosition, direction) {
+    context.beginPath();
+    context.arc(xPosition, yPosition, 6.5, 0, Math.PI * 2);
+    context.fillStyle = direction === "LOWER" ? COLORS.lower : COLORS.higher;
+    context.fill();
+    context.strokeStyle = "#0b1119";
+    context.lineWidth = 2;
+    context.stroke();
+  }
+
+  function drawChart(canvas, detail, rangeDays, selectedEventId, onSelect, options = {}) {
     const context = canvas.getContext("2d");
     const width = canvas.width;
     const height = canvas.height;
     const margin = { left: 68, right: 26, top: 30, bottom: 48 };
     const plotWidth = width - margin.left - margin.right;
     const plotHeight = height - margin.top - margin.bottom;
-    const times = timeBounds(detail, rangeDays);
+    const times = options.timeBounds || timeBounds(detail, rangeDays);
     const items = visibleChartItems(detail, times);
     const prices = priceBounds(items);
     const x = (value) => margin.left + proportionalPosition(parseTime(value), times.minimum, times.maximum) * plotWidth;
@@ -221,6 +248,19 @@
     context.fillText("Price", 12, 18);
     context.textAlign = "right";
     context.fillText("Actual event time →", width - margin.right, height - 5);
+
+    if (options.timeCursor && Number.isFinite(parseTime(options.timeCursor))) {
+      const cursorX = x(options.timeCursor);
+      context.save();
+      context.setLineDash([4, 4]);
+      context.strokeStyle = "rgba(226,232,240,.7)";
+      context.lineWidth = 1;
+      context.beginPath();
+      context.moveTo(cursorX, margin.top);
+      context.lineTo(cursorX, height - margin.bottom);
+      context.stroke();
+      context.restore();
+    }
 
     items.near.forEach((item) => {
       const start = Math.max(margin.left, x(item.known_at));
@@ -263,9 +303,20 @@
       const pressureItem = pressureByIdentity.get(identity);
       const routeColor = item.route === "BTD" ? COLORS.btd : COLORS.str;
       const visualItem = pressureItem
-        ? { ...pressureItem, ...item, direction: pressureItem.direction, _classifications: [item.route, `${pressureItem.direction} Pressure`] }
+        ? {
+            ...item,
+            ...pressureItem,
+            route: item.route,
+            source_tracker: `${item.source_tracker} + ${pressureItem.source_tracker}`,
+            event_type: item.event_type,
+            direction: pressureItem.direction,
+            _classifications: [item.route, `${pressureItem.direction} Pressure`],
+          }
         : item;
-      if (pressureItem) {
+      if (pressureItem && options.pressureStyle === "circle") {
+        combinedPressureIds.add(identity);
+        drawPressureCircle(context, xPosition, yPosition, pressureItem.direction);
+      } else if (pressureItem) {
         combinedPressureIds.add(identity);
         drawCombinedMarker(
           context,
@@ -293,7 +344,9 @@
       if (combinedPressureIds.has(eventIdentity(item))) return;
       const xPosition = x(item.effective_at);
       const yPosition = y(item.price);
-      if (item.route === "BTD" || item.route === "STR") {
+      if (options.pressureStyle === "circle") {
+        drawPressureCircle(context, xPosition, yPosition, item.direction);
+      } else if (item.route === "BTD" || item.route === "STR") {
         drawCombinedMarker(
           context,
           xPosition,
@@ -324,8 +377,9 @@
     };
   }
 
-  function renderLegend() {
+  function renderLegend(options = {}) {
     const legend = node("div", "opportunity-map-legend");
+    if (options.pressureStyle === "circle") legend.classList.add("circular-pressure");
     [
       ["btd", "BTD observation"], ["str", "STR observation"],
       ["mrz", "MRZ zone"], ["near", "Near Miss candidate"],
@@ -338,7 +392,7 @@
     return legend;
   }
 
-  function renderEventDetails(target, item) {
+  function renderEventDetails(target, item, options = {}) {
     target.replaceChildren();
     if (!item) {
       target.append(node("p", "", "Select a chart marker to inspect its canonical evidence."));
@@ -346,9 +400,15 @@
     }
     const heading = node("div", "opportunity-selected-event-heading");
     heading.append(
-      node("strong", "", `${item.source_tracker} · ${item.event_type}`),
+      node("strong", "", `${item.symbol ? `${item.symbol} · ` : ""}${item.source_tracker} · ${item.event_type}`),
       node("span", "", item.canonical_event_id),
     );
+    if (options.onClose) {
+      const close = node("button", "quiet-button", "Close");
+      close.type = "button";
+      close.addEventListener("click", options.onClose);
+      heading.append(close);
+    }
     const grid = node("dl", "opportunity-selected-event-grid");
     [
       ["Event time", exactTime(item.effective_at)],
@@ -436,28 +496,6 @@
     const rows = timelineRows(detail);
     const visibleRows = expanded ? rows : rows.slice(0, 8);
     table.append(head, timelineBody(visibleRows, onSelect)); wrap.append(table); return wrap;
-  }
-
-  function renderAssessment(detail) {
-    const panel = node("section", "opportunity-assessment panel");
-    const header = node("header", "opportunity-panel-heading");
-    const evidenceLink = node("a", "opportunity-canonical-link", "Open canonical evidence →");
-    evidenceLink.href = `/mrz/symbols?${new URLSearchParams({ symbol: detail.symbol, from: "watchlists" })}`;
-    header.append(node("div", "", "Opportunity Assessment"), evidenceLink);
-    panel.append(header);
-    const list = node("dl", "opportunity-assessment-list");
-    [
-      ["What happened?", detail.assessment.what_happened],
-      ["What changed?", detail.assessment.what_changed],
-      ["What evidence conflicts?", detail.assessment.conflicting_evidence],
-      ["What should be monitored next?", detail.assessment.next_condition],
-      ["Is an entry verified?", detail.assessment.entry_message],
-    ].forEach(([term, value], index) => {
-      const dt = node("dt", "", term);
-      const dd = node("dd", index === 4 ? "entry-not-verified" : "", value);
-      list.append(dt, dd);
-    });
-    panel.append(list); return panel;
   }
 
   function renderOpportunityWorkspace(target, detail, componentState, options = {}) {
@@ -559,6 +597,12 @@
     const mapHeader = node("header", "opportunity-panel-heading");
     const title = node("div", ""); title.append(node("strong", "", "Opportunity Map (Time × Price)"), node("small", "", "Actual event time · linear instrument price"));
     const mapTools = node("div", "opportunity-map-tools");
+    const evidenceLink = node("a", "opportunity-canonical-link", "Open Canonical Evidence →");
+    evidenceLink.href = `/mrz/symbols?${new URLSearchParams({
+      symbol: detail.symbol,
+      from: "watchlists",
+      as_known_at: detail.as_known_at,
+    })}`;
     const ranges = node("div", "opportunity-range-controls");
     [[0, "All"], [90, "90D"], [30, "30D"]].forEach(([days, label]) => {
       const button = node("button", "", label); button.type = "button"; button.setAttribute("aria-pressed", String(componentState.rangeDays === days));
@@ -578,7 +622,7 @@
       globalObject.requestAnimationFrame(() => drawChart(canvas, detail, componentState.rangeDays, componentState.selectedEventId, selectEvidence));
     };
     maximize.addEventListener("click", () => setMaximized(!componentState.maximized));
-    mapTools.append(ranges, maximize);
+    mapTools.append(ranges, evidenceLink, maximize);
     mapHeader.append(title, mapTools); mapPanel.append(mapHeader);
     const scroll = node("div", "opportunity-chart-scroll");
     const canvas = node("canvas", "opportunity-map-canvas"); canvas.width = 1120; canvas.height = 280; canvas.setAttribute("aria-label", `Time-price opportunity map for ${detail.symbol}`); canvas.tabIndex = 0;
@@ -600,7 +644,6 @@
     if (componentState.maximized) setMaximized(true);
     globalObject.requestAnimationFrame(() => drawChart(canvas, detail, componentState.rangeDays, componentState.selectedEventId, selectEvidence));
 
-    target.append(renderAssessment(detail));
     const timeline = node("section", "opportunity-event-timeline panel");
     const recordCount = timelineRows(detail).length;
     const timelineHeader = node("header", "opportunity-panel-heading"); timelineHeader.append(node("div", "", `Opportunity Event Timeline (${detail.symbol})`), node("span", "", `${recordCount} records`));
@@ -624,10 +667,19 @@
     target.append(timeline);
   }
 
-  function renderCandidateTable(target, summary, onSelect) {
+  function renderCandidateTable(target, summary, onSelect, options = {}) {
     target.replaceChildren();
     const header = node("header", "opportunity-candidate-heading");
-    header.append(node("div", "", "Symbol Opportunity Candidates"), node("span", "", `${summary.candidates.length} research hypotheses`)); target.append(header);
+    const identity = node("div", "", "Symbol Opportunity Candidates");
+    const actions = node("div", "opportunity-candidate-actions");
+    actions.append(node("span", "", `${summary.candidates.length} research hypotheses`));
+    if (options.onCompare && (options.members || []).length >= 2) {
+      const compare = node("button", "opportunity-compare-action", "Compare Maps");
+      compare.type = "button";
+      compare.addEventListener("click", options.onCompare);
+      actions.append(compare);
+    }
+    header.append(identity, actions); target.append(header);
     const wrap = node("div", "opportunity-candidate-table-wrap");
     const table = node("table", "opportunity-candidate-table");
     const head = node("thead", "");
@@ -670,7 +722,7 @@
     });
     target.append(overview);
     const candidatePanel = node("section", "opportunity-candidates panel");
-    renderCandidateTable(candidatePanel, summary, options.onSelectSymbol || (() => {}));
+    renderCandidateTable(candidatePanel, summary, options.onSelectSymbol || (() => {}), options);
     target.append(candidatePanel);
   }
 
@@ -708,8 +760,13 @@
   globalObject.edgeOpportunityMap = {
     axisPrice,
     collectReplayCursors,
+    comparisonTimeBounds,
+    drawChart,
+    eventIdentity,
     proportionalPosition,
+    renderEventDetails,
     renderGroup,
+    renderLegend,
     renderSymbol,
     timelineRows,
     timeBounds,

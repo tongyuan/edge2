@@ -164,6 +164,49 @@ class APIIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(before_evidence.status_code, 404)
 
+    def test_opportunity_comparison_is_group_bounded_and_replayable(self) -> None:
+        for index, symbol in enumerate(("AMD", "NVDA"), start=1):
+            response = self.client.post(
+                "/webhook/tradingview",
+                json=webhook_payload(
+                    index,
+                    str(100 + index),
+                    symbol=symbol,
+                    event_id=f"comparison-{symbol.lower()}",
+                ),
+            )
+            self.assertEqual(response.status_code, 201)
+        group = self.client.post(
+            "/api/groups",
+            json={"name": "Semi", "members": ["AMD", "NVDA"]},
+        ).json()
+
+        comparison = self.client.get(
+            "/api/opportunities/compare",
+            params={
+                "group_id": group["id"],
+                "symbol_a": "AMD",
+                "symbol_b": "NVDA",
+            },
+        )
+        self.assertEqual(comparison.status_code, 200)
+        self.assertEqual(comparison.headers["cache-control"], "no-store, max-age=0")
+        payload = comparison.json()
+        self.assertEqual(payload["schema_version"], "opportunity-intelligence.comparison.v1")
+        self.assertEqual([item["symbol"] for item in payload["details"]], ["AMD", "NVDA"])
+        self.assertTrue(payload["synchronised"])
+
+        duplicate = self.client.get(
+            "/api/opportunities/compare",
+            params={"group_id": group["id"], "symbol_a": "AMD", "symbol_b": "AMD"},
+        )
+        self.assertEqual(duplicate.status_code, 422)
+        outside = self.client.get(
+            "/api/opportunities/compare",
+            params={"group_id": group["id"], "symbol_a": "AMD", "symbol_b": "AAPL"},
+        )
+        self.assertEqual(outside.status_code, 422)
+
     def test_location_distribution_history_defaults_to_24h_and_rejects_unknown_windows(self) -> None:
         response = self.client.get("/api/location-distribution/history")
 

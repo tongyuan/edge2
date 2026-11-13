@@ -96,6 +96,11 @@ class WorkspaceContractTests(unittest.TestCase):
         mobile_rules = CSS.split("@media (max-width: 820px)", 1)[1]
         self.assertIn(".sidebar-toggle { display: none; }", mobile_rules)
         self.assertIn("body.sidebar-collapsed .workspace-sidebar", mobile_rules)
+        self.assertIn("@media (min-width: 641px) and (max-width: 1024px)", CSS)
+        tablet_rules = CSS.split("@media (min-width: 641px) and (max-width: 1024px)", 1)[1]
+        self.assertIn(".sidebar-toggle { display: flex; min-height: 44px; }", tablet_rules)
+        self.assertIn("body.sidebar-collapsed .workspace-shell", tablet_rules)
+        self.assertIn(".mobile-nav-button { display: none; }", tablet_rules)
 
     def test_legacy_pressure_route_redirects_to_group_evidence_with_context(self) -> None:
         self.assertIn('@application.get("/mrz/pressure"', API)

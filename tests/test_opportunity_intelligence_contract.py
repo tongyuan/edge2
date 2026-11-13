@@ -11,12 +11,14 @@ ENGINE = (ROOT / "app/opportunity_intelligence.py").read_text(encoding="utf-8")
 HTML = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
 GROUP_JS = (ROOT / "app/static/group-evidence.js").read_text(encoding="utf-8")
 MAP_JS = (ROOT / "app/static/opportunity-map.js").read_text(encoding="utf-8")
+COMPARISON_JS = (ROOT / "app/static/opportunity-comparison.js").read_text(encoding="utf-8")
 MAP_CSS = (ROOT / "app/static/opportunity-map.css").read_text(encoding="utf-8")
 
 
 class OpportunityIntelligenceContractTests(unittest.TestCase):
     def test_api_is_read_only_and_supports_replay(self) -> None:
         self.assertIn('@application.get("/api/opportunities")', API)
+        self.assertIn('@application.get("/api/opportunities/compare")', API)
         self.assertIn('@application.get("/api/opportunities/{symbol}")', API)
         self.assertIn("as_known_at: datetime | None", API)
         for verb in ("post", "put", "patch", "delete"):
@@ -56,12 +58,15 @@ class OpportunityIntelligenceContractTests(unittest.TestCase):
         for copy in (
             "Opportunity Map (Time × Price)",
             "Historical Replay — As Known At",
-            "Opportunity Assessment",
-            "Is an entry verified?",
             "opportunity-replay-slider",
             "opportunity-maximize-button",
         ):
             self.assertIn(copy, MAP_JS)
+        self.assertNotIn("Opportunity Assessment", MAP_JS)
+        self.assertNotIn("What happened?", MAP_JS)
+        self.assertNotIn("renderAssessment", MAP_JS)
+        self.assertIn("Open Canonical Evidence", MAP_JS)
+        self.assertIn("as_known_at: detail.as_known_at", MAP_JS)
         self.assertNotIn("OTE unavailable", MAP_JS)
         self.assertIn("proportionalPosition", MAP_JS)
         self.assertIn('btd: "#3B82F6"', MAP_JS)
@@ -90,6 +95,28 @@ class OpportunityIntelligenceContractTests(unittest.TestCase):
         self.assertIn('timelineWrap.classList.toggle("expanded"', MAP_JS)
         self.assertIn(".opportunity-timeline-wrap.expanded", MAP_CSS)
         self.assertEqual(MAP_JS.count('node("table", "opportunity-timeline-table")'), 1)
+
+    def test_group_comparison_is_shared_time_read_only_and_responsive(self) -> None:
+        self.assertIn("opportunity-comparison.js", HTML)
+        for required in (
+            "Compare Maps",
+            "comparisonSelection",
+            "groupOpportunityComparison",
+            "renderComparison",
+        ):
+            self.assertIn(required, GROUP_JS + MAP_JS + COMPARISON_JS)
+        for required in (
+            "Relative Structural Comparison",
+            "Synchronise Replay",
+            "unifiedCheckpoints",
+            "comparisonTimeBounds",
+            'pressureStyle: "circle"',
+            "comparison_symbols_must_differ",
+            "comparison_symbol_not_in_group",
+        ):
+            self.assertIn(required, COMPARISON_JS + MAP_JS + API)
+        self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr))", MAP_CSS)
+        self.assertIn(".opportunity-comparison-workspace.maximized", MAP_CSS)
 
 
 if __name__ == "__main__":
