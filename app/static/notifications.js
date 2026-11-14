@@ -98,7 +98,7 @@
     vapidPublicKey,
   }) {
     const registration = await navigatorObject.serviceWorker.register(
-      "/service-worker.js?v=pressure-ui-retirement-20261114",
+      "/service-worker.js?v=mobile-navigation-20261114",
       { scope: "/" },
     );
     const permission = notificationObject.permission === "granted"

@@ -104,7 +104,10 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertIn('edge2.mrz.sidebar.collapsed', SHELL)
         self.assertIn('localStorage', SHELL)
         self.assertIn('body.classList.toggle("sidebar-collapsed", collapsed)', SHELL)
-        self.assertIn('body.classList.toggle("nav-open")', SHELL)
+        self.assertIn('body.classList.toggle("nav-open", open)', SHELL)
+        self.assertIn('id="mobileSidebarClose"', SHELL)
+        self.assertIn('aria-controls="mrzWorkspaceSidebar"', HTML)
+        self.assertIn('aria-expanded="false"', HTML)
         self.assertIn('body.sidebar-collapsed .workspace-shell', CSS)
         self.assertIn('body.group-opportunity-active.sidebar-collapsed .workspace-shell', CSS)
         self.assertIn('class="nav-icon"', SHELL)
@@ -112,13 +115,18 @@ class WorkspaceContractTests(unittest.TestCase):
         for abbreviation in (">GR<", ">SY<", ">AL<", ">LD<", ">FD<", ">EV<"):
             self.assertNotIn(abbreviation, SHELL)
         mobile_rules = CSS.split("@media (max-width: 820px)", 1)[1]
-        self.assertIn(".sidebar-toggle { display: none; }", mobile_rules)
+        self.assertIn(".mobile-sidebar-close { position: absolute", mobile_rules)
+        self.assertIn("height: 100dvh", mobile_rules)
+        self.assertIn("overflow-y: auto", mobile_rules)
         self.assertIn("body.sidebar-collapsed .workspace-sidebar", mobile_rules)
-        self.assertIn("@media (min-width: 641px) and (max-width: 1024px)", CSS)
-        tablet_rules = CSS.split("@media (min-width: 641px) and (max-width: 1024px)", 1)[1]
+        self.assertIn("body.group-opportunity-active .workspace-header { display: flex; }", mobile_rules)
+        self.assertIn("@media (min-width: 641px) and (max-width: 1024px) and (min-height: 601px)", CSS)
+        tablet_rules = CSS.split("@media (min-width: 641px) and (max-width: 1024px) and (min-height: 601px)", 1)[1]
         self.assertIn(".sidebar-toggle { display: flex; min-height: 44px; }", tablet_rules)
         self.assertIn("body.sidebar-collapsed .workspace-shell", tablet_rules)
         self.assertIn(".mobile-nav-button { display: none; }", tablet_rules)
+        self.assertIn("(max-width: 1024px) and (max-height: 600px)", CSS)
+        self.assertNotIn("@media (min-width: 641px) and (max-width: 1024px) {", CSS)
 
     def test_legacy_pressure_routes_redirect_to_operational_history(self) -> None:
         self.assertIn('@application.get("/mrz/pressure"', API)

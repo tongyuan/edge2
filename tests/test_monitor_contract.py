@@ -47,7 +47,7 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn('if (activation) activation.checked', WORKSPACE)
         self.assertIn('if (migration) migration.checked', WORKSPACE)
         self.assertIn('if (nearMiss) nearMiss.checked', WORKSPACE)
-        self.assertIn("pressure-ui-retirement-20261114", HTML)
+        self.assertIn("mobile-navigation-20261114", HTML)
 
     def test_notification_inbox_remains_durable_and_distinct(self) -> None:
         self.assertIn('id="notificationInboxButton"', HTML)

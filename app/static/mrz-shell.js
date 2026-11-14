@@ -63,6 +63,7 @@
   function sidebarMarkup(activeRoute) {
     return `
       <a class="workspace-brand" href="/mrz/watchlists?group=all&window=24H" aria-label="EDGE 2.0 Group Radar home"><span class="brand-mark"><img src="/static/edge-intel-radar-icon-192.png" alt="" /></span><span class="brand-copy"><strong>EDGE 2.0</strong></span></a>
+      <button class="mobile-sidebar-close" id="mobileSidebarClose" type="button" aria-label="Close EDGE Intel navigation">×</button>
       <nav class="workspace-navigation">${navigationMarkup(activeRoute)}</nav>
       <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-controls="mrzWorkspaceMain"><span class="sidebar-toggle-icon" aria-hidden="true">‹</span><span class="sidebar-toggle-label">Collapse</span></button>
       <div class="sidebar-foot"><span class="health-dot" id="healthState">Checking system</span><small>Canonical universe monitoring</small></div>
@@ -95,6 +96,15 @@
       storage?.setItem(SIDEBAR_STORAGE_KEY, String(collapsed));
     } catch {
       // The shell still works when storage is unavailable or blocked.
+    }
+  }
+
+  function setMobileNavigationOpen(documentRef, open) {
+    documentRef.body.classList.toggle("nav-open", open);
+    const button = documentRef.querySelector("#mobileNavButton");
+    if (button) {
+      button.setAttribute("aria-expanded", String(open));
+      button.setAttribute("aria-label", open ? "Close EDGE Intel navigation" : "Open EDGE Intel navigation");
     }
   }
 
@@ -142,10 +152,16 @@
       storeCollapsedPreference(storage, nextCollapsed);
     });
     documentRef.querySelector("#mobileNavButton")?.addEventListener("click", () => {
-      documentRef.body.classList.toggle("nav-open");
+      setMobileNavigationOpen(documentRef, !documentRef.body.classList.contains("nav-open"));
+    });
+    documentRef.querySelector("#mobileSidebarClose")?.addEventListener("click", () => {
+      setMobileNavigationOpen(documentRef, false);
     });
     sidebar.querySelectorAll(".workspace-navigation a").forEach((link) => {
-      link.addEventListener("click", () => documentRef.body.classList.remove("nav-open"));
+      link.addEventListener("click", () => setMobileNavigationOpen(documentRef, false));
+    });
+    documentRef.addEventListener?.("keydown", (event) => {
+      if (event.key === "Escape") setMobileNavigationOpen(documentRef, false);
     });
     if (fetchImpl) loadShellHealth(documentRef, fetchImpl);
     return { activeRoute, collapsed };
@@ -160,6 +176,7 @@
     navigationIcon,
     readCollapsedPreference,
     routeNameForPath,
+    setMobileNavigationOpen,
     sidebarMarkup,
     storeCollapsedPreference,
   };

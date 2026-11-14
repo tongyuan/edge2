@@ -10,6 +10,7 @@ const {
   navigationMarkup,
   readCollapsedPreference,
   routeNameForPath,
+  setMobileNavigationOpen,
   sidebarMarkup,
   storeCollapsedPreference,
 } = require("../app/static/mrz-shell.js");
@@ -237,6 +238,9 @@ console.log("shared MRZ shell tests passed");
         : null
   );
   const mobile = new FakeEventTarget();
+  mobile.attributes = new Map();
+  mobile.setAttribute = (name, value) => mobile.attributes.set(name, String(value));
+  const mobileClose = new FakeEventTarget();
   const routeLinks = Array.from({ length: 9 }, () => new FakeEventTarget());
   const sidebar = {
     innerHTML: "",
@@ -255,6 +259,7 @@ console.log("shared MRZ shell tests passed");
       if (selector === "[data-mrz-sidebar]") return sidebar;
       if (selector === "#sidebarToggle") return toggle;
       if (selector === "#mobileNavButton") return mobile;
+      if (selector === "#mobileSidebarClose") return mobileClose;
       return null;
     },
   };
@@ -276,6 +281,28 @@ console.log("shared MRZ shell tests passed");
   assert.equal(storageValues.get(SIDEBAR_STORAGE_KEY), "true");
   mobile.dispatch("click");
   assert.equal(classes.has("nav-open"), true);
+  assert.equal(mobile.attributes.get("aria-expanded"), "true");
+  assert.equal(mobile.attributes.get("aria-label"), "Close EDGE Intel navigation");
+  mobileClose.dispatch("click");
+  assert.equal(classes.has("nav-open"), false, "the in-drawer close button is always authoritative");
+  mobile.dispatch("click");
   routeLinks[8].dispatch("click");
   assert.equal(classes.has("nav-open"), false, "mobile route navigation closes the drawer");
+}
+
+{
+  const classes = new Set(["nav-open"]);
+  const attributes = new Map();
+  const documentRef = {
+    body: { classList: {
+      toggle(name, enabled) { if (enabled) classes.add(name); else classes.delete(name); },
+    } },
+    querySelector(selector) {
+      return selector === "#mobileNavButton" ? { setAttribute(name, value) { attributes.set(name, String(value)); } } : null;
+    },
+  };
+  setMobileNavigationOpen(documentRef, false);
+  assert.equal(classes.has("nav-open"), false);
+  assert.equal(attributes.get("aria-expanded"), "false");
+  assert.equal(attributes.get("aria-label"), "Open EDGE Intel navigation");
 }
