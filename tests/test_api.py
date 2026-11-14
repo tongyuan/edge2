@@ -52,13 +52,15 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(health.status_code, 200)
         self.assertEqual(health.json()["database"], "ok")
         symbols_payload = self.client.get("/api/symbols").json()
-        pressure = symbols_payload.pop("pressure")
-        taxonomy_pressure = symbols_payload.pop("taxonomy_pressure")
         self.assertEqual(
             symbols_payload,
             {
                 "incomplete_taxonomy_count": 0,
                 "minimum_cluster_observations": 4,
+                "pressure_retirement": {
+                    "status": "retired",
+                    "active_generation": False,
+                },
                 "location_migration_tendency": {
                     key: {
                         "migration_samples": 0,
@@ -77,46 +79,6 @@ class APIIntegrationTests(unittest.TestCase):
                     )
                 },
                 "symbols": [],
-            },
-        )
-        self.assertEqual(pressure["counts"], {"higher": 0, "lower": 0, "neutral": 0})
-        self.assertEqual(pressure["participation"], {"count": 0, "total": 0})
-        self.assertEqual(pressure["pressure_map"]["totals"], pressure["counts"])
-        self.assertEqual(pressure["headline"]["label"], "Insufficient Participation")
-        self.assertEqual(
-            taxonomy_pressure,
-            {
-                "sources": {"higher": [], "lower": [], "neutral": []},
-                "asset_classes": [],
-                "asset_class_included_count": 0,
-                "asset_class_excluded_count": 0,
-                "sectors": [],
-                "industries": [],
-                "included_equity_count": 0,
-                "excluded_count": 0,
-                "counts": {"higher": 0, "lower": 0, "neutral": 0},
-                "concentration": {
-                    "higher": {
-                        "direction": "higher",
-                        "equity_count": 0,
-                        "contributing_sector_count": 0,
-                        "top_sector": None,
-                        "top_sector_count": 0,
-                        "top_sector_share_pct": None,
-                    },
-                    "lower": {
-                        "direction": "lower",
-                        "equity_count": 0,
-                        "contributing_sector_count": 0,
-                        "top_sector": None,
-                        "top_sector_count": 0,
-                        "top_sector_share_pct": None,
-                    },
-                },
-                "method": (
-                    "Canonical pressure state grouped by instrument asset class; "
-                    "sector and industry remain complete EQUITY taxonomy only."
-                ),
             },
         )
         evidence = self.client.get("/api/group-evidence")
@@ -317,9 +279,11 @@ class APIIntegrationTests(unittest.TestCase):
             {"higher": 0, "lower": 0, "none": 7},
         )
         self.assertEqual(pressure_payload["window"], "24H")
+        self.assertEqual(pressure_payload["status"], "retired")
+        self.assertTrue(pressure_payload["deprecated"])
         self.assertEqual(
-            sum(len(members) for members in pressure_payload["categories"].values()),
-            7,
+            pressure_payload["categories"],
+            {"higher": [], "lower": [], "none": []},
         )
         protected_tables = (
             "observations", "active_mrz", "mrz_events", "saved_symbol_groups",
@@ -1294,7 +1258,7 @@ class APIIntegrationTests(unittest.TestCase):
         }
         self.assertEqual(updated["DD"]["current_price_location"], "shallow_premium")
 
-    def test_universe_pressure_reconciles_and_matches_saved_group_scope(self) -> None:
+    def test_operational_pressure_contracts_are_retired(self) -> None:
         observed_base = datetime.now(timezone.utc) - timedelta(hours=1)
 
         def ingest(symbol: str, index: int, price: str) -> None:
@@ -1321,31 +1285,11 @@ class APIIntegrationTests(unittest.TestCase):
         ingest("NOACTIVE", 1, "120")
 
         overview = self.client.get("/api/symbols").json()
-        pressure = overview["pressure"]
-        self.assertEqual(pressure["counts"], {"higher": 1, "lower": 1, "neutral": 2})
-        self.assertEqual(pressure["participation"], {"count": 2, "total": 4})
-        self.assertEqual(pressure["pressure_map"]["totals"], pressure["counts"])
-        deep_discount = pressure["pressure_map"]["locations"]["deep_discount"]
-        self.assertEqual(deep_discount["participation"], {"count": 2, "total": 4})
-        self.assertEqual(deep_discount["counts"], pressure["counts"])
-        pressure_sources = {
-            item["symbol"]: item
-            for members in overview["taxonomy_pressure"]["sources"].values()
-            for item in members
-        }
-        self.assertEqual(pressure_sources["UP"]["direction"], "higher")
+        self.assertNotIn("pressure", overview)
+        self.assertNotIn("taxonomy_pressure", overview)
         self.assertEqual(
-            pressure_sources["UP"]["latest_directional_pressure"]["direction"],
-            "higher",
-        )
-        self.assertEqual(pressure_sources["DOWN"]["direction"], "lower")
-        self.assertEqual(
-            pressure_sources["DOWN"]["latest_directional_pressure"]["direction"],
-            "lower",
-        )
-        self.assertEqual(pressure_sources["QUIET"]["direction"], "neutral")
-        self.assertIsNone(
-            pressure_sources["QUIET"]["latest_directional_pressure"]
+            overview["pressure_retirement"],
+            {"status": "retired", "active_generation": False},
         )
 
         created = self.client.post(
@@ -1353,27 +1297,10 @@ class APIIntegrationTests(unittest.TestCase):
             json={"name": "Pressure parity", "members": ["UP", "DOWN", "QUIET", "NOACTIVE"]},
         ).json()
         peers = self.client.get(f"/api/groups/{created['id']}/peer-pressure").json()
-        self.assertEqual(sum(peers["counts"].values()), 4)
-        self.assertEqual(peers["counts"], {"higher": 1, "lower": 1, "none": 2})
-        self.assertEqual(
-            [item["symbol"] for item in peers["categories"]["higher"]],
-            ["UP"],
-        )
-        self.assertEqual(
-            [item["symbol"] for item in peers["categories"]["lower"]],
-            ["DOWN"],
-        )
-        global_directions = {
-            item["symbol"]: item["direction"]
-            for members in pressure["categories"].values()
-            for item in members
-        }
-        group_directions = {
-            item["symbol"]: item["current_pressure"]
-            for members in peers["categories"].values()
-            for item in members
-        }
-        self.assertEqual(global_directions, group_directions)
+        self.assertEqual(peers["status"], "retired")
+        self.assertTrue(peers["deprecated"])
+        self.assertEqual(peers["counts"], {"higher": 0, "lower": 0, "none": 4})
+        self.assertEqual(peers["categories"], {"higher": [], "lower": [], "none": []})
 
     def test_authentication_is_required_and_secret_is_redacted(self) -> None:
         packet = webhook_payload()

@@ -42,9 +42,7 @@ class OpportunityIntelligenceContractTests(unittest.TestCase):
             '"known_at"',
             '"CONFLICTING_EVIDENCE"',
             '"STRUCTURAL_DEVELOPMENT"',
-            '"HISTORICAL_OUTCOME_EVIDENCE"',
             '"NOT_VERIFIED"',
-            '"RECONSTRUCTED_AS_KNOWN_AT"',
             '"not_connected"',
         ):
             self.assertIn(required, ENGINE)
@@ -72,8 +70,9 @@ class OpportunityIntelligenceContractTests(unittest.TestCase):
         self.assertIn("proportionalPosition", MAP_JS)
         self.assertIn('btd: "#3B82F6"', MAP_JS)
         self.assertIn('str: "#A78BFA"', MAP_JS)
-        self.assertIn('higher: "#22C55E"', MAP_JS)
-        self.assertIn('lower: "#F87171"', MAP_JS)
+        self.assertNotIn('higher: "#22C55E"', MAP_JS)
+        self.assertNotIn('lower: "#F87171"', MAP_JS)
+        self.assertNotIn("pressure_observations || []", MAP_JS)
         self.assertIn("@media (max-width: 560px)", MAP_CSS)
         self.assertIn("overflow-x: auto", MAP_CSS)
 
@@ -87,8 +86,6 @@ class OpportunityIntelligenceContractTests(unittest.TestCase):
             "selectedEventId",
             "timelineExpanded",
             "setMaximized",
-            "drawCombinedMarker",
-            'pressureStyle: "circle"',
             "opportunity-back-to-group",
         ):
             self.assertIn(required, MAP_JS + MAP_CSS)
@@ -113,7 +110,6 @@ class OpportunityIntelligenceContractTests(unittest.TestCase):
             "Sync Replay",
             "unifiedCheckpoints",
             "comparisonTimeBounds",
-            'pressureStyle: "circle"',
             "comparison_symbols_must_differ",
             "comparison_symbol_not_in_group",
             "No evidence available at this timestamp",

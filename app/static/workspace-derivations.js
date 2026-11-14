@@ -41,6 +41,12 @@
     "deep_premium",
     "unavailable",
   ];
+  const EVENT_HISTORY_FILTERS = new Set([
+    "historical-pressure",
+    "MRZ_ACTIVATED",
+    "MRZ_MIGRATED",
+    "MRZ_NEAR_MISS",
+  ]);
   const LOCATION_TRANSITION_BUCKETS = [
     { key: "deep_discount", label: "Deep Discount", shortLabel: "Deep Disc." },
     { key: "shallow_discount", label: "Shallow Discount", shortLabel: "Shallow Disc." },
@@ -62,6 +68,11 @@
 
   function uniqueTrackedSymbols(groups) {
     return new Set((groups || []).flatMap((group) => group.members || []));
+  }
+
+  function eventHistoryFilterFromSearch(search = "") {
+    const requested = new URLSearchParams(String(search || "")).get("type");
+    return EVENT_HISTORY_FILTERS.has(requested) ? requested : "all";
   }
 
   function symbolsForWatchlist(symbols, groups, selectedGroupId = "all") {
@@ -982,6 +993,7 @@
     deriveResearchInterpretation,
     directionalTaxonomyDrilldown,
     eventDirection,
+    eventHistoryFilterFromSearch,
     eventLabel,
     groupPressureSourcesByAssetClass,
     isGroupEvidenceRequestCurrent,

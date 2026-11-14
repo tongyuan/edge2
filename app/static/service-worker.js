@@ -18,7 +18,13 @@ function safeNotificationPath(candidate) {
       return `/mrz/symbols?symbol=${encodeURIComponent(symbol)}`;
     }
     if (parsed.pathname === "/mrz/pressure") {
-      return `/mrz/pressure?symbol=${encodeURIComponent(symbol)}`;
+      return `/mrz/events?symbol=${encodeURIComponent(symbol)}&type=historical-pressure`;
+    }
+    if (
+      parsed.pathname === "/mrz/events"
+      && parsed.searchParams.get("type") === "historical-pressure"
+    ) {
+      return `/mrz/events?symbol=${encodeURIComponent(symbol)}&type=historical-pressure`;
     }
     if (parsed.pathname === "/diagnostics/mrz-robustness") {
       const section = parsed.hash.startsWith("#") ? parsed.hash.slice(1) : "";

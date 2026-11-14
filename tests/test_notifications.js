@@ -327,7 +327,7 @@ async function testServiceWorkerPushAndClick() {
   );
   assert.equal(
     pressure.options.data.destination,
-    "/mrz/pressure?symbol=ZECUSDT",
+    "/mrz/events?symbol=ZECUSDT&type=historical-pressure",
   );
 
   await click(activation);
@@ -337,7 +337,7 @@ async function testServiceWorkerPushAndClick() {
   assert.deepEqual(navigated, [
     "https://edge.example.test/mrz/symbols?symbol=BTCUSDT",
     "https://edge.example.test/mrz/symbols?symbol=BTCUSDT",
-    "https://edge.example.test/mrz/pressure?symbol=ZECUSDT",
+    "https://edge.example.test/mrz/events?symbol=ZECUSDT&type=historical-pressure",
     `https://edge.example.test${nearMissDestination}`,
   ]);
   assert.equal(focusCount, 4, "the existing EDGE client is focused after navigation");
@@ -359,7 +359,7 @@ async function testServiceWorkerPushAndClick() {
   await click(pressure);
   assert.equal(
     opened[0],
-    "https://edge.example.test/mrz/pressure?symbol=ZECUSDT",
+    "https://edge.example.test/mrz/events?symbol=ZECUSDT&type=historical-pressure",
     "a cold launch opens the exact destination",
   );
 
@@ -413,7 +413,15 @@ async function main() {
       "/mrz/pressure?symbol=WLDUSDT",
       "https://edge.example.test",
     ),
-    "/mrz/pressure?symbol=WLDUSDT",
+    "/mrz/events?symbol=WLDUSDT&type=historical-pressure",
+  );
+  assert.equal(
+    safeNotificationPath(
+      "/mrz/events?symbol=WLDUSDT&type=historical-pressure",
+      "https://edge.example.test",
+    ),
+    "/mrz/events?symbol=WLDUSDT&type=historical-pressure",
+    "cached service workers retain the safe Historical Pressure destination",
   );
   assert.equal(
     safeNotificationPath("/?symbol=WLDUSDT", "https://edge.example.test"),

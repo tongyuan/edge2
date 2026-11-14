@@ -25,7 +25,7 @@
         <div class="route-status" id="workspaceStatus" role="status">Loading canonical EDGE state…</div>
 
         <section class="route-panel" data-route-panel="overview" hidden>
-          <header class="route-heading"><p>OVERVIEW</p><h1>What requires attention now?</h1><span>Tracked trading authority, recent events, and meaningful pressure.</span></header>
+          <header class="route-heading"><p>OVERVIEW</p><h1>What requires attention now?</h1><span>Tracked trading authority and canonical structural events.</span></header>
           <div class="metric-strip"><article><span>WATCHLISTS</span><strong id="overviewGroupCount">0</strong></article><article><span>TRACKED SYMBOLS</span><strong id="overviewSymbolCount">0</strong></article><article><span>ACTIVE MRZ</span><strong id="overviewActiveCount">0</strong></article><article class="accent-metric"><span>CURRENT ATTENTION</span><strong id="overviewAttentionCount">0</strong></article></div>
           <div class="overview-grid"><section class="panel"><div class="panel-heading"><div><p>ATTENTION NOW</p><h2>Trading universe</h2></div><a href="/mrz/attention">View queue</a></div><div id="overviewAttention"></div></section><section class="panel"><div class="panel-heading"><div><p>WATCHLIST STATUS</p><h2>Current authority</h2></div><a href="/mrz/watchlists">Open watchlists</a></div><div id="overviewGroups"></div></section></div>
           <div class="route-links"><a href="/mrz/watchlists"><strong>Watchlists</strong><span>Scan tradable symbols</span></a><a href="/mrz/symbols"><strong>Symbols</strong><span>Inspect authority</span></a><a href="/mrz/events"><strong>Events</strong><span>Review global history</span></a></div>
@@ -54,7 +54,6 @@
           <section class="symbol-empty panel" id="symbolEmpty">Select a symbol from this page, a watchlist, or Attention.</section>
           <div class="symbol-detail-grid" id="symbolDetail" hidden>
             <section class="panel current-authority-panel"><div class="panel-heading"><div><p>SELECTED SYMBOL</p><h2 id="detailSymbol">—</h2></div><span class="status-pill" id="detailStatus">—</span></div><div class="authority-range" id="detailRange">—</div><div class="authority-meta" id="detailMeta"></div></section>
-            <section class="panel pressure-intelligence-panel"><p class="panel-kicker">CURRENT PRESSURE</p><div id="detailPressure" class="detail-block">—</div><div id="detailPressureEvidence" class="pressure-evidence-grid"></div></section>
             <section class="panel"><p class="panel-kicker">MRZ CONTEXT</p><div id="detailMrzContext" class="detail-block">—</div><div id="detailPrevious" class="detail-block previous-authority">—</div><a class="detail-event-history-link" id="detailEventHistoryLink" href="/mrz/events">Open Events History</a></section>
           </div>
         </section>
@@ -64,7 +63,7 @@
           <form class="panel alert-preferences-form" id="alertPreferencesForm">
             <fieldset><legend>ALERTS ON/OFF</legend><section class="device-alert-control"><div><strong>THIS DEVICE</strong><span id="notificationStatus" role="status">Checking browser support…</span></div><button class="quiet-button" type="button" id="notificationButton" disabled>Checking notifications…</button></section></fieldset>
             <fieldset><legend>ALERT SCOPE</legend><label class="choice"><input type="radio" name="alertScope" value="TRACKED_GROUPS_ONLY" /><span><strong>Tracked Groups Only</strong><small>Only symbols in a trading watchlist may interrupt you.</small></span></label><label class="choice"><input type="radio" name="alertScope" value="ALL_SYMBOLS" /><span><strong>All Symbols</strong><small>Preserves the previous global alert behavior.</small></span></label></fieldset>
-            <fieldset><legend>EVENT TYPES</legend><label class="choice"><input id="prefActivation" type="checkbox" /><span><strong>MRZ Activation</strong></span></label><label class="choice"><input id="prefMigration" type="checkbox" /><span><strong>MRZ Migration</strong></span></label><label class="choice"><input id="prefPressure" type="checkbox" /><span><strong>Pressure</strong></span></label><label class="choice"><input id="prefNearMiss" type="checkbox" /><span><strong>Near-Miss</strong></span></label></fieldset>
+            <fieldset><legend>EVENT TYPES</legend><label class="choice"><input id="prefActivation" type="checkbox" /><span><strong>MRZ Activation</strong></span></label><label class="choice"><input id="prefMigration" type="checkbox" /><span><strong>MRZ Migration</strong></span></label><label class="choice"><input id="prefNearMiss" type="checkbox" /><span><strong>Near-Miss</strong></span></label></fieldset>
             <p class="form-error" id="alertPreferencesError" hidden></p><footer><span class="form-success" id="alertPreferencesSaved" role="status"></span><button class="primary-button" id="saveAlertPreferences" type="submit">Save preferences</button></footer>
           </form>
         </section>
@@ -101,8 +100,8 @@
         </section>
 
         <section class="route-panel" data-route-panel="events" hidden>
-          <header class="route-heading"><p>EVENTS</p><h1>Global canonical event history</h1><span>All monitored symbols, independent of watchlists and alert interruption scope.</span></header>
-          <section class="panel"><div class="panel-heading events-panel-heading"><div><p>CANONICAL HISTORY</p><h2>Recent events</h2></div><div class="event-filters"><label class="event-symbol-search">SYMBOL<input id="eventSymbolSearch" type="search" placeholder="Search symbol…" autocomplete="off" spellcheck="false" /></label><label class="event-filter">TYPE<select id="eventTypeFilter"><option value="all">All events</option><option value="CURRENT_PRESSURE_CHANGED">Current Pressure Changes</option><option value="POST_ACTIVATION_PRESSURE_CHANGED">Historical Cumulative Pressure</option><option value="MRZ_ACTIVATED">Activation</option><option value="MRZ_MIGRATED">Migration</option><option value="MRZ_NEAR_MISS">Near-Miss</option></select></label></div></div><div id="eventsList" class="event-history-wrap"></div></section>
+          <header class="route-heading"><p>EVENTS</p><h1>Global event history</h1><span>Canonical events plus explicitly archived historical Pressure records.</span></header>
+          <section class="panel"><div class="panel-heading events-panel-heading"><div><p>EVENT HISTORY</p><h2>Recent events</h2></div><div class="event-filters"><label class="event-symbol-search">SYMBOL<input id="eventSymbolSearch" type="search" placeholder="Search symbol…" autocomplete="off" spellcheck="false" /></label><label class="event-filter">TYPE<select id="eventTypeFilter"><option value="all">All events</option><option value="historical-pressure">Historical Pressure</option><option value="MRZ_ACTIVATED">Activation</option><option value="MRZ_MIGRATED">Migration</option><option value="MRZ_NEAR_MISS">Near-Miss</option></select></label></div></div><div id="eventsList" class="event-history-wrap"></div></section>
         </section>
       </main>
     </div>

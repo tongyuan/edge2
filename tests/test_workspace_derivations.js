@@ -14,6 +14,7 @@ const {
   derivePeerLocationFlow,
   eventLabel,
   eventDirection,
+  eventHistoryFilterFromSearch,
   filterGroupEvidenceContributors,
   groupPressureSourcesByAssetClass,
   isGroupEvidenceRequestCurrent,
@@ -30,6 +31,30 @@ const {
   symbolsForWatchlist,
   uniqueTrackedSymbols,
 } = require("../app/static/workspace-derivations.js");
+
+assert.equal(
+  eventHistoryFilterFromSearch("?type=historical-pressure"),
+  "historical-pressure",
+  "direct Historical Pressure links initialize the archived filter",
+);
+assert.equal(
+  eventHistoryFilterFromSearch("?symbol=AMD&type=historical-pressure"),
+  "historical-pressure",
+  "notification inbox links preserve the Historical Pressure filter",
+);
+assert.equal(
+  eventHistoryFilterFromSearch(""),
+  "all",
+  "normal Event History navigation defaults to All events",
+);
+assert.equal(
+  eventHistoryFilterFromSearch("?type=unsupported"),
+  "all",
+  "unsupported event filters fail safely to All events",
+);
+assert.equal(eventHistoryFilterFromSearch("?type=MRZ_ACTIVATED"), "MRZ_ACTIVATED");
+assert.equal(eventHistoryFilterFromSearch("?type=MRZ_MIGRATED"), "MRZ_MIGRATED");
+assert.equal(eventHistoryFilterFromSearch("?type=MRZ_NEAR_MISS"), "MRZ_NEAR_MISS");
 
 assert.deepEqual(parseGroupEvidenceState("?group=12&window=20D&dimension=structural&bucket=higher"), {
   groupId: "12", window: "20D", dimension: "structural", bucket: "higher", evidence: null, sort: "name", openRecentEvents: false, normalized: false,

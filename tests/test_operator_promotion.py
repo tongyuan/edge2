@@ -272,7 +272,7 @@ class OperatorPromotionIntegrationTests(unittest.TestCase):
             ],
             ["MRZ_NEAR_MISS", "MRZ_ACTIVATED", "MRZ_MIGRATED"],
         )
-        self.assertIn(
+        self.assertNotIn(
             "POST_ACTIVATION_PRESSURE_CHANGED",
             [item["event_type"] for item in notifications],
         )

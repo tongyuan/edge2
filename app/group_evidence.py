@@ -821,19 +821,6 @@ def _activity(
 ) -> dict[str, Any]:
     records = [dict(item) for item in location_activity.get("records", ())]
     records.extend(dict(item) for item in mrz_records)
-    for event in pressure.get("events", ()):
-        records.append({
-            "id": f"pressure:{event['event_id']}",
-            "tracker": "pressure",
-            "event_type": "POST_ACTIVATION_PRESSURE_CHANGED",
-            "symbol": event["symbol"],
-            "occurred_at": event["occurred_at"],
-            "direction": event["event_direction"],
-            "previous_state": event["previous_state"],
-            "route_owner": event["route_owner"],
-            "source_event_id": event["event_id"],
-            "timestamp_semantics": "canonical_pressure_event_timestamp",
-        })
     episode_keys: set[str] = set()
     for episode in near_miss.get("episodes", ()):
         if episode["started_in_window"]:
@@ -873,7 +860,7 @@ def _activity(
     )
     by_tracker = {
         tracker: sum(item["tracker"] == tracker for item in records)
-        for tracker in ("ipda", "mrz", "pressure", "near_miss", "ote")
+        for tracker in ("ipda", "mrz", "near_miss", "ote")
     }
     location_records = [item for item in records if item["tracker"] == "ipda"]
     tracker_records = [item for item in records if item["tracker"] != "ipda"]
@@ -919,10 +906,6 @@ def _activity(
                 "semantics": "baseline_plus_fresh_comparable_observation",
             },
             "mrz": {
-                "status": "event_history_available",
-                "semantics": "event_presence_only_no_independent_freshness_heartbeat",
-            },
-            "pressure": {
                 "status": "event_history_available",
                 "semantics": "event_presence_only_no_independent_freshness_heartbeat",
             },
@@ -1207,6 +1190,11 @@ def build_named_group_evidence(
     return {
         "contract_version": CONTRACT_VERSION,
         "scope": "named_group",
+        "pressure_compatibility": {
+            "status": "deprecated_read_only",
+            "operational": False,
+            "consumed_by_active_ui": False,
+        },
         "status": status,
         "group": {
             "id": int(group["id"]),
@@ -1305,12 +1293,18 @@ def build_all_groups_evidence(inputs: Mapping[str, Any]) -> dict[str, Any]:
         record for record in activity_records.values() if record["tracker"] == "ipda"
     ]
     tracker_records = [
-        record for record in activity_records.values() if record["tracker"] != "ipda"
+        record for record in activity_records.values()
+        if record["tracker"] not in {"ipda", "pressure"}
     ]
     status = "partial" if any(detail.get("status") == "partial" for detail in details) else "available"
     return {
         "contract_version": CONTRACT_VERSION,
         "scope": "all_groups",
+        "pressure_compatibility": {
+            "status": "deprecated_read_only",
+            "operational": False,
+            "consumed_by_active_ui": False,
+        },
         "status": status,
         "window": _snapshot(inputs),
         "membership_semantics": "current_membership_at_snapshot",
@@ -1342,7 +1336,7 @@ def build_all_groups_evidence(inputs: Mapping[str, Any]) -> dict[str, Any]:
             "new_tracker_events": len(tracker_records),
             "tracker_event_breakdown": {
                 tracker: sum(record["tracker"] == tracker for record in tracker_records)
-                for tracker in ("mrz", "pressure", "near_miss", "ote")
+                for tracker in ("mrz", "near_miss", "ote")
             },
             "changed_groups": sum(
                 detail.get("activity", {}).get("status") == "changed"

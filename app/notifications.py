@@ -4,7 +4,7 @@ import json
 import logging
 import re
 from collections.abc import Callable, Mapping, Sequence
-from datetime import datetime, timezone
+from datetime import datetime
 from decimal import Decimal
 from typing import Any, Literal
 from urllib.parse import quote, urlsplit
@@ -15,7 +15,6 @@ from pywebpush import WebPushException, webpush
 
 from app.config import Settings
 from app.db import connect, transaction
-from app.mrz_robustness import MRZRobustnessService, RobustnessInputProvider
 
 
 LOGGER = logging.getLogger("edge2.notifications")
@@ -43,7 +42,7 @@ def build_push_destination(
     if event_type in {"MRZ_ACTIVATED", "MRZ_MIGRATED"}:
         return f"/mrz/symbols?symbol={encoded_symbol}"
     if event_type == PRESSURE_EVENT_TYPE:
-        return f"/mrz/pressure?symbol={encoded_symbol}"
+        return f"/mrz/events?symbol={encoded_symbol}&type=historical-pressure"
     if event_type == "MRZ_NEAR_MISS":
         candidate_identity = str(
             (event_context or {}).get("candidate_identity") or ""
@@ -193,7 +192,7 @@ class NotificationRepository:
                         "alert_scope": "ALL_SYMBOLS",
                         "activation_enabled": True,
                         "migration_enabled": True,
-                        "pressure_enabled": True,
+                        "pressure_enabled": False,
                         "near_miss_enabled": True,
                         "updated_at": None,
                     }
@@ -201,7 +200,7 @@ class NotificationRepository:
                     "alert_scope": str(row["alert_scope"]),
                     "activation_enabled": bool(row["activation_enabled"]),
                     "migration_enabled": bool(row["migration_enabled"]),
-                    "pressure_enabled": bool(row["pressure_enabled"]),
+                    "pressure_enabled": False,
                     "near_miss_enabled": bool(row["near_miss_enabled"]),
                     "updated_at": iso(row["updated_at"]),
                 }
@@ -232,7 +231,7 @@ class NotificationRepository:
                         preferences.alert_scope,
                         preferences.activation_enabled,
                         preferences.migration_enabled,
-                        preferences.pressure_enabled,
+                        False,
                         preferences.near_miss_enabled,
                     ),
                 )
@@ -243,7 +242,12 @@ class NotificationRepository:
         report: Mapping[str, Any],
         evaluation_trigger_event_id: str,
     ) -> int | None:
-        """Persist one lifecycle-scoped pressure comparison and optional outbox row."""
+        """Retired compatibility entry point; historical pressure is read-only."""
+        return None
+
+        # The archived implementation below is intentionally unreachable during
+        # Phase 2 so an overlooked legacy caller cannot create state or outbox
+        # rows. It remains in place until the dead-code removal phase.
         symbol = str(report["symbol"])
         active = report["active_mrz"]
         pressure = report["migration_pressure"]
@@ -611,8 +615,7 @@ class NotificationRepository:
                     FROM web_push_notifications
                     WHERE deliverable = TRUE
                       AND event_type IN (
-                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
-                          'POST_ACTIVATION_PRESSURE_CHANGED'
+                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS'
                       )
                     """
                 )
@@ -631,18 +634,13 @@ class NotificationRepository:
                     CROSS JOIN notification_preferences p
                     WHERE n.deliverable = TRUE
                       AND n.event_type IN (
-                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
-                          'POST_ACTIVATION_PRESSURE_CHANGED'
+                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS'
                       )
                       AND n.id > %s
                       AND (
                           (n.event_type = 'MRZ_ACTIVATED' AND p.activation_enabled)
                           OR (n.event_type = 'MRZ_MIGRATED' AND p.migration_enabled)
                           OR (n.event_type = 'MRZ_NEAR_MISS' AND p.near_miss_enabled)
-                          OR (
-                              n.event_type = 'POST_ACTIVATION_PRESSURE_CHANGED'
-                              AND p.pressure_enabled
-                          )
                       )
                       AND (
                           p.alert_scope = 'ALL_SYMBOLS'
@@ -942,17 +940,12 @@ class NotificationRepository:
                     ) attempts ON TRUE
                     WHERE n.deliverable = TRUE
                       AND n.event_type IN (
-                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
-                          'POST_ACTIVATION_PRESSURE_CHANGED'
+                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS'
                       )
                       AND (
                           (n.event_type = 'MRZ_ACTIVATED' AND p.activation_enabled)
                           OR (n.event_type = 'MRZ_MIGRATED' AND p.migration_enabled)
                           OR (n.event_type = 'MRZ_NEAR_MISS' AND p.near_miss_enabled)
-                          OR (
-                              n.event_type = 'POST_ACTIVATION_PRESSURE_CHANGED'
-                              AND p.pressure_enabled
-                          )
                       )
                       AND (
                           p.alert_scope = 'ALL_SYMBOLS'
@@ -1014,6 +1007,14 @@ class NotificationRepository:
                       AND delivered_count = 0
                       AND claimed_count = 0
                       AND (max_attempt = 0 OR last_retryable IS TRUE)
+                      AND EXISTS (
+                          SELECT 1
+                          FROM web_push_notifications n
+                          WHERE n.id = %s
+                            AND n.event_type IN (
+                                'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS'
+                            )
+                      )
                     ON CONFLICT (
                         notification_id, subscription_id, attempt_number
                     ) DO NOTHING
@@ -1025,6 +1026,7 @@ class NotificationRepository:
                         notification_id,
                         subscription_id,
                         MAX_DELIVERY_ATTEMPTS,
+                        notification_id,
                     ),
                 )
                 row = cursor.fetchone()
@@ -1095,12 +1097,11 @@ class NotificationService:
         self,
         settings: Settings,
         repository: NotificationRepository,
-        pressure_input_provider: RobustnessInputProvider | None = None,
+        pressure_input_provider: object | None = None,
         sender: Callable[..., Any] = webpush,
     ) -> None:
         self.settings = settings
         self.repository = repository
-        self.pressure_input_provider = pressure_input_provider
         self.sender = sender
 
     @property
@@ -1113,7 +1114,6 @@ class NotificationService:
 
     def process_trigger_event(self, trigger_event_id: str) -> None:
         self.repository.reconcile_notifiable_events(trigger_event_id)
-        self.reconcile_pressure(trigger_event_id)
         # Each accepted or duplicate webhook is a lightweight opportunity to
         # resume persisted transient deliveries. Claiming remains atomic and
         # bounded, so this sweep cannot resend successes or create new logical
@@ -1122,62 +1122,11 @@ class NotificationService:
 
     def recover(self) -> None:
         self.repository.reconcile_notifiable_events()
-        self.reconcile_pressure()
         self.dispatch_pending()
 
     def reconcile_pressure(self, trigger_event_id: str | None = None) -> None:
-        if self.pressure_input_provider is None:
-            return
-        try:
-            active_mrzs, observations, migration_provenance = (
-                self.pressure_input_provider()
-            )
-            if not active_mrzs:
-                return
-            observations_by_symbol: dict[str, list[Any]] = {}
-            trigger_symbol = None
-            for observation in observations:
-                observations_by_symbol.setdefault(observation.symbol, []).append(
-                    observation
-                )
-                if observation.event_id == trigger_event_id:
-                    trigger_symbol = observation.symbol
-            if trigger_event_id is not None and trigger_symbol is None:
-                return
-
-            generated_at = datetime.now(timezone.utc)
-            robustness_service = MRZRobustnessService(
-                lambda: (active_mrzs, observations, migration_provenance)
-            )
-            for active in active_mrzs:
-                if trigger_symbol is not None and active.symbol != trigger_symbol:
-                    continue
-                symbol_observations = observations_by_symbol.get(active.symbol, [])
-                if not symbol_observations:
-                    continue
-                evaluation_trigger = max(
-                    symbol_observations,
-                    key=lambda item: (item.received_at, item.id),
-                )
-                report = robustness_service.active_mrz_report(
-                    active,
-                    symbol_observations,
-                    generated_at,
-                    migration_provenance.get(
-                        active.symbol,
-                        {"has_migrated": False},
-                    ),
-                )
-                self.repository.reconcile_pressure_state(
-                    report,
-                    evaluation_trigger.event_id,
-                )
-        except Exception:
-            LOGGER.exception(
-                "Post-activation pressure reconciliation failed; MRZ authority "
-                "and other notifications are unaffected",
-                extra={"trigger_event_id": trigger_event_id},
-            )
+        """Deprecated compatibility no-op; Pressure generation is retired."""
+        return None
 
     def dispatch_pending(self, notification_ids: Sequence[int] | None = None) -> None:
         if not self.web_push_configured:
@@ -1313,8 +1262,10 @@ def current_pressure_history_item(row: Mapping[str, Any]) -> dict[str, Any]:
         "event_id": event_key,
         "source_event_key": event_key,
         "source_trigger_event_id": str(row["trigger_event_id"]),
-        "title": f"{row['symbol']} · Current Pressure → {direction_label}",
-        "event_name": "Current Pressure Changed",
+        "title": f"{row['symbol']} · Historical Pressure → {direction_label}",
+        "event_name": "Historical Pressure",
+        "historical_category": "HISTORICAL_PRESSURE",
+        "operational": False,
         "body": detail,
         "details": detail,
         "symbol": str(row["symbol"]),
@@ -1383,8 +1334,8 @@ def notification_payload(row: Mapping[str, Any]) -> dict[str, Any]:
         side = "above" if direction == "UP" else "below"
         side_mrz_count = int(row[f"{side}_mrz_count"])
         side_envelope_count = int(row[f"{side}_envelope_count"])
-        title = f"{symbol} · {row['pressure_state_label']}"
-        event_name = str(row["pressure_state_label"])
+        title = f"{symbol} · Historical Pressure"
+        event_name = "Historical Pressure"
         body = (
             f"Post-activation activity materially favors {side}-envelope observations · "
             f"{int(row['post_activation_observation_count'])} total · "
@@ -1448,6 +1399,8 @@ def notification_payload(row: Mapping[str, Any]) -> dict[str, Any]:
     if event_type == PRESSURE_EVENT_TYPE:
         displacement_value = row.get("displacement")
         payload.update({
+            "historical_category": "HISTORICAL_PRESSURE",
+            "operational": False,
             "lifecycle_activation_event_id": str(
                 row["lifecycle_activation_event_id"]
             ),

@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Any, Iterable, Mapping, Sequence
 
 from app.domain import Observation, Route
-from app.mrz_robustness import classify_current_pressure_directions
+from app.pressure import classify_current_pressure_directions
 from app.structure import classify_ipda_location
 
 
@@ -17,11 +17,9 @@ STATE_LABELS = {
     "DEVELOPING": "Developing",
     "NEAR_MISS": "Near Miss",
     "STRUCTURE_ESTABLISHED": "Structure Established",
-    "REASSESSMENT": "Reassessment",
     "HISTORICAL_UNRESOLVED": "Historical / Unresolved",
 }
 STATE_RANK = {
-    "REASSESSMENT": 6,
     "STRUCTURE_ESTABLISHED": 5,
     "NEAR_MISS": 4,
     "DEVELOPING": 3,
@@ -304,7 +302,6 @@ def _state_history(
     observations: Sequence[Mapping[str, Any]],
     near_misses: Sequence[Mapping[str, Any]],
     lifecycles: Sequence[Mapping[str, Any]],
-    pressure: Sequence[Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
     changes: list[dict[str, Any]] = []
 
@@ -336,18 +333,6 @@ def _state_history(
                 lifecycle,
                 f"Authoritative {route} MRZ lifecycle established.",
             )
-    previous = "NEUTRAL"
-    for event in pressure:
-        if event["mrz_route"] != route:
-            continue
-        current = str(event["current_pressure_state"])
-        if current != "NEUTRAL" and current != previous:
-            add(
-                "REASSESSMENT",
-                event,
-                f"Latest-four Current Pressure changed to {event['current_pressure_label']}.",
-            )
-        previous = current
     changes.sort(
         key=lambda item: (
             _parse_iso(item["known_at"]),
@@ -366,22 +351,88 @@ def _state_history(
 def _next_condition(
     route: str,
     state: str,
-    latest_pressure: Mapping[str, Any] | None,
 ) -> str:
     if state == "CONTEXT_OBSERVED":
         return (
             f"Watch for a canonical {route} Near Miss or MRZ activation; "
-            "no observation-count threshold is inferred in Phase 1."
+            "no observation-count threshold is inferred."
         )
     if state == "NEAR_MISS":
         return f"Watch for authoritative {route} MRZ activation or the candidate episode ending."
     if state == "STRUCTURE_ESTABLISHED":
-        if latest_pressure and latest_pressure["current_pressure_state"] == "NEUTRAL":
-            return "Watch the next qualifying observation for a latest-four Current Pressure change."
-        return "Watch for a canonical MRZ migration, route change, new Near Miss, or Current Pressure change."
-    if state == "REASSESSMENT":
-        return "Watch for new structural development: MRZ migration/route change, Near Miss, or a Current Pressure change."
+        return "Watch for a canonical MRZ migration, route change, new Near Miss, or new route observation."
     return "No execution condition is defined; inspect new canonical evidence as it arrives."
+
+
+def build_canonical_opportunity_evidence(
+    inputs: Mapping[str, Any],
+    symbol: str,
+    as_known_at: datetime,
+) -> dict[str, Any] | None:
+    """Project retained observations, MRZs and near misses without Pressure."""
+    source_observations = [
+        observation
+        for observation in inputs.get("observations", ())
+        if observation.symbol == symbol and _utc(observation.received_at) <= as_known_at
+    ]
+    source_observations.sort(key=lambda item: item.order_key)
+    if not source_observations:
+        return None
+    observation_events = [_observation_event(item) for item in source_observations]
+    mrz_rows = [
+        row for row in inputs.get("mrz_events", ()) if str(row["symbol"]) == symbol
+    ]
+    all_lifecycles = _mrz_lifecycles(mrz_rows)
+    lifecycles = _filter_known(all_lifecycles, as_known_at)
+    for lifecycle in lifecycles:
+        if (
+            lifecycle.get("ended_known_at")
+            and _parse_iso(str(lifecycle["ended_known_at"])) > as_known_at
+        ):
+            lifecycle["ended_effective_at"] = None
+            lifecycle["ended_known_at"] = None
+    near_misses = [
+        event
+        for event in (
+            _near_miss_event(row)
+            for row in inputs.get("near_miss_episodes", ())
+            if str(row["symbol"]) == symbol
+        )
+        if event is not None and _parse_iso(event["known_at"]) <= as_known_at
+    ]
+    return {
+        "source_observations": source_observations,
+        "observation_events": observation_events,
+        "all_lifecycles": all_lifecycles,
+        "lifecycles": lifecycles,
+        "near_misses": near_misses,
+    }
+
+
+def build_opportunity_pressure_projection(
+    inputs: Mapping[str, Any],
+    symbol: str,
+    canonical: Mapping[str, Any],
+    as_known_at: datetime,
+) -> dict[str, Any]:
+    """Project the Phase-1 Pressure fields separately from canonical evidence."""
+    pressure = _pressure_events(
+        canonical["source_observations"],
+        canonical["all_lifecycles"],
+        as_known_at,
+    )
+    persisted_pressure = [
+        {
+            "canonical_event_id": str(row["event_key"]),
+            "effective_at": iso(row["supporting_observed_at"] or row["occurred_at"]),
+            "known_at": iso(row["occurred_at"]),
+            "previous_state": str(row["previous_state"]),
+            "current_state": str(row["current_state"]),
+        }
+        for row in inputs.get("current_pressure_events", ())
+        if str(row["symbol"]) == symbol and _utc(row["occurred_at"]) <= as_known_at
+    ]
+    return {"pressure": pressure, "persisted_pressure": persisted_pressure}
 
 
 def build_symbol_opportunity(
@@ -393,48 +444,16 @@ def build_symbol_opportunity(
     normalized = symbol.upper()
     snapshot_at = _utc(inputs["as_of"])
     cursor = _as_known_at(as_known_at, snapshot_at)
-    source_observations = [
-        observation
-        for observation in inputs.get("observations", ())
-        if observation.symbol == normalized and _utc(observation.received_at) <= cursor
-    ]
-    source_observations.sort(key=lambda item: item.order_key)
-    if not source_observations:
+    canonical = build_canonical_opportunity_evidence(inputs, normalized, cursor)
+    if canonical is None:
         return None
-    observation_events = [_observation_event(item) for item in source_observations]
-    mrz_rows = [
-        row for row in inputs.get("mrz_events", ()) if str(row["symbol"]) == normalized
-    ]
-    all_lifecycles = _mrz_lifecycles(mrz_rows)
-    lifecycles = _filter_known(all_lifecycles, cursor)
-    for lifecycle in lifecycles:
-        if (
-            lifecycle.get("ended_known_at")
-            and _parse_iso(str(lifecycle["ended_known_at"])) > cursor
-        ):
-            lifecycle["ended_effective_at"] = None
-            lifecycle["ended_known_at"] = None
-    near_misses = [
-        event
-        for event in (
-            _near_miss_event(row)
-            for row in inputs.get("near_miss_episodes", ())
-            if str(row["symbol"]) == normalized
-        )
-        if event is not None and _parse_iso(event["known_at"]) <= cursor
-    ]
-    pressure = _pressure_events(source_observations, all_lifecycles, cursor)
-    persisted_pressure = [
-        {
-            "canonical_event_id": str(row["event_key"]),
-            "effective_at": iso(row["supporting_observed_at"] or row["occurred_at"]),
-            "known_at": iso(row["occurred_at"]),
-            "previous_state": str(row["previous_state"]),
-            "current_state": str(row["current_state"]),
-        }
-        for row in inputs.get("current_pressure_events", ())
-        if str(row["symbol"]) == normalized and _utc(row["occurred_at"]) <= cursor
-    ]
+    source_observations = canonical["source_observations"]
+    observation_events = canonical["observation_events"]
+    lifecycles = canonical["lifecycles"]
+    near_misses = canonical["near_misses"]
+    # Deprecated response fields remain empty for cached Phase-1 clients.
+    pressure: list[dict[str, Any]] = []
+    persisted_pressure: list[dict[str, Any]] = []
 
     episodes = []
     for route in (Route.BTD.value, Route.STR.value):
@@ -449,17 +468,15 @@ def build_symbol_opportunity(
         route_near = [event for event in near_misses if event["route"] == route]
         opposing_near = [event for event in near_misses if event["route"] != route]
         route_lifecycles = [event for event in lifecycles if event["route"] == route]
-        route_pressure = [event for event in pressure if event["mrz_route"] == route]
         history = _state_history(
             route,
             route_observations,
             near_misses,
             lifecycles,
-            pressure,
         )
         state = history[-1]["state"] if history else "CONTEXT_OBSERVED"
         latest_evidence = max(
-            [*route_observations, *route_near, *route_lifecycles, *route_pressure],
+            [*route_observations, *route_near, *route_lifecycles],
             key=lambda item: (
                 _parse_iso(item["known_at"]),
                 _parse_iso(item["effective_at"]),
@@ -475,7 +492,6 @@ def build_symbol_opportunity(
                     *route_near,
                     *opposing_near,
                     *route_lifecycles,
-                    *route_pressure,
                 ],
                 key=lambda item: (
                     _parse_iso(item["effective_at"]),
@@ -490,15 +506,12 @@ def build_symbol_opportunity(
                 relationship = "CONFLICTING_EVIDENCE"
             elif event.get("source_tracker") in {"MRZ", "NEAR_MISS"}:
                 relationship = "STRUCTURAL_DEVELOPMENT"
-            elif event.get("source_tracker") == "PRESSURE":
-                relationship = "HISTORICAL_OUTCOME_EVIDENCE"
             elif event is route_observations[0]:
                 relationship = "CONTEXT"
             else:
                 relationship = "SUPPORTING_EVIDENCE"
             item.update({"relationship": relationship, "sequence_order": index})
             evidence.append(item)
-        latest_pressure = route_pressure[-1] if route_pressure else None
         episodes.append(
             {
                 "episode_id": _episode_id(
@@ -525,13 +538,11 @@ def build_symbol_opportunity(
                     for item in evidence
                 ),
                 "evidence": evidence,
-                "next_observable_condition": _next_condition(
-                    route, state, latest_pressure
-                ),
+                "next_observable_condition": _next_condition(route, state),
                 "entry_verification": {
                     "status": "NOT_VERIFIED",
                     "label": "Entry not verified",
-                    "reason": "Phase 1 reconstructs research evidence only; execution readiness is not established.",
+                    "reason": "Canonical research evidence does not establish execution readiness.",
                 },
                 "rule_version": RULE_VERSION,
                 "replay": {
@@ -570,10 +581,10 @@ def build_symbol_opportunity(
         ),
         "next_condition": latest_episode["next_observable_condition"],
         "entry_verified": False,
-        "entry_message": "Not verified. Phase 1 is historical opportunity research, not an execution signal.",
+        "entry_message": "Not verified. Canonical opportunity research is not an execution signal.",
     }
     return {
-        "schema_version": "opportunity-intelligence.phase1",
+        "schema_version": "opportunity-intelligence.phase2",
         "symbol": normalized,
         "as_of": iso(snapshot_at),
         "as_known_at": iso(cursor),
@@ -585,10 +596,7 @@ def build_symbol_opportunity(
         "mrz_lifecycles": lifecycles,
         "pressure_observations": pressure,
         "persisted_current_pressure_events": persisted_pressure,
-        "current_pressure_persistence_note": (
-            "Reconstructed historical latest-four states are labelled separately from "
-            "contemporaneously persisted Current Pressure events."
-        ),
+        "pressure_retirement": {"status": "retired", "active_projection": False},
         "ote": {
             "status": "not_connected",
             "source": "EDGE_BOT",
@@ -608,7 +616,7 @@ def build_empty_symbol_opportunity(
     snapshot_at = _utc(inputs["as_of"])
     cursor = _as_known_at(as_known_at, snapshot_at)
     return {
-        "schema_version": "opportunity-intelligence.phase1",
+        "schema_version": "opportunity-intelligence.phase2",
         "symbol": symbol.upper(),
         "as_of": iso(snapshot_at),
         "as_known_at": iso(cursor),
@@ -620,9 +628,7 @@ def build_empty_symbol_opportunity(
         "mrz_lifecycles": [],
         "pressure_observations": [],
         "persisted_current_pressure_events": [],
-        "current_pressure_persistence_note": (
-            "No canonical observation is known for this symbol at the selected replay cursor."
-        ),
+        "pressure_retirement": {"status": "retired", "active_projection": False},
         "ote": {
             "status": "not_connected",
             "source": "EDGE_BOT",
@@ -649,14 +655,6 @@ def _candidate_summary(detail: Mapping[str, Any]) -> dict[str, Any]:
         ),
         None,
     )
-    latest_pressure = next(
-        (
-            item
-            for item in reversed(detail["pressure_observations"])
-            if item["mrz_route"] == episode["hypothesis"]
-        ),
-        None,
-    )
     return {
         "symbol": detail["symbol"],
         "episode_id": episode["episode_id"],
@@ -680,25 +678,7 @@ def _candidate_summary(detail: Mapping[str, Any]) -> dict[str, Any]:
             if mrz
             else None
         ),
-        "current_pressure": (
-            {
-                "state": latest_pressure["current_pressure_state"],
-                "label": latest_pressure["current_pressure_label"],
-                "higher": latest_pressure["recent_higher_observation_count"],
-                "lower": latest_pressure["recent_lower_observation_count"],
-                "count": latest_pressure["recent_pressure_observation_count"],
-                "basis": latest_pressure["state_basis"],
-            }
-            if latest_pressure
-            else {
-                "state": "NEUTRAL",
-                "label": "Neutral",
-                "higher": 0,
-                "lower": 0,
-                "count": 0,
-                "basis": "RECONSTRUCTED_AS_KNOWN_AT",
-            }
-        ),
+        "observation_count": len(detail["observations"]),
         "conflicting_evidence_count": episode["conflicting_evidence_count"],
         "next_observable_condition": episode["next_observable_condition"],
         "entry_verified": False,
@@ -776,13 +756,6 @@ def build_opportunity_overview(
                         if item["state"] == "STRUCTURE_ESTABLISHED"
                     }
                 ),
-                "reassessment_count": len(
-                    {
-                        item["symbol"]
-                        for item in group_candidates
-                        if item["state"] == "REASSESSMENT"
-                    }
-                ),
                 "earliest_candidate": min(
                     group_candidates,
                     key=lambda item: (
@@ -802,7 +775,7 @@ def build_opportunity_overview(
         )
     unique_candidates = {item["symbol"]: item for item in candidates}
     return {
-        "schema_version": "opportunity-intelligence.phase1",
+        "schema_version": "opportunity-intelligence.phase2",
         "as_of": iso(_utc(inputs["as_of"])),
         "as_known_at": iso(
             _as_known_at(as_known_at, _utc(inputs["as_of"]))
@@ -821,10 +794,6 @@ def build_opportunity_overview(
             ),
             "structure_established": sum(
                 item["state"] == "STRUCTURE_ESTABLISHED"
-                for item in unique_candidates.values()
-            ),
-            "needs_reassessment": sum(
-                item["state"] == "REASSESSMENT"
                 for item in unique_candidates.values()
             ),
         },

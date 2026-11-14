@@ -2,7 +2,6 @@
   "use strict";
 
   const STAGE_ORDER = {
-    REASSESSMENT: 6,
     STRUCTURE_ESTABLISHED: 5,
     NEAR_MISS: 4,
     DEVELOPING: 3,
@@ -14,8 +13,6 @@
     text: "#91a1b3",
     btd: "#3B82F6",
     str: "#A78BFA",
-    higher: "#22C55E",
-    lower: "#F87171",
     mrz: "#14B8A6",
     near: "#C084FC",
   };
@@ -110,7 +107,6 @@
       ...(detail.observations || []),
       ...(detail.near_miss_events || []),
       ...(detail.mrz_lifecycles || []),
-      ...(detail.pressure_observations || []),
     ].forEach((item) => { if (item.known_at) values.add(item.known_at); });
     return [...values].sort((left, right) => parseTime(left) - parseTime(right));
   }
@@ -148,7 +144,6 @@
       (detail.observations || []).forEach((item) => values.push(parseTime(item.effective_at)));
       (detail.near_miss_events || []).forEach((item) => values.push(parseTime(item.known_at), parseTime(item.ended_at)));
       (detail.mrz_lifecycles || []).forEach((item) => values.push(parseTime(item.known_at), parseTime(item.ended_known_at)));
-      (detail.pressure_observations || []).forEach((item) => values.push(parseTime(item.effective_at)));
       values.push(parseTime(detail.as_known_at || detail.as_of));
       return values.filter(Number.isFinite);
     });
@@ -176,7 +171,6 @@
         const end = parseTime(item.ended_known_at || detail.as_known_at);
         return start <= bounds.maximum && end >= bounds.minimum;
       }),
-      pressure: (detail.pressure_observations || []).filter((item) => within(item.effective_at)),
     };
   }
 
@@ -187,7 +181,6 @@
       if (Number.isFinite(numeric)) values.push(numeric);
     };
     items.observations.forEach((item) => add(item.price));
-    items.pressure.forEach((item) => add(item.price));
     items.near.forEach((item) => { add(item.lower_bound); add(item.upper_bound); });
     items.mrz.forEach((item) => {
       add(item.lower_bound); add(item.upper_bound);
@@ -211,27 +204,6 @@
     context.fill();
     context.strokeStyle = stroke;
     context.lineWidth = strokeWidth;
-    context.stroke();
-  }
-
-  function drawCombinedMarker(context, xPosition, yPosition, direction, routeColor, pressureColor) {
-    drawTriangle(context, xPosition, yPosition, direction, 8, "#0b1119", pressureColor, 2.5);
-    context.beginPath();
-    context.arc(xPosition, yPosition, 3, 0, Math.PI * 2);
-    context.fillStyle = routeColor;
-    context.fill();
-    context.strokeStyle = "#0b1119";
-    context.lineWidth = 1;
-    context.stroke();
-  }
-
-  function drawPressureCircle(context, xPosition, yPosition, direction) {
-    context.beginPath();
-    context.arc(xPosition, yPosition, 6.5, 0, Math.PI * 2);
-    context.fillStyle = direction === "LOWER" ? COLORS.lower : COLORS.higher;
-    context.fill();
-    context.strokeStyle = "#0b1119";
-    context.lineWidth = 2;
     context.stroke();
   }
 
@@ -323,75 +295,22 @@
     });
 
     const hits = [];
-    const pressureByIdentity = new Map(items.pressure.map((item) => [eventIdentity(item), item]));
-    const combinedPressureIds = new Set();
     items.observations.forEach((item) => {
       const xPosition = x(item.effective_at);
       const yPosition = y(item.price);
       const identity = eventIdentity(item);
-      const pressureItem = pressureByIdentity.get(identity);
       const routeColor = item.route === "BTD" ? COLORS.btd : COLORS.str;
-      const visualItem = pressureItem
-        ? {
-            ...item,
-            ...pressureItem,
-            route: item.route,
-            source_tracker: `${item.source_tracker} + ${pressureItem.source_tracker}`,
-            event_type: item.event_type,
-            direction: pressureItem.direction,
-            _classifications: [item.route, `${pressureItem.direction} Pressure`],
-          }
-        : item;
-      if (pressureItem && options.pressureStyle === "circle") {
-        combinedPressureIds.add(identity);
-        drawPressureCircle(context, xPosition, yPosition, pressureItem.direction);
-      } else if (pressureItem) {
-        combinedPressureIds.add(identity);
-        drawCombinedMarker(
-          context,
-          xPosition,
-          yPosition,
-          pressureItem.direction,
-          routeColor,
-          pressureItem.direction === "LOWER" ? COLORS.lower : COLORS.higher,
-        );
-      } else {
-        context.beginPath(); context.arc(xPosition, yPosition, 5, 0, Math.PI * 2);
-        context.fillStyle = routeColor;
-        context.fill();
-        context.strokeStyle = "#0b1119";
-        context.lineWidth = 1.5;
-        context.stroke();
-      }
+      context.beginPath(); context.arc(xPosition, yPosition, 5, 0, Math.PI * 2);
+      context.fillStyle = routeColor;
+      context.fill();
+      context.strokeStyle = "#0b1119";
+      context.lineWidth = 1.5;
+      context.stroke();
       if (eventIdentity(item) === selectedEventId) {
         context.beginPath(); context.arc(xPosition, yPosition, 10, 0, Math.PI * 2);
         context.strokeStyle = "#ffffff"; context.lineWidth = 2; context.stroke();
       }
-      hits.push({ x: xPosition, y: yPosition, radius: 12, item: visualItem });
-    });
-    items.pressure.forEach((item) => {
-      if (combinedPressureIds.has(eventIdentity(item))) return;
-      const xPosition = x(item.effective_at);
-      const yPosition = y(item.price);
-      if (options.pressureStyle === "circle") {
-        drawPressureCircle(context, xPosition, yPosition, item.direction);
-      } else if (item.route === "BTD" || item.route === "STR") {
-        drawCombinedMarker(
-          context,
-          xPosition,
-          yPosition,
-          item.direction,
-          item.route === "BTD" ? COLORS.btd : COLORS.str,
-          item.direction === "LOWER" ? COLORS.lower : COLORS.higher,
-        );
-      } else {
-        drawTriangle(context, xPosition, yPosition, item.direction, 8, item.direction === "LOWER" ? COLORS.lower : COLORS.higher);
-      }
-      if (eventIdentity(item) === selectedEventId) {
-        context.beginPath(); context.arc(xPosition, yPosition, 12, 0, Math.PI * 2);
-        context.strokeStyle = "#ffffff"; context.lineWidth = 2; context.stroke();
-      }
-      hits.push({ x: xPosition, y: yPosition, radius: 13, item });
+      hits.push({ x: xPosition, y: yPosition, radius: 12, item });
     });
     canvas._opportunityHits = hits;
     canvas.onclick = (event) => {
@@ -408,11 +327,9 @@
 
   function renderLegend(options = {}) {
     const legend = node("div", "opportunity-map-legend");
-    if (options.pressureStyle === "circle") legend.classList.add("circular-pressure");
     [
       ["btd", "BTD observation"], ["str", "STR observation"],
       ["mrz", "MRZ zone"], ["near", "Near Miss candidate"],
-      ["lower", "Lower Pressure"], ["higher", "Higher Pressure"],
     ].forEach(([tone, label]) => {
       const item = node("span", tone);
       item.append(node("i", ""), node("b", "", label));
@@ -461,7 +378,6 @@
       [detail.observations || [], "Route observation"],
       [detail.near_miss_events || [], "Near Miss"],
       [detail.mrz_lifecycles || [], "MRZ"],
-      [detail.pressure_observations || [], "Pressure"],
     ];
     sources.forEach(([items, classification]) => items.forEach((item) => {
       const identity = eventIdentity(item);
@@ -493,7 +409,7 @@
       const evidence = item.relationship
         || item.ipda_location_label
         || item.structural_location
-        || (item.current_pressure_state ? `${item.current_pressure_label} ${item.recent_higher_observation_count}/${item.recent_lower_observation_count}` : "Canonical observed evidence");
+        || "Canonical observed evidence";
       const observedKnown = node("td", "opportunity-event-time");
       observedKnown.append(node("time", "", exactTime(item.effective_at)), node("small", "", `Known ${exactTime(item.known_at)}`));
       row.append(
@@ -645,14 +561,14 @@
       maximize.textContent = value ? "Restore" : "Maximize";
       maximize.setAttribute("aria-pressed", String(value));
       maximize.setAttribute("aria-label", value ? "Restore Opportunity Map" : "Maximize Opportunity Map");
-      globalObject.requestAnimationFrame(() => drawChart(canvas, detail, componentState.rangeDays, componentState.selectedEventId, selectEvidence, { pressureStyle: "circle" }));
+      globalObject.requestAnimationFrame(() => drawChart(canvas, detail, componentState.rangeDays, componentState.selectedEventId, selectEvidence));
     };
     maximize.addEventListener("click", () => setMaximized(!componentState.maximized));
     mapTools.append(ranges, maximize);
     mapHeader.append(title, mapTools); mapPanel.append(mapHeader);
     const scroll = node("div", "opportunity-chart-scroll");
     const canvas = node("canvas", "opportunity-map-canvas"); canvas.width = 1120; canvas.height = 280; canvas.setAttribute("aria-label", `Time-price opportunity map for ${detail.symbol}`); canvas.tabIndex = 0;
-    scroll.append(canvas); mapPanel.append(scroll, renderLegend({ pressureStyle: "circle" }));
+    scroll.append(canvas); mapPanel.append(scroll, renderLegend());
     const details = node("div", "opportunity-selected-event");
     const previouslySelected = timelineRows(detail).find((item) => eventIdentity(item) === componentState.selectedEventId) || null;
     mapPanel.append(details); renderEventDetails(details, previouslySelected);
@@ -660,7 +576,7 @@
     const selectEvidence = (item) => {
       componentState.selectedEventId = eventIdentity(item);
       renderEventDetails(details, item);
-      drawChart(canvas, detail, componentState.rangeDays, componentState.selectedEventId, selectEvidence, { pressureStyle: "circle" });
+      drawChart(canvas, detail, componentState.rangeDays, componentState.selectedEventId, selectEvidence);
       target.querySelectorAll(".opportunity-timeline-table tr[data-event-id]").forEach((row) => row.classList.toggle("selected", row.dataset.eventId === componentState.selectedEventId));
       mapPanel.scrollIntoView({ block: "nearest", behavior: "smooth" });
     };
@@ -668,7 +584,7 @@
     componentState.escapeHandler = (event) => { if (event.key === "Escape" && componentState.maximized) setMaximized(false); };
     globalObject.document.addEventListener("keydown", componentState.escapeHandler);
     if (componentState.maximized) setMaximized(true);
-    globalObject.requestAnimationFrame(() => drawChart(canvas, detail, componentState.rangeDays, componentState.selectedEventId, selectEvidence, { pressureStyle: "circle" }));
+    globalObject.requestAnimationFrame(() => drawChart(canvas, detail, componentState.rangeDays, componentState.selectedEventId, selectEvidence));
 
     const timeline = node("section", "opportunity-event-timeline panel");
     const recordCount = timelineRows(detail).length;
@@ -709,7 +625,7 @@
     const wrap = node("div", "opportunity-candidate-table-wrap");
     const table = node("table", "opportunity-candidate-table");
     const head = node("thead", "");
-    head.innerHTML = "<tr><th>Symbol</th><th>Hypothesis</th><th>IPDA location</th><th>MRZ levels</th><th>Current pressure</th><th>Opportunity state</th><th>Latest development</th><th aria-label=\"Open\"></th></tr>";
+    head.innerHTML = "<tr><th>Symbol</th><th>Hypothesis</th><th>IPDA location</th><th>MRZ levels</th><th>Observations</th><th>Opportunity state</th><th>Latest development</th><th aria-label=\"Open\"></th></tr>";
     const body = node("tbody", "");
     summary.candidates
       .slice()
@@ -720,11 +636,11 @@
         const hypothesis = node("td", ""); hypothesis.append(node("b", `route ${candidate.hypothesis.toLowerCase()}`, candidate.hypothesis));
         const location = node("td", "", candidate.ipda_location || "Unavailable");
         const mrz = node("td", "", candidate.mrz ? `${price(candidate.mrz.lower)}–${price(candidate.mrz.upper)}` : "No active MRZ");
-        const pressure = node("td", candidate.current_pressure?.state === "LOWER" ? "lower" : candidate.current_pressure?.state === "HIGHER" ? "higher" : "", candidate.current_pressure ? `${candidate.current_pressure.label} ${candidate.current_pressure.higher}/${candidate.current_pressure.lower}` : "Neutral");
+        const observations = node("td", "", String(candidate.observation_count ?? 0));
         const stage = node("td", ""); stage.append(node("span", `opportunity-stage ${stageClass(candidate.state)}`, candidate.state_label));
         const latest = node("td", "opportunity-candidate-development", `${candidate.latest_event_type} · ${shortTime(candidate.latest_event_at)}`);
         const open = node("td", "opportunity-candidate-open", "Open →");
-        row.append(symbol, hypothesis, location, mrz, pressure, stage, latest, open);
+        row.append(symbol, hypothesis, location, mrz, observations, stage, latest, open);
         row.addEventListener("click", () => onSelect(candidate.symbol));
         row.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelect(candidate.symbol); } });
         body.append(row);
@@ -741,7 +657,6 @@
       ["Developing context", summary.context_or_developing_count || 0, "No invented count threshold", "context"],
       ["Near Miss", summary.near_miss_count || 0, "Canonical candidates", "near"],
       ["Structure established", summary.structure_established_count || 0, "Authoritative MRZ", "structure"],
-      ["Needs reassessment", summary.reassessment_count || 0, "Material context change", "reassessment"],
     ];
     cards.forEach(([label, value, detail, tone]) => {
       const card = node("article", `opportunity-overview-card ${tone}`); card.append(node("strong", "", value), node("span", "", label), node("small", "", detail)); overview.append(card);

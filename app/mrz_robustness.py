@@ -14,7 +14,23 @@ from app.concentration import (
     latest_route_window,
 )
 from app.domain import ActiveMRZ, Observation, Route
-from app.state_engine import build_successor_mrz, successor_external_side
+from app.mrz_evidence import (
+    PostActivationEvidence,
+    build_post_activation_evidence,
+    select_post_activation_observations,
+)
+from app.pressure import (
+    CURRENT_PRESSURE_CONFIRMATION_COUNT,
+    CURRENT_PRESSURE_RECENT_WINDOW,
+    CurrentPressureRegime,
+    DirectionalPressureObservation,
+    PostActivationState,
+    classify_cumulative_pressure,
+    classify_cumulative_pressure_counts,
+    classify_current_pressure_directions,
+    derive_current_pressure_regime as interpret_current_pressure,
+)
+from app.state_engine import build_successor_mrz
 from app.structure import classify_structural_location
 
 
@@ -26,14 +42,6 @@ RobustnessInputProvider = Callable[
         Mapping[str, Mapping[str, object]],
     ],
 ]
-
-
-MIN_MEANINGFUL_OUTSIDE_ENVELOPE_OBSERVATIONS = 2
-MIN_DIRECTIONAL_ENVELOPE_LEAD = 2
-DIRECTIONAL_ENVELOPE_SHARE_NUMERATOR = 3
-DIRECTIONAL_ENVELOPE_SHARE_DENOMINATOR = 5
-CURRENT_PRESSURE_RECENT_WINDOW = 4
-CURRENT_PRESSURE_CONFIRMATION_COUNT = 3
 
 
 def iso(value: datetime | None) -> str | None:
@@ -117,53 +125,47 @@ def structural_location_label(value: str) -> str:
 
 
 @dataclass(frozen=True, slots=True)
-class PostActivationState:
-    status: str
-    label: str
-    reason: str
-    direction: str
-    direction_label: str
-
-
-@dataclass(frozen=True, slots=True)
-class DirectionalPressureObservation:
-    observation: Observation
-    direction: str
-
-
-@dataclass(frozen=True, slots=True)
-class CurrentPressureRegime:
-    state: PostActivationState
-    recent_evidence: tuple[DirectionalPressureObservation, ...]
-    current_pressure_since: datetime | None
-    latest_pressure_observed_at: datetime | None
-
-    @property
-    def recent_higher_count(self) -> int:
-        return sum(item.direction == "UP" for item in self.recent_evidence)
-
-    @property
-    def recent_lower_count(self) -> int:
-        return sum(item.direction == "DOWN" for item in self.recent_evidence)
-
-
-@dataclass(frozen=True, slots=True)
 class PostActivationSnapshot:
-    observations: tuple[Observation, ...]
+    evidence: PostActivationEvidence
     state: PostActivationState
     current_pressure: CurrentPressureRegime
-    inside_mrz_count: int
-    above_mrz_count: int
-    below_mrz_count: int
-    upper_boundary_test_count: int
-    lower_boundary_test_count: int
-    above_envelope_count: int
-    below_envelope_count: int
     displacement_median: Decimal | None
 
     @property
     def total_observation_count(self) -> int:
-        return len(self.observations)
+        return self.evidence.total_observation_count
+
+    @property
+    def observations(self) -> tuple[Observation, ...]:
+        return self.evidence.observations
+
+    @property
+    def inside_mrz_count(self) -> int:
+        return self.evidence.inside_mrz_count
+
+    @property
+    def above_mrz_count(self) -> int:
+        return self.evidence.above_mrz_count
+
+    @property
+    def below_mrz_count(self) -> int:
+        return self.evidence.below_mrz_count
+
+    @property
+    def upper_boundary_test_count(self) -> int:
+        return self.evidence.upper_boundary_test_count
+
+    @property
+    def lower_boundary_test_count(self) -> int:
+        return self.evidence.lower_boundary_test_count
+
+    @property
+    def above_envelope_count(self) -> int:
+        return self.evidence.above_envelope_count
+
+    @property
+    def below_envelope_count(self) -> int:
+        return self.evidence.below_envelope_count
 
 
 def classify_post_activation_state(
@@ -171,133 +173,11 @@ def classify_post_activation_state(
     above_envelope_count: int,
     below_envelope_count: int,
 ) -> PostActivationState:
-    """Interpret envelope activity without changing migration eligibility."""
-    if total_observation_count == 0:
-        return PostActivationState(
-            status="NO_EVIDENCE",
-            label="No evidence",
-            reason="No post-activation observations are available to assess behavior.",
-            direction="NEUTRAL",
-            direction_label="Neutral",
-        )
-
-    outside_count = above_envelope_count + below_envelope_count
-    if outside_count < MIN_MEANINGFUL_OUTSIDE_ENVELOPE_OBSERVATIONS:
-        reason = (
-            "No post-activation observation is beyond the active MRZ migration envelope."
-            if outside_count == 0
-            else (
-                "Only one post-activation observation is beyond the active MRZ "
-                "migration envelope; this is not enough to establish directional pressure."
-            )
-        )
-        return PostActivationState(
-            status="STABLE",
-            label="Contained / Quiet",
-            reason=reason,
-            direction="NEUTRAL",
-            direction_label="Neutral",
-        )
-
-    def materially_dominates(dominant_count: int, other_count: int) -> bool:
-        return (
-            dominant_count - other_count >= MIN_DIRECTIONAL_ENVELOPE_LEAD
-            and dominant_count * DIRECTIONAL_ENVELOPE_SHARE_DENOMINATOR
-            >= outside_count * DIRECTIONAL_ENVELOPE_SHARE_NUMERATOR
-        )
-
-    if materially_dominates(above_envelope_count, below_envelope_count):
-        return PostActivationState(
-            status="UNDER_PRESSURE",
-            label="Upward Pressure",
-            reason="Above-envelope activity materially dominates below-envelope activity.",
-            direction="UP",
-            direction_label="Upward",
-        )
-    if materially_dominates(below_envelope_count, above_envelope_count):
-        return PostActivationState(
-            status="UNDER_PRESSURE",
-            label="Downward Pressure",
-            reason="Below-envelope activity materially dominates above-envelope activity.",
-            direction="DOWN",
-            direction_label="Downward",
-        )
-    return PostActivationState(
-        status="STABLE",
-        label="Two-sided / Consolidating",
-        reason=(
-            "Post-activation observations are distributed on both sides of the active "
-            "MRZ with no meaningful directional dominance."
-        ),
-        direction="NEUTRAL",
-        direction_label="Neutral",
-    )
-
-
-def classify_current_pressure_directions(
-    directions: Sequence[str],
-) -> PostActivationState:
-    """Classify a bounded, chronological pressure regime from canonical sides."""
-    recent = tuple(directions[-CURRENT_PRESSURE_RECENT_WINDOW:])
-    evidence_count = len(recent)
-    higher_count = recent.count("UP")
-    lower_count = recent.count("DOWN")
-    if evidence_count == 0:
-        return PostActivationState(
-            status="NO_EVIDENCE",
-            label="No current pressure evidence",
-            reason=(
-                "No post-activation observation is beyond the active MRZ "
-                "migration envelope."
-            ),
-            direction="NEUTRAL",
-            direction_label="Neutral",
-        )
-    if evidence_count < CURRENT_PRESSURE_CONFIRMATION_COUNT:
-        return PostActivationState(
-            status="INSUFFICIENT_EVIDENCE",
-            label="Insufficient recent pressure evidence",
-            reason=(
-                f"{evidence_count} recent qualifying pressure observation"
-                f"{' is' if evidence_count == 1 else 's are'} available; "
-                f"{CURRENT_PRESSURE_CONFIRMATION_COUNT} are required to establish "
-                "the current pressure regime."
-            ),
-            direction="NEUTRAL",
-            direction_label="Neutral",
-        )
-    if higher_count >= CURRENT_PRESSURE_CONFIRMATION_COUNT:
-        return PostActivationState(
-            status="UNDER_PRESSURE",
-            label="Upward Pressure",
-            reason=(
-                f"{higher_count} of the latest {evidence_count} qualifying pressure "
-                "observations are above the active MRZ migration envelope."
-            ),
-            direction="UP",
-            direction_label="Upward",
-        )
-    if lower_count >= CURRENT_PRESSURE_CONFIRMATION_COUNT:
-        return PostActivationState(
-            status="UNDER_PRESSURE",
-            label="Downward Pressure",
-            reason=(
-                f"{lower_count} of the latest {evidence_count} qualifying pressure "
-                "observations are below the active MRZ migration envelope."
-            ),
-            direction="DOWN",
-            direction_label="Downward",
-        )
-    return PostActivationState(
-        status="STABLE",
-        label="Neutral / Mixed",
-        reason=(
-            f"The latest {evidence_count} qualifying pressure observations do not "
-            f"contain {CURRENT_PRESSURE_CONFIRMATION_COUNT} observations on either "
-            "side of the active MRZ migration envelope."
-        ),
-        direction="NEUTRAL",
-        direction_label="Neutral",
+    """Compatibility adapter for the existing cumulative Pressure contract."""
+    return classify_cumulative_pressure_counts(
+        total_observation_count,
+        above_envelope_count,
+        below_envelope_count,
     )
 
 
@@ -305,51 +185,9 @@ def derive_current_pressure_regime(
     active: ActiveMRZ,
     post_activation: Sequence[Observation],
 ) -> CurrentPressureRegime:
-    """Derive one recency-aware regime without mutating MRZ authority."""
-    directional = tuple(
-        DirectionalPressureObservation(observation, direction)
-        for observation in sorted(post_activation, key=lambda item: item.order_key)
-        if (direction := successor_external_side(active, observation)) is not None
-    )
-    state = classify_current_pressure_directions(
-        tuple(item.direction for item in directional)
-    )
-    previous_direction = "NEUTRAL"
-    current_pressure_since = None
-    for index, item in enumerate(directional, 1):
-        next_state = classify_current_pressure_directions(
-            tuple(evidence.direction for evidence in directional[:index])
-        )
-        if next_state.direction != previous_direction:
-            current_pressure_since = item.observation.observed_at
-            previous_direction = next_state.direction
-    return CurrentPressureRegime(
-        state=state,
-        recent_evidence=directional[-CURRENT_PRESSURE_RECENT_WINDOW:],
-        current_pressure_since=current_pressure_since,
-        latest_pressure_observed_at=(
-            directional[-1].observation.observed_at if directional else None
-        ),
-    )
-
-
-def select_post_activation_observations(
-    active: ActiveMRZ,
-    observations: Sequence[Observation],
-) -> tuple[Observation, ...]:
-    """Select observations after the current activation in canonical order."""
-    ordered = tuple(sorted(observations, key=lambda item: item.order_key))
-    activation = next(
-        (
-            item
-            for item in ordered
-            if item.event_id == active.activation_event_id
-        ),
-        None,
-    )
-    if activation is not None:
-        return tuple(item for item in ordered if item.order_key > activation.order_key)
-    return tuple(item for item in ordered if item.observed_at > active.activated_at)
+    """Compatibility adapter for consumers of the existing helper."""
+    evidence = build_post_activation_evidence(active, post_activation)
+    return interpret_current_pressure(evidence)
 
 
 def post_activation_snapshot(
@@ -357,60 +195,12 @@ def post_activation_snapshot(
     observations: Sequence[Observation],
 ) -> PostActivationSnapshot:
     """Build the shared post-activation evidence consumed by UI and notifications."""
-    post_activation = select_post_activation_observations(active, observations)
-    current_pressure = derive_current_pressure_regime(active, post_activation)
-    inside_mrz_count = sum(
-        active.core_mrz_lower
-        <= observation.observation_price
-        <= active.core_mrz_upper
-        for observation in post_activation
-    )
-    above_mrz_count = sum(
-        observation.observation_price > active.core_mrz_upper
-        for observation in post_activation
-    )
-    below_mrz_count = sum(
-        observation.observation_price < active.core_mrz_lower
-        for observation in post_activation
-    )
-    upper_boundary_test_count = sum(
-        observation.observation_price >= active.core_mrz_upper
-        for observation in post_activation
-    )
-    lower_boundary_test_count = sum(
-        observation.observation_price <= active.core_mrz_lower
-        for observation in post_activation
-    )
-    above_envelope_count = sum(
-        observation.observation_price > active.upper_migration_boundary
-        for observation in post_activation
-    )
-    below_envelope_count = sum(
-        observation.observation_price < active.lower_migration_boundary
-        for observation in post_activation
-    )
-    midpoint_displacements = tuple(
-        (observation.observation_price - active.core_mrz_midpoint)
-        / active.ipda_width_at_activation
-        * Decimal("100")
-        for observation in post_activation
-    )
+    evidence = build_post_activation_evidence(active, observations)
     return PostActivationSnapshot(
-        observations=post_activation,
-        state=classify_post_activation_state(
-            len(post_activation),
-            above_envelope_count,
-            below_envelope_count,
-        ),
-        current_pressure=current_pressure,
-        inside_mrz_count=inside_mrz_count,
-        above_mrz_count=above_mrz_count,
-        below_mrz_count=below_mrz_count,
-        upper_boundary_test_count=upper_boundary_test_count,
-        lower_boundary_test_count=lower_boundary_test_count,
-        above_envelope_count=above_envelope_count,
-        below_envelope_count=below_envelope_count,
-        displacement_median=median_decimal(midpoint_displacements),
+        evidence=evidence,
+        state=classify_cumulative_pressure(evidence),
+        current_pressure=interpret_current_pressure(evidence),
+        displacement_median=median_decimal(evidence.midpoint_displacements),
     )
 
 

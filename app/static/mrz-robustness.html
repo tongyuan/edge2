@@ -32,7 +32,7 @@
         <li><span>01</span><strong>Formation</strong></li>
         <li><span>02</span><strong>Activation</strong></li>
         <li class="current"><span>03</span><strong>Operation Card</strong></li>
-        <li><span>04</span><strong>Migration Pressure</strong></li>
+        <li><span>04</span><strong>Successor Evidence</strong></li>
         <li><span>05</span><strong>Migration Confirmation</strong></li>
       </ol>
 
@@ -52,10 +52,7 @@
             <input id="symbolSearch" type="search" inputmode="search" placeholder="BTCUSDT" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-describedby="filterResultStatus">
             <span class="filter-result-status" id="filterResultStatus" role="status" aria-live="polite" hidden></span>
           </div>
-          <div class="filter-options" role="tablist" aria-label="Operator Card view">
-            <button class="filter-option active" id="filterAll" type="button" role="tab" aria-selected="true" aria-controls="activeReports" tabindex="0">All <span class="filter-count" id="allCount">0</span></button>
-            <button class="filter-option" id="filterPressure" type="button" role="tab" aria-selected="false" aria-controls="activeReports" tabindex="-1">Pressure <span class="filter-count" id="pressureCount">0</span></button>
-          </div>
+          <div class="filter-options" aria-label="Operator Card count"><span>All <strong class="filter-count" id="allCount">0</strong></span></div>
         </section>
         <div id="activeReports" role="tabpanel" aria-labelledby="filterAll" tabindex="0"></div>
       </div>

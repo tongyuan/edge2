@@ -60,14 +60,7 @@ function normalizedSymbolQuery(searchQuery) {
 
 function filterReports(reports, filterMode = "all", searchQuery = "") {
   let filteredReports;
-  if (filterMode === "pressure") {
-    filteredReports = reports.filter((report) => {
-      const pressure = report.current_pressure || report.migration_pressure;
-      return report.structural_authority?.status === "AUTHORITATIVE"
-        && pressure?.status === "UNDER_PRESSURE"
-        && ["UP", "DOWN"].includes(pressure.direction);
-    });
-  } else if (filterMode === "migrated") {
+  if (filterMode === "migrated") {
     filteredReports = reports.filter((report) => hasValidMigrationProvenance(report));
   } else {
     filteredReports = [...reports];
@@ -78,7 +71,7 @@ function filterReports(reports, filterMode = "all", searchQuery = "") {
 }
 
 function operatorViewCounts(reports) {
-  return { all: reports.length, pressure: filterReports(reports, "pressure").length };
+  return { all: reports.length };
 }
 
 function percentageText(value) {
@@ -251,8 +244,6 @@ function robustnessCardMarkup(
   const position = report.observation_position;
   const boundary = report.boundary_pressure;
   const displacement = report.mrz_displacement;
-  const pressure = report.current_pressure || report.migration_pressure;
-  const cumulativePressure = report.cumulative_pressure || report.migration_pressure;
   const successor = report.successor_watch;
   const age = report.mrz_age;
   const qualifyingObservationName = report.route_owner === "BTD" ? "reclaim" : "rejection";
@@ -266,19 +257,6 @@ function robustnessCardMarkup(
   const activeTimestamp = timestampFormatter(active.activated_at) || "—";
   const activeDuration = durationText(age.active_duration_seconds);
   const postActivationObservationText = `${behavior.post_activation_observation_count} observation${behavior.post_activation_observation_count === 1 ? "" : "s"}`;
-  const pressureDirection = directionText(pressure.direction, pressure.direction_label);
-  const stateSummary = pressure.direction !== "NEUTRAL"
-    ? `${pressure.direction === "UP" ? "↑" : "↓"} ${pressure.label}`
-    : pressure.label || pressureDirection;
-  const recentPressureSequence = (pressure.recent_sequence || [])
-    .map((entry) => (entry.direction === "UP" ? "↑" : "↓"))
-    .join(" ") || "—";
-  const currentPressureSince = pressure.current_pressure_since
-    ? `Since ${timestampFormatter(pressure.current_pressure_since)}`
-    : "Regime not established";
-  const latestPressureObservation = pressure.latest_pressure_observed_at
-    ? `Observed ${timestampFormatter(pressure.latest_pressure_observed_at)}`
-    : "No qualifying pressure observations";
   const migrationSummary = report.migration?.has_migrated
     ? `Migrated ${String(report.migration.direction || "").toLowerCase()}`
     : "No recorded migration";
@@ -313,7 +291,7 @@ function robustnessCardMarkup(
     ? `<strong class="authority-migration-direction">${migrationDirection === "UP" ? "↑ MIGRATED UP" : "↓ MIGRATED DOWN"}</strong>`
     : "";
 
-  const postActivationContent = `<p class="detail-explanation">${escapeHtml(cumulativePressure.reason)}</p>
+  const postActivationContent = `<p class="detail-explanation">Factual observation distribution relative to the frozen active MRZ and migration envelope.</p>
   <div class="evidence-grid">
     <article class="metric-card">
       <h3>Observation Position</h3>
@@ -399,36 +377,13 @@ function robustnessCardMarkup(
         ${migrationEqmMarkup}
       </section>
 
-      <section class="current-pressure-panel ${statusClass(pressure.status)}" aria-label="Current Pressure">
-        <div class="current-pressure-heading">
-          <div>
-            <span class="section-label">CURRENT PRESSURE</span>
-            <strong>${escapeHtml(stateSummary)}</strong>
-          </div>
-          <span class="pressure-observation-count">${escapeHtml(currentPressureSince)}</span>
-        </div>
-        <div class="current-pressure-evidence">
-          <div>
-            <span>RECENT PRESSURE</span>
-            <strong aria-label="Recent pressure sequence">${escapeHtml(recentPressureSequence)}</strong>
-          </div>
-          <div>
-            <span>LATEST PRESSURE OBSERVATION</span>
-            <strong>${escapeHtml(latestPressureObservation)}</strong>
-          </div>
-        </div>
-        <p class="cumulative-pressure-summary">
-          <span>CUMULATIVE SINCE ACTIVATION</span>
-          <strong>↑ ${cumulativePressure.above_upper_envelope_observation_count} · ↓ ${cumulativePressure.below_lower_envelope_observation_count} · ${cumulativePressure.observations_beyond_envelope} outside</strong>
-        </p>
-      </section>
     </header>
 
     <div class="operator-disclosures">
       ${disclosureMarkup(
     "post-activation",
     "Cumulative since activation",
-    `${cumulativePressure.label} · ${postActivationObservationText}`,
+    postActivationObservationText,
     postActivationContent,
   )}
       ${disclosureMarkup(
@@ -464,9 +419,6 @@ function reportMarkup(
   const normalizedQuery = normalizedSymbolQuery(searchQuery);
   if (normalizedQuery && !visibleReports.length) {
     return `<section class="empty-report">No symbols match “${escapeHtml(String(searchQuery).trim())}”.</section>`;
-  }
-  if (filterMode === "pressure" && !visibleReports.length) {
-    return '<section class="empty-report">No directional pressure currently detected.</section>';
   }
   if (filterMode === "migrated" && !visibleReports.length) {
     return '<section class="empty-report">No migrated MRZ pairs currently available.</section>';
@@ -515,13 +467,9 @@ if (typeof document !== "undefined") {
     const status = document.getElementById("reportStatus");
     const content = document.getElementById("reportContent");
     const activeReports = document.getElementById("activeReports");
-    const allFilterButton = document.getElementById("filterAll");
-    const pressureFilterButton = document.getElementById("filterPressure");
     const allCount = document.getElementById("allCount");
-    const pressureCount = document.getElementById("pressureCount");
     const symbolSearch = document.getElementById("symbolSearch");
     const filterResultStatus = document.getElementById("filterResultStatus");
-    const viewButtons = [allFilterButton, pressureFilterButton];
     const requestedSymbol = operatorCardSymbolFromSearch(window.location.search);
     const requestedSection = operatorCardSectionFromHash(window.location.hash);
     let reports = [];
@@ -539,24 +487,17 @@ if (typeof document !== "undefined") {
       );
       const counts = operatorViewCounts(reports);
       const visibleCount = filterReports(reports, filterMode, searchQuery).length;
-      const viewCount = filterMode === "pressure" ? counts.pressure : counts.all;
+      const viewCount = counts.all;
       allCount.textContent = counts.all;
-      pressureCount.textContent = counts.pressure;
       filterResultStatus.textContent = normalizedSymbolQuery(searchQuery)
         ? `Showing ${visibleCount} of ${viewCount} ${viewCount === 1 ? "symbol" : "symbols"}`
         : "";
       filterResultStatus.hidden = !normalizedSymbolQuery(searchQuery);
-      viewButtons.forEach((button) => {
-        const selected = button === (filterMode === "pressure" ? pressureFilterButton : allFilterButton);
-        button.classList.toggle("active", selected);
-        button.setAttribute("aria-selected", String(selected));
-        button.tabIndex = selected ? 0 : -1;
-      });
-      activeReports.setAttribute("aria-labelledby", filterMode === "pressure" ? "filterPressure" : "filterAll");
+      activeReports.setAttribute("aria-label", "Active MRZ operation cards");
     }
 
     function selectFilter(nextFilterMode) {
-      filterMode = nextFilterMode === "pressure" ? "pressure" : "all";
+      filterMode = nextFilterMode === "migrated" ? "migrated" : "all";
       renderReports();
     }
 
@@ -598,8 +539,6 @@ if (typeof document !== "undefined") {
     }
 
     refreshButton.addEventListener("click", loadReport);
-    allFilterButton.addEventListener("click", () => selectFilter("all"));
-    pressureFilterButton.addEventListener("click", () => selectFilter("pressure"));
     symbolSearch.addEventListener("input", (event) => {
       searchQuery = event.target.value;
       renderReports();
@@ -610,19 +549,6 @@ if (typeof document !== "undefined") {
       symbolSearch.value = "";
       searchQuery = "";
       renderReports();
-    });
-    viewButtons.forEach((button, index) => {
-      button.addEventListener("keydown", (event) => {
-        let nextIndex;
-        if (event.key === "ArrowRight") nextIndex = (index + 1) % viewButtons.length;
-        else if (event.key === "ArrowLeft") nextIndex = (index + viewButtons.length - 1) % viewButtons.length;
-        else if (event.key === "Home") nextIndex = 0;
-        else if (event.key === "End") nextIndex = viewButtons.length - 1;
-        else return;
-        event.preventDefault();
-        selectFilter(nextIndex === 1 ? "pressure" : "all");
-        viewButtons[nextIndex].focus({ preventScroll: true });
-      });
     });
     loadReport();
   });

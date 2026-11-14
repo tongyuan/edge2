@@ -88,7 +88,7 @@ class PushDestinationTests(unittest.TestCase):
         )
         self.assertEqual(
             build_push_destination(PRESSURE_EVENT_TYPE, "ZECUSDT"),
-            "/mrz/pressure?symbol=ZECUSDT",
+            "/mrz/events?symbol=ZECUSDT&type=historical-pressure",
         )
         self.assertEqual(
             build_push_destination(
@@ -305,6 +305,7 @@ class NotificationIntegrationTests(unittest.TestCase):
         self.assertIn("no-store", response.headers["cache-control"])
         return response.json()
 
+    @unittest.skip("retired operational Pressure generation")
     def test_ranging_to_upward_uses_shared_state_and_needs_no_successor(self) -> None:
         self.client.post("/api/notifications/subscriptions", json=SUBSCRIPTION)
         self.activate()
@@ -340,6 +341,7 @@ class NotificationIntegrationTests(unittest.TestCase):
         self.assertEqual(self.current_pressure_state(), "UP")
         self.assertEqual(self.pressure_notification_count(), 1)
 
+    @unittest.skip("retired operational Pressure generation")
     def test_ranging_to_downward_and_unchanged_down_do_not_repeat(self) -> None:
         self.activate()
         self.post_spx(5, "90")
@@ -359,6 +361,7 @@ class NotificationIntegrationTests(unittest.TestCase):
         self.assertEqual(self.current_pressure_state(), "DOWN")
         self.assertEqual(self.pressure_notification_count(), 1)
 
+    @unittest.skip("retired operational Pressure generation")
     def test_neutral_resolution_is_persisted_and_reentry_is_new_episode(self) -> None:
         self.activate()
         self.post_spx(5, "120")
@@ -386,6 +389,7 @@ class NotificationIntegrationTests(unittest.TestCase):
         self.assertEqual(keys, 2)
         self.assertNotEqual(self.pressure_events()[-1]["source_event_key"], first_key)
 
+    @unittest.skip("retired operational Pressure generation")
     def test_restart_recovery_can_flip_direction_without_duplicate_or_mrz_change(self) -> None:
         self.activate()
         self.post_spx(5, "120")
@@ -424,6 +428,7 @@ class NotificationIntegrationTests(unittest.TestCase):
         self.assertEqual(self.pressure_notification_count(), 3)
         self.assertEqual(self.active_authority_signature(), authority_before)
 
+    @unittest.skip("retired operational Pressure delivery")
     def test_pressure_delivery_retry_keeps_one_logical_notification(self) -> None:
         self.activate()
         self.client.post("/api/notifications/subscriptions", json=SUBSCRIPTION)
@@ -470,6 +475,7 @@ class NotificationIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(self.active_authority_signature(), authority_before)
 
+    @unittest.skip("retired operational Pressure state")
     def test_new_mrz_lifecycle_does_not_inherit_previous_pressure(self) -> None:
         self.activate_btc()
         self.post_btc_cluster(5, ("81000", "85000"))
@@ -507,6 +513,7 @@ class NotificationIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(lifecycle_ids, 2)
 
+    @unittest.skip("retired operational Pressure state")
     def test_operator_promoted_authority_uses_the_same_pressure_path(self) -> None:
         for index, price in enumerate(("941.52", "941.52", "941.52", "949.89"), 1):
             self.assertEqual(
@@ -536,6 +543,7 @@ class NotificationIntegrationTests(unittest.TestCase):
         self.assertEqual(len(pressure), 1)
         self.assertEqual(pressure[0]["current_state"], "DOWN")
 
+    @unittest.skip("retired startup Pressure reconciliation")
     def test_preexisting_pressure_is_baselined_without_historical_push(self) -> None:
         self.activate()
         self.post_spx(5, "120")
@@ -733,21 +741,21 @@ class NotificationIntegrationTests(unittest.TestCase):
         self.post_spx(6, "150")
 
         inbox = self.inbox()
-        self.assertEqual(inbox["unread_count"], 2)
+        self.assertEqual(inbox["unread_count"], 1)
         original_ids = [item["id"] for item in inbox["items"]]
         canonical_state = self.canonical_operator_state()
 
         marked = self.client.post("/api/notifications/inbox/mark-all-read")
         self.assertEqual(marked.status_code, 200, marked.text)
-        self.assertEqual(marked.json()["updated_count"], 2)
+        self.assertEqual(marked.json()["updated_count"], 1)
         updated = self.inbox()
         self.assertEqual(updated["unread_count"], 0)
-        self.assertEqual(updated["read_count"], 2)
+        self.assertEqual(updated["read_count"], 1)
         self.assertEqual([item["id"] for item in updated["items"]], original_ids)
         self.assertTrue(all(item["is_read"] for item in updated["items"]))
         self.assertEqual(
             self.scalar("SELECT COUNT(*) FROM web_push_notifications"),
-            2,
+            1,
         )
         self.assertEqual(self.canonical_operator_state(), canonical_state)
         self.assertEqual(
@@ -773,14 +781,14 @@ class NotificationIntegrationTests(unittest.TestCase):
 
         cleared = self.client.post("/api/notifications/inbox/clear")
         self.assertEqual(cleared.status_code, 200, cleared.text)
-        self.assertEqual(cleared.json()["dismissed_count"], 2)
+        self.assertEqual(cleared.json()["dismissed_count"], 1)
         empty = self.inbox()
         self.assertEqual(empty["items"], [])
         self.assertEqual(empty["unread_count"], 0)
         self.assertEqual(empty["read_count"], 0)
         self.assertEqual(
             self.scalar("SELECT COUNT(*) FROM web_push_notifications"),
-            2,
+            1,
         )
         self.assertEqual(self.canonical_operator_state(), canonical_state)
 
@@ -803,7 +811,6 @@ class NotificationIntegrationTests(unittest.TestCase):
             "MRZ_ACTIVATED": "MRZ Activated",
             "MRZ_MIGRATED": "MRZ Migrated",
             "MRZ_NEAR_MISS": "Near Miss",
-            PRESSURE_EVENT_TYPE: "Upward Pressure",
         }
         self.assertTrue(set(expected_names).issubset({
             item["event_type"] for item in inbox["items"]
@@ -1090,7 +1097,7 @@ class NotificationIntegrationTests(unittest.TestCase):
             self.scalar("SELECT COUNT(*) FROM mrz_events WHERE event_type = 'MRZ_MIGRATED'"),
             1,
         )
-        self.assertEqual(len(self.sender.calls), 3)
+        self.assertEqual(len(self.sender.calls), 2)
         delivered_payloads = [json.loads(call["data"]) for call in self.sender.calls]
         activated_payload = next(
             item for item in delivered_payloads if item["event_type"] == "MRZ_ACTIVATED"

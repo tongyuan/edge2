@@ -521,12 +521,6 @@
     const response = await fetch(`/api/symbols/${encodeURIComponent(symbol)}`, { cache: "no-store" });
     if (!response.ok) throw new Error(`Unable to load ${symbol}.`);
     const detail = await response.json();
-    const pressure = pressureBySymbol().get(symbol);
-    const pressureSource = pressureSourceBySymbol().get(symbol) || {};
-    derive.pressureDetailPresentation({
-      ...pressureSource,
-      direction: pressure?.direction || "neutral",
-    });
     $("#symbolEmpty").hidden = true; $("#symbolDetail").hidden = false;
     $("#detailSymbol").textContent = symbol;
     $("#detailStatus").textContent = detail.mrz_status === "active" ? "● ACTIVE" : "NO ACTIVE MRZ";
@@ -539,21 +533,19 @@
     if (detail.migration?.has_migrated) {
       $("#detailPrevious").replaceChildren(element("strong", "", `${formatPrice(detail.migration.previous_lower)}–${formatPrice(detail.migration.previous_upper)}`), element("span", "", `Previous authority · ${detail.migration.direction === "UP" ? "migrated upward" : "migrated downward"}`), element("span", "", exactTime(detail.migration.previous_activated_at)));
     } else $("#detailPrevious").textContent = "No previous MRZ migration for the current lifecycle.";
-    const direction = pressure?.direction || "neutral";
-    const evidence = pressure?.evidence || {};
-    $("#detailPressure").replaceChildren(
-      element("strong", `pressure-${direction} current-pressure-headline`, currentPressureLabel(direction, evidence)),
-      element("span", "", evidence.reason || "Canonical current-pressure evidence is unavailable."),
-      element("time", "", evidence.latest_pressure_observed_at
-        ? `Latest qualifying observation · ${exactTime(evidence.latest_pressure_observed_at)} · ${relativeTime(evidence.latest_pressure_observed_at)}`
-        : "Latest qualifying observation · —"),
-    );
-    renderPressureEvidence(pressure);
-    const active = pressure?.active_mrz || {};
+    const active = detail.mrz_status === "active" ? {
+      status: "active",
+      lower: detail.core_mrz_lower,
+      upper: detail.core_mrz_upper,
+      lower_migration_boundary: detail.lower_migration_boundary,
+      upper_migration_boundary: detail.upper_migration_boundary,
+      effective_width: detail.effective_width,
+      lifecycle_activation_event_id: detail.activation_event_id,
+    } : {};
     $("#detailMrzContext").replaceChildren(
       element("strong", "", active.status === "active" ? `${formatPrice(active.lower)}–${formatPrice(active.upper)}` : "No active MRZ"),
       element("span", "", `Migration envelope · ${formatPrice(active.lower_migration_boundary)}–${formatPrice(active.upper_migration_boundary)}`),
-      element("span", "", `MRZ width · ${formatPrice(active.effective_width)} · ${evidence.post_activation_observation_count || 0} post-activation observations`),
+      element("span", "", `MRZ width · ${formatPrice(active.effective_width)}`),
       element("span", "", `Lifecycle · ${active.lifecycle_activation_event_id || "—"}`),
     );
     $("#detailEventHistoryLink").href = `/mrz/events?symbol=${encodeURIComponent(symbol)}`;
@@ -780,7 +772,9 @@
     const filter = $("#eventTypeFilter").value;
     const symbolQuery = $("#eventSymbolSearch").value.trim().toUpperCase();
     const events = state.events.filter((event) => (
-      (filter === "all" || event.event_type === filter)
+      (filter === "all"
+        || event.event_type === filter
+        || (filter === "historical-pressure" && ["CURRENT_PRESSURE_CHANGED", "POST_ACTIVATION_PRESSURE_CHANGED"].includes(event.event_type)))
       && (!symbolQuery || String(event.symbol || "").toUpperCase().includes(symbolQuery))
     ));
     if (!events.length) {
@@ -861,7 +855,6 @@
     state.groups = (await response.json()).groups || [];
     if (state.groups.length === 1 && state.selectedGroupId === "all") state.selectedGroupId = String(state.groups[0].id);
     renderAll();
-    await loadPeerContext();
   }
 
   function renderPreferences() {
@@ -871,7 +864,6 @@
     if (scope) scope.checked = true;
     $("#prefActivation").checked = prefs.activation_enabled;
     $("#prefMigration").checked = prefs.migration_enabled;
-    $("#prefPressure").checked = prefs.pressure_enabled;
     $("#prefNearMiss").checked = prefs.near_miss_enabled;
     $("#alertScopeLabel").textContent = prefs.alert_scope === "TRACKED_GROUPS_ONLY" ? "Alerts: Tracked Groups" : "Alerts: All Symbols";
   }
@@ -880,7 +872,7 @@
     $("#alertPreferencesError").hidden = true;
     $("#alertPreferencesSaved").textContent = "";
     const selectedScope = document.querySelector('input[name="alertScope"]:checked');
-    const payload = { alert_scope: selectedScope?.value || "ALL_SYMBOLS", activation_enabled: $("#prefActivation").checked, migration_enabled: $("#prefMigration").checked, pressure_enabled: $("#prefPressure").checked, near_miss_enabled: $("#prefNearMiss").checked };
+    const payload = { alert_scope: selectedScope?.value || "ALL_SYMBOLS", activation_enabled: $("#prefActivation").checked, migration_enabled: $("#prefMigration").checked, pressure_enabled: false, near_miss_enabled: $("#prefNearMiss").checked };
     const response = await fetch("/api/notifications/preferences", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     if (!response.ok) { $("#alertPreferencesError").textContent = "Unable to save alert preferences."; $("#alertPreferencesError").hidden = false; return; }
     state.preferences = await response.json(); renderPreferences(); $("#alertPreferencesSaved").textContent = "Preferences saved.";
@@ -894,8 +886,12 @@
     activateRoute();
     configureSymbolReturnNavigation();
     if (routeName() === "events") {
-      const requestedSymbol = new URLSearchParams(globalObject.location.search).get("symbol");
+      const eventSearch = new URLSearchParams(globalObject.location.search);
+      const requestedSymbol = eventSearch.get("symbol");
       if (requestedSymbol) $("#eventSymbolSearch").value = requestedSymbol;
+      $("#eventTypeFilter").value = derive.eventHistoryFilterFromSearch(
+        globalObject.location.search,
+      );
     }
     if (routeName() === "location-distribution") restoreLocationStateFromUrl();
     if (routeName() === "watchlists") {
@@ -916,7 +912,6 @@
       state.locationHistory = locationHistoryResponse ? await locationHistoryResponse.json() : null;
       if (state.groups.length === 1) state.selectedGroupId = String(state.groups[0].id);
       renderAll();
-      if (routeName() === "watchlists") await loadPeerContext();
       $("#workspaceStatus").hidden = true;
     } catch (error) { $("#workspaceStatus").textContent = error.message || "Unable to load MRZ workspace."; $("#workspaceStatus").classList.add("error"); }
   }

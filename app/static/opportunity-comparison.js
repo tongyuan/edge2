@@ -59,10 +59,6 @@
     return (detail.mrz_lifecycles || []).at(-1) || null;
   }
 
-  function lastPressure(detail) {
-    return (detail.pressure_observations || []).at(-1) || null;
-  }
-
   function latestStructuralEvent(detail) {
     return map.timelineRows(detail)
       .slice()
@@ -78,16 +74,12 @@
 
   function comparisonFacts(detail) {
     const mrz = lastLifecycle(detail);
-    const pressure = lastPressure(detail);
     const latest = latestStructuralEvent(detail);
-    const pressureState = pressure?.current_pressure_label || pressure?.direction || "Neutral / unavailable";
-    const sequenceCount = pressure?.recent_pressure_observation_count;
     return [
       ["Latest observed IPDA location", detail.latest_ipda_location || "Unavailable"],
       ["Authoritative MRZ route", mrz?.route || "Unavailable"],
       ["Active MRZ bounds", mrz ? `${exactPrice(mrz.lower_bound)}–${exactPrice(mrz.upper_bound)}` : "Unavailable"],
-      ["Latest Pressure regime", pressureState],
-      ["Recent qualifying Pressure sequence", Number.isFinite(Number(sequenceCount)) ? `${sequenceCount} observations` : "Unavailable"],
+      ["Canonical observations", `${(detail.observations || []).length} observations`],
       ["Latest structural change", latest ? `${latest.event_type} · ${exactTime(latest.known_at)}` : "Unavailable"],
       ["Near Miss status", nearMissStatus(detail)],
       ["Next condition to monitor", detail.assessment?.next_condition || "Unavailable"],
@@ -97,13 +89,6 @@
   function structuralStatements(details) {
     const [left, right] = details;
     const statements = [];
-    const leftPressure = lastPressure(left);
-    const rightPressure = lastPressure(right);
-    if (leftPressure && rightPressure && leftPressure.direction !== rightPressure.direction) {
-      statements.push(`${left.symbol} has recent ${String(leftPressure.direction).toLowerCase()} Pressure evidence while ${right.symbol} has recent ${String(rightPressure.direction).toLowerCase()} Pressure evidence at the selected replay cutoffs.`);
-    } else if (leftPressure || rightPressure) {
-      statements.push(`${left.symbol}: ${leftPressure?.direction || "no qualifying Pressure"}; ${right.symbol}: ${rightPressure?.direction || "no qualifying Pressure"}.`);
-    }
     const eventTime = (detail, source) => {
       const items = source(detail).filter((item) => item.known_at);
       return items.length ? items.map((item) => parseTime(item.known_at)).sort((a, b) => a - b)[0] : null;
@@ -111,7 +96,6 @@
     const leadership = [
       ["Near Miss", (detail) => detail.near_miss_events || []],
       ["MRZ activation", (detail) => (detail.mrz_lifecycles || []).filter((item) => item.event_type === "MRZ_ACTIVATED")],
-      ["Pressure change", (detail) => detail.pressure_observations || []],
     ];
     leadership.forEach(([label, source]) => {
       const leftAt = eventTime(left, source);
@@ -387,14 +371,14 @@
         const canvas = $node("canvas", "opportunity-map-canvas comparison-map-canvas"); canvas.width = 920; canvas.height = 340; canvas.tabIndex = 0; canvas.setAttribute("aria-label", `Time-price opportunity map for ${detail.symbol}`);
         scroll.append(canvas); panel.append(scroll);
         if (!map.timelineRows(detail).length) panel.append($node("p", "comparison-empty-evidence", "No evidence available at this timestamp"));
-        panel.append(map.renderLegend({ pressureStyle: "circle" })); charts.append(panel);
+        panel.append(map.renderLegend()); charts.append(panel);
         globalObject.requestAnimationFrame(() => map.drawChart(
           canvas,
           detail,
           state.rangeDays,
           state.selected?.symbol === detail.symbol ? eventId(state.selected.item) : null,
           (item) => selectEvent(detail.symbol, item),
-          { timeBounds: bounds, pressureStyle: "circle", timeCursor: state.selected?.item?.effective_at },
+          { timeBounds: bounds, timeCursor: state.selected?.item?.effective_at },
         ));
       });
       workspace.append(charts);

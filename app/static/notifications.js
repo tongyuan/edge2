@@ -45,7 +45,13 @@
         return `/mrz/symbols?symbol=${encodeURIComponent(symbol)}`;
       }
       if (parsed.pathname === "/mrz/pressure") {
-        return `/mrz/pressure?symbol=${encodeURIComponent(symbol)}`;
+        return `/mrz/events?symbol=${encodeURIComponent(symbol)}&type=historical-pressure`;
+      }
+      if (
+        parsed.pathname === "/mrz/events"
+        && parsed.searchParams.get("type") === "historical-pressure"
+      ) {
+        return `/mrz/events?symbol=${encodeURIComponent(symbol)}&type=historical-pressure`;
       }
       if (parsed.pathname === "/diagnostics/mrz-robustness") {
         const section = parsed.hash.startsWith("#") ? parsed.hash.slice(1) : "";
@@ -260,7 +266,7 @@
         try {
           await persistSubscription(this.subscription, fetch.bind(globalObject));
           this.rememberRequested();
-          this.render("subscribed", "MRZ pressure, near-miss, activation and migration alerts are enabled on this device.");
+          this.render("subscribed", "MRZ near-miss, activation and migration alerts are enabled on this device.");
         } catch (error) {
           if (error.code === "subscription_expired") {
             await this.subscription.unsubscribe();
@@ -289,7 +295,7 @@
             fetchImpl: fetch.bind(globalObject),
           });
           this.subscription = null;
-          this.render("ready", "MRZ pressure, near-miss, activation and migration alerts are off on this device.");
+          this.render("ready", "MRZ near-miss, activation and migration alerts are off on this device.");
           return;
         }
         const result = await enableWebPush({
@@ -308,7 +314,7 @@
         }
         this.subscription = result.subscription;
         this.rememberRequested();
-        this.render("subscribed", "MRZ pressure, near-miss, activation and migration alerts are enabled on this device.");
+        this.render("subscribed", "MRZ near-miss, activation and migration alerts are enabled on this device.");
       } catch (error) {
         this.render("error", error.message || "Unable to update notifications.");
       }

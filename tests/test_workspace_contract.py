@@ -44,7 +44,6 @@ class WorkspaceContractTests(unittest.TestCase):
             "MRZ Levels",
             "Route",
             "Location",
-            "Current Pressure (Latest 4 Obs)",
             "Near Miss",
         ):
             self.assertIn(label, GROUP_JS)
@@ -93,8 +92,9 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertNotIn(".workspace-navigation a { display: none; }", mobile_rules)
         self.assertIn('value="TRACKED_GROUPS_ONLY"', HTML)
         self.assertIn('value="ALL_SYMBOLS"', HTML)
-        for control in ("prefActivation", "prefMigration", "prefPressure", "prefNearMiss"):
+        for control in ("prefActivation", "prefMigration", "prefNearMiss"):
             self.assertIn(f'id="{control}"', HTML)
+        self.assertNotIn('id="prefPressure"', HTML)
         self.assertIn("/api/notifications/preferences", JS)
 
     def test_shared_sidebar_is_collapsible_persistent_and_mobile_safe(self) -> None:
@@ -281,9 +281,8 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertNotIn("pressureNeutralExpanded", JS)
         self.assertNotIn("Universe Pressure", GROUP_JS)
         self.assertNotIn(".pressure-taxonomy-grid", CSS)
-        self.assertIn("Latest directional ·", JS)
-        self.assertIn('id="detailPressure"', HTML)
-        self.assertIn('"taxonomy_pressure": build_taxonomy_pressure_report(', API)
+        self.assertNotIn('id="detailPressure"', HTML)
+        self.assertNotIn('"taxonomy_pressure": build_taxonomy_pressure_report(', API)
         self.assertIn("def build_taxonomy_pressure_report(", PEER_PRESSURE)
         for helper in (
             "groupPressureSourcesByAssetClass",
@@ -310,7 +309,7 @@ class WorkspaceContractTests(unittest.TestCase):
         for window in ("24H", "5D", "20D"):
             self.assertIn(f'data-group-window="{window}"', watchlists)
         self.assertIn("/api/group-evidence", GROUP_JS)
-        self.assertIn("currentPressureGauge", GROUP_JS)
+        self.assertNotIn("currentPressureGauge", GROUP_JS)
         self.assertIn("Group Event Timeline", GROUP_JS)
         self.assertNotIn("OTE feed not connected", GROUP_JS)
         mobile_rules = CSS[CSS.index("@media (max-width: 560px)") :]

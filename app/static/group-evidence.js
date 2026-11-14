@@ -235,7 +235,7 @@
       {
         label: "New tracker events",
         value: summary.new_tracker_events,
-        detail: `MRZ ${summary.tracker_event_breakdown.mrz} · Pressure ${summary.tracker_event_breakdown.pressure} · Near Miss ${summary.tracker_event_breakdown.near_miss}`,
+        detail: `MRZ ${summary.tracker_event_breakdown.mrz} · Near Miss ${summary.tracker_event_breakdown.near_miss}`,
         tone: "events",
       },
     ];
@@ -258,14 +258,12 @@
           context_or_developing: selectedSummary.context_or_developing_count,
           near_miss: selectedSummary.near_miss_count,
           structure_established: selectedSummary.structure_established_count,
-          needs_reassessment: selectedSummary.reassessment_count,
         }
       : (payload?.counts || {});
     [
       ["Developing context", counts.context_or_developing || 0, "Observable context · no invented threshold", "context"],
       ["Near Miss", counts.near_miss || 0, "Canonical structural candidates", "near"],
       ["Structure established", counts.structure_established || 0, "Authoritative MRZ", "structure"],
-      ["Needs reassessment", counts.needs_reassessment || 0, "Latest-four or structural change", "reassessment"],
     ].forEach(([label, value, supporting, tone]) => {
       const card = node("article", `opportunity-overview-card ${tone}`);
       card.append(node("strong", "", value), node("span", "", label), node("small", "", supporting));
@@ -301,7 +299,6 @@
       const parts = [];
       if (summary.ipda_location_change_count) parts.push(`${summary.ipda_location_change_count} IPDA change${summary.ipda_location_change_count === 1 ? "" : "s"}`);
       if (summary.by_tracker?.mrz) parts.push(`${summary.by_tracker.mrz} MRZ`);
-      if (summary.by_tracker?.pressure) parts.push(`${summary.by_tracker.pressure} pressure`);
       if (summary.by_tracker?.near_miss) parts.push(`${summary.by_tracker.near_miss} Near Miss`);
       button.append(node("strong", "", parts.slice(0, 2).join(" · ") || `${summary.record_count} recorded changes`));
       if (parts.length > 2) button.append(node("small", "", `+ ${parts.length - 2} more tracker type${parts.length - 2 === 1 ? "" : "s"}`));
@@ -322,7 +319,7 @@
     const tableWrap = node("div", "radar-table-wrap");
     const table = node("table", "radar-table");
     const head = node("thead", "");
-    head.innerHTML = `<tr><th>Group</th><th>Members</th><th>Opportunity research</th><th>IPDA Breadth (P / E / D)</th><th>Migration</th><th>Current Pressure State</th><th class="activity-heading">Activity (${state.scope.window})</th><th>Near Miss</th><th aria-label="Open"></th></tr>`;
+    head.innerHTML = `<tr><th>Group</th><th>Members</th><th>Opportunity research</th><th>IPDA Breadth (P / E / D)</th><th>Migration</th><th class="activity-heading">Activity (${state.scope.window})</th><th>Near Miss</th><th aria-label="Open"></th></tr>`;
     const body = node("tbody", "");
     const groups = sortedOverviewGroups([...(state.overview?.groups || [])]);
     groups.forEach((group) => {
@@ -344,12 +341,10 @@
       } else opportunityCell.append(node("span", "radar-unavailable", "No context"));
       const breadthCell = node("td", ""); breadthCell.append(renderBreadth(group));
       const migrationCell = node("td", ""); migrationCell.append(directionMetric(group.migrations?.unique_higher_contributors, group.migrations?.unique_lower_contributors));
-      const current = group.directional?.current_pressure || {};
-      const pressureCell = node("td", ""); pressureCell.append(directionMetric(current.higher, current.lower));
       const activity = node("td", "activity-table-cell"); activity.append(activityCell(group));
       const nearCell = node("td", "near-miss-count", group.near_miss?.status === "available" ? group.near_miss.active_episode_count : "Unavailable");
       const open = node("td", "radar-open-cell"); open.append(node("span", "", "Open"));
-      row.append(nameCell, memberCell, opportunityCell, breadthCell, migrationCell, pressureCell, activity, nearCell, open);
+      row.append(nameCell, memberCell, opportunityCell, breadthCell, migrationCell, activity, nearCell, open);
       row.addEventListener("click", () => openGroup(group.id));
       row.addEventListener("keydown", (event) => { if (event.target === row && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); openGroup(group.id); } });
       body.append(row);
@@ -357,7 +352,7 @@
     if (!groups.length) {
       const row = node("tr", "");
       const cell = node("td", "radar-empty", state.overview?.groups?.length ? "No groups match this search." : "No saved groups. Create a group to begin.");
-      cell.colSpan = 9; row.append(cell); body.append(row);
+      cell.colSpan = 8; row.append(cell); body.append(row);
     }
     table.append(head, body); tableWrap.append(table); section.append(tableWrap);
     return section;
@@ -372,16 +367,13 @@
   }
 
   function renderEvidenceCards(payload) {
-    const current = payload.directional.current_pressure;
     const migrations = payload.directional.mrz_migrations;
     const near = payload.near_miss;
     const cards = node("div", "radar-evidence-cards");
     const migrationValue = migrations.status === "available" ? `${migrations.summary.unique_contributors} contributor${migrations.summary.unique_contributors === 1 ? "" : "s"}` : "Unavailable";
     const migrationSupport = migrations.status === "available" && migrations.summary.event_count ? `Latest ${shortDate(migrations.summary.latest_at)} · ${migrations.summary.event_count} event${migrations.summary.event_count === 1 ? "" : "s"}` : "No migration in selected window";
-    const dominant = current.status === "available" ? current.summary.lower > current.summary.higher ? `Lower ${current.summary.lower}` : current.summary.higher > current.summary.lower ? `Higher ${current.summary.higher}` : `Balanced ${current.summary.higher}/${current.summary.lower}` : "Unavailable";
     cards.append(
       evidenceCard("migration", "MRZ Migration", migrationValue, migrationSupport, "migration"),
-      evidenceCard("pressure", "Current Pressure State", dominant, current.status === "available" ? `${current.summary.neutral} neutral · retained canonical snapshot` : "Current pressure unavailable", "pressure"),
       evidenceCard("near-miss", "Near Miss", near.status === "available" ? `${near.active_episode_count} active` : "Unavailable", near.status === "available" ? `${near.historical_episode_count} historical in window` : "Episode data unavailable", "near-miss"),
     );
     return cards;
@@ -399,9 +391,6 @@
     if (kind === "migration") {
       title = "Migration contributors"; rows = payload.directional.mrz_migrations.contributors || [];
       rows.forEach((item) => { const row = node("a", "inspector-row"); row.href = symbolUrl(item.symbol); row.append(node("strong", "", item.symbol), node("span", "", `${item.directions.map(titleCase).join(" · ")} · ${item.event_count} event${item.event_count === 1 ? "" : "s"} · latest ${exactTime(item.latest_at)}`)); list.append(row); });
-    } else if (kind === "pressure") {
-      title = "Current pressure contributors"; rows = (payload.directional.current_pressure.members || []).filter((item) => item.direction !== "neutral");
-      rows.forEach((item) => { const row = node("a", "inspector-row"); row.href = symbolUrl(item.symbol); row.append(node("strong", item.direction, item.symbol), node("span", "", `${titleCase(item.direction)} · evidence ${exactTime(item.evidence?.latest_pressure_observed_at)}`)); list.append(row); });
     } else if (kind === "near-miss") {
       title = "Near Miss episodes"; rows = payload.near_miss.episodes || [];
       rows.forEach((item) => { const row = node("a", "inspector-row"); row.href = symbolUrl(item.symbol); row.append(node("strong", item.active ? "active" : "", item.symbol), node("span", "", `${item.route_owner} · ${item.active ? "Active episode" : `Ended ${exactTime(item.ended_at)}`} · started ${exactTime(item.started_at)}`)); list.append(row); });
@@ -494,7 +483,6 @@
   function timelineEvents(payload) {
     return {
       migration: (payload.directional.mrz_migrations.events || []).map((event) => ({ ...event, at: event.occurred_at, label: `${event.symbol} · ${titleCase(event.direction)}`, tone: event.direction })),
-      pressure: (payload.directional.cumulative_lifecycle_pressure_events.events || []).map((event) => ({ ...event, at: event.occurred_at, label: `${event.symbol} · ${titleCase(event.event_direction)}`, tone: event.event_direction })),
       "near-miss": (payload.near_miss.episodes || []).flatMap((episode) => { const events = [{ ...episode, at: episode.started_at, label: `${episode.symbol} · Started`, tone: "near-miss" }]; if (episode.ended_at) events.push({ ...episode, at: episode.ended_at, label: `${episode.symbol} · Ended`, tone: "near-miss-ended" }); return events; }),
     };
   }
@@ -502,7 +490,7 @@
   function renderTimeline(payload) {
     const panel = node("section", "radar-panel event-timeline-panel"); const header = node("header", "radar-panel-heading"); header.append(node("h3", "", "Group Event Timeline"), node("span", "", `Last ${state.scope.window}`)); panel.append(header);
     const lanes = node("div", "timeline-lanes"); const events = timelineEvents(payload); const start = new Date(payload.window.comparison_at).getTime(); const end = new Date(payload.window.as_of).getTime();
-    [["migration", "Migration"], ["pressure", "Pressure"], ["near-miss", "Near Miss"]].forEach(([key, label]) => {
+    [["migration", "Migration"], ["near-miss", "Near Miss"]].forEach(([key, label]) => {
       const lane = node("div", "timeline-lane"); lane.append(node("span", `lane-label ${key}`, label)); const track = node("div", "timeline-track");
       (events[key] || []).forEach((event) => { const marker = node("button", `timeline-marker ${event.tone || key}`); marker.type = "button"; marker.title = `${event.label} · ${exactTime(event.at)}`; marker.style.left = `${percent(new Date(event.at).getTime() - start, end - start)}%`; marker.setAttribute("aria-label", marker.title); marker.addEventListener("click", () => { const details = $("#timelineEventDetails"); details.textContent = `${event.label} · ${exactTime(event.at)} · ${text(event.event_key || event.episode_key || event.source_event_key, "Canonical event")}`; details.hidden = false; }); track.append(marker); });
       lane.append(track); lanes.append(lane);
@@ -513,39 +501,9 @@
 
   function statusPill(value, tone) { return node("span", `radar-pill ${tone || ""}`, value); }
 
-  function currentPressureGauge(member) {
-    const current = member.current_pressure || {};
-    const evidence = current.evidence || {};
-    const sequence = evidence.recent_sequence || [];
-    const wrap = node("div", `current-pressure-gauge ${member.pressure || "neutral"}`);
-    const cells = node("div", "pressure-sequence");
-    sequence.forEach((item) => {
-      const tone = item.direction === "UP" ? "higher" : "lower";
-      const type = item.observation_type === "reclaim" ? "R" : item.observation_type === "rejection" ? "X" : "•";
-      const cell = node("span", `pressure-sequence-cell ${tone}`, `${tone === "higher" ? "↑" : "↓"}${type}`);
-      cell.title = `${item.direction_label || titleCase(tone)} · ${item.route || "—"} ${item.observation_type || "observation"} · ${item.observation_price || "—"} · ${exactTime(item.observed_at)}`;
-      cells.append(cell);
-    });
-    const count = sequence.length;
-    const higher = Number(evidence.recent_higher_observation_count || 0);
-    const lower = Number(evidence.recent_lower_observation_count || 0);
-    const label = !member.current_pressure ? "Unavailable"
-      : member.mrz?.status !== "active" ? "No active MRZ"
-      : evidence.status === "NO_EVIDENCE" ? "No evidence"
-      : evidence.status === "INSUFFICIENT_EVIDENCE" ? `Insufficient (${count}/${evidence.confirmation_count || 3})`
-      : member.pressure === "higher" ? `↑ Higher (${higher}/${count})`
-      : member.pressure === "lower" ? `↓ Lower (${lower}/${count})`
-        : count ? `— Neutral (${higher}↑/${lower}↓)` : "No evidence";
-    const summary = node("span", "pressure-gauge-summary");
-    summary.append(node("strong", "pressure-gauge-label", label));
-    if (member.pressure_evidence_at) summary.append(node("small", "", `${shortDate(member.pressure_evidence_at)} · ${relativeTime(member.pressure_evidence_at)}`));
-    wrap.append(cells, summary);
-    return wrap;
-  }
-
   function renderMembers(payload) {
     const panel = node("section", "radar-panel group-members-panel"); const header = node("header", "radar-panel-heading"); header.append(node("h3", "", `Group Members (${payload.group.member_count})`)); panel.append(header);
-    const wrap = node("div", "radar-table-wrap"); const table = node("table", "member-evidence-table"); const head = node("thead", ""); head.innerHTML = "<tr><th>Symbol</th><th>Route</th><th>Location</th><th>MRZ Levels</th><th>Current Pressure (Latest 4 Obs)</th><th>Near Miss</th><th>Status</th><th aria-label=\"Open\"></th></tr>"; const body = node("tbody", "");
+    const wrap = node("div", "radar-table-wrap"); const table = node("table", "member-evidence-table"); const head = node("thead", ""); head.innerHTML = "<tr><th>Symbol</th><th>Route</th><th>Location</th><th>MRZ Levels</th><th>Near Miss</th><th>Status</th><th aria-label=\"Open\"></th></tr>"; const body = node("tbody", "");
     (payload.members || []).forEach((member) => {
       const row = node("tr", ""); const symbol = node("td", "symbol-cell"); symbol.append(detailLink(member.symbol, symbolUrl(member.symbol), "symbol-link")); const route = node("td", ""); route.append(statusPill(text(member.route), String(member.route || "").toLowerCase())); const location = node("td", ""); location.append(statusPill(member.location_label, member.location?.includes("discount") ? "lower" : member.location?.includes("premium") ? "higher" : "neutral"));
       const mrz = node("td", "mrz-levels-cell");
@@ -555,8 +513,7 @@
         details.append(node("span", "", `Midpoint ${member.mrz.midpoint}`), node("span", "", `Activated ${exactTime(member.mrz.activated_at)}`), node("span", "", `Route ${member.mrz.route_owner}`));
         mrz.append(details);
       } else mrz.append(node("span", "radar-unavailable", member.mrz?.status === "inactive" ? "No active MRZ" : "Unavailable"));
-      const pressure = node("td", "current-pressure-cell"); const pressureLink = node("a", "current-pressure-link"); pressureLink.href = symbolUrl(member.symbol); pressureLink.setAttribute("aria-label", `Inspect ${member.symbol} current pressure evidence`); pressureLink.append(currentPressureGauge(member)); pressure.append(pressureLink);
-      const near = node("td", "near-miss-cell", member.near_miss ? (member.near_miss.active ? "Active" : "Historical") : "—"); const status = node("td", ""); status.append(statusPill(member.mrz_status, member.mrz_status === "Active" ? "active" : "neutral")); const open = node("td", "radar-open-cell"); open.append(detailLink("Open", symbolUrl(member.symbol), "table-open-link")); row.append(symbol, route, location, mrz, pressure, near, status, open); body.append(row);
+      const near = node("td", "near-miss-cell", member.near_miss ? (member.near_miss.active ? "Active" : "Historical") : "—"); const status = node("td", ""); status.append(statusPill(member.mrz_status, member.mrz_status === "Active" ? "active" : "neutral")); const open = node("td", "radar-open-cell"); open.append(detailLink("Open", symbolUrl(member.symbol), "table-open-link")); row.append(symbol, route, location, mrz, near, status, open); body.append(row);
     });
     table.append(head, body); wrap.append(table); panel.append(wrap); return panel;
   }
@@ -580,13 +537,6 @@
         title: labels[record.event_type] || "MRZ event",
         detail: `${record.route_owner}${direction}`,
         tone: "mrz",
-      };
-    }
-    if (record.tracker === "pressure") {
-      return {
-        title: "Directional pressure event",
-        detail: `${titleCase(record.direction)} pressure recorded`,
-        tone: record.direction,
       };
     }
     if (record.tracker === "near_miss") {
@@ -626,7 +576,6 @@
     [
       ["IPDA moves", summary.by_tracker.ipda],
       ["MRZ", summary.by_tracker.mrz],
-      ["Pressure", summary.by_tracker.pressure],
       ["Near Miss", summary.by_tracker.near_miss],
     ].forEach(([label, value]) => {
       const item = node("div", "");
@@ -646,7 +595,7 @@
     const activitySection = node("section", "activity-records");
     activitySection.append(node("h3", "", `Recent activity (${state.scope.window})`));
     const list = node("div", "activity-record-list");
-    (payload.activity.records || []).forEach((record) => {
+    (payload.activity.records || []).filter((record) => record.tracker !== "pressure").forEach((record) => {
       const presentation = activityRecordPresentation(record);
       const link = node("a", `activity-record ${presentation.tone}`);
       link.href = symbolUrl(record.symbol);
@@ -676,7 +625,6 @@
         node("strong", "", member.symbol),
         node("span", member.location?.includes("discount") ? "lower" : member.location?.includes("premium") ? "higher" : "neutral", member.location_label),
         node("span", "", mrz),
-        node("span", member.pressure || "neutral", member.pressure ? `${titleCase(member.pressure)} pressure` : "No pressure state"),
       );
       memberList.append(item);
     });
@@ -705,7 +653,7 @@
     const opportunity = node("section", "opportunity-intelligence"); opportunity.id = "groupOpportunityIntelligence"; opportunity.setAttribute("aria-label", `${payload.group.name} Opportunity Intelligence`); opportunity.append(node("div", "opportunity-loading", "Loading opportunity candidates…")); workspace.append(opportunity);
 
     const evidence = node("details", "group-canonical-evidence panel");
-    const summary = node("summary", ""); summary.append(node("strong", "", "Group Evidence"), node("span", "", "IPDA · MRZ Migration · Current Pressure · Near Miss · Group Event Timeline · Members"));
+    const summary = node("summary", ""); summary.append(node("strong", "", "Group Evidence"), node("span", "", "IPDA · MRZ Migration · Near Miss · Group Event Timeline · Members"));
     const body = node("div", "group-canonical-evidence-body");
     body.append(renderEvidenceCards(payload));
     const inspector = node("section", "radar-evidence-inspector"); inspector.id = "radarEvidenceInspector"; inspector.hidden = true; body.append(inspector);
@@ -731,7 +679,7 @@
 
   function renderDetails() {
     const body = $("#groupEvidenceDetailsBody"); body.replaceChildren(); const payload = state.detail || state.overview; if (!payload) return; const grid = node("dl", "evidence-detail-grid");
-    const values = payload.scope === "named_group" ? [["As of", exactTime(payload.window.as_of)], ["Comparison", exactTime(payload.window.comparison_at)], ["Members", payload.group.member_count], ["Structural comparable", ratio(payload.coverage.structural_comparable, payload.group.member_count)], ["Current locations available", ratio(payload.coverage.structural_current_available, payload.group.member_count)], ["Fresh observations", ratio(payload.coverage.structural_fresh_in_window, payload.coverage.structural_comparable)], ["Active MRZ coverage", ratio(payload.coverage.current_pressure_active_mrz, payload.group.member_count)], ["Latest relevant evidence", exactTime(payload.latest_relevant_evidence_at)], ["Membership updated", exactTime(payload.group.updated_at)]] : [["As of", exactTime(payload.window.as_of)], ["Comparison", exactTime(payload.window.comparison_at)], ["Saved groups", payload.scope_totals.group_count], ["Member slots", payload.scope_totals.member_slots], ["Unique symbols", payload.scope_totals.unique_members], ["Canonical migrations", payload.scope_totals.canonical_migration_events]];
+    const values = payload.scope === "named_group" ? [["As of", exactTime(payload.window.as_of)], ["Comparison", exactTime(payload.window.comparison_at)], ["Members", payload.group.member_count], ["Structural comparable", ratio(payload.coverage.structural_comparable, payload.group.member_count)], ["Current locations available", ratio(payload.coverage.structural_current_available, payload.group.member_count)], ["Fresh observations", ratio(payload.coverage.structural_fresh_in_window, payload.coverage.structural_comparable)], ["Latest relevant evidence", exactTime(payload.latest_relevant_evidence_at)], ["Membership updated", exactTime(payload.group.updated_at)]] : [["As of", exactTime(payload.window.as_of)], ["Comparison", exactTime(payload.window.comparison_at)], ["Saved groups", payload.scope_totals.group_count], ["Member slots", payload.scope_totals.member_slots], ["Unique symbols", payload.scope_totals.unique_members], ["Canonical migrations", payload.scope_totals.canonical_migration_events]];
     values.forEach(([label, value]) => { grid.append(node("dt", "", label), node("dd", "", text(value))); }); const limitations = node("ul", "evidence-limitations"); (payload.limitations || []).forEach((item) => limitations.append(node("li", "", item))); body.append(grid, limitations);
   }
 
@@ -851,7 +799,7 @@
   }
 
   async function deleteGroup(group = state.editingGroup || selectedGroup()) {
-    if (!group) return; if (!globalObject.confirm(`Delete “${group.name}”? Canonical MRZ, pressure, Near Miss and event evidence will not be changed.`)) return; const response = await globalObject.fetch(`/api/groups/${group.id}`, { method: "DELETE" }); if (!response.ok) throw new Error("Unable to delete group."); if ($("#groupEvidenceDialog").open) $("#groupEvidenceDialog").close(); if ($("#groupEvidenceManageDialog").open) $("#groupEvidenceManageDialog").close(); updateUrl({ group: "all" }); state.detail = null; state.recentLoaded = false; await load();
+    if (!group) return; if (!globalObject.confirm(`Delete “${group.name}”? Canonical MRZ, Near Miss and event evidence will not be changed.`)) return; const response = await globalObject.fetch(`/api/groups/${group.id}`, { method: "DELETE" }); if (!response.ok) throw new Error("Unable to delete group."); if ($("#groupEvidenceDialog").open) $("#groupEvidenceDialog").close(); if ($("#groupEvidenceManageDialog").open) $("#groupEvidenceManageDialog").close(); updateUrl({ group: "all" }); state.detail = null; state.recentLoaded = false; await load();
   }
 
   async function duplicateGroup(group = selectedGroup()) {

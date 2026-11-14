@@ -173,7 +173,7 @@ class OpportunityIntelligenceTests(unittest.TestCase):
         str_episode = next(
             item for item in detail["episodes"] if item["hypothesis"] == "STR"
         )
-        self.assertEqual(str_episode["state"], "REASSESSMENT")
+        self.assertEqual(str_episode["state"], "STRUCTURE_ESTABLISHED")
         self.assertGreater(str_episode["conflicting_evidence_count"], 0)
         self.assertEqual(str_episode["entry_verification"]["status"], "NOT_VERIFIED")
         self.assertEqual(len(detail["near_miss_events"]), 2)
@@ -182,23 +182,9 @@ class OpportunityIntelligenceTests(unittest.TestCase):
         self.assertEqual(mrz["upper_bound"], "243.73")
         self.assertEqual(mrz["lower_migration_boundary"], "239.11")
         self.assertEqual(mrz["upper_migration_boundary"], "246.81")
-        self.assertEqual(len(detail["pressure_observations"]), 6)
-        self.assertEqual(detail["pressure_observations"][0]["direction"], "HIGHER")
-        self.assertTrue(
-            all(
-                item["direction"] == "LOWER"
-                for item in detail["pressure_observations"][1:]
-            )
-        )
-        oct13 = next(
-            item
-            for item in detail["pressure_observations"]
-            if item["canonical_event_id"] == "nbis-oct13-lower"
-        )
-        self.assertEqual(oct13["current_pressure_state"], "DOWN")
-        self.assertEqual(oct13["recent_lower_observation_count"], 3)
-        self.assertEqual(oct13["recent_higher_observation_count"], 1)
-        self.assertEqual(oct13["state_basis"], "RECONSTRUCTED_AS_KNOWN_AT")
+        self.assertEqual(detail["pressure_observations"], [])
+        self.assertEqual(len(detail["observations"]), 14)
+        self.assertEqual(detail["pressure_retirement"]["status"], "retired")
         self.assertEqual(detail["persisted_current_pressure_events"], [])
         self.assertEqual(detail["ote"]["status"], "not_connected")
 

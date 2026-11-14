@@ -30,9 +30,8 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn('id="eventTypeFilter"', HTML)
         self.assertIn('String(event.symbol || "").toUpperCase().includes(symbolQuery)', WORKSPACE)
         self.assertIn('addEventListener("input", renderEvents)', WORKSPACE)
-        self.assertIn('value="CURRENT_PRESSURE_CHANGED">Current Pressure Changes', HTML)
-        self.assertIn('value="POST_ACTIVATION_PRESSURE_CHANGED">Historical Cumulative Pressure', HTML)
-        self.assertIn('(filter === "all" || event.event_type === filter)', WORKSPACE)
+        self.assertIn('value="historical-pressure">Historical Pressure', HTML)
+        self.assertIn('filter === "historical-pressure"', WORKSPACE)
 
     def test_notification_inbox_remains_durable_and_distinct(self) -> None:
         self.assertIn('id="notificationInboxButton"', HTML)
@@ -71,13 +70,12 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn('id="detailRange"', HTML)
         self.assertIn('id="detailPrevious"', HTML)
         self.assertNotIn('id="detailLatestEvent"', HTML)
-        self.assertIn('id="detailPressure"', HTML)
-        self.assertIn('id="detailPressureEvidence"', HTML)
+        self.assertNotIn('id="detailPressure"', HTML)
+        self.assertNotIn('id="detailPressureEvidence"', HTML)
         self.assertNotIn('id="detailPressureTimeline"', HTML)
         self.assertNotIn("Pressure Timeline", HTML)
         self.assertIn("Open Events History", HTML)
-        self.assertIn("currentPressureLabel", WORKSPACE)
-        self.assertIn("Latest qualifying observation", WORKSPACE)
+        self.assertNotIn('$("#detailPressure")', WORKSPACE)
         self.assertIn("detail.migration?.has_migrated", WORKSPACE)
         self.assertIn("/api/symbols/${encodeURIComponent(symbol)}", WORKSPACE)
 

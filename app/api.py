@@ -38,12 +38,6 @@ from app.opportunity_intelligence import (
     build_opportunity_overview,
     build_symbol_opportunity,
 )
-from app.peer_pressure import (
-    build_peer_pressure_report,
-    build_recent_peer_pressure_report,
-    build_taxonomy_pressure_report,
-    build_universe_pressure_report,
-)
 from app.repository import (
     EdgeRepository,
     LOCATION_HISTORY_WINDOWS,
@@ -112,15 +106,12 @@ def create_app(
     notification_service = NotificationService(
         resolved,
         notification_repository,
-        pressure_input_provider=repository.mrz_robustness_inputs,
         **({"sender": web_push_sender} if web_push_sender is not None else {}),
     )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         LOGGER.info("EDGE 2.0 application started")
-        pressure_recovery = repository.reconcile_current_pressure_states()
-        LOGGER.info("Current-pressure state recovery complete: %s", pressure_recovery)
         run_notification_recovery(notification_service)
         yield
         LOGGER.info("EDGE 2.0 application stopped")
@@ -411,28 +402,13 @@ def create_app(
     @application.get("/api/symbols")
     def symbols() -> dict[str, Any]:
         symbol_states = repository.symbols()
-        active_mrzs, observations, _migration_provenance = (
-            repository.mrz_robustness_inputs()
-        )
-        pressure = build_universe_pressure_report(
-            symbol_states,
-            active_mrzs,
-            observations,
-        )
-        directional_events = (
-            notification_repository.latest_directional_pressure_events(
-                [str(item["symbol"]) for item in symbol_states]
-            )
-        )
         return {
             "minimum_cluster_observations": MIN_CLUSTER_OBSERVATIONS,
             "location_migration_tendency": repository.location_migration_tendency(),
-            "pressure": pressure,
-            "taxonomy_pressure": build_taxonomy_pressure_report(
-                pressure,
-                symbol_states,
-                directional_events,
-            ),
+            "pressure_retirement": {
+                "status": "retired",
+                "active_generation": False,
+            },
             "incomplete_taxonomy_count": (
                 repository.count_incomplete_taxonomy_records()
             ),
@@ -736,25 +712,16 @@ def create_app(
         group = repository.saved_group_report(group_id)
         if group is None:
             raise HTTPException(status_code=404, detail="group_not_found")
-        active_mrzs, observations, _migration_provenance = (
-            repository.mrz_robustness_inputs()
-        )
-        current_pressure = build_peer_pressure_report(
-            group, active_mrzs, observations
-        )
-        since = datetime.now(timezone.utc) - LOCATION_HISTORY_WINDOWS[window]
-        directional_events = (
-            notification_repository.latest_directional_pressure_events(
-                group["members"], since
-            )
-        )
         return JSONResponse(
-            build_recent_peer_pressure_report(
-                group,
-                current_pressure,
-                directional_events,
-                window=window,
-            ),
+            {
+                "status": "retired",
+                "deprecated": True,
+                "window": window,
+                "group_id": group_id,
+                "member_count": len(group["members"]),
+                "categories": {"higher": [], "lower": [], "none": []},
+                "counts": {"higher": 0, "lower": 0, "none": len(group["members"])},
+            },
             headers={"Cache-Control": "no-store, max-age=0"},
         )
 

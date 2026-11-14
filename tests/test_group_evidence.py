@@ -788,7 +788,7 @@ class GroupEvidenceTests(unittest.TestCase):
         self.assertEqual(incomplete["activity"]["coverage"]["ipda"]["fresh_comparable"], 1)
         self.assertEqual(incomplete["activity"]["coverage"]["ipda"]["insufficient"], 1)
 
-    def test_persistent_pressure_is_separate_from_new_pressure_activity(self) -> None:
+    def test_deprecated_pressure_projection_never_contributes_to_activity(self) -> None:
         group_row = group(1, "Pressure", ["A"])
         endpoint_row = endpoint(
             "A",
@@ -812,15 +812,19 @@ class GroupEvidenceTests(unittest.TestCase):
             without_event["directional"]["current_pressure"]["summary"]["lower"],
             1,
         )
-        self.assertEqual(without_event["activity"]["summary"]["by_tracker"]["pressure"], 0)
+        self.assertNotIn("pressure", without_event["activity"]["summary"]["by_tracker"])
         self.assertEqual(without_event["activity"]["status"], "no_change")
+        self.assertEqual(
+            without_event["pressure_compatibility"]["status"],
+            "deprecated_read_only",
+        )
 
         base["pressure_events"] = [
             pressure_event("A", 1, "lower", AS_OF - timedelta(minutes=30))
         ]
         with_event = build_named_group_evidence(base, group_row)
-        self.assertEqual(with_event["activity"]["summary"]["by_tracker"]["pressure"], 1)
-        self.assertEqual(with_event["activity"]["status"], "changed")
+        self.assertNotIn("pressure", with_event["activity"]["summary"]["by_tracker"])
+        self.assertEqual(with_event["activity"]["status"], "no_change")
 
     def test_tracker_events_and_overlapping_group_membership_are_deduplicated(self) -> None:
         groups = [group(1, "One", ["A"]), group(2, "Two", ["A", "B"])]
@@ -838,10 +842,9 @@ class GroupEvidenceTests(unittest.TestCase):
         payload = build_all_groups_evidence(request)
         summary = payload["activity_summary"]
         self.assertEqual(summary["groups_with_activity"], 2)
-        self.assertEqual(summary["new_tracker_events"], 3)
+        self.assertEqual(summary["new_tracker_events"], 2)
         self.assertEqual(summary["tracker_event_breakdown"], {
             "mrz": 2,
-            "pressure": 1,
             "near_miss": 0,
             "ote": 0,
         })
