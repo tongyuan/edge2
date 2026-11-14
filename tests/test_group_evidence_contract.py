@@ -67,7 +67,7 @@ class GroupEvidenceContractTests(unittest.TestCase):
         self.assertNotIn("renderWatchlists", render_all)
 
     def test_stage_a_assets_share_a_fresh_cache_version(self) -> None:
-        version = "individual-replay-boundary-20261113"
+        version = "pressure-ui-retirement-20261114"
         self.assertIn(f'/static/workspace.css?v={version}', HTML)
         self.assertIn(f'/static/group-evidence.js?v={version}', HTML)
         self.assertIn(f'/static/workspace.js?v={version}', HTML)
@@ -87,17 +87,21 @@ class GroupEvidenceContractTests(unittest.TestCase):
         self.assertIn(".selected-group-workspace { display: grid", CSS)
         self.assertIn(".radar-table-wrap { width: 100%; overflow-x: auto; }", CSS)
 
-    def test_opportunity_radar_contract_exposes_required_evidence_and_management(self) -> None:
+    def test_opportunity_radar_contract_exposes_research_and_management_without_pressure_or_group_evidence(self) -> None:
         for copy in (
             "Group Radar",
             "Migration",
-            "Pressure",
             "Near Miss",
-            "Group IPDA Location Distribution (20W)",
-            "Group Event Timeline",
-            "Group Members",
         ):
             self.assertIn(copy, HTML + JS)
+        for removed in (
+            'node("strong", "", "Group Evidence")',
+            'node("details", "group-canonical-evidence panel")',
+            "Current Pressure State",
+            "Lower Pressure",
+            "Higher Pressure",
+        ):
+            self.assertNotIn(removed, HTML + JS)
         for removed in ("OTE (1D)", "OTE (1W)", "Latest OTE Alert", "OTE feed not connected", "OTE (from EDGE_BOT)"):
             self.assertNotIn(removed, HTML + JS)
         for action in ("edit", "duplicate", "delete", "all"):
@@ -112,12 +116,11 @@ class GroupEvidenceContractTests(unittest.TestCase):
             'view === "group"',
             'view === "symbol"',
             "openOpportunitySymbol",
-            "group-canonical-evidence",
             "symbol-opportunity-intelligence",
         ):
             self.assertIn(required, JS + CSS)
-        self.assertIn("Candidate symbols · Expandable canonical evidence", JS)
-        self.assertIn("Time · Price · Structural evidence", JS)
+        self.assertIn("Candidate symbols · Opportunity research", JS)
+        self.assertIn("Time · Price · Structural context", JS)
 
     def test_repository_snapshot_includes_near_miss_and_location_history_inputs(self) -> None:
         method = REPOSITORY.split("def group_evidence_inputs", 1)[1].split("def saved_groups", 1)[0]

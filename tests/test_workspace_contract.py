@@ -120,14 +120,14 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertIn("body.sidebar-collapsed .workspace-shell", tablet_rules)
         self.assertIn(".mobile-nav-button { display: none; }", tablet_rules)
 
-    def test_legacy_pressure_route_redirects_to_group_evidence_with_context(self) -> None:
+    def test_legacy_pressure_routes_redirect_to_operational_history(self) -> None:
         self.assertIn('@application.get("/mrz/pressure"', API)
-        self.assertIn('url=f"/mrz/watchlists?{urlencode(params)}"', API)
-        self.assertIn('params = {"group": "all", "window": "24H"}', API)
-        self.assertIn("params.update(dict(request.query_params))", API)
+        self.assertIn('f"/mrz/events?{urlencode(params)}"', API)
+        self.assertIn("params = dict(request.query_params)", API)
         self.assertIn('normalized === "/mrz/pressure"', SHELL)
-        self.assertIn('return "watchlists"', SHELL)
+        self.assertIn('return "events"', SHELL)
         self.assertNotIn('data-route-panel="pressure"', HTML)
+        self.assertNotIn('data-route-panel="pressure-history"', HTML)
 
     def test_location_distribution_reuses_canonical_buckets_on_its_own_route(self) -> None:
         distribution = HTML.split('data-route-panel="location-distribution"', 1)[1].split(
@@ -310,7 +310,8 @@ class WorkspaceContractTests(unittest.TestCase):
             self.assertIn(f'data-group-window="{window}"', watchlists)
         self.assertIn("/api/group-evidence", GROUP_JS)
         self.assertNotIn("currentPressureGauge", GROUP_JS)
-        self.assertIn("Group Event Timeline", GROUP_JS)
+        self.assertNotIn('node("strong", "", "Group Evidence")', GROUP_JS)
+        self.assertNotIn('node("details", "group-canonical-evidence panel")', GROUP_JS)
         self.assertNotIn("OTE feed not connected", GROUP_JS)
         mobile_rules = CSS[CSS.index("@media (max-width: 560px)") :]
         for selector in (".radar-evidence-cards", ".opportunity-sheet", ".manage-group-row"):

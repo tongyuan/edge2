@@ -44,14 +44,15 @@
       if (parsed.pathname === "/mrz/symbols") {
         return `/mrz/symbols?symbol=${encodeURIComponent(symbol)}`;
       }
-      if (parsed.pathname === "/mrz/pressure") {
-        return `/mrz/events?symbol=${encodeURIComponent(symbol)}&type=historical-pressure`;
-      }
+      if (parsed.pathname === "/mrz/pressure") return `/mrz/events?symbol=${encodeURIComponent(symbol)}`;
       if (
         parsed.pathname === "/mrz/events"
         && parsed.searchParams.get("type") === "historical-pressure"
       ) {
-        return `/mrz/events?symbol=${encodeURIComponent(symbol)}&type=historical-pressure`;
+        return `/mrz/events?symbol=${encodeURIComponent(symbol)}`;
+      }
+      if (parsed.pathname === "/mrz/pressure-history") {
+        return `/mrz/events?symbol=${encodeURIComponent(symbol)}`;
       }
       if (parsed.pathname === "/diagnostics/mrz-robustness") {
         const section = parsed.hash.startsWith("#") ? parsed.hash.slice(1) : "";
@@ -97,7 +98,7 @@
     vapidPublicKey,
   }) {
     const registration = await navigatorObject.serviceWorker.register(
-      "/service-worker.js?v=edge-intel-radar-20261110",
+      "/service-worker.js?v=pressure-ui-retirement-20261114",
       { scope: "/" },
     );
     const permission = notificationObject.permission === "granted"

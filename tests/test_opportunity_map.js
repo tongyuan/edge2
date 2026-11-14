@@ -35,7 +35,6 @@ assert.deepEqual(cursors, [
   "2026-08-21T15:48:05Z",
   "2026-09-18T13:51:07Z",
   "2026-10-02T19:57:03Z",
-  "2026-10-13T14:11:04Z",
   "2026-11-12T00:00:00Z",
 ]);
 assert.equal(
@@ -49,8 +48,8 @@ assert.equal(
 
 const bounds = map.timeBounds(detail, 0);
 const first = new Date("2026-08-21T15:48:00Z").getTime();
-const activation = new Date("2026-10-02T19:57:00Z").getTime();
-const last = new Date("2026-10-13T14:11:00Z").getTime();
+const activation = new Date("2026-09-18T13:51:07Z").getTime();
+const last = new Date("2026-10-02T19:57:00Z").getTime();
 const firstPosition = map.proportionalPosition(first, bounds.minimum, bounds.maximum);
 const activationPosition = map.proportionalPosition(activation, bounds.minimum, bounds.maximum);
 const lastPosition = map.proportionalPosition(last, bounds.minimum, bounds.maximum);
@@ -72,9 +71,9 @@ const duplicateIdentityDetail = {
   near_miss_events: [], mrz_lifecycles: [],
 };
 const canonicalRows = map.timelineRows(duplicateIdentityDetail);
-assert.equal(canonicalRows.length, 1, "one canonical observation must render as one timeline row");
-assert.deepEqual(canonicalRows[0]._classifications, ["BTD", "Pressure"]);
-assert.deepEqual(canonicalRows[0]._trackers, ["IPDA_ROUTE", "PRESSURE"]);
+assert.equal(canonicalRows.length, 1, "retired Pressure data must not add an interface timeline row");
+assert.deepEqual(canonicalRows[0]._classifications, ["BTD"]);
+assert.deepEqual(canonicalRows[0]._trackers, ["IPDA_ROUTE"]);
 
 const comparisonBounds = map.comparisonTimeBounds([
   { ...detail, as_known_at: "2026-11-12T00:00:00Z" },

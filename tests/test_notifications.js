@@ -109,7 +109,7 @@ async function testGrantedPermissionPath() {
     navigatorObject: {
       serviceWorker: {
         async register(url, options) {
-          assert.equal(url, "/service-worker.js?v=edge-intel-radar-20261110");
+          assert.equal(url, "/service-worker.js?v=pressure-ui-retirement-20261114");
           assert.deepEqual(options, { scope: "/" });
           return registration;
         },
@@ -311,7 +311,7 @@ async function testServiceWorkerPushAndClick() {
   assert.equal(nearMiss.options.data.event_type, "MRZ_NEAR_MISS");
   assert.equal(nearMiss.options.data.destination, nearMissDestination);
 
-  const pressure = await push({
+  await push({
     event_id: "POST_ACTIVATION_PRESSURE_CHANGED:ZECUSDT:event-4:event-6:DOWN",
     source_event_key: "POST_ACTIVATION_PRESSURE_CHANGED:ZECUSDT:event-4:event-6:DOWN",
     event_type: "POST_ACTIVATION_PRESSURE_CHANGED",
@@ -320,34 +320,24 @@ async function testServiceWorkerPushAndClick() {
     symbol: "ZECUSDT",
     destination: "/mrz/pressure?symbol=ZECUSDT",
   });
-  assert.equal(shown.length, 4);
-  assert.equal(
-    pressure.options.data.event_type,
-    "POST_ACTIVATION_PRESSURE_CHANGED",
-  );
-  assert.equal(
-    pressure.options.data.destination,
-    "/mrz/events?symbol=ZECUSDT&type=historical-pressure",
-  );
+  assert.equal(shown.length, 3, "retired Pressure pushes are ignored");
 
   await click(activation);
   await click(migration);
-  await click(pressure);
   await click(nearMiss);
   assert.deepEqual(navigated, [
     "https://edge.example.test/mrz/symbols?symbol=BTCUSDT",
     "https://edge.example.test/mrz/symbols?symbol=BTCUSDT",
-    "https://edge.example.test/mrz/events?symbol=ZECUSDT&type=historical-pressure",
     `https://edge.example.test${nearMissDestination}`,
   ]);
-  assert.equal(focusCount, 4, "the existing EDGE client is focused after navigation");
+  assert.equal(focusCount, 3, "the existing EDGE client is focused after navigation");
   assert.deepEqual(
-    readRequests.slice(0, 4).map((request) => ({
+    readRequests.slice(0, 3).map((request) => ({
       url: request.url,
       method: request.options.method,
       source_event_key: JSON.parse(request.options.body).source_event_key,
     })),
-    [activation, migration, pressure, nearMiss].map((notification) => ({
+    [activation, migration, nearMiss].map((notification) => ({
       url: "/api/notifications/inbox/read-by-source",
       method: "POST",
       source_event_key: notification.options.data.source_event_key,
@@ -356,11 +346,14 @@ async function testServiceWorkerPushAndClick() {
   );
 
   currentClients = [];
-  await click(pressure);
+  await click({ options: { data: {
+    source_event_key: "POST_ACTIVATION_PRESSURE_CHANGED:ZECUSDT:event-4:event-6:DOWN",
+    destination: "/mrz/events?symbol=ZECUSDT&type=historical-pressure",
+  } } });
   assert.equal(
     opened[0],
-    "https://edge.example.test/mrz/events?symbol=ZECUSDT&type=historical-pressure",
-    "a cold launch opens the exact destination",
+    "https://edge.example.test/mrz/events?symbol=ZECUSDT",
+    "an already displayed legacy Pressure notification opens operational history without Pressure UI",
   );
 
   const legacy = await push({
@@ -372,7 +365,7 @@ async function testServiceWorkerPushAndClick() {
   assert.equal(legacy.options.data.destination, "/");
   await click(legacy);
   assert.equal(opened[1], "https://edge.example.test/");
-  assert.equal(readRequests.length, 5, "legacy push without canonical identity stays unread");
+  assert.equal(readRequests.length, 4, "legacy push without canonical identity stays unread");
 
   const external = await push({
     event_id: "invalid-external",
@@ -383,7 +376,7 @@ async function testServiceWorkerPushAndClick() {
   assert.equal(external.options.data.destination, "/");
   await click(external);
   assert.equal(opened[2], "https://edge.example.test/");
-  assert.equal(readRequests.length, 5, "unsafe push without canonical identity stays unread");
+  assert.equal(readRequests.length, 4, "unsafe push without canonical identity stays unread");
   assert.equal(context.safeNotificationPath("https://attacker.example/phish"), "/");
 }
 
@@ -413,15 +406,22 @@ async function main() {
       "/mrz/pressure?symbol=WLDUSDT",
       "https://edge.example.test",
     ),
-    "/mrz/events?symbol=WLDUSDT&type=historical-pressure",
+    "/mrz/events?symbol=WLDUSDT",
   );
   assert.equal(
     safeNotificationPath(
       "/mrz/events?symbol=WLDUSDT&type=historical-pressure",
       "https://edge.example.test",
     ),
-    "/mrz/events?symbol=WLDUSDT&type=historical-pressure",
-    "cached service workers retain the safe Historical Pressure destination",
+    "/mrz/events?symbol=WLDUSDT",
+    "legacy Event History links resolve to operational history",
+  );
+  assert.equal(
+    safeNotificationPath(
+      "/mrz/pressure-history?symbol=WLDUSDT",
+      "https://edge.example.test",
+    ),
+    "/mrz/events?symbol=WLDUSDT",
   );
   assert.equal(
     safeNotificationPath("/?symbol=WLDUSDT", "https://edge.example.test"),

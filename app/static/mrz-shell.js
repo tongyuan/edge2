@@ -36,7 +36,7 @@
   function routeNameForPath(pathname) {
     const normalized = String(pathname || "/").replace(/\/$/, "");
     if (normalized === "" || normalized === "/" || normalized === "/mrz" || normalized === "/mrz/overview" || normalized === "/mrz/attention") return "watchlists";
-    if (normalized === "/mrz/pressure") return "watchlists";
+    if (normalized === "/mrz/pressure" || normalized === "/mrz/pressure-history") return "events";
     if (normalized === "/mrz/breadth-leadership") return "location-distribution";
     if (
       normalized === "/mrz/formation-diagnostics"

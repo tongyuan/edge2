@@ -768,19 +768,14 @@
     renderPeerContext(selectedGroup());
   }
 
-  function renderEvents() {
-    const filter = $("#eventTypeFilter").value;
-    const symbolQuery = $("#eventSymbolSearch").value.trim().toUpperCase();
-    const events = state.events.filter((event) => (
-      (filter === "all"
-        || event.event_type === filter
-        || (filter === "historical-pressure" && ["CURRENT_PRESSURE_CHANGED", "POST_ACTIVATION_PRESSURE_CHANGED"].includes(event.event_type)))
-      && (!symbolQuery || String(event.symbol || "").toUpperCase().includes(symbolQuery))
-    ));
+  const RETIRED_PRESSURE_EVENT_TYPES = new Set([
+    "CURRENT_PRESSURE_CHANGED",
+    "POST_ACTIVATION_PRESSURE_CHANGED",
+  ]);
+
+  function renderEventHistoryTable(events, target, emptyMessage) {
     if (!events.length) {
-      $("#eventsList").replaceChildren(empty(symbolQuery
-        ? `No events found for symbols matching “${symbolQuery}”.`
-        : "No events match the selected type."));
+      target.replaceChildren(empty(emptyMessage));
       return;
     }
     const table = element("table", "event-history-table");
@@ -811,7 +806,22 @@
       body.append(row);
     });
     table.append(head, body);
-    $("#eventsList").replaceChildren(table);
+    target.replaceChildren(table);
+  }
+
+  function renderEvents() {
+    const target = $("#eventsList");
+    if (!target) return;
+    const filter = $("#eventTypeFilter")?.value || "all";
+    const symbolQuery = $("#eventSymbolSearch")?.value.trim().toUpperCase() || "";
+    const events = state.events.filter((event) => (
+      !RETIRED_PRESSURE_EVENT_TYPES.has(event.event_type)
+      && (filter === "all" || event.event_type === filter)
+      && (!symbolQuery || String(event.symbol || "").toUpperCase().includes(symbolQuery))
+    ));
+    renderEventHistoryTable(events, target, symbolQuery
+      ? `No events found for symbols matching “${symbolQuery}”.`
+      : "No operational events match the selected type.");
   }
 
   function openWatchlistDialog(group = null) {
@@ -862,9 +872,12 @@
     if (!prefs) return;
     const scope = document.querySelector(`input[name="alertScope"][value="${prefs.alert_scope}"]`);
     if (scope) scope.checked = true;
-    $("#prefActivation").checked = prefs.activation_enabled;
-    $("#prefMigration").checked = prefs.migration_enabled;
-    $("#prefNearMiss").checked = prefs.near_miss_enabled;
+    const activation = $("#prefActivation");
+    const migration = $("#prefMigration");
+    const nearMiss = $("#prefNearMiss");
+    if (activation) activation.checked = prefs.activation_enabled;
+    if (migration) migration.checked = prefs.migration_enabled;
+    if (nearMiss) nearMiss.checked = prefs.near_miss_enabled;
     $("#alertScopeLabel").textContent = prefs.alert_scope === "TRACKED_GROUPS_ONLY" ? "Alerts: Tracked Groups" : "Alerts: All Symbols";
   }
   async function savePreferences(event) {
@@ -872,7 +885,13 @@
     $("#alertPreferencesError").hidden = true;
     $("#alertPreferencesSaved").textContent = "";
     const selectedScope = document.querySelector('input[name="alertScope"]:checked');
-    const payload = { alert_scope: selectedScope?.value || "ALL_SYMBOLS", activation_enabled: $("#prefActivation").checked, migration_enabled: $("#prefMigration").checked, pressure_enabled: false, near_miss_enabled: $("#prefNearMiss").checked };
+    const payload = {
+      alert_scope: selectedScope?.value || "ALL_SYMBOLS",
+      activation_enabled: $("#prefActivation")?.checked ?? false,
+      migration_enabled: $("#prefMigration")?.checked ?? false,
+      pressure_enabled: false,
+      near_miss_enabled: $("#prefNearMiss")?.checked ?? false,
+    };
     const response = await fetch("/api/notifications/preferences", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     if (!response.ok) { $("#alertPreferencesError").textContent = "Unable to save alert preferences."; $("#alertPreferencesError").hidden = false; return; }
     state.preferences = await response.json(); renderPreferences(); $("#alertPreferencesSaved").textContent = "Preferences saved.";

@@ -88,7 +88,7 @@ class PushDestinationTests(unittest.TestCase):
         )
         self.assertEqual(
             build_push_destination(PRESSURE_EVENT_TYPE, "ZECUSDT"),
-            "/mrz/events?symbol=ZECUSDT&type=historical-pressure",
+            "/mrz/events?symbol=ZECUSDT",
         )
         self.assertEqual(
             build_push_destination(
@@ -304,6 +304,93 @@ class NotificationIntegrationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertIn("no-store", response.headers["cache-control"])
         return response.json()
+
+    def insert_historical_pressure_records(self) -> None:
+        with transaction(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO web_push_notifications (
+                        source_event_key, source_trigger_event_id, event_type,
+                        symbol, route_owner, structural_location,
+                        core_mrz_lower, core_mrz_upper, activated_at, occurred_at,
+                        deliverable, lifecycle_activation_event_id,
+                        previous_pressure_state, current_pressure_state,
+                        pressure_state_label, post_activation_observation_count,
+                        above_mrz_count, inside_mrz_count, below_mrz_count,
+                        above_envelope_count, below_envelope_count,
+                        successor_status, successor_label
+                    ) VALUES (
+                        'pressure:SPXUSDT:archive', 'api-event-4',
+                        'POST_ACTIVATION_PRESSURE_CHANGED', 'SPXUSDT', 'BTD',
+                        'shallow_premium_core_mrz', 110, 110.6,
+                        clock_timestamp(), clock_timestamp(), TRUE,
+                        'api-event-4', 'NEUTRAL', 'UP', 'Upward Pressure',
+                        3, 3, 0, 0, 3, 0,
+                        'NO_QUALIFYING_SUCCESSOR', 'No qualifying successor'
+                    )
+                    """
+                )
+                cursor.execute(
+                    """
+                    INSERT INTO current_pressure_events (
+                        event_key, symbol, lifecycle_activation_event_id,
+                        trigger_event_id, trigger_observation_id, route_owner,
+                        previous_state, current_state, state_status, state_label,
+                        occurred_at, supporting_observed_at,
+                        recent_pressure_observation_count,
+                        recent_higher_observation_count,
+                        recent_lower_observation_count, lower_migration_boundary,
+                        upper_migration_boundary, supporting_observations
+                    )
+                    SELECT
+                        'current-pressure:SPXUSDT:archive', 'SPXUSDT',
+                        'api-event-4', 'api-event-4', id, 'BTD',
+                        'NEUTRAL', 'UP', 'directional', 'Higher',
+                        clock_timestamp(), observed_at, 3, 3, 0, 109, 112, '[]'::jsonb
+                    FROM observations
+                    WHERE event_id = 'api-event-4'
+                    """
+                )
+
+    def test_retired_pressure_is_excluded_from_operational_history_and_inbox(self) -> None:
+        self.activate()
+        self.insert_historical_pressure_records()
+
+        operational = self.client.get("/api/mrz/events?limit=100").json()["events"]
+        inbox = self.inbox()
+        archived = self.client.get(
+            "/api/mrz/pressure-history?limit=100"
+        ).json()["events"]
+
+        retired = {"CURRENT_PRESSURE_CHANGED", PRESSURE_EVENT_TYPE}
+        self.assertTrue(operational)
+        self.assertTrue(all(item["event_type"] not in retired for item in operational))
+        self.assertTrue(all(item["event_type"] not in retired for item in inbox["items"]))
+        self.assertEqual(inbox["unread_count"], 1)
+        self.assertEqual(
+            {item["event_type"] for item in archived},
+            retired,
+        )
+        self.assertEqual(
+            self.scalar(
+                "SELECT COUNT(*) FROM web_push_notifications "
+                "WHERE event_type = 'POST_ACTIVATION_PRESSURE_CHANGED'"
+            ),
+            1,
+            "archive access and operational filtering must not delete history",
+        )
+
+    def test_legacy_pressure_links_redirect_to_operational_history(self) -> None:
+        response = self.client.get(
+            "/mrz/events?symbol=SPXUSDT&type=historical-pressure",
+            follow_redirects=False,
+        )
+        self.assertEqual(response.status_code, 307)
+        self.assertEqual(
+            response.headers["location"],
+            "/mrz/events?symbol=SPXUSDT",
+        )
 
     @unittest.skip("retired operational Pressure generation")
     def test_ranging_to_upward_uses_shared_state_and_needs_no_successor(self) -> None:

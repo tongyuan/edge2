@@ -512,7 +512,7 @@ class APIIntegrationTests(unittest.TestCase):
             "/mrz/location-distribution?group=22&window=5D&return=%2Fmrz%2Fwatchlists%3Fgroup%3D22",
         )
 
-    def test_legacy_pressure_navigation_redirects_to_group_evidence(self) -> None:
+    def test_legacy_pressure_navigation_redirects_to_operational_history(self) -> None:
         default_response = self.client.get("/mrz/pressure", follow_redirects=False)
         contextual_response = self.client.get(
             "/mrz/pressure?group=22&window=5D&symbol=NVDA&return=%2Fmrz%2Fsymbols%3Fsymbol%3DNVDA",
@@ -522,12 +522,12 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(default_response.status_code, 307)
         self.assertEqual(
             default_response.headers["location"],
-            "/mrz/watchlists?group=all&window=24H",
+            "/mrz/events",
         )
         self.assertEqual(contextual_response.status_code, 307)
         self.assertEqual(
             contextual_response.headers["location"],
-            "/mrz/watchlists?group=22&window=5D&symbol=NVDA&return=%2Fmrz%2Fsymbols%3Fsymbol%3DNVDA",
+            "/mrz/events?group=22&window=5D&symbol=NVDA&return=%2Fmrz%2Fsymbols%3Fsymbol%3DNVDA",
         )
 
     def test_mrz_robustness_report_api_is_hidden(self) -> None:

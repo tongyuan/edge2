@@ -42,7 +42,6 @@
     "unavailable",
   ];
   const EVENT_HISTORY_FILTERS = new Set([
-    "historical-pressure",
     "MRZ_ACTIVATED",
     "MRZ_MIGRATED",
     "MRZ_NEAR_MISS",

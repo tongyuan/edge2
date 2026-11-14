@@ -17,14 +17,15 @@ function safeNotificationPath(candidate) {
     if (parsed.pathname === "/mrz/symbols") {
       return `/mrz/symbols?symbol=${encodeURIComponent(symbol)}`;
     }
-    if (parsed.pathname === "/mrz/pressure") {
-      return `/mrz/events?symbol=${encodeURIComponent(symbol)}&type=historical-pressure`;
-    }
+    if (parsed.pathname === "/mrz/pressure") return `/mrz/events?symbol=${encodeURIComponent(symbol)}`;
     if (
       parsed.pathname === "/mrz/events"
       && parsed.searchParams.get("type") === "historical-pressure"
     ) {
-      return `/mrz/events?symbol=${encodeURIComponent(symbol)}&type=historical-pressure`;
+      return `/mrz/events?symbol=${encodeURIComponent(symbol)}`;
+    }
+    if (parsed.pathname === "/mrz/pressure-history") {
+      return `/mrz/events?symbol=${encodeURIComponent(symbol)}`;
     }
     if (parsed.pathname === "/diagnostics/mrz-robustness") {
       const section = parsed.hash.startsWith("#") ? parsed.hash.slice(1) : "";
@@ -66,6 +67,7 @@ self.addEventListener("push", (event) => {
   } catch {
     payload = {};
   }
+  if (payload.event_type === "POST_ACTIVATION_PRESSURE_CHANGED") return;
   const eventId = typeof payload.event_id === "string" ? payload.event_id : "unknown";
   const sourceEventKey = typeof payload.source_event_key === "string"
     ? payload.source_event_key
@@ -74,7 +76,6 @@ self.addEventListener("push", (event) => {
     "MRZ_ACTIVATED",
     "MRZ_MIGRATED",
     "MRZ_NEAR_MISS",
-    "POST_ACTIVATION_PRESSURE_CHANGED",
   ].includes(payload.event_type)
     ? payload.event_type
     : null;

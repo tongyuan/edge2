@@ -169,8 +169,23 @@ def create_app(
     @application.get("/mrz/symbols", include_in_schema=False)
     @application.get("/mrz/alert-settings", include_in_schema=False)
     @application.get("/mrz/location-distribution", include_in_schema=False)
-    @application.get("/mrz/events", include_in_schema=False)
     def mrz_workspace() -> FileResponse:
+        return FileResponse(
+            STATIC_DIR / "index.html",
+            headers={
+                "Cache-Control": "no-store, max-age=0",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
+
+    @application.get("/mrz/events", include_in_schema=False)
+    def mrz_events_workspace(request: Request):
+        if request.query_params.get("type") == "historical-pressure":
+            params = dict(request.query_params)
+            params.pop("type", None)
+            suffix = f"?{urlencode(params)}" if params else ""
+            return RedirectResponse(url=f"/mrz/events{suffix}", status_code=307)
         return FileResponse(
             STATIC_DIR / "index.html",
             headers={
@@ -182,10 +197,21 @@ def create_app(
 
     @application.get("/mrz/pressure", include_in_schema=False)
     def legacy_pressure(request: Request) -> RedirectResponse:
-        params = {"group": "all", "window": "24H"}
-        params.update(dict(request.query_params))
+        params = dict(request.query_params)
         return RedirectResponse(
-            url=f"/mrz/watchlists?{urlencode(params)}",
+            url=(
+                f"/mrz/events?{urlencode(params)}"
+                if params
+                else "/mrz/events"
+            ),
+            status_code=307,
+        )
+
+    @application.get("/mrz/pressure-history", include_in_schema=False)
+    def legacy_pressure_history(request: Request) -> RedirectResponse:
+        params = dict(request.query_params)
+        return RedirectResponse(
+            url=f"/mrz/events?{urlencode(params)}" if params else "/mrz/events",
             status_code=307,
         )
 
@@ -763,6 +789,15 @@ def create_app(
     ) -> JSONResponse:
         return JSONResponse(
             {"events": notification_repository.event_history(limit)},
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
+    @application.get("/api/mrz/pressure-history")
+    def mrz_pressure_history(
+        limit: int = Query(default=200, ge=1, le=500),
+    ) -> JSONResponse:
+        return JSONResponse(
+            {"events": notification_repository.pressure_history(limit)},
             headers={"Cache-Control": "no-store, max-age=0"},
         )
 

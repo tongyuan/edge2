@@ -42,7 +42,7 @@ def build_push_destination(
     if event_type in {"MRZ_ACTIVATED", "MRZ_MIGRATED"}:
         return f"/mrz/symbols?symbol={encoded_symbol}"
     if event_type == PRESSURE_EVENT_TYPE:
-        return f"/mrz/events?symbol={encoded_symbol}&type=historical-pressure"
+        return f"/mrz/events?symbol={encoded_symbol}"
     if event_type == "MRZ_NEAR_MISS":
         candidate_identity = str(
             (event_context or {}).get("candidate_identity") or ""
@@ -663,7 +663,7 @@ class NotificationRepository:
             connection.close()
 
     def event_history(self, limit: int = 200) -> list[dict[str, Any]]:
-        """Return global canonical alert events independent of interruption policy."""
+        """Return operational events, excluding retired Pressure history."""
         connection = connect(self.database_url)
         try:
             with connection.cursor(cursor_factory=RealDictCursor) as cursor:
@@ -673,9 +673,30 @@ class NotificationRepository:
                     FROM web_push_notifications
                     WHERE deliverable = TRUE
                       AND event_type IN (
-                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
-                          'POST_ACTIVATION_PRESSURE_CHANGED'
+                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS'
                       )
+                    ORDER BY occurred_at DESC, id DESC
+                    LIMIT %s
+                    """,
+                    (limit,),
+                )
+                return [
+                    notification_inbox_item(row)
+                    for row in cursor.fetchall()
+                ]
+        finally:
+            connection.close()
+
+    def pressure_history(self, limit: int = 200) -> list[dict[str, Any]]:
+        """Return retained, read-only Pressure records for explicit audit access."""
+        connection = connect(self.database_url)
+        try:
+            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    """
+                    SELECT *
+                    FROM web_push_notifications
+                    WHERE event_type = 'POST_ACTIVATION_PRESSURE_CHANGED'
                     ORDER BY occurred_at DESC, id DESC
                     LIMIT %s
                     """,
@@ -756,8 +777,7 @@ class NotificationRepository:
                     WHERE n.deliverable = TRUE
                       AND n.dismissed_at IS NULL
                       AND n.event_type IN (
-                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
-                          'POST_ACTIVATION_PRESSURE_CHANGED'
+                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS'
                       )
                       AND (
                           p.alert_scope = 'ALL_SYMBOLS'
@@ -783,8 +803,7 @@ class NotificationRepository:
                     WHERE n.deliverable = TRUE
                       AND n.dismissed_at IS NULL
                       AND n.event_type IN (
-                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
-                          'POST_ACTIVATION_PRESSURE_CHANGED'
+                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS'
                       )
                       AND (
                           p.alert_scope = 'ALL_SYMBOLS'
@@ -822,8 +841,7 @@ class NotificationRepository:
                     WHERE {identity_clause}
                       AND deliverable = TRUE
                       AND event_type IN (
-                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
-                          'POST_ACTIVATION_PRESSURE_CHANGED'
+                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS'
                       )
                     RETURNING id
                     """,
@@ -841,8 +859,7 @@ class NotificationRepository:
                     WHERE id = %s
                       AND deliverable = TRUE
                       AND event_type IN (
-                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
-                          'POST_ACTIVATION_PRESSURE_CHANGED'
+                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS'
                       )
                     RETURNING id
                     """,
@@ -862,8 +879,7 @@ class NotificationRepository:
                       AND n.read_at IS NULL
                       AND n.dismissed_at IS NULL
                       AND n.event_type IN (
-                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
-                          'POST_ACTIVATION_PRESSURE_CHANGED'
+                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS'
                       )
                       AND (
                           p.alert_scope = 'ALL_SYMBOLS'
@@ -888,8 +904,7 @@ class NotificationRepository:
                     WHERE deliverable = TRUE
                       AND dismissed_at IS NULL
                       AND event_type IN (
-                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
-                          'POST_ACTIVATION_PRESSURE_CHANGED'
+                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS'
                       )
                     RETURNING id
                     """

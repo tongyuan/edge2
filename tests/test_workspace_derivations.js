@@ -34,13 +34,13 @@ const {
 
 assert.equal(
   eventHistoryFilterFromSearch("?type=historical-pressure"),
-  "historical-pressure",
-  "direct Historical Pressure links initialize the archived filter",
+  "all",
+  "legacy Pressure links cannot re-enable Pressure in Global Event History",
 );
 assert.equal(
   eventHistoryFilterFromSearch("?symbol=AMD&type=historical-pressure"),
-  "historical-pressure",
-  "notification inbox links preserve the Historical Pressure filter",
+  "all",
+  "legacy notification links are handled by the archive route, not the ordinary filter",
 );
 assert.equal(
   eventHistoryFilterFromSearch(""),

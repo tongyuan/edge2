@@ -30,8 +30,24 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn('id="eventTypeFilter"', HTML)
         self.assertIn('String(event.symbol || "").toUpperCase().includes(symbolQuery)', WORKSPACE)
         self.assertIn('addEventListener("input", renderEvents)', WORKSPACE)
-        self.assertIn('value="historical-pressure">Historical Pressure', HTML)
-        self.assertIn('filter === "historical-pressure"', WORKSPACE)
+        self.assertNotIn('value="historical-pressure">Historical Pressure', HTML)
+        self.assertNotIn('filter === "historical-pressure"', WORKSPACE)
+        self.assertIn("!RETIRED_PRESSURE_EVENT_TYPES.has(event.event_type)", WORKSPACE)
+        self.assertIn("Operational MRZ activations, migrations, and near-miss events.", HTML)
+
+    def test_pressure_is_absent_from_the_operator_interface(self) -> None:
+        self.assertNotIn('data-route-panel="pressure-history"', HTML)
+        self.assertNotIn("Historical Pressure records", HTML)
+        self.assertNotIn('/api/mrz/pressure-history?limit=500', WORKSPACE)
+        self.assertNotIn('href="/mrz/pressure-history"', HTML)
+
+    def test_removed_pressure_checkbox_is_cache_safe(self) -> None:
+        self.assertNotIn('id="prefPressure"', HTML)
+        self.assertNotIn('$("#prefPressure").checked', WORKSPACE)
+        self.assertIn('if (activation) activation.checked', WORKSPACE)
+        self.assertIn('if (migration) migration.checked', WORKSPACE)
+        self.assertIn('if (nearMiss) nearMiss.checked', WORKSPACE)
+        self.assertIn("pressure-ui-retirement-20261114", HTML)
 
     def test_notification_inbox_remains_durable_and_distinct(self) -> None:
         self.assertIn('id="notificationInboxButton"', HTML)
