@@ -47,7 +47,7 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn('if (activation) activation.checked', WORKSPACE)
         self.assertIn('if (migration) migration.checked', WORKSPACE)
         self.assertIn('if (nearMiss) nearMiss.checked', WORKSPACE)
-        self.assertIn("unified-docking-20261115", HTML)
+        self.assertIn("migration-path-20261115", HTML)
 
     def test_notification_inbox_remains_durable_and_distinct(self) -> None:
         self.assertIn('id="notificationInboxButton"', HTML)
@@ -84,7 +84,8 @@ class MonitorContractTests(unittest.TestCase):
 
     def test_current_and_previous_authority_are_available_in_symbols(self) -> None:
         self.assertIn('id="detailRange"', HTML)
-        self.assertIn('id="symbolMigrationRows"', HTML)
+        self.assertIn('id="migrationPathCanvas"', HTML)
+        self.assertIn('id="migrationGenerateButton"', HTML)
         self.assertIn('id="symbolNearMissRows"', HTML)
         self.assertNotIn('id="detailLatestEvent"', HTML)
         self.assertNotIn('id="detailPressure"', HTML)

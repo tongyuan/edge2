@@ -2380,24 +2380,37 @@ class EdgeRepository:
             with connection.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute(
                     """
-                    SELECT migration.old_core_mrz_lower, migration.old_core_mrz_upper,
+                    SELECT migration.event_key, migration.sequence,
+                           migration.route_owner, migration.previous_route_owner,
+                           migration.old_core_mrz_lower, migration.old_core_mrz_upper,
                            migration.new_core_mrz_lower, migration.new_core_mrz_upper,
-                           migration.new_core_mrz_midpoint, migration.occurred_at
+                           migration.new_core_mrz_midpoint, migration.occurred_at,
+                           activation.event_key AS activation_event_key,
+                           activation.sequence AS activation_sequence
                     FROM mrz_events AS migration
+                    LEFT JOIN LATERAL (
+                        SELECT event_key, sequence
+                        FROM mrz_events AS activation_event
+                        WHERE activation_event.symbol = migration.symbol
+                          AND activation_event.event_type = 'MRZ_ACTIVATED'
+                          AND activation_event.sequence < migration.sequence
+                        ORDER BY activation_event.sequence DESC
+                        LIMIT 1
+                    ) AS activation ON TRUE
                     WHERE migration.symbol = %s
                       AND migration.event_type = 'MRZ_MIGRATED'
-                      AND migration.sequence > COALESCE((
-                          SELECT MAX(activation.sequence)
-                          FROM mrz_events AS activation
-                          WHERE activation.symbol = migration.symbol
-                            AND activation.event_type = 'MRZ_ACTIVATED'
-                      ), 0)
-                    ORDER BY migration.sequence DESC
+                    ORDER BY migration.sequence ASC
                     """,
                     (normalized,),
                 )
                 migrations = [
                     {
+                        "event_key": row["event_key"],
+                        "sequence": row["sequence"],
+                        "route": row["route_owner"],
+                        "previous_route": row["previous_route_owner"],
+                        "activation_event_key": row["activation_event_key"],
+                        "activation_sequence": row["activation_sequence"],
                         "from_lower": decimal_text(row["old_core_mrz_lower"]),
                         "from_upper": decimal_text(row["old_core_mrz_upper"]),
                         "to_lower": decimal_text(row["new_core_mrz_lower"]),

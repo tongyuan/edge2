@@ -560,14 +560,12 @@
   function renderSymbolHistory(history) {
     const migrations = history?.migrations || [];
     const nearMisses = history?.near_misses || [];
-    renderSymbolHistoryRows("#symbolMigrationRows", migrations.map((item, index) => [
-      String(migrations.length - index),
-      element("span", "symbol-history-pill history-event", "MRZ Migrated"),
-      symbolRange(item.from_lower, item.from_upper),
-      symbolRange(item.to_lower, item.to_upper),
-      { higher: "Higher", lower: "Lower" }[item.direction] || "—",
-      historyTimestamp(item.observed_at),
-    ]), history ? "No previous MRZ migration for the current segment." : "Migration history is unavailable.");
+    globalObject.edgeMigrationPath?.setData({
+      symbol: $("#detailSymbol")?.textContent || "",
+      migrations,
+      formatPrice,
+      exactTime,
+    });
 
     renderSymbolHistoryRows("#symbolNearMissRows", nearMisses.map((item, index) => [
       String(nearMisses.length - index),

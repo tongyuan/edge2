@@ -637,6 +637,11 @@ class APIIntegrationTests(unittest.TestCase):
         history = self.client.get("/api/symbols/SPXUSDT/history").json()
         self.assertEqual(len(history["migrations"]), 1)
         migration = history["migrations"][0]
+        self.assertEqual(migration["sequence"], 2)
+        self.assertEqual(migration["route"], "BTD")
+        self.assertTrue(migration["event_key"])
+        self.assertTrue(migration["activation_event_key"])
+        self.assertEqual(migration["activation_sequence"], 1)
         self.assertEqual(float(migration["from_lower"]), monitor["migration"]["previous_lower"])
         self.assertEqual(float(migration["to_upper"]), monitor["migration"]["current_upper"])
         self.assertEqual(migration["direction"], "higher")

@@ -9,9 +9,9 @@
     <link rel="manifest" href="/manifest.webmanifest?v=edge-intel-radar-20261110" />
     <link rel="icon" href="/static/edge-intel-radar-icon-192.png" type="image/png" />
     <link rel="apple-touch-icon" href="/static/edge-intel-radar-icon-180.png" />
-    <link rel="stylesheet" href="/static/workspace.css?v=unified-docking-20261115" />
-    <link rel="stylesheet" href="/static/opportunity-map.css?v=unified-docking-20261115" />
-    <link rel="stylesheet" href="/static/dock-workspace.css?v=unified-docking-20261115" />
+    <link rel="stylesheet" href="/static/workspace.css?v=migration-path-20261115" />
+    <link rel="stylesheet" href="/static/opportunity-map.css?v=migration-path-20261115" />
+    <link rel="stylesheet" href="/static/dock-workspace.css?v=migration-path-20261115" />
   </head>
   <body>
     <div class="workspace-shell">
@@ -60,17 +60,16 @@
               <div class="authority-range" id="detailRange">—</div>
               <div class="authority-meta" id="detailMeta"></div>
             </section>
-            <section class="panel symbol-history-panel symbol-migration-panel" id="symbolMigrationHistory" aria-labelledby="symbolMigrationTitle">
-              <header class="symbol-history-heading">
-                <h2 id="symbolMigrationTitle">MRZ Migration History</h2>
-                <p>Structural changes to MRZ bounds.</p>
-              </header>
-              <div class="symbol-history-scroll" tabindex="0" role="region" aria-labelledby="symbolMigrationTitle">
-                <table class="symbol-history-table">
-                  <thead><tr><th scope="col">#</th><th scope="col">Event</th><th scope="col">From (MRZ)</th><th scope="col">To (MRZ)</th><th scope="col">Direction</th><th scope="col">Observed at (UTC)</th></tr></thead>
-                  <tbody id="symbolMigrationRows"></tbody>
-                </table>
-              </div>
+            <section class="panel symbol-migration-launcher" id="symbolMigrationHistory" aria-labelledby="symbolMigrationTitle">
+              <header><div><h2 id="symbolMigrationTitle">MRZ Migration Path</h2><p>Visualize the chronological path of MRZ levels from migration history.</p></div><span class="migration-count-badge" id="migrationCountBadge">0 migrations</span></header>
+              <p class="migration-empty-state" id="migrationEmptyState">No migration history available.</p>
+              <button class="migration-generate-button" id="migrationGenerateButton" type="button">Generate Migration Path</button>
+            </section>
+            <section class="panel migration-path-panel" id="migrationPathPanel" aria-labelledby="migrationPathHeading" hidden>
+              <header class="migration-path-heading"><div><h2 id="migrationPathHeading">MRZ Migration Path</h2><span id="migrationPathSummary"></span></div><button class="quiet-button" id="migrationHideButton" type="button">Hide Path</button></header>
+              <div class="migration-path-layout"><div class="migration-chart-scroll" id="migrationChartScroll" tabindex="0" role="region" aria-label="Scrollable chronological MRZ migration chart"><canvas id="migrationPathCanvas" aria-label="MRZ migration path by event time and instrument price"></canvas></div><aside class="migration-record-detail" id="migrationRecordDetail" aria-live="polite"></aside></div>
+              <div class="migration-chart-legend"><span><i class="range"></i>MRZ range (structural bound)</span><span><i class="midpoint"></i>MRZ midpoint (migration path)</span><span><i class="path"></i>Midpoint path (structural progression)</span></div>
+              <p class="migration-limited-note" id="migrationLimitedNote" hidden>Limited verified history; no broader trend is implied.</p>
             </section>
             <section class="panel symbol-history-panel symbol-near-miss-panel" aria-labelledby="symbolNearMissTitle">
               <header class="symbol-history-heading">
@@ -150,6 +149,6 @@
 
     <dialog class="workspace-dialog inbox-dialog" id="notificationInboxDialog" aria-labelledby="notificationInboxTitle"><section><header><div><p>DELIVERY HISTORY</p><h2 id="notificationInboxTitle">Notification Inbox</h2><span id="notificationInboxSummary">No unread notifications</span></div><div class="notification-inbox-header-actions"><button class="quiet-button" id="notificationInboxDock" type="button">Dock</button><button class="icon-button" id="notificationInboxClose" type="button" aria-label="Close">×</button></div></header><p class="notification-inbox-empty" id="notificationInboxEmpty">No active notifications.</p><ul class="notification-inbox-list" id="notificationInboxList" aria-live="polite"></ul><footer><button class="quiet-button" type="button" id="notificationMarkAllRead" disabled>Mark all read</button><button class="danger-button" type="button" id="notificationClearInbox" disabled>Clear inbox</button></footer></section></dialog>
     <div class="notification-toast-host" id="notificationToastHost" aria-live="polite"></div>
-    <script src="/static/mrz-shell.js?v=unified-docking-20261115" defer></script><script src="/static/operator-time.js?v=unified-docking-20261115" defer></script><script src="/static/workspace-derivations.js?v=unified-docking-20261115" defer></script><script src="/static/docking.js?v=unified-docking-20261115" defer></script><script src="/static/opportunity-map.js?v=unified-docking-20261115" defer></script><script src="/static/opportunity-comparison.js?v=unified-docking-20261115" defer></script><script src="/static/group-evidence.js?v=unified-docking-20261115" defer></script><script src="/static/notifications.js?v=unified-docking-20261115" defer></script><script src="/static/workspace.js?v=unified-docking-20261115" defer></script>
+    <script src="/static/mrz-shell.js?v=migration-path-20261115" defer></script><script src="/static/operator-time.js?v=migration-path-20261115" defer></script><script src="/static/workspace-derivations.js?v=migration-path-20261115" defer></script><script src="/static/docking.js?v=migration-path-20261115" defer></script><script src="/static/opportunity-map.js?v=migration-path-20261115" defer></script><script src="/static/opportunity-comparison.js?v=migration-path-20261115" defer></script><script src="/static/group-evidence.js?v=migration-path-20261115" defer></script><script src="/static/notifications.js?v=migration-path-20261115" defer></script><script src="/static/migration-path.js?v=migration-path-20261115" defer></script><script src="/static/workspace.js?v=migration-path-20261115" defer></script>
   </body>
 </html>
