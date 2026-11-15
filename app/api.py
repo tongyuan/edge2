@@ -179,6 +179,18 @@ def create_app(
             },
         )
 
+    @application.get("/dock/inbox", include_in_schema=False)
+    @application.get("/dock/opportunity-map/{symbol}", include_in_schema=False)
+    def dock_workspace(symbol: str | None = None) -> FileResponse:
+        return FileResponse(
+            STATIC_DIR / "dock.html",
+            headers={
+                "Cache-Control": "no-store, max-age=0",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
+
     @application.get("/mrz/events", include_in_schema=False)
     def mrz_events_workspace(request: Request):
         if request.query_params.get("type") == "historical-pressure":

@@ -146,6 +146,7 @@
       this.alertScopeLabel = document.querySelector("#alertScopeLabel");
       this.toastHost = document.querySelector("#notificationToastHost");
       this.inboxButton = document.querySelector("#notificationInboxButton");
+      this.inboxDock = document.querySelector("#notificationInboxDock");
       this.unreadBadge = document.querySelector("#notificationUnreadBadge");
       this.inboxDialog = document.querySelector("#notificationInboxDialog");
       this.inboxClose = document.querySelector("#notificationInboxClose");
@@ -158,6 +159,15 @@
       this.subscription = null;
       this.cursor = 0;
       this.pollTimer = null;
+      this.docked = document.body?.dataset.dockFeature === "inbox"
+        || globalObject.location?.pathname === "/dock/inbox";
+      this.inboxChannel = typeof globalObject.BroadcastChannel === "function"
+        ? new globalObject.BroadcastChannel("edge-notification-inbox-v1")
+        : null;
+      this.inboxChannel?.addEventListener("message", () => this.refreshInbox().catch(() => {}));
+      globalObject.addEventListener?.("storage", (event) => {
+        if (event.key === "edgeNotificationInboxRefresh") this.refreshInbox().catch(() => {});
+      });
     }
 
     render(state, detail) {
@@ -214,8 +224,16 @@
 
     async initialize() {
       if (this.button) this.button.addEventListener("click", () => this.toggle());
-      if (this.inboxButton) {
-        this.inboxButton.addEventListener("click", () => {
+      if (this.inboxDock) {
+        this.inboxDock.hidden = !globalObject.edgeDocking?.canDock();
+        this.inboxDock.addEventListener("click", () => {
+          const opened = globalObject.edgeDocking?.openInbox();
+          if (!opened) globalObject.alert?.("The dock window was blocked. Allow pop-ups for EDGE and try again.");
+          else this.inboxDialog?.close();
+        });
+      }
+      if (this.inboxButton || this.docked) {
+        this.inboxButton?.addEventListener("click", () => {
           this.openInbox().catch(() => this.showInboxError());
         });
         this.inboxClose?.addEventListener("click", () => this.inboxDialog.close());
@@ -230,6 +248,15 @@
         } catch {
           this.showInboxError();
         }
+      }
+      if (this.docked) {
+        try {
+          await this.loadConfig();
+          this.startEventPolling();
+        } catch {
+          // The inbox remains available even if live polling configuration is unavailable.
+        }
+        return;
       }
       if (!this.button) {
         try {
@@ -323,7 +350,7 @@
 
     startEventPolling() {
       this.pollTimer = globalObject.setInterval(() => {
-        if (document.visibilityState === "visible") this.pollEvents();
+        if (this.docked || document.visibilityState === "visible") this.pollEvents();
       }, 20000);
     }
 
@@ -335,19 +362,23 @@
         );
         if (!response.ok) return;
         const payload = await response.json();
-        payload.events.forEach((event) => this.showToast(event));
+        if (!this.docked) payload.events.forEach((event) => this.showToast(event));
         this.cursor = Math.max(
           this.cursor,
           Number(payload.latest_notification_id) || 0,
           ...payload.events.map((event) => Number(event.id) || 0),
         );
-        if (payload.events.length > 0) await this.refreshInbox();
+        if (payload.events.length > 0) {
+          await this.refreshInbox();
+          this.notifyInboxChanged();
+        }
       } catch {
         // The system notification path is independent; a failed toast poll is quiet.
       }
     }
 
     showToast(event) {
+      if (!this.toastHost) return;
       const toast = document.createElement("article");
       toast.className = "notification-toast";
       const copy = document.createElement("div");
@@ -382,9 +413,11 @@
     renderInbox(payload) {
       const items = Array.isArray(payload.items) ? payload.items : [];
       const unreadCount = Number(payload.unread_count) || 0;
-      this.unreadBadge.textContent = unreadCount > 99 ? "99+" : String(unreadCount);
-      this.unreadBadge.hidden = unreadCount === 0;
-      this.inboxButton.setAttribute(
+      if (this.unreadBadge) {
+        this.unreadBadge.textContent = unreadCount > 99 ? "99+" : String(unreadCount);
+        this.unreadBadge.hidden = unreadCount === 0;
+      }
+      this.inboxButton?.setAttribute(
         "aria-label",
         unreadCount === 1
           ? "Notification Inbox, 1 unread notification"
@@ -450,8 +483,13 @@
       } catch {
         // An uncertain write remains unread, but the canonical deep link still opens.
       } finally {
-        this.inboxDialog.close();
-        globalObject.location.assign(destination);
+        if (this.docked) {
+          globalObject.edgeDocking?.openInMain(destination);
+          await this.refreshInbox().catch(() => {});
+        } else {
+          this.inboxDialog.close();
+          globalObject.location.assign(destination);
+        }
       }
     }
 
@@ -479,11 +517,18 @@
     async mutateInbox(url) {
       const response = await fetch(url, { method: "POST" });
       if (!response.ok) throw new Error("Notification state could not be updated.");
-      return response.json();
+      const payload = await response.json();
+      this.notifyInboxChanged();
+      return payload;
+    }
+
+    notifyInboxChanged() {
+      this.inboxChannel?.postMessage({ type: "refresh" });
+      try { globalObject.localStorage?.setItem("edgeNotificationInboxRefresh", String(Date.now())); } catch { /* optional */ }
     }
 
     showInboxError() {
-      this.inboxSummary.textContent = "Inbox temporarily unavailable";
+      if (this.inboxSummary) this.inboxSummary.textContent = "Inbox temporarily unavailable";
     }
   }
 
@@ -503,7 +548,9 @@
     document.addEventListener("DOMContentLoaded", () => {
       const button = document.querySelector("#notificationButton");
       const inboxButton = document.querySelector("#notificationInboxButton");
-      if (button || inboxButton) new NotificationController().initialize();
+      const dockInbox = document.body?.dataset.dockFeature === "inbox"
+        || globalObject.location?.pathname === "/dock/inbox";
+      if (button || inboxButton || dockInbox) new NotificationController().initialize();
     });
   }
 

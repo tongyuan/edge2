@@ -57,7 +57,7 @@ class OpportunityIntelligenceContractTests(unittest.TestCase):
             "Opportunity Map (Time × Price)",
             "Historical Replay — As Known At",
             "opportunity-replay-slider",
-            "opportunity-maximize-button",
+            "opportunity-dock-button",
         ):
             self.assertIn(copy, MAP_JS)
         self.assertNotIn("Opportunity Assessment", MAP_JS)
@@ -85,7 +85,7 @@ class OpportunityIntelligenceContractTests(unittest.TestCase):
             "eventIdentity",
             "selectedEventId",
             "timelineExpanded",
-            "setMaximized",
+            "openOpportunityMap",
             "opportunity-back-to-group",
         ):
             self.assertIn(required, MAP_JS + MAP_CSS)

@@ -462,7 +462,15 @@
     const backToGroup = node("button", "quiet-button opportunity-back-to-group", "← Back to Group");
     backToGroup.type = "button";
     backToGroup.addEventListener("click", options.onBackToGroup || (() => {}));
-    headerActions.append(backToGroup, renderCanonicalEvidenceLink(detail, options));
+    if (options.docked) {
+      const returnButton = node("button", "quiet-button opportunity-return-to-edge", "Return to EDGE");
+      returnButton.type = "button";
+      returnButton.addEventListener("click", options.onReturnToEdge || (() => {}));
+      headerActions.append(returnButton);
+    } else {
+      headerActions.append(backToGroup);
+    }
+    headerActions.append(renderCanonicalEvidenceLink(detail, options));
     identity.append(headerActions, node("p", "", `${selectedEpisode.hypothesis} RESEARCH HYPOTHESIS`), node("h3", "", `${detail.symbol} — Opportunity History`));
     const facts = node("div", "opportunity-symbol-facts");
     [
@@ -548,23 +556,22 @@
     const ranges = node("div", "opportunity-range-controls");
     [[0, "All"], [90, "90D"], [30, "30D"]].forEach(([days, label]) => {
       const button = node("button", "", label); button.type = "button"; button.setAttribute("aria-pressed", String(componentState.rangeDays === days));
-      button.addEventListener("click", () => { componentState.rangeDays = days; renderOpportunityWorkspace(target, detail, componentState, options); }); ranges.append(button);
+      button.addEventListener("click", () => { componentState.rangeDays = days; options.onRangeChange?.(days); renderOpportunityWorkspace(target, detail, componentState, options); }); ranges.append(button);
     });
-    const maximize = node("button", "opportunity-maximize-button", componentState.maximized ? "Restore" : "Maximize");
-    maximize.type = "button";
-    maximize.setAttribute("aria-pressed", String(Boolean(componentState.maximized)));
-    maximize.setAttribute("aria-label", componentState.maximized ? "Restore Opportunity Map" : "Maximize Opportunity Map");
-    const setMaximized = (value) => {
-      componentState.maximized = value;
-      mapPanel.classList.toggle("maximized", value);
-      globalObject.document.body.classList.toggle("opportunity-map-maximized", value);
-      maximize.textContent = value ? "Restore" : "Maximize";
-      maximize.setAttribute("aria-pressed", String(value));
-      maximize.setAttribute("aria-label", value ? "Restore Opportunity Map" : "Maximize Opportunity Map");
-      globalObject.requestAnimationFrame(() => drawChart(canvas, detail, componentState.rangeDays, componentState.selectedEventId, selectEvidence));
-    };
-    maximize.addEventListener("click", () => setMaximized(!componentState.maximized));
-    mapTools.append(ranges, maximize);
+    mapTools.append(ranges);
+    if (!options.docked && globalObject.edgeDocking?.canDock()) {
+      const dock = node("button", "opportunity-dock-button", "Dock");
+      dock.type = "button";
+      dock.setAttribute("aria-label", "Dock Opportunity Map in a separate window");
+      dock.addEventListener("click", () => {
+        const opened = globalObject.edgeDocking.openOpportunityMap(detail.symbol, {
+          rangeDays: componentState.rangeDays,
+          returnUrl: `${globalObject.location.pathname}${globalObject.location.search}${globalObject.location.hash}`,
+        });
+        if (!opened) globalObject.alert?.("The dock window was blocked. Allow pop-ups for EDGE and try again.");
+      });
+      mapTools.append(dock);
+    }
     mapHeader.append(title, mapTools); mapPanel.append(mapHeader);
     const scroll = node("div", "opportunity-chart-scroll");
     const canvas = node("canvas", "opportunity-map-canvas"); canvas.width = 1120; canvas.height = 280; canvas.setAttribute("aria-label", `Time-price opportunity map for ${detail.symbol}`); canvas.tabIndex = 0;
@@ -580,11 +587,16 @@
       target.querySelectorAll(".opportunity-timeline-table tr[data-event-id]").forEach((row) => row.classList.toggle("selected", row.dataset.eventId === componentState.selectedEventId));
       mapPanel.scrollIntoView({ block: "nearest", behavior: "smooth" });
     };
-    if (componentState.escapeHandler) globalObject.document.removeEventListener("keydown", componentState.escapeHandler);
-    componentState.escapeHandler = (event) => { if (event.key === "Escape" && componentState.maximized) setMaximized(false); };
-    globalObject.document.addEventListener("keydown", componentState.escapeHandler);
-    if (componentState.maximized) setMaximized(true);
-    globalObject.requestAnimationFrame(() => drawChart(canvas, detail, componentState.rangeDays, componentState.selectedEventId, selectEvidence));
+    const redraw = () => {
+      const available = Math.max(680, Math.floor(scroll.clientWidth - 20));
+      canvas.width = available;
+      canvas.height = options.docked ? Math.max(280, Math.min(500, Math.floor(globalObject.innerHeight * .42))) : 280;
+      drawChart(canvas, detail, componentState.rangeDays, componentState.selectedEventId, selectEvidence);
+    };
+    componentState.resizeObserver?.disconnect();
+    componentState.resizeObserver = typeof globalObject.ResizeObserver === "function" ? new globalObject.ResizeObserver(redraw) : null;
+    componentState.resizeObserver?.observe(scroll);
+    globalObject.requestAnimationFrame(redraw);
 
     const timeline = node("section", "opportunity-event-timeline panel");
     const recordCount = timelineRows(detail).length;
@@ -606,7 +618,18 @@
       });
       timeline.append(expansion);
     }
-    target.append(timeline);
+    if (options.docked) {
+      const collapsible = node("details", "dock-event-details");
+      collapsible.open = !componentState.detailsCollapsed;
+      collapsible.append(node("summary", "", `Event evidence · ${recordCount} records`), timeline);
+      collapsible.addEventListener("toggle", () => {
+        componentState.detailsCollapsed = !collapsible.open;
+        options.onDetailsChange?.(componentState.detailsCollapsed);
+      });
+      target.append(collapsible);
+    } else {
+      target.append(timeline);
+    }
   }
 
   function renderCandidateTable(target, summary, onSelect, options = {}) {
@@ -671,9 +694,9 @@
     target.replaceChildren(node("section", "panel opportunity-loading", `Reconstructing ${symbol}…`));
     let fullDetail = null;
     const componentState = {
-      cursors: [], cursorIndex: 0, replayTimestamp: null, rangeDays: 0,
+      cursors: [], cursorIndex: 0, replayTimestamp: null, rangeDays: [0, 30, 90].includes(Number(options.initialRangeDays)) ? Number(options.initialRangeDays) : 0,
       playing: false, playTimer: null, sliderTimer: null, loadCursor: null,
-      selectedEventId: null, timelineExpanded: false, maximized: false, escapeHandler: null,
+      selectedEventId: null, timelineExpanded: false, detailsCollapsed: Boolean(options.detailsCollapsed), resizeObserver: null,
     };
     const loadSymbol = async (symbol, asKnownAt = null) => {
       const params = new URLSearchParams(); if (asKnownAt) params.set("as_known_at", asKnownAt);
