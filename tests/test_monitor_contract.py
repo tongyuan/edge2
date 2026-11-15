@@ -10,6 +10,7 @@ WORKSPACE = (ROOT / "app/static/workspace.js").read_text(encoding="utf-8")
 NOTIFICATIONS = (ROOT / "app/static/notifications.js").read_text(encoding="utf-8")
 SERVICE_WORKER = (ROOT / "app/static/service-worker.js").read_text(encoding="utf-8")
 REPOSITORY = (ROOT / "app/repository.py").read_text(encoding="utf-8")
+MIGRATION_PATH = (ROOT / "app/static/migration-path.js").read_text(encoding="utf-8")
 
 
 class MonitorContractTests(unittest.TestCase):
@@ -86,6 +87,13 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn('id="detailRange"', HTML)
         self.assertIn('id="migrationPathCanvas"', HTML)
         self.assertIn('id="migrationGenerateButton"', HTML)
+        self.assertIn('id="migrationOlderButton"', HTML)
+        self.assertIn('id="migrationNewerButton"', HTML)
+        self.assertIn("actual event time and linear instrument price", HTML)
+        self.assertIn("latestWindowStart(records.length)", MIGRATION_PATH)
+        self.assertIn("midpoint: (lower + upper) / 2", MIGRATION_PATH)
+        self.assertIn("a.time - b.time", MIGRATION_PATH)
+        self.assertIn("previous.item.chainId !== point.item.chainId", MIGRATION_PATH)
         self.assertIn('id="symbolNearMissRows"', HTML)
         self.assertNotIn('id="detailLatestEvent"', HTML)
         self.assertNotIn('id="detailPressure"', HTML)
