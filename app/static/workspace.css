@@ -25,6 +25,12 @@ button, a, select { -webkit-tap-highlight-color: transparent; }
 a { color: inherit; text-decoration: none; }
 [hidden] { display: none !important; }
 
+.opportunity-dock-button { display: inline-flex; width: 36px; min-width: 36px; height: 36px; align-items: center; justify-content: center; padding: 0; border: 1px solid #2a4252; border-radius: 7px; background: #111a24; color: #c5d0da; cursor: pointer; }
+.opportunity-dock-button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.opportunity-dock-button:hover { border-color: #5b7d91; color: white; }
+.opportunity-dock-button:focus-visible { border-color: #72e6c2; color: white; outline: 2px solid #72e6c2; outline-offset: 2px; }
+@media (pointer: coarse) { .opportunity-dock-button { width: 44px; min-width: 44px; height: 44px; } }
+
 .workspace-shell { min-height: 100vh; display: grid; grid-template-columns: 226px minmax(0, 1fr); transition: grid-template-columns 160ms ease; }
 .workspace-sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; padding: max(20px, env(safe-area-inset-top)) 14px max(20px, env(safe-area-inset-bottom)); border-right: 1px solid var(--line-soft); background: var(--sidebar); transition: width 160ms ease, padding 160ms ease; }
 .workspace-brand { display: flex; align-items: center; gap: 11px; padding: 2px 8px 22px; }

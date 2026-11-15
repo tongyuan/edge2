@@ -4,6 +4,12 @@ const assert = require("node:assert/strict");
 
 const opened = [];
 const saved = new Map();
+class FakeElement {
+  constructor(tag) { this.tag = tag; this.attributes = {}; this.children = []; this.classNames = []; this.classList = { add: (...names) => this.classNames.push(...names) }; }
+  setAttribute(name, value) { this.attributes[name] = value; }
+  replaceChildren(...children) { this.children = children; }
+  append(...children) { this.children.push(...children); }
+}
 global.screen = { availWidth: 1600, availHeight: 1000 };
 global.innerWidth = 1200;
 global.location = { origin: "https://edge.example.test", pathname: "/mrz/watchlists", search: "?group=AI", hash: "" };
@@ -15,10 +21,20 @@ global.open = (url, name, features) => {
   return item;
 };
 global.addEventListener = () => {};
+global.document = {
+  createElement: (tag) => new FakeElement(tag),
+  createElementNS: (_namespace, tag) => new FakeElement(tag),
+};
 
 const docking = require("../app/static/docking.js");
 
 assert.equal(docking.canDock(), true);
+const dockButton = docking.createDockButton("Dock Opportunity Map");
+assert.deepEqual(dockButton.classNames, ["opportunity-dock-button", "dock-icon-button"]);
+assert.equal(dockButton.attributes["aria-label"], "Dock Opportunity Map");
+assert.equal(dockButton.title, "Dock Opportunity Map");
+assert.equal(dockButton.children[0].tag, "svg");
+assert.equal(dockButton.children[0].attributes["aria-hidden"], "true");
 assert.equal(docking.dockUrl("inbox"), "/dock/inbox");
 assert.equal(
   docking.dockUrl("opportunity-map", { symbol: "aapl", rangeDays: 90, returnUrl: "/mrz/watchlists?group=AI" }),

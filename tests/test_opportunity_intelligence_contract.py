@@ -57,14 +57,14 @@ class OpportunityIntelligenceContractTests(unittest.TestCase):
             "Opportunity Map (Time × Price)",
             "Historical Replay — As Known At",
             "opportunity-replay-slider",
-            "opportunity-dock-button",
+            'createDockButton("Dock Opportunity Map")',
         ):
             self.assertIn(copy, MAP_JS)
         self.assertNotIn("Opportunity Assessment", MAP_JS)
         self.assertNotIn("What happened?", MAP_JS)
         self.assertNotIn("renderAssessment", MAP_JS)
         self.assertIn("Open Canonical Evidence", MAP_JS)
-        self.assertIn('node("span", "", "Evidence")', MAP_JS)
+        self.assertIn('options.label || "Evidence"', MAP_JS)
         self.assertIn("as_known_at: detail.as_known_at", MAP_JS)
         self.assertNotIn("OTE unavailable", MAP_JS)
         self.assertIn("proportionalPosition", MAP_JS)

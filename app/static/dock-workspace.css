@@ -1,20 +1,19 @@
 :root { color-scheme: dark; }
 .dock-body { min-width: 0; margin: 0; overflow: auto; background: #080b10; color: #e7eef4; }
 .dock-shell { min-height: 100dvh; padding: 10px; }
-.dock-opportunity-map { display: grid; gap: 10px; min-width: 0; }
+.dock-opportunity-map { display: grid; min-width: 0; height: calc(100dvh - 20px); }
 .dock-opportunity-map[hidden], .dock-inbox[hidden] { display: none; }
-.dock-opportunity-map .opportunity-breadcrumb { display: none; }
-.dock-opportunity-map .opportunity-symbol-header { position: sticky; z-index: 4; top: 0; }
-.dock-opportunity-map .opportunity-map-canvas { min-width: 680px; }
-.dock-opportunity-map .opportunity-chart-scroll { max-height: calc(100dvh - 390px); }
-.dock-opportunity-map .dock-event-details { border: 1px solid var(--line); border-radius: 10px; background: #0e161f; }
-.dock-opportunity-map .dock-event-details > summary { padding: 12px 14px; color: #bfeada; cursor: pointer; font-size: .68rem; font-weight: 800; }
-.dock-opportunity-map .dock-event-details .opportunity-event-timeline { border: 0; border-top: 1px solid var(--line-soft); border-radius: 0; }
-.opportunity-dock-button { min-height: 28px; padding: 0 10px; border: 1px solid #2a4252; border-radius: 7px; background: #111a24; color: #c5d0da; cursor: pointer; font-size: .6rem; font-weight: 800; }
-.opportunity-dock-button:hover, .opportunity-dock-button:focus-visible { border-color: #5b7d91; color: white; outline: none; }
+.dock-opportunity-map .docked-opportunity-map-panel { display: flex; min-width: 0; min-height: 0; height: 100%; flex-direction: column; overflow: hidden; }
+.dock-opportunity-map .opportunity-panel-heading { flex: 0 0 auto; padding: 10px 12px; }
+.dock-opportunity-map .opportunity-chart-scroll { display: flex; min-width: 0; min-height: 260px; flex: 1 1 auto; padding: 6px 8px 0; overflow: hidden; }
+.dock-opportunity-map .opportunity-map-canvas { width: 100%; min-width: 0; height: 100%; }
+.dock-opportunity-map .opportunity-map-legend { flex: 0 0 auto; padding: 8px 12px; }
+.dock-opportunity-map .dock-selected-evidence { flex: 0 0 auto; border-top: 1px solid var(--line-soft); background: #0e161f; }
+.dock-opportunity-map .dock-selected-evidence > summary { min-height: 36px; padding: 10px 14px; color: #bfeada; cursor: pointer; font-size: .64rem; font-weight: 800; }
+.dock-opportunity-map .dock-selected-evidence .opportunity-selected-event { border-top: 1px solid var(--line-soft); }
 .dock-inbox { display: flex; flex-direction: column; min-height: calc(100dvh - 20px); padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: #0e161f; }
 .dock-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--line-soft); }
 .dock-header p, .dock-header h1 { margin: 0; }.dock-header p { color: var(--accent); font-size: .58rem; font-weight: 800; letter-spacing: .1em; }.dock-header h1 { margin: 3px 0; font-size: 1.05rem; }.dock-header span { color: var(--muted); font-size: .65rem; }
 .dock-inbox .notification-inbox-list { flex: 1; }.dock-inbox footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding-top: 12px; }
 .dock-inbox .notification-inbox-item-heading { align-items: flex-start; flex-direction: column; }.dock-inbox .notification-inbox-item-time { overflow-wrap: anywhere; }
-@media (max-width: 700px) { .dock-shell { padding: 6px; }.dock-opportunity-map .opportunity-symbol-header, .dock-opportunity-map .opportunity-panel-heading { align-items: stretch; flex-direction: column; }.dock-opportunity-map .opportunity-symbol-facts { grid-template-columns: repeat(2,minmax(80px,1fr)); }.dock-opportunity-map .opportunity-replay-slider-row { grid-template-columns: 1fr; }.dock-header { flex-direction: column; } }
+@media (max-width: 700px) { .dock-shell { padding: 6px; }.dock-opportunity-map { height: calc(100dvh - 12px); }.dock-opportunity-map .opportunity-panel-heading { align-items: stretch; flex-direction: column; }.dock-opportunity-map .opportunity-map-tools { justify-content: space-between; }.dock-opportunity-map .opportunity-canonical-link span:last-child { display: none; }.dock-header { flex-direction: column; } }

@@ -49,7 +49,7 @@
     link.title = "Open Canonical Evidence";
     const icon = node("span", "opportunity-evidence-icon", "◎");
     icon.setAttribute("aria-hidden", "true");
-    link.append(icon, node("span", "", "Evidence"));
+    link.append(icon, node("span", "", options.label || "Evidence"));
     return link;
   }
 
@@ -234,14 +234,15 @@
       context.textAlign = "right";
       context.fillText(axisPrice(priceValue, detail.symbol, prices.maximum - prices.minimum), margin.left - 10, yPosition + 4);
     }
-    for (let index = 0; index <= 6; index += 1) {
-      const ratio = index / 6;
+    const timeTickCount = width < 520 ? 3 : width < 800 ? 4 : 6;
+    for (let index = 0; index <= timeTickCount; index += 1) {
+      const ratio = index / timeTickCount;
       const xPosition = margin.left + ratio * plotWidth;
       const time = new Date(times.minimum + ratio * (times.maximum - times.minimum));
       context.strokeStyle = "rgba(34,50,66,.48)";
       context.beginPath(); context.moveTo(xPosition, margin.top); context.lineTo(xPosition, height - margin.bottom); context.stroke();
       context.fillStyle = COLORS.text;
-      context.textAlign = index === 0 ? "left" : index === 6 ? "right" : "center";
+      context.textAlign = index === 0 ? "left" : index === timeTickCount ? "right" : "center";
       context.fillText(time.toLocaleDateString(undefined, { month: "short", day: "numeric" }), xPosition, height - 20);
     }
     context.textAlign = "left";
@@ -263,6 +264,7 @@
       context.restore();
     }
 
+    const zoneHits = [];
     items.near.forEach((item) => {
       const start = Math.max(margin.left, x(item.known_at));
       const end = Math.min(width - margin.right, x(item.ended_at || detail.as_known_at));
@@ -274,6 +276,7 @@
       context.setLineDash([6, 4]);
       context.strokeRect(start, top, Math.max(2, end - start), Math.max(2, bottom - top));
       context.restore();
+      zoneHits.push({ left: start, right: Math.max(start + 8, end), top: Math.min(top, bottom), bottom: Math.max(top + 8, bottom), item });
     });
     items.mrz.forEach((item) => {
       const start = Math.max(margin.left, x(item.known_at));
@@ -292,9 +295,10 @@
         context.beginPath(); context.moveTo(start, y(boundary)); context.lineTo(end, y(boundary)); context.stroke();
       });
       context.restore();
+      zoneHits.push({ left: start, right: Math.max(start + 8, end), top: Math.min(top, bottom), bottom: Math.max(top + 8, bottom), item });
     });
 
-    const hits = [];
+    const pointHits = [];
     items.observations.forEach((item) => {
       const xPosition = x(item.effective_at);
       const yPosition = y(item.price);
@@ -310,18 +314,22 @@
         context.beginPath(); context.arc(xPosition, yPosition, 10, 0, Math.PI * 2);
         context.strokeStyle = "#ffffff"; context.lineWidth = 2; context.stroke();
       }
-      hits.push({ x: xPosition, y: yPosition, radius: 12, item });
+      pointHits.push({ x: xPosition, y: yPosition, radius: 12, item });
     });
-    canvas._opportunityHits = hits;
+    canvas._opportunityHits = [...pointHits, ...zoneHits];
     canvas.onclick = (event) => {
       const box = canvas.getBoundingClientRect();
       const clickX = (event.clientX - box.left) * (canvas.width / box.width);
       const clickY = (event.clientY - box.top) * (canvas.height / box.height);
-      const selected = hits
+      const selectedPoint = pointHits
         .map((hit) => ({ hit, distance: Math.hypot(hit.x - clickX, hit.y - clickY) }))
         .filter((candidate) => candidate.distance <= candidate.hit.radius)
         .sort((left, right) => left.distance - right.distance)[0];
-      if (selected) onSelect(selected.hit.item);
+      if (selectedPoint) { onSelect(selectedPoint.hit.item); return; }
+      const selectedZone = zoneHits.slice().reverse().find((hit) => (
+        clickX >= hit.left && clickX <= hit.right && clickY >= hit.top && clickY <= hit.bottom
+      ));
+      if (selectedZone) onSelect(selectedZone.item);
     };
   }
 
@@ -443,8 +451,95 @@
     table.append(head, timelineBody(visibleRows, onSelect)); wrap.append(table); return wrap;
   }
 
+  function renderMapComponent(target, detail, componentState, options = {}) {
+    const mapPanel = node("section", `opportunity-map-panel panel${options.docked ? " docked-opportunity-map-panel" : ""}`);
+    const mapHeader = node("header", "opportunity-panel-heading");
+    const title = node("div", "");
+    title.append(
+      node("strong", "", "Opportunity Map (Time × Price)"),
+      node("small", "", options.docked ? `${detail.symbol} · Actual event time · linear instrument price` : "Actual event time · linear instrument price"),
+    );
+    const mapTools = node("div", "opportunity-map-tools");
+    const ranges = node("div", "opportunity-range-controls");
+    [[0, "All"], [90, "90D"], [30, "30D"]].forEach(([days, label]) => {
+      const button = node("button", "", label); button.type = "button"; button.setAttribute("aria-pressed", String(componentState.rangeDays === days));
+      button.addEventListener("click", () => { componentState.rangeDays = days; options.onRangeChange?.(days); renderOpportunityWorkspace(target, detail, componentState, options); }); ranges.append(button);
+    });
+    mapTools.append(ranges);
+    if (options.docked) {
+      const evidence = renderCanonicalEvidenceLink(detail, { ...options, label: "Open Canonical Evidence" });
+      evidence.addEventListener("click", (event) => {
+        if (!globalObject.edgeDocking?.openInMain) return;
+        event.preventDefault();
+        globalObject.edgeDocking.openInMain(evidence.getAttribute("href"));
+      });
+      mapTools.append(evidence);
+    } else if (globalObject.edgeDocking?.canDock()) {
+      const dock = globalObject.edgeDocking.createDockButton("Dock Opportunity Map");
+      dock.addEventListener("click", () => {
+        const opened = globalObject.edgeDocking.openOpportunityMap(detail.symbol, {
+          rangeDays: componentState.rangeDays,
+          returnUrl: `${globalObject.location.pathname}${globalObject.location.search}${globalObject.location.hash}`,
+        });
+        if (!opened) globalObject.alert?.("The dock window was blocked. Allow pop-ups for EDGE and try again.");
+      });
+      mapTools.append(dock);
+    }
+    mapHeader.append(title, mapTools); mapPanel.append(mapHeader);
+    const scroll = node("div", "opportunity-chart-scroll");
+    const canvas = node("canvas", "opportunity-map-canvas"); canvas.width = 1120; canvas.height = 280; canvas.setAttribute("aria-label", `Time-price opportunity map for ${detail.symbol}`); canvas.tabIndex = 0;
+    scroll.append(canvas); mapPanel.append(scroll, renderLegend());
+    const details = node("div", "opportunity-selected-event");
+    const previouslySelected = timelineRows(detail).find((item) => eventIdentity(item) === componentState.selectedEventId) || null;
+    if (options.docked) {
+      const collapsible = node("details", "dock-selected-evidence");
+      collapsible.open = !componentState.detailsCollapsed;
+      collapsible.append(node("summary", "", `Selected canonical evidence · ${detail.symbol}`), details);
+      collapsible.addEventListener("toggle", () => {
+        componentState.detailsCollapsed = !collapsible.open;
+        options.onDetailsChange?.(componentState.detailsCollapsed);
+        componentState.resizeObserver?.disconnect();
+        globalObject.requestAnimationFrame(() => componentState.resizeObserver?.observe(scroll));
+      });
+      mapPanel.append(collapsible);
+    } else {
+      mapPanel.append(details);
+    }
+    renderEventDetails(details, previouslySelected);
+    target.append(mapPanel);
+    const selectEvidence = (item) => {
+      componentState.selectedEventId = eventIdentity(item);
+      renderEventDetails(details, item);
+      drawChart(canvas, detail, componentState.rangeDays, componentState.selectedEventId, selectEvidence);
+      target.querySelectorAll(".opportunity-timeline-table tr[data-event-id]").forEach((row) => row.classList.toggle("selected", row.dataset.eventId === componentState.selectedEventId));
+      mapPanel.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    };
+    const redraw = () => {
+      const minimumWidth = options.docked ? 280 : 680;
+      const available = Math.max(minimumWidth, Math.floor(scroll.clientWidth - (options.docked ? 16 : 20)));
+      canvas.width = available;
+      canvas.height = options.docked
+        ? Math.max(260, globalObject.innerHeight - (componentState.detailsCollapsed ? 178 : 300))
+        : 280;
+      if (options.docked) {
+        canvas.style.width = `${canvas.width}px`;
+        canvas.style.height = `${canvas.height}px`;
+      }
+      drawChart(canvas, detail, componentState.rangeDays, componentState.selectedEventId, selectEvidence);
+    };
+    componentState.resizeObserver?.disconnect();
+    componentState.resizeObserver = typeof globalObject.ResizeObserver === "function" ? new globalObject.ResizeObserver(redraw) : null;
+    componentState.resizeObserver?.observe(scroll);
+    globalObject.requestAnimationFrame(redraw);
+    return { mapPanel, selectEvidence };
+  }
+
   function renderOpportunityWorkspace(target, detail, componentState, options = {}) {
     target.replaceChildren();
+    if (options.docked) {
+      renderMapComponent(target, detail, componentState, options);
+      return;
+    }
     const selectedEpisode = detail.episodes.find((item) => item.episode_id === detail.selected_episode_id) || detail.episodes[0] || {
       hypothesis: "NO KNOWN",
       origin_effective_at: null,
@@ -462,14 +557,7 @@
     const backToGroup = node("button", "quiet-button opportunity-back-to-group", "← Back to Group");
     backToGroup.type = "button";
     backToGroup.addEventListener("click", options.onBackToGroup || (() => {}));
-    if (options.docked) {
-      const returnButton = node("button", "quiet-button opportunity-return-to-edge", "Return to EDGE");
-      returnButton.type = "button";
-      returnButton.addEventListener("click", options.onReturnToEdge || (() => {}));
-      headerActions.append(returnButton);
-    } else {
-      headerActions.append(backToGroup);
-    }
+    headerActions.append(backToGroup);
     headerActions.append(renderCanonicalEvidenceLink(detail, options));
     identity.append(headerActions, node("p", "", `${selectedEpisode.hypothesis} RESEARCH HYPOTHESIS`), node("h3", "", `${detail.symbol} — Opportunity History`));
     const facts = node("div", "opportunity-symbol-facts");
@@ -549,54 +637,7 @@
     sliderRow.append(replaySlider, selectedTime, latest);
     replay.append(sliderRow, node("p", "opportunity-replay-note", `Visible evidence known by ${exactTime(detail.as_known_at)}. Event time and knowledge time remain separate.`)); target.append(replay);
 
-    const mapPanel = node("section", "opportunity-map-panel panel");
-    const mapHeader = node("header", "opportunity-panel-heading");
-    const title = node("div", ""); title.append(node("strong", "", "Opportunity Map (Time × Price)"), node("small", "", "Actual event time · linear instrument price"));
-    const mapTools = node("div", "opportunity-map-tools");
-    const ranges = node("div", "opportunity-range-controls");
-    [[0, "All"], [90, "90D"], [30, "30D"]].forEach(([days, label]) => {
-      const button = node("button", "", label); button.type = "button"; button.setAttribute("aria-pressed", String(componentState.rangeDays === days));
-      button.addEventListener("click", () => { componentState.rangeDays = days; options.onRangeChange?.(days); renderOpportunityWorkspace(target, detail, componentState, options); }); ranges.append(button);
-    });
-    mapTools.append(ranges);
-    if (!options.docked && globalObject.edgeDocking?.canDock()) {
-      const dock = node("button", "opportunity-dock-button", "Dock");
-      dock.type = "button";
-      dock.setAttribute("aria-label", "Dock Opportunity Map in a separate window");
-      dock.addEventListener("click", () => {
-        const opened = globalObject.edgeDocking.openOpportunityMap(detail.symbol, {
-          rangeDays: componentState.rangeDays,
-          returnUrl: `${globalObject.location.pathname}${globalObject.location.search}${globalObject.location.hash}`,
-        });
-        if (!opened) globalObject.alert?.("The dock window was blocked. Allow pop-ups for EDGE and try again.");
-      });
-      mapTools.append(dock);
-    }
-    mapHeader.append(title, mapTools); mapPanel.append(mapHeader);
-    const scroll = node("div", "opportunity-chart-scroll");
-    const canvas = node("canvas", "opportunity-map-canvas"); canvas.width = 1120; canvas.height = 280; canvas.setAttribute("aria-label", `Time-price opportunity map for ${detail.symbol}`); canvas.tabIndex = 0;
-    scroll.append(canvas); mapPanel.append(scroll, renderLegend());
-    const details = node("div", "opportunity-selected-event");
-    const previouslySelected = timelineRows(detail).find((item) => eventIdentity(item) === componentState.selectedEventId) || null;
-    mapPanel.append(details); renderEventDetails(details, previouslySelected);
-    target.append(mapPanel);
-    const selectEvidence = (item) => {
-      componentState.selectedEventId = eventIdentity(item);
-      renderEventDetails(details, item);
-      drawChart(canvas, detail, componentState.rangeDays, componentState.selectedEventId, selectEvidence);
-      target.querySelectorAll(".opportunity-timeline-table tr[data-event-id]").forEach((row) => row.classList.toggle("selected", row.dataset.eventId === componentState.selectedEventId));
-      mapPanel.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    };
-    const redraw = () => {
-      const available = Math.max(680, Math.floor(scroll.clientWidth - 20));
-      canvas.width = available;
-      canvas.height = options.docked ? Math.max(280, Math.min(500, Math.floor(globalObject.innerHeight * .42))) : 280;
-      drawChart(canvas, detail, componentState.rangeDays, componentState.selectedEventId, selectEvidence);
-    };
-    componentState.resizeObserver?.disconnect();
-    componentState.resizeObserver = typeof globalObject.ResizeObserver === "function" ? new globalObject.ResizeObserver(redraw) : null;
-    componentState.resizeObserver?.observe(scroll);
-    globalObject.requestAnimationFrame(redraw);
+    const { selectEvidence } = renderMapComponent(target, detail, componentState, options);
 
     const timeline = node("section", "opportunity-event-timeline panel");
     const recordCount = timelineRows(detail).length;
@@ -618,18 +659,7 @@
       });
       timeline.append(expansion);
     }
-    if (options.docked) {
-      const collapsible = node("details", "dock-event-details");
-      collapsible.open = !componentState.detailsCollapsed;
-      collapsible.append(node("summary", "", `Event evidence · ${recordCount} records`), timeline);
-      collapsible.addEventListener("toggle", () => {
-        componentState.detailsCollapsed = !collapsible.open;
-        options.onDetailsChange?.(componentState.detailsCollapsed);
-      });
-      target.append(collapsible);
-    } else {
-      target.append(timeline);
-    }
+    target.append(timeline);
   }
 
   function renderCandidateTable(target, summary, onSelect, options = {}) {

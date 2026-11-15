@@ -14,6 +14,33 @@
     return typeof globalObject.open === "function" && !isStandalone() && usefulWidth >= 700;
   }
 
+  function decorateDockButton(button, label) {
+    if (!button) return button;
+    button.classList.add("opportunity-dock-button", "dock-icon-button");
+    button.setAttribute("aria-label", label);
+    button.title = label;
+    button.replaceChildren();
+    const namespace = "http://www.w3.org/2000/svg";
+    const icon = globalObject.document.createElementNS(namespace, "svg");
+    icon.setAttribute("viewBox", "0 0 24 24");
+    icon.setAttribute("aria-hidden", "true");
+    icon.setAttribute("focusable", "false");
+    const rectangle = globalObject.document.createElementNS(namespace, "rect");
+    rectangle.setAttribute("width", "18"); rectangle.setAttribute("height", "18");
+    rectangle.setAttribute("x", "3"); rectangle.setAttribute("y", "3"); rectangle.setAttribute("rx", "2");
+    const horizontal = globalObject.document.createElementNS(namespace, "path"); horizontal.setAttribute("d", "M3 9h18");
+    const vertical = globalObject.document.createElementNS(namespace, "path"); vertical.setAttribute("d", "M9 21V9");
+    icon.append(rectangle, horizontal, vertical);
+    button.append(icon);
+    return button;
+  }
+
+  function createDockButton(label) {
+    const button = globalObject.document.createElement("button");
+    button.type = "button";
+    return decorateDockButton(button, label);
+  }
+
   function readSize(feature) {
     const defaults = FEATURES[feature];
     if (!defaults) throw new Error(`Unknown dock feature: ${feature}`);
@@ -90,6 +117,8 @@
 
   const exported = {
     canDock,
+    createDockButton,
+    decorateDockButton,
     dockUrl,
     openDock,
     openInbox: () => openDock("inbox"),

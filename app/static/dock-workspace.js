@@ -8,7 +8,6 @@
     if (path === "/dock/inbox") {
       document.body.dataset.dockFeature = "inbox";
       document.querySelector("#dockInbox").hidden = false;
-      document.querySelector("#dockReturnToEdge").addEventListener("click", () => globalObject.edgeDocking.openInMain("/mrz/watchlists"));
       globalObject.edgeDocking.trackDockedWindow("inbox");
       return;
     }
@@ -28,7 +27,6 @@
       initialRangeDays: rangeDays,
       detailsCollapsed: storedCollapsed(symbol),
       returnUrl,
-      onReturnToEdge: () => globalObject.edgeDocking.openInMain(returnUrl),
       onRangeChange: (days) => {
         params.set("range", String(days));
         globalObject.history.replaceState(null, "", `${path}?${params}`);

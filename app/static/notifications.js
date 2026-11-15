@@ -225,6 +225,7 @@
     async initialize() {
       if (this.button) this.button.addEventListener("click", () => this.toggle());
       if (this.inboxDock) {
+        globalObject.edgeDocking?.decorateDockButton(this.inboxDock, "Dock Inbox");
         this.inboxDock.hidden = !globalObject.edgeDocking?.canDock();
         this.inboxDock.addEventListener("click", () => {
           const opened = globalObject.edgeDocking?.openInbox();
