@@ -82,7 +82,7 @@ const nearMiss = currentNearMissMarkup(
   () => "21 Aug 2026 · 20:30 UTC−4",
 );
 assert.match(nearMiss, /WLDUSDT · BTD/);
-assert.match(nearMiss, /Current minimum allowance required/);
+assert.match(nearMiss, /<dt>% Deviation<\/dt>/);
 assert.match(nearMiss, /1\.59%/);
 assert.match(nearMiss, /Current production allowance/);
 assert.match(nearMiss, /1\.00%/);

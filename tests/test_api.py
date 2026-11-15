@@ -634,6 +634,13 @@ class APIIntegrationTests(unittest.TestCase):
             "2026-08-20T12:00:04Z",
         )
         self.assertEqual(report["migration"], monitor["migration"])
+        history = self.client.get("/api/symbols/SPXUSDT/history").json()
+        self.assertEqual(len(history["migrations"]), 1)
+        migration = history["migrations"][0]
+        self.assertEqual(float(migration["from_lower"]), monitor["migration"]["previous_lower"])
+        self.assertEqual(float(migration["to_upper"]), monitor["migration"]["current_upper"])
+        self.assertEqual(migration["direction"], "higher")
+        self.assertEqual(migration["observed_at"], monitor["migration"]["migrated_at"])
         self.assertEqual(report["migration_pressure"]["status"], "STABLE")
         self.assertEqual(report["migration_pressure"]["direction"], "NEUTRAL")
         self.assertEqual(report["post_activation_robustness"]["status"], "STABLE")

@@ -9,7 +9,7 @@
     <link rel="manifest" href="/manifest.webmanifest?v=edge-intel-radar-20261110" />
     <link rel="icon" href="/static/edge-intel-radar-icon-192.png" type="image/png" />
     <link rel="apple-touch-icon" href="/static/edge-intel-radar-icon-180.png" />
-    <link rel="stylesheet" href="/static/workspace.css?v=mobile-navigation-20261114" />
+    <link rel="stylesheet" href="/static/workspace.css?v=near-miss-history-20261115" />
     <link rel="stylesheet" href="/static/opportunity-map.css?v=mobile-navigation-20261114" />
   </head>
   <body>
@@ -51,10 +51,41 @@
 
         <section class="route-panel" data-route-panel="symbols" hidden>
           <header class="route-heading symbol-route-heading"><div><a class="symbol-context-back-link" id="symbolContextBackLink" href="/mrz/watchlists" hidden>← Back to Opportunity History</a><p>SYMBOLS</p><h1>Canonical symbol inspection</h1><span>MRZ authority identifies context; Trade Desk remains responsible for entries and exits.</span></div><label class="symbol-picker">SELECT SYMBOL<select id="symbolSelect"><option value="">Select a symbol</option></select></label></header>
-          <section class="symbol-empty panel" id="symbolEmpty">Select a symbol from this page, a watchlist, or Attention.</section>
+          <section class="symbol-empty panel" id="symbolEmpty" role="status">Select a symbol from this page, a watchlist, or Attention.</section>
           <div class="symbol-detail-grid" id="symbolDetail" hidden>
-            <section class="panel current-authority-panel"><div class="panel-heading"><div><p>SELECTED SYMBOL</p><h2 id="detailSymbol">—</h2></div><span class="status-pill" id="detailStatus">—</span></div><div class="authority-range" id="detailRange">—</div><div class="authority-meta" id="detailMeta"></div></section>
-            <section class="panel"><p class="panel-kicker">MRZ CONTEXT</p><div id="detailMrzContext" class="detail-block">—</div><div id="detailPrevious" class="detail-block previous-authority">—</div><a class="detail-event-history-link" id="detailEventHistoryLink" href="/mrz/events">Open Events History</a></section>
+            <section class="panel current-authority-panel" id="symbolAuthority">
+              <div class="panel-heading"><div><p>SELECTED SYMBOL</p><h2 id="detailSymbol">—</h2></div><span class="status-pill" id="detailStatus">—</span></div>
+              <div class="authority-range-label" id="detailRangeLabel">MRZ (ACTIVE)</div>
+              <div class="authority-range" id="detailRange">—</div>
+              <div class="authority-meta" id="detailMeta"></div>
+            </section>
+            <section class="panel symbol-history-panel symbol-migration-panel" id="symbolMigrationHistory" aria-labelledby="symbolMigrationTitle">
+              <header class="symbol-history-heading">
+                <h2 id="symbolMigrationTitle">MRZ Migration History</h2>
+                <p>Structural changes to MRZ bounds.</p>
+              </header>
+              <div class="symbol-history-scroll" tabindex="0" role="region" aria-labelledby="symbolMigrationTitle">
+                <table class="symbol-history-table">
+                  <thead><tr><th scope="col">#</th><th scope="col">Event</th><th scope="col">From (MRZ)</th><th scope="col">To (MRZ)</th><th scope="col">Direction</th><th scope="col">Observed at (UTC)</th></tr></thead>
+                  <tbody id="symbolMigrationRows"></tbody>
+                </table>
+              </div>
+            </section>
+            <section class="panel symbol-history-panel symbol-near-miss-panel" aria-labelledby="symbolNearMissTitle">
+              <header class="symbol-history-heading">
+                <div class="symbol-near-miss-heading">
+                  <h2 id="symbolNearMissTitle">Near Miss History</h2>
+                  <p>Candidate concentrations greater than 1.00% (MRZ activation threshold).</p>
+                </div>
+                <a class="quiet-button symbol-history-link" id="symbolNearMissLink" hidden></a>
+              </header>
+              <div class="symbol-history-scroll" tabindex="0" role="region" aria-labelledby="symbolNearMissTitle">
+                <table class="symbol-history-table">
+                  <thead><tr><th scope="col">#</th><th scope="col">Event</th><th scope="col">Candidate Range</th><th scope="col">Route</th><th scope="col">% Deviation</th><th scope="col">Deviation from 1.00%</th><th scope="col">Observed at (UTC)</th></tr></thead>
+                  <tbody id="symbolNearMissRows"></tbody>
+                </table>
+              </div>
+            </section>
           </div>
         </section>
 
@@ -113,6 +144,6 @@
 
     <dialog class="workspace-dialog inbox-dialog" id="notificationInboxDialog" aria-labelledby="notificationInboxTitle"><section><header><div><p>DELIVERY HISTORY</p><h2 id="notificationInboxTitle">Notification Inbox</h2><span id="notificationInboxSummary">No unread notifications</span></div><button class="icon-button" id="notificationInboxClose" type="button" aria-label="Close">×</button></header><p class="notification-inbox-empty" id="notificationInboxEmpty">No active notifications.</p><ul class="notification-inbox-list" id="notificationInboxList" aria-live="polite"></ul><footer><button class="quiet-button" type="button" id="notificationMarkAllRead" disabled>Mark all read</button><button class="danger-button" type="button" id="notificationClearInbox" disabled>Clear inbox</button></footer></section></dialog>
     <div class="notification-toast-host" id="notificationToastHost" aria-live="polite"></div>
-    <script src="/static/mrz-shell.js?v=mobile-navigation-20261114" defer></script><script src="/static/operator-time.js?v=mobile-navigation-20261114" defer></script><script src="/static/workspace-derivations.js?v=mobile-navigation-20261114" defer></script><script src="/static/opportunity-map.js?v=mobile-navigation-20261114" defer></script><script src="/static/opportunity-comparison.js?v=mobile-navigation-20261114" defer></script><script src="/static/group-evidence.js?v=mobile-navigation-20261114" defer></script><script src="/static/notifications.js?v=mobile-navigation-20261114" defer></script><script src="/static/workspace.js?v=mobile-navigation-20261114" defer></script>
+    <script src="/static/mrz-shell.js?v=mobile-navigation-20261114" defer></script><script src="/static/operator-time.js?v=mobile-navigation-20261114" defer></script><script src="/static/workspace-derivations.js?v=mobile-navigation-20261114" defer></script><script src="/static/opportunity-map.js?v=mobile-navigation-20261114" defer></script><script src="/static/opportunity-comparison.js?v=mobile-navigation-20261114" defer></script><script src="/static/group-evidence.js?v=mobile-navigation-20261114" defer></script><script src="/static/notifications.js?v=mobile-navigation-20261114" defer></script><script src="/static/workspace.js?v=near-miss-history-20261115" defer></script>
   </body>
 </html>

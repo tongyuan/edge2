@@ -84,15 +84,16 @@ class MonitorContractTests(unittest.TestCase):
 
     def test_current_and_previous_authority_are_available_in_symbols(self) -> None:
         self.assertIn('id="detailRange"', HTML)
-        self.assertIn('id="detailPrevious"', HTML)
+        self.assertIn('id="symbolMigrationRows"', HTML)
+        self.assertIn('id="symbolNearMissRows"', HTML)
         self.assertNotIn('id="detailLatestEvent"', HTML)
         self.assertNotIn('id="detailPressure"', HTML)
         self.assertNotIn('id="detailPressureEvidence"', HTML)
         self.assertNotIn('id="detailPressureTimeline"', HTML)
         self.assertNotIn("Pressure Timeline", HTML)
-        self.assertIn("Open Events History", HTML)
+        self.assertIn("View All Near Miss", WORKSPACE)
         self.assertNotIn('$("#detailPressure")', WORKSPACE)
-        self.assertIn("detail.migration?.has_migrated", WORKSPACE)
+        self.assertIn('fetchJson(`${path}/history`)', WORKSPACE)
         self.assertIn("/api/symbols/${encodeURIComponent(symbol)}", WORKSPACE)
 
     def test_standalone_pressure_is_removed_and_location_distribution_remains(self) -> None:

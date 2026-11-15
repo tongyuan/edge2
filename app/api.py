@@ -957,6 +957,14 @@ def create_app(
             raise HTTPException(status_code=404, detail="symbol_not_found")
         return detail
 
+    @application.get("/api/symbols/{symbol}/history")
+    def symbol_inspection_history(symbol: str) -> JSONResponse:
+        try:
+            history = repository.symbol_inspection_history(symbol)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return JSONResponse(history, headers={"Cache-Control": "no-store, max-age=0"})
+
     @application.get("/api/symbols/{symbol}/mrz")
     def symbol_mrz(symbol: str) -> dict[str, Any]:
         return symbol_detail(symbol)

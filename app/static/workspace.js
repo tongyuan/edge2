@@ -516,39 +516,126 @@
     });
     container.append(element("p", "pressure-evidence-legend", "R = Reclaim · X = Rejection · ↑ above envelope · ↓ below envelope"));
   }
+  const symbolHistoryDate = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "UTC", day: "2-digit", month: "short", year: "numeric",
+  });
+  let symbolDetailRequest;
+
+  function symbolRange(lower, upper) {
+    return lower == null || upper == null ? "—" : `${formatPrice(lower)} – ${formatPrice(upper)}`;
+  }
+
+  function historyTimestamp(value) {
+    const time = element("time", "", "—");
+    const date = value ? new Date(value) : null;
+    if (date && Number.isFinite(date.getTime())) {
+      time.dateTime = value;
+      time.textContent = `${symbolHistoryDate.format(date)} · ${date.toISOString().slice(11, 16)}`;
+    }
+    return time;
+  }
+
+  function renderSymbolHistoryRows(target, rows, emptyMessage) {
+    const body = $(target);
+    if (!rows.length) {
+      const row = element("tr", "");
+      const cell = element("td", "symbol-history-empty", emptyMessage);
+      cell.colSpan = body.parentElement.tHead.rows[0].cells.length;
+      row.append(cell);
+      body.replaceChildren(row);
+      return;
+    }
+    body.replaceChildren(...rows.map((values) => {
+      const row = element("tr", "");
+      values.forEach((value) => {
+        const cell = element("td", "");
+        cell.append(value);
+        row.append(cell);
+      });
+      return row;
+    }));
+  }
+
+  function renderSymbolHistory(history, fullNearMissHistory) {
+    const migrations = history?.migrations || [];
+    const nearMisses = history?.near_misses || [];
+    renderSymbolHistoryRows("#symbolMigrationRows", migrations.map((item, index) => [
+      String(migrations.length - index),
+      element("span", "symbol-history-pill history-event", "MRZ Migrated"),
+      symbolRange(item.from_lower, item.from_upper),
+      symbolRange(item.to_lower, item.to_upper),
+      { higher: "Higher", lower: "Lower" }[item.direction] || "—",
+      historyTimestamp(item.observed_at),
+    ]), history ? "No previous MRZ migration for the current segment." : "Migration history is unavailable.");
+
+    const visibleNearMisses = fullNearMissHistory ? nearMisses : nearMisses.slice(0, 3);
+    renderSymbolHistoryRows("#symbolNearMissRows", visibleNearMisses.map((item, index) => [
+      String(nearMisses.length - index),
+      element("span", "symbol-history-pill history-event", "Near Miss"),
+      symbolRange(item.candidate_lower, item.candidate_upper),
+      element("span", `symbol-history-pill history-route ${item.route === "STR" ? "str" : "btd"}`, item.route),
+      element("strong", "history-deviation", `${Number(item.deviation_pct).toFixed(2)}%`),
+      element("span", "symbol-history-pill history-shortfall", `+${Number(item.shortfall_pp).toFixed(2)} pp`),
+      historyTimestamp(item.observed_at),
+    ]), history ? "No recorded near misses for this symbol." : "Near Miss History is unavailable.");
+
+    const link = $("#symbolNearMissLink");
+    const url = new URL(globalObject.location.href);
+    if (fullNearMissHistory) url.searchParams.delete("history");
+    else url.searchParams.set("history", "near-miss");
+    link.href = `${url.pathname}${url.search}`;
+    link.textContent = fullNearMissHistory ? "← Back to Symbol" : `View All Near Miss (${nearMisses.length})`;
+    link.hidden = !fullNearMissHistory && !nearMisses.length;
+  }
+
   async function loadSymbolDetail(symbol) {
-    if (!symbol) { $("#symbolEmpty").hidden = false; $("#symbolDetail").hidden = true; return; }
-    const response = await fetch(`/api/symbols/${encodeURIComponent(symbol)}`, { cache: "no-store" });
-    if (!response.ok) throw new Error(`Unable to load ${symbol}.`);
-    const detail = await response.json();
-    $("#symbolEmpty").hidden = true; $("#symbolDetail").hidden = false;
-    $("#detailSymbol").textContent = symbol;
-    $("#detailStatus").textContent = detail.mrz_status === "active" ? "● ACTIVE" : "NO ACTIVE MRZ";
-    $("#detailRange").textContent = detail.mrz_status === "active" ? `${formatPrice(detail.core_mrz_lower)}–${formatPrice(detail.core_mrz_upper)}` : "No current authority";
-    $("#detailMeta").replaceChildren(
-      element("span", "", `Route · ${detail.route_owner || "—"}`),
-      element("span", "", `Activated · ${exactTime(detail.activated_at)}`),
-      element("span", "", `Location · ${locationLabels[detail.structural_location] || "—"}`),
-    );
-    if (detail.migration?.has_migrated) {
-      $("#detailPrevious").replaceChildren(element("strong", "", `${formatPrice(detail.migration.previous_lower)}–${formatPrice(detail.migration.previous_upper)}`), element("span", "", `Previous authority · ${detail.migration.direction === "UP" ? "migrated upward" : "migrated downward"}`), element("span", "", exactTime(detail.migration.previous_activated_at)));
-    } else $("#detailPrevious").textContent = "No previous MRZ migration for the current lifecycle.";
-    const active = detail.mrz_status === "active" ? {
-      status: "active",
-      lower: detail.core_mrz_lower,
-      upper: detail.core_mrz_upper,
-      lower_migration_boundary: detail.lower_migration_boundary,
-      upper_migration_boundary: detail.upper_migration_boundary,
-      effective_width: detail.effective_width,
-      lifecycle_activation_event_id: detail.activation_event_id,
-    } : {};
-    $("#detailMrzContext").replaceChildren(
-      element("strong", "", active.status === "active" ? `${formatPrice(active.lower)}–${formatPrice(active.upper)}` : "No active MRZ"),
-      element("span", "", `Migration envelope · ${formatPrice(active.lower_migration_boundary)}–${formatPrice(active.upper_migration_boundary)}`),
-      element("span", "", `MRZ width · ${formatPrice(active.effective_width)}`),
-      element("span", "", `Lifecycle · ${active.lifecycle_activation_event_id || "—"}`),
-    );
-    $("#detailEventHistoryLink").href = `/mrz/events?symbol=${encodeURIComponent(symbol)}`;
+    symbolDetailRequest?.abort();
+    const request = new AbortController();
+    symbolDetailRequest = request;
+    const status = $("#symbolEmpty");
+    const panel = $("#symbolDetail");
+    panel.hidden = true;
+    status.hidden = false;
+    status.textContent = symbol ? `Loading ${symbol}…` : "Select a symbol from this page, a watchlist, or Attention.";
+    if (!symbol) return;
+
+    const path = `/api/symbols/${encodeURIComponent(symbol)}`;
+    const options = { cache: "no-store", signal: request.signal };
+    const fetchJson = async (url) => {
+      const response = await fetch(url, options);
+      if (!response.ok) throw new Error(`Unable to load ${symbol}.`);
+      return response.json();
+    };
+    try {
+      const [detail, history] = await Promise.all([
+        fetchJson(path),
+        fetchJson(`${path}/history`).catch(() => null),
+      ]);
+      if (request.signal.aborted) return;
+
+      const active = detail.mrz_status === "active";
+      const fullNearMissHistory = new URLSearchParams(globalObject.location.search).get("history") === "near-miss";
+      $("#symbolAuthority").hidden = fullNearMissHistory;
+      $("#symbolMigrationHistory").hidden = fullNearMissHistory;
+      $("#detailSymbol").textContent = symbol;
+      $("#detailStatus").textContent = active ? "● MRZ ACTIVE" : "NO ACTIVE MRZ";
+      $("#detailStatus").classList.toggle("is-active", active);
+      $("#detailRangeLabel").hidden = !active;
+      $("#detailRange").textContent = active ? symbolRange(detail.core_mrz_lower, detail.core_mrz_upper) : "No current authority";
+      $("#detailMeta").replaceChildren();
+      if (active) {
+        $("#detailMeta").append(
+          element("span", "", `Route · ${detail.route_owner || "—"}`),
+          element("span", "", `Activated · ${exactTime(detail.activated_at)}`),
+          element("span", "", `Location · ${locationLabels[detail.structural_location] || "—"}`),
+        );
+      }
+      renderSymbolHistory(history, fullNearMissHistory);
+      status.hidden = true;
+      panel.hidden = false;
+    } catch {
+      if (!request.signal.aborted) status.textContent = `Unable to load ${symbol}.`;
+    }
   }
 
   function syncLocationUrl() {

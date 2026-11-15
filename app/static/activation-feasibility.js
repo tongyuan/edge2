@@ -133,7 +133,7 @@ function currentNearMissMarkup(items, timestampFormatter = (value) => value) {
     return `<article class="diagnostic-card near-miss-card" data-near-miss-symbol="${escapeHtml(item.symbol)}" data-near-miss-route="${escapeHtml(item.route)}" data-candidate-identity="${escapeHtml(item.candidate_identity)}">
       <h3>${escapeHtml(item.symbol)} · ${escapeHtml(item.route)}</h3>
       <dl>
-        <div><dt>Current minimum allowance required</dt><dd>${percentageText(item.minimum_required_allowance_pct)}</dd></div>
+        <div><dt>% Deviation</dt><dd>${percentageText(item.minimum_required_allowance_pct)}</dd></div>
         <div><dt>Current production allowance</dt><dd>${percentageText(item.configured_allowance_pct)}</dd></div>
         <div><dt>Shortfall</dt><dd>${percentagePointText(item.shortfall_percentage_points)}</dd></div>
         <div><dt>Candidate range</dt><dd>${candidateRange}</dd></div>

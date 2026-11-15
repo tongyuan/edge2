@@ -2371,6 +2371,68 @@ class EdgeRepository:
         finally:
             connection.close()
 
+    def symbol_inspection_history(self, symbol: str) -> dict[str, Any]:
+        """Return canonical migrations and the recorded candidate at each Near Miss episode."""
+        normalized = normalize_symbol(symbol)
+        connection = connect(self.database_url)
+        try:
+            connection.set_session(readonly=True, isolation_level="REPEATABLE READ")
+            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    """
+                    SELECT migration.old_core_mrz_lower, migration.old_core_mrz_upper,
+                           migration.new_core_mrz_lower, migration.new_core_mrz_upper,
+                           migration.new_core_mrz_midpoint, migration.occurred_at
+                    FROM mrz_events AS migration
+                    WHERE migration.symbol = %s
+                      AND migration.event_type = 'MRZ_MIGRATED'
+                      AND migration.sequence > COALESCE((
+                          SELECT MAX(activation.sequence)
+                          FROM mrz_events AS activation
+                          WHERE activation.symbol = migration.symbol
+                            AND activation.event_type = 'MRZ_ACTIVATED'
+                      ), 0)
+                    ORDER BY migration.sequence DESC
+                    """,
+                    (normalized,),
+                )
+                migrations = [
+                    {
+                        "from_lower": decimal_text(row["old_core_mrz_lower"]),
+                        "from_upper": decimal_text(row["old_core_mrz_upper"]),
+                        "to_lower": decimal_text(row["new_core_mrz_lower"]),
+                        "to_upper": decimal_text(row["new_core_mrz_upper"]),
+                        "direction": migration_direction(row),
+                        "observed_at": iso(row["occurred_at"]),
+                    }
+                    for row in cursor.fetchall()
+                ]
+                cursor.execute(
+                    """
+                    SELECT route_owner, candidate_lower, candidate_upper,
+                           minimum_required_allowance_pct, shortfall_percentage_points,
+                           candidate_timestamp
+                    FROM current_production_near_miss_episodes
+                    WHERE symbol = %s
+                    ORDER BY started_at DESC, id DESC
+                    """,
+                    (normalized,),
+                )
+                near_misses = [
+                    {
+                        "route": row["route_owner"],
+                        "candidate_lower": decimal_text(row["candidate_lower"]),
+                        "candidate_upper": decimal_text(row["candidate_upper"]),
+                        "deviation_pct": decimal_text(row["minimum_required_allowance_pct"]),
+                        "shortfall_pp": decimal_text(row["shortfall_percentage_points"]),
+                        "observed_at": iso(row["candidate_timestamp"]),
+                    }
+                    for row in cursor.fetchall()
+                ]
+                return {"migrations": migrations, "near_misses": near_misses}
+        finally:
+            connection.close()
+
     def schema_43_observations(self) -> tuple[Observation, ...]:
         """Return the complete canonical sample for read-only diagnostics."""
         connection = connect(self.database_url)

@@ -632,6 +632,17 @@ class OperatorPromotionIntegrationTests(unittest.TestCase):
         self.assertFalse(
             self.scalar("SELECT deliverable FROM current_production_near_miss_episodes")
         )
+        history = self.client.get("/api/symbols/MU/history")
+        self.assertEqual(history.status_code, 200)
+        self.assertEqual(history.json()["migrations"], [])
+        near_misses = history.json()["near_misses"]
+        self.assertEqual(len(near_misses), 1)
+        self.assertEqual(near_misses[0]["route"], self.payload(5, "949.89")["route"])
+        self.assertAlmostEqual(
+            float(near_misses[0]["deviation_pct"]) - 1,
+            float(near_misses[0]["shortfall_pp"]),
+        )
+        self.assertEqual(self.client.get("/api/symbols/OTHER/history").json()["near_misses"], [])
         self.assertEqual(
             self.scalar(
                 "SELECT COUNT(*) FROM web_push_notifications WHERE event_type = 'MRZ_NEAR_MISS'"
