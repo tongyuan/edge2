@@ -9,8 +9,8 @@
     <link rel="manifest" href="/manifest.webmanifest?v=edge-intel-radar-20261110" />
     <link rel="icon" href="/static/edge-intel-radar-icon-192.png" type="image/png" />
     <link rel="apple-touch-icon" href="/static/edge-intel-radar-icon-180.png" />
-    <link rel="stylesheet" href="/static/workspace.css?v=near-miss-history-20261115" />
-    <link rel="stylesheet" href="/static/opportunity-map.css?v=near-miss-history-20261115" />
+    <link rel="stylesheet" href="/static/workspace.css?v=near-miss-inline-20261115" />
+    <link rel="stylesheet" href="/static/opportunity-map.css?v=near-miss-inline-20261115" />
   </head>
   <body>
     <div class="workspace-shell">
@@ -77,7 +77,6 @@
                   <h2 id="symbolNearMissTitle">Near Miss History</h2>
                   <p>Candidate concentrations greater than 1.00% (MRZ activation threshold).</p>
                 </div>
-                <a class="quiet-button symbol-history-link" id="symbolNearMissLink" hidden></a>
               </header>
               <div class="symbol-history-scroll" tabindex="0" role="region" aria-labelledby="symbolNearMissTitle">
                 <table class="symbol-history-table">
@@ -125,8 +124,14 @@
             <p class="location-flow-note">Line thickness represents symbol count; color represents structural movement direction. Same bucket does not imply stability.</p>
           </section>
           <section class="location-section location-contributors-section" aria-labelledby="locationContributorsHeading">
-            <header class="location-section-heading location-contributors-heading"><div><h2 id="locationContributorsHeading">Contributing Symbols</h2><p id="locationContributorScope">Select a flow to reveal its exact underlying symbols.</p></div></header>
-            <div class="location-contributors-table-wrap"><table class="location-contributors-table"><thead><tr><th>Symbol</th><th>Previous</th><th>Current</th><th>Observation freshness</th><th><span class="visually-hidden">Open details</span></th></tr></thead><tbody id="locationContributorRows"></tbody></table></div>
+            <header class="location-section-heading location-contributors-heading"><div><h2 id="locationContributorsHeading">Sector Symbols</h2><p id="locationContributorScope">Select a taxonomy to inspect all assigned symbols.</p></div><button class="quiet-button" id="locationClearFlow" type="button" hidden>Clear flow selection</button></header>
+            <div class="location-symbol-filters" role="group" aria-label="Symbol movement filter">
+              <button type="button" data-location-symbol-filter="all" aria-pressed="true">All Symbols <span id="locationFilterAllCount">0</span></button>
+              <button type="button" data-location-symbol-filter="lower" aria-pressed="false">Moving Lower <span id="locationFilterLowerCount">0</span></button>
+              <button type="button" data-location-symbol-filter="unchanged" aria-pressed="false">Unchanged <span id="locationFilterUnchangedCount">0</span></button>
+              <button type="button" data-location-symbol-filter="higher" aria-pressed="false">Moving Higher <span id="locationFilterHigherCount">0</span></button>
+            </div>
+            <div class="location-contributors-table-wrap"><table class="location-contributors-table"><thead><tr><th>Symbol</th><th>Previous</th><th>Current</th><th>Movement</th><th>Observation freshness</th><th><span class="visually-hidden">Open details</span></th></tr></thead><tbody id="locationContributorRows"></tbody></table></div>
           </section>
         </section>
 
@@ -144,6 +149,6 @@
 
     <dialog class="workspace-dialog inbox-dialog" id="notificationInboxDialog" aria-labelledby="notificationInboxTitle"><section><header><div><p>DELIVERY HISTORY</p><h2 id="notificationInboxTitle">Notification Inbox</h2><span id="notificationInboxSummary">No unread notifications</span></div><button class="icon-button" id="notificationInboxClose" type="button" aria-label="Close">×</button></header><p class="notification-inbox-empty" id="notificationInboxEmpty">No active notifications.</p><ul class="notification-inbox-list" id="notificationInboxList" aria-live="polite"></ul><footer><button class="quiet-button" type="button" id="notificationMarkAllRead" disabled>Mark all read</button><button class="danger-button" type="button" id="notificationClearInbox" disabled>Clear inbox</button></footer></section></dialog>
     <div class="notification-toast-host" id="notificationToastHost" aria-live="polite"></div>
-    <script src="/static/mrz-shell.js?v=near-miss-history-20261115" defer></script><script src="/static/operator-time.js?v=near-miss-history-20261115" defer></script><script src="/static/workspace-derivations.js?v=near-miss-history-20261115" defer></script><script src="/static/opportunity-map.js?v=near-miss-history-20261115" defer></script><script src="/static/opportunity-comparison.js?v=near-miss-history-20261115" defer></script><script src="/static/group-evidence.js?v=near-miss-history-20261115" defer></script><script src="/static/notifications.js?v=near-miss-history-20261115" defer></script><script src="/static/workspace.js?v=near-miss-history-20261115" defer></script>
+    <script src="/static/mrz-shell.js?v=near-miss-inline-20261115" defer></script><script src="/static/operator-time.js?v=near-miss-inline-20261115" defer></script><script src="/static/workspace-derivations.js?v=near-miss-inline-20261115" defer></script><script src="/static/opportunity-map.js?v=near-miss-inline-20261115" defer></script><script src="/static/opportunity-comparison.js?v=near-miss-inline-20261115" defer></script><script src="/static/group-evidence.js?v=near-miss-inline-20261115" defer></script><script src="/static/notifications.js?v=near-miss-inline-20261115" defer></script><script src="/static/workspace.js?v=near-miss-inline-20261115" defer></script>
   </body>
 </html>

@@ -153,10 +153,22 @@ class WorkspaceContractTests(unittest.TestCase):
             with self.subTest(bucket=key):
                 self.assertIn(f'{{ key: "{key}", label: "{label}"', DERIVATIONS)
 
-    def test_location_distribution_contributors_show_exact_flow_members(self) -> None:
+    def test_location_distribution_shows_all_taxonomy_members_and_exact_flow_members(self) -> None:
         self.assertNotIn('id="locationContributorSearch"', HTML)
         self.assertNotIn("filterLocationTransitionMembers", DERIVATIONS)
-        self.assertIn("const members = cell.members", JS)
+        self.assertIn("deriveLocationTaxonomyMembers", DERIVATIONS)
+        self.assertIn("members = cell.members", JS)
+        self.assertIn("Sector Symbols", HTML)
+        self.assertIn("Industry Symbols", JS)
+        self.assertIn('data-location-symbol-filter="all"', HTML)
+        self.assertIn('data-location-symbol-filter="lower"', HTML)
+        self.assertIn('data-location-symbol-filter="unchanged"', HTML)
+        self.assertIn('data-location-symbol-filter="higher"', HTML)
+        self.assertIn("Comparison unavailable", JS)
+        self.assertIn("Clear flow selection", HTML)
+        self.assertIn("totals.comparable", JS)
+        self.assertIn("totals.all", JS)
+        self.assertIn("unavailable: categories.unavailable.length", DERIVATIONS)
         self.assertIn("/mrz/symbols?symbol=", JS)
         mobile_rules = CSS.split("@media (max-width: 820px)", 1)[1]
         self.assertNotIn(".location-contributors-section { display: none; }", mobile_rules)

@@ -47,7 +47,7 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn('if (activation) activation.checked', WORKSPACE)
         self.assertIn('if (migration) migration.checked', WORKSPACE)
         self.assertIn('if (nearMiss) nearMiss.checked', WORKSPACE)
-        self.assertIn("near-miss-history-20261115", HTML)
+        self.assertIn("near-miss-inline-20261115", HTML)
 
     def test_notification_inbox_remains_durable_and_distinct(self) -> None:
         self.assertIn('id="notificationInboxButton"', HTML)
@@ -91,7 +91,8 @@ class MonitorContractTests(unittest.TestCase):
         self.assertNotIn('id="detailPressureEvidence"', HTML)
         self.assertNotIn('id="detailPressureTimeline"', HTML)
         self.assertNotIn("Pressure Timeline", HTML)
-        self.assertIn("View All Near Miss", WORKSPACE)
+        self.assertNotIn("View All Near Miss", WORKSPACE)
+        self.assertNotIn('id="symbolNearMissLink"', HTML)
         self.assertNotIn('$("#detailPressure")', WORKSPACE)
         self.assertIn('fetchJson(`${path}/history`)', WORKSPACE)
         self.assertIn("/api/symbols/${encodeURIComponent(symbol)}", WORKSPACE)

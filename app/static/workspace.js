@@ -15,6 +15,7 @@
     locationTaxonomySort: "lower",
     locationTaxonomySelection: null,
     locationFlowSelection: null,
+    locationSymbolFilter: "all",
     peerWindow: "24H",
     peerLocationHistory: null,
     peerPressure: null,
@@ -556,7 +557,7 @@
     }));
   }
 
-  function renderSymbolHistory(history, fullNearMissHistory) {
+  function renderSymbolHistory(history) {
     const migrations = history?.migrations || [];
     const nearMisses = history?.near_misses || [];
     renderSymbolHistoryRows("#symbolMigrationRows", migrations.map((item, index) => [
@@ -568,8 +569,7 @@
       historyTimestamp(item.observed_at),
     ]), history ? "No previous MRZ migration for the current segment." : "Migration history is unavailable.");
 
-    const visibleNearMisses = fullNearMissHistory ? nearMisses : nearMisses.slice(0, 3);
-    renderSymbolHistoryRows("#symbolNearMissRows", visibleNearMisses.map((item, index) => [
+    renderSymbolHistoryRows("#symbolNearMissRows", nearMisses.map((item, index) => [
       String(nearMisses.length - index),
       element("span", "symbol-history-pill history-event", "Near Miss"),
       symbolRange(item.candidate_lower, item.candidate_upper),
@@ -579,13 +579,6 @@
       historyTimestamp(item.observed_at),
     ]), history ? "No recorded near misses for this symbol." : "Near Miss History is unavailable.");
 
-    const link = $("#symbolNearMissLink");
-    const url = new URL(globalObject.location.href);
-    if (fullNearMissHistory) url.searchParams.delete("history");
-    else url.searchParams.set("history", "near-miss");
-    link.href = `${url.pathname}${url.search}`;
-    link.textContent = fullNearMissHistory ? "← Back to Symbol" : `View All Near Miss (${nearMisses.length})`;
-    link.hidden = !fullNearMissHistory && !nearMisses.length;
   }
 
   async function loadSymbolDetail(symbol) {
@@ -614,9 +607,8 @@
       if (request.signal.aborted) return;
 
       const active = detail.mrz_status === "active";
-      const fullNearMissHistory = new URLSearchParams(globalObject.location.search).get("history") === "near-miss";
-      $("#symbolAuthority").hidden = fullNearMissHistory;
-      $("#symbolMigrationHistory").hidden = fullNearMissHistory;
+      $("#symbolAuthority").hidden = false;
+      $("#symbolMigrationHistory").hidden = false;
       $("#detailSymbol").textContent = symbol;
       $("#detailStatus").textContent = active ? "● MRZ ACTIVE" : "NO ACTIVE MRZ";
       $("#detailStatus").classList.toggle("is-active", active);
@@ -630,7 +622,7 @@
           element("span", "", `Location · ${locationLabels[detail.structural_location] || "—"}`),
         );
       }
-      renderSymbolHistory(history, fullNearMissHistory);
+      renderSymbolHistory(history);
       status.hidden = true;
       panel.hidden = false;
     } catch {
@@ -647,6 +639,7 @@
     url.searchParams.set("sort", state.locationTaxonomySort);
     if (state.locationTaxonomySelection) url.searchParams.set("taxonomy", state.locationTaxonomySelection); else url.searchParams.delete("taxonomy");
     if (state.locationFlowSelection) url.searchParams.set("transition", state.locationFlowSelection); else url.searchParams.delete("transition");
+    if (state.locationSymbolFilter !== "all") url.searchParams.set("movement", state.locationSymbolFilter); else url.searchParams.delete("movement");
     globalObject.history.replaceState({}, "", url);
   }
 
@@ -658,6 +651,7 @@
     if (["lower", "higher", "lower_pct", "higher_pct", "name"].includes(params.get("sort"))) state.locationTaxonomySort = params.get("sort");
     state.locationTaxonomySelection = params.get("taxonomy") || null;
     state.locationFlowSelection = params.get("transition") || null;
+    if (["all", "lower", "unchanged", "higher"].includes(params.get("movement"))) state.locationSymbolFilter = params.get("movement");
   }
 
   function renderLocationDistribution() {
@@ -705,7 +699,8 @@
     const flowReport = derive.deriveLocationTaxonomyFlow(history, state.symbols, state.locationTaxonomyLevel, state.locationTaxonomySelection);
     if (state.locationFlowSelection && !flowReport.cells.some((cell) => cell.key === state.locationFlowSelection && cell.count)) state.locationFlowSelection = null;
     renderLocationFlow(flowReport);
-    renderLocationContributors(flowReport);
+    const memberReport = derive.deriveLocationTaxonomyMembers(history, state.symbols, state.locationTaxonomyLevel, state.locationTaxonomySelection);
+    renderLocationContributors(flowReport, memberReport);
     syncLocationUrl();
   }
 
@@ -730,6 +725,7 @@
     button.addEventListener("click", () => {
       state.locationTaxonomySelection = group.name;
       state.locationFlowSelection = null;
+      state.locationSymbolFilter = "all";
       renderLocationDistribution();
     });
     return button;
@@ -790,24 +786,45 @@
     $("#locationContributorsHeading")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 
-  function renderLocationContributors(report) {
+  function renderLocationContributors(report, memberReport) {
     const cell = report.cells.find((item) => item.key === state.locationFlowSelection && item.count);
     const target = $("#locationContributorRows"); target.replaceChildren();
-    if (!cell) {
-      $("#locationContributorScope").textContent = "Select a flow to reveal its exact underlying symbols.";
-      const row = element("tr", ""); const data = element("td", "location-contributors-empty", "No flow selected."); data.colSpan = 5; row.append(data); target.append(row); return;
+    const levelLabels = { sector: "Sector Symbols", industry: "Industry Symbols", asset_class: "Asset Class Symbols" };
+    $("#locationContributorsHeading").textContent = levelLabels[state.locationTaxonomyLevel] || "Taxonomy Symbols";
+    const totals = memberReport.totals;
+    $("#locationFilterAllCount").textContent = String(totals.all);
+    $("#locationFilterLowerCount").textContent = String(totals.lower);
+    $("#locationFilterUnchangedCount").textContent = String(totals.unchanged);
+    $("#locationFilterHigherCount").textContent = String(totals.higher);
+    document.querySelectorAll("[data-location-symbol-filter]").forEach((button) => {
+      button.setAttribute("aria-pressed", String(button.dataset.locationSymbolFilter === state.locationSymbolFilter));
+      button.disabled = Boolean(cell);
+    });
+    $("#locationClearFlow").hidden = !cell;
+    let members;
+    if (cell) {
+      members = cell.members;
+      $("#locationContributorScope").textContent = `Selected flow: ${cell.fromLabel} → ${cell.toLabel} · ${cell.count} of ${totals.comparable} comparable · ${totals.all} total symbols`;
+    } else {
+      members = state.locationSymbolFilter === "all" ? memberReport.members : memberReport.members.filter((item) => item.direction === state.locationSymbolFilter);
+      const filterLabels = { all: "All symbols", lower: "Moving lower", unchanged: "Unchanged", higher: "Moving higher" };
+      $("#locationContributorScope").textContent = `${filterLabels[state.locationSymbolFilter]} · ${members.length} shown · ${totals.comparable} comparable · ${totals.all} total symbols`;
     }
-    const members = cell.members;
-    $("#locationContributorScope").textContent = `${cell.fromLabel} → ${cell.toLabel} · ${cell.count} symbol${cell.count === 1 ? "" : "s"}`;
+    if (!members.length) {
+      const row = element("tr", ""); const data = element("td", "location-contributors-empty", state.locationTaxonomySelection ? "No symbols match this filter." : "Select a taxonomy to inspect its symbols."); data.colSpan = 6; row.append(data); target.append(row); return;
+    }
     members.forEach((item) => {
       const row = element("tr", "");
       const symbol = element("td", "", item.symbol); symbol.dataset.label = "Symbol";
       const previous = element("td", "", item.start_location_label || "—"); previous.dataset.label = "Previous";
       const current = element("td", "", item.current_location_label || "—"); current.dataset.label = "Current";
+      const movementLabels = { lower: "Lower", unchanged: "Same", higher: "Higher", unavailable: "Unavailable" };
+      const movement = element("td", `location-movement ${item.direction || "unavailable"}`, movementLabels[item.direction] || "Unavailable"); movement.dataset.label = "Movement";
       const freshness = element("td", ""); freshness.dataset.label = "Observation freshness";
-      freshness.append(element("strong", item.has_new_observation ? "is-fresh" : "", item.has_new_observation ? `New observation inside ${state.locationWindow}` : `No new observation inside ${state.locationWindow}`), element("small", "", `${exactTime(item.comparison_observed_at)} → ${exactTime(item.current_observed_at)}`));
+      if (item.comparable) freshness.append(element("strong", item.has_new_observation ? "is-fresh" : "", item.has_new_observation ? `New observation inside ${state.locationWindow}` : `No new observation inside ${state.locationWindow}`), element("small", "", `${exactTime(item.comparison_observed_at)} → ${exactTime(item.current_observed_at)}`));
+      else freshness.append(element("strong", "", "Comparison unavailable"), element("small", "", item.current_observed_at ? `Current · ${exactTime(item.current_observed_at)}` : "No canonical observation"));
       const open = element("td", ""); open.append(symbolLink(item.symbol, "Open details"));
-      row.append(symbol, previous, current, freshness, open); target.append(row);
+      row.append(symbol, previous, current, movement, freshness, open); target.append(row);
     });
   }
   async function loadLocationHistory(window) {
@@ -1054,10 +1071,20 @@
     renderLocationDistribution();
   }));
   $("#locationTaxonomyLevel")?.addEventListener("change", (event) => {
-    state.locationTaxonomyLevel = event.target.value; state.locationTaxonomySelection = null; state.locationFlowSelection = null; renderLocationDistribution();
+    state.locationTaxonomyLevel = event.target.value; state.locationTaxonomySelection = null; state.locationFlowSelection = null; state.locationSymbolFilter = "all"; renderLocationDistribution();
   });
   $("#locationTaxonomySort")?.addEventListener("change", (event) => {
     state.locationTaxonomySort = event.target.value; renderLocationDistribution();
+  });
+  document.querySelectorAll("[data-location-symbol-filter]").forEach((button) => button.addEventListener("click", () => {
+    if (state.locationFlowSelection) return;
+    state.locationSymbolFilter = button.dataset.locationSymbolFilter;
+    renderLocationDistribution();
+  }));
+  $("#locationClearFlow")?.addEventListener("click", () => {
+    state.locationFlowSelection = null;
+    state.locationSymbolFilter = "all";
+    renderLocationDistribution();
   });
   $("#locationFlowCanvas")?.addEventListener("mousemove", (event) => {
     const canvas = event.currentTarget; const bounds = canvas.getBoundingClientRect();

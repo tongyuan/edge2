@@ -8,6 +8,7 @@ const {
   directionalTaxonomyDrilldown,
   deriveLocationFlowDetails,
   deriveLocationTaxonomyFlow,
+  deriveLocationTaxonomyMembers,
   deriveLocationTaxonomyOverview,
   deriveLocationTransitionHeatmap,
   derivePeerLocation,
@@ -547,7 +548,26 @@ assert.deepEqual(alphabeticalTie.groups.map((group) => group.name), ["Alpha", "B
 const technologyFlow = deriveLocationTaxonomyFlow(breadthHistory, taxonomySymbols, "sector", "Technology");
 assert.deepEqual(technologyFlow.totals, { higher: 2, lower: 1, unchanged: 0, comparable: 3 }, "selected taxonomy flow reconciles its exact symbols");
 assert.deepEqual(new Set(technologyFlow.cells.flatMap((cell) => cell.members).map((member) => member.symbol)), new Set(["UP_CONFIRMED", "UP_NEUTRAL", "DOWN_CONFIRMED"]));
+assert.ok(technologyFlow.cells.flatMap((cell) => cell.members).every((member) => member.comparable), "flow contributors retain comparable freshness semantics in the detail table");
 assert.equal(technologyFlow.reconciles, true, "taxonomy flow stays internally reconciled without recomputing canonical direction");
+const technologyMembers = deriveLocationTaxonomyMembers(breadthHistory, [
+  ...taxonomySymbols,
+  { symbol: "TECH_NO_HISTORY", asset_class: "EQUITY", sector: "Technology", industry: "Software", current_price_location: "deep_discount", latest_observed_at: "2026-10-08T11:00:00Z" },
+], "sector", "Technology");
+assert.deepEqual(technologyMembers.totals, { all: 4, higher: 2, lower: 1, unchanged: 0, comparable: 3, unavailable: 1 }, "taxonomy detail distinguishes total and comparable membership");
+assert.deepEqual(technologyMembers.members.map((member) => member.symbol), ["DOWN_CONFIRMED", "TECH_NO_HISTORY", "UP_CONFIRMED", "UP_NEUTRAL"], "all canonical taxonomy members are visible in stable symbol order");
+assert.deepEqual(technologyMembers.members.find((member) => member.symbol === "TECH_NO_HISTORY"), {
+  symbol: "TECH_NO_HISTORY",
+  start_location: null,
+  start_location_label: null,
+  current_location: "deep_discount",
+  current_location_label: "Deep Discount",
+  direction: "unavailable",
+  comparison_observed_at: null,
+  current_observed_at: "2026-10-08T11:00:00Z",
+  has_new_observation: false,
+  comparable: false,
+}, "non-comparable members retain current canonical evidence without fabricating history");
 const unknownTaxonomyDirection = deriveLocationTaxonomyOverview({
   symbol_movements: [{ symbol: "UP_CONFIRMED", start_location: "deep_discount", current_location: "shallow_discount", direction: "unknown" }],
 }, taxonomySymbols, { level: "sector", mode: "all", sort: "name" });

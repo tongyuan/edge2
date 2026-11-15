@@ -120,6 +120,7 @@
         direction,
         magnitude: magnitude !== null && Number.isFinite(magnitude) ? magnitude : null,
         has_new_observation: movement.has_new_observation === true,
+        comparable: true,
       };
       cell.count += 1;
       cell.members.push(member);
@@ -238,6 +239,59 @@
         comparable_symbols: filteredMovements.length,
       },
     });
+  }
+
+  function deriveLocationTaxonomyMembers(history = {}, symbols = [], level = "sector", taxonomy = null) {
+    const labels = new Map(LOCATION_TRANSITION_BUCKETS.map((bucket) => [bucket.key, bucket.label]));
+    const movements = new Map();
+    (history.symbol_movements || []).forEach((movement) => {
+      const symbol = String(movement.symbol || "").trim();
+      if (symbol && !movements.has(symbol)) movements.set(symbol, movement);
+    });
+    const members = (symbols || []).filter((item) => (
+      locationTaxonomyName(item, level) === taxonomy && String(item.symbol || "").trim()
+    )).map((item) => {
+      const symbol = String(item.symbol).trim();
+      const movement = movements.get(symbol);
+      const comparable = Boolean(
+        movement
+        && labels.has(movement.start_location)
+        && labels.has(movement.current_location)
+        && ["higher", "lower", "unchanged"].includes(movement.direction)
+      );
+      return {
+        symbol,
+        start_location: comparable ? movement.start_location : null,
+        start_location_label: comparable ? movement.start_location_label || labels.get(movement.start_location) : null,
+        current_location: comparable ? movement.current_location : item.current_price_location || null,
+        current_location_label: comparable
+          ? movement.current_location_label || labels.get(movement.current_location)
+          : labels.get(item.current_price_location) || null,
+        direction: comparable ? movement.direction : "unavailable",
+        comparison_observed_at: comparable ? movement.comparison_observed_at || null : null,
+        current_observed_at: comparable ? movement.current_observed_at || null : item.latest_observed_at || null,
+        has_new_observation: comparable && movement.has_new_observation === true,
+        comparable,
+      };
+    }).sort(compareSymbol);
+    const categories = {
+      lower: members.filter((item) => item.direction === "lower"),
+      unchanged: members.filter((item) => item.direction === "unchanged"),
+      higher: members.filter((item) => item.direction === "higher"),
+      unavailable: members.filter((item) => item.direction === "unavailable"),
+    };
+    return {
+      members,
+      categories,
+      totals: {
+        all: members.length,
+        comparable: members.length - categories.unavailable.length,
+        lower: categories.lower.length,
+        unchanged: categories.unchanged.length,
+        higher: categories.higher.length,
+        unavailable: categories.unavailable.length,
+      },
+    };
   }
 
   function eventDirection(event) {
@@ -985,6 +1039,7 @@
     derivePeerLocationFlow,
     deriveLocationFlowDetails,
     deriveLocationTaxonomyFlow,
+    deriveLocationTaxonomyMembers,
     deriveLocationTaxonomyOverview,
     deriveLocationTransitionHeatmap,
     deriveAttention,

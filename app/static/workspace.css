@@ -226,9 +226,8 @@ input { padding: 0 11px; }
 @media (min-width: 821px) {
   .symbol-near-miss-heading p { padding-left: 18px; border-left: 1px solid var(--line); }
 }
-.symbol-history-link { display: inline-flex; align-items: center; min-height: 36px; border-radius: 999px; font-size: .813rem; font-weight: 700; }
 .symbol-history-scroll { overflow-x: auto; border-radius: 8px; }
-.symbol-history-scroll:focus-visible, .symbol-history-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.symbol-history-scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .symbol-history-table { width: 100%; border-collapse: collapse; text-align: center; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .symbol-history-table th { padding: 11px 12px; background: var(--surface-2); color: #c4d0df; font-size: .72rem; text-transform: uppercase; }
 .symbol-history-table td { padding: 9px 12px; border-bottom: 1px solid var(--line-soft); font-size: .875rem; }
@@ -321,6 +320,13 @@ input { padding: 0 11px; }
 .location-flow-hit-targets button { pointer-events: auto; }
 .location-flow-tooltip { position: absolute; z-index: 3; max-width: 250px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px; background: #17202b; box-shadow: 0 8px 24px rgba(0,0,0,.4); color: var(--text); font-size: .64rem; pointer-events: none; }
 .location-flow-note { margin: 10px 0 0; }
+.location-contributors-heading { align-items: center; }
+.location-symbol-filters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 0 0 12px; }
+.location-symbol-filters button { min-height: 38px; padding: 7px 10px; border: 1px solid var(--line-soft); border-radius: 9px; background: transparent; color: var(--muted); cursor: pointer; font-size: .68rem; font-weight: 700; }
+.location-symbol-filters button span { margin-left: 5px; color: #cbd4df; font-variant-numeric: tabular-nums; }
+.location-symbol-filters button[aria-pressed="true"] { border-color: #526172; background: #252d37; color: var(--text); }
+.location-symbol-filters button:disabled { cursor: not-allowed; opacity: .5; }
+.location-symbol-filters button:focus-visible, #locationClearFlow:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .location-contributors-table-wrap { max-width: 100%; overflow-x: auto; border: 1px solid var(--line-soft); border-radius: 10px; }
 .location-contributors-table { width: 100%; border-collapse: collapse; font-size: .68rem; }
 .location-contributors-table th, .location-contributors-table td { padding: 11px 12px; border-bottom: 1px solid var(--line-soft); text-align: left; vertical-align: middle; }
@@ -332,6 +338,11 @@ input { padding: 0 11px; }
 .location-contributors-table td strong { color: #c4cdd8; font-size: .64rem; }
 .location-contributors-table td strong.is-fresh { color: var(--accent); }
 .location-contributors-table td small { margin-top: 4px; color: var(--muted); font-size: .59rem; }
+.location-movement { font-weight: 750; }
+.location-movement.lower { color: #ff7f88; }
+.location-movement.unchanged { color: #bac3ce; }
+.location-movement.higher { color: #54e4ae; }
+.location-movement.unavailable { color: var(--muted); }
 .location-contributors-table a { color: var(--accent); font-weight: 750; white-space: nowrap; }
 .location-contributors-empty { padding: 24px !important; color: var(--muted) !important; text-align: center !important; font-weight: 400 !important; }
 .workspace-dialog { width: min(680px, calc(100vw - 28px)); max-height: calc(100vh - 40px); padding: 0; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--text); box-shadow: 0 32px 90px rgba(0,0,0,.62); }
@@ -529,6 +540,8 @@ input { padding: 0 11px; }
   .location-segmented { grid-column: auto; }
   .location-page-header .location-window-selector { width: 100%; }
   .location-section-heading { align-items: flex-start; }
+  .location-contributors-heading { align-items: stretch; flex-direction: column; }
+  .location-symbol-filters { grid-template-columns: 1fr 1fr; }
   .location-taxonomy-card { min-height: 104px; }
   .location-contributors-table-wrap { border: 0; overflow: visible; }
   .location-contributors-table, .location-contributors-table tbody, .location-contributors-table tr, .location-contributors-table td { display: block; width: 100%; }
