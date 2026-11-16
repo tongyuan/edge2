@@ -645,11 +645,6 @@
 
   function renderNamedGroup(payload) {
     const workspace = node("section", "selected-group-workspace"); workspace.id = "selectedGroupWorkspace";
-    const header = node("header", "selected-group-header");
-    const back = node("button", "back-button", "← Back to Groups"); back.type = "button"; back.addEventListener("click", () => { updateUrl({ group: "all", symbol: null }); state.detail = null; render(); globalObject.scrollTo({ top: 0, behavior: "smooth" }); });
-    const identity = node("div", "selected-group-identity"); identity.append(node("p", "", "GROUP WORKSPACE"), node("h2", "", payload.group.name), node("span", "", `${payload.group.member_count} members · Candidate research`));
-    const edit = node("button", "quiet-button", "Edit Group"); edit.type = "button"; edit.addEventListener("click", () => openEditor(selectedGroup()));
-    header.append(back, identity, edit); workspace.append(header);
     const opportunity = node("section", "opportunity-intelligence"); opportunity.id = "groupOpportunityIntelligence"; opportunity.setAttribute("aria-label", `${payload.group.name} Opportunity Intelligence`); opportunity.append(node("div", "opportunity-loading", "Loading opportunity candidates…")); workspace.append(opportunity);
 
     return workspace;
@@ -831,9 +826,9 @@
     if (view === "overview") renderActivitySummary(); else $("#groupActivitySummary").hidden = true;
     const toolbar = $(".radar-toolbar"); if (toolbar) toolbar.hidden = view !== "overview";
     const details = $("#groupEvidenceDetails"); if (details) details.hidden = view !== "overview";
-    $("#groupEvidenceTitle").textContent = view === "comparison" ? "Opportunity Comparison" : view === "symbol" ? "Opportunity Intelligence" : view === "group" ? "Group Workspace" : "Group Radar";
-    $("#groupEvidenceScope").textContent = view === "comparison" ? "Shared chronology · Independent price scales" : view === "symbol" ? "Time · Price · Structural context" : view === "group" ? "Candidate symbols · Opportunity research" : "Opportunity discovery · Event evolution";
-    $("#groupEvidenceGroupCount").textContent = `Groups (${state.overview?.scope_totals?.group_count || 0})`; $("#groupEvidenceAsOf").textContent = exactTime((state.detail || state.overview)?.window?.as_of); $("#groupEvidenceEdit").hidden = true;
+    $("#groupEvidenceTitle").textContent = view === "comparison" ? "Opportunity Comparison" : view === "symbol" ? "Opportunity Intelligence" : view === "group" ? state.detail.group.name : "Group Radar";
+    $("#groupEvidenceScope").textContent = view === "comparison" ? "Shared chronology · Independent price scales" : view === "symbol" ? "Time · Price · Structural context" : view === "group" ? `${state.detail.group.member_count} members · Group Workspace` : "Opportunity discovery · Event evolution";
+    $("#groupEvidenceGroupCount").textContent = `Groups (${state.overview?.scope_totals?.group_count || 0})`; $("#groupEvidenceAsOf").textContent = exactTime((state.detail || state.overview)?.window?.as_of); $("#groupEvidenceEdit").hidden = view !== "group"; $("#groupEvidenceBack").hidden = view !== "group";
     globalObject.document.querySelectorAll("[data-group-window]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.groupWindow === state.scope.window)));
     const live = $("#groupEvidenceLive"); live.className = "group-evidence-live"; live.hidden = false; live.textContent = state.detail?.status === "partial" || state.overview?.status === "partial" ? "Group data loaded with one or more unavailable dimensions." : "Group data loaded."; if (view === "overview") renderDetails(); updateManageMenuState();
   }
@@ -916,7 +911,7 @@
   function bindEvents() {
     globalObject.document.querySelectorAll("[data-group-window]").forEach((button) => button.addEventListener("click", () => { updateUrl({ window: button.dataset.groupWindow }); state.recentLoaded = false; load(); }));
     $("#groupEvidenceSort").addEventListener("change", (event) => { state.sort = event.target.value; render(); });
-    $("#groupEvidenceNew").addEventListener("click", () => openEditor()); $("#groupEvidenceEdit").addEventListener("click", () => openEditor(selectedGroup()));
+    $("#groupEvidenceNew").addEventListener("click", () => openEditor()); $("#groupEvidenceEdit").addEventListener("click", () => openEditor(selectedGroup())); $("#groupEvidenceBack").addEventListener("click", () => { updateUrl({ group: "all", symbol: null }); state.detail = null; render(); globalObject.scrollTo({ top: 0, behavior: "smooth" }); });
     $("#groupEvidenceManage").addEventListener("click", () => { const menu = $("#groupEvidenceManageMenu"); menu.hidden = !menu.hidden; $("#groupEvidenceManage").setAttribute("aria-expanded", String(!menu.hidden)); });
     $("#groupEvidenceManageMenu").addEventListener("click", (event) => { const action = event.target.closest("[data-manage-action]")?.dataset.manageAction; if (!action) return; if (action === "edit") openEditor(selectedGroup()); else if (action === "duplicate") duplicateGroup().catch((error) => setError(error.message)); else if (action === "delete") deleteGroup().catch((error) => setError(error.message)); else if (action === "all") openManageAll(); });
     globalObject.document.addEventListener("click", (event) => { if (!event.target.closest(".manage-menu-wrap")) closeMenu(); });

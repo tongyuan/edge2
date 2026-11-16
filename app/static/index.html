@@ -9,9 +9,9 @@
     <link rel="manifest" href="/manifest.webmanifest?v=edge-intel-radar-20261110" />
     <link rel="icon" href="/static/edge-intel-radar-icon-192.png" type="image/png" />
     <link rel="apple-touch-icon" href="/static/edge-intel-radar-icon-180.png" />
-    <link rel="stylesheet" href="/static/workspace.css?v=migration-path-correction-20261115" />
-    <link rel="stylesheet" href="/static/opportunity-map.css?v=structural-review-20261116" />
-    <link rel="stylesheet" href="/static/dock-workspace.css?v=group-evolution-inbox-20261116" />
+    <link rel="stylesheet" href="/static/workspace.css?v=group-workspace-20261116" />
+    <link rel="stylesheet" href="/static/opportunity-map.css?v=group-workspace-20261116" />
+    <link rel="stylesheet" href="/static/dock-workspace.css?v=group-workspace-20261116" />
   </head>
   <body>
     <div class="workspace-shell">
@@ -34,11 +34,11 @@
 
         <section class="route-panel group-evidence-route" data-route-panel="watchlists" hidden>
           <header class="radar-page-header">
-            <div class="radar-title-block"><p>GROUP RADAR</p><h1 id="groupEvidenceTitle" tabindex="-1">Group Radar</h1><span id="groupEvidenceScope">Opportunity discovery · Event evolution</span></div>
-            <div class="radar-header-actions"><div class="location-window-selector" role="group" aria-label="Group activity window"><button type="button" data-group-window="24H" aria-pressed="true">24H</button><button type="button" data-group-window="5D" aria-pressed="false">5D</button><button type="button" data-group-window="20D" aria-pressed="false">20D</button></div><div class="radar-as-of"><span>AS OF</span><strong id="groupEvidenceAsOf">—</strong></div></div>
+            <div class="radar-page-identity"><button class="back-button radar-group-back" id="groupEvidenceBack" type="button" hidden>← Back to Groups</button><div class="radar-title-block"><p>GROUP RADAR</p><h1 id="groupEvidenceTitle" tabindex="-1">Group Radar</h1><span id="groupEvidenceScope">Opportunity discovery · Event evolution</span></div></div>
+            <div class="radar-header-actions"><div class="location-window-selector" role="group" aria-label="Group activity window"><button type="button" data-group-window="24H" aria-pressed="true">24H</button><button type="button" data-group-window="5D" aria-pressed="false">5D</button><button type="button" data-group-window="20D" aria-pressed="false">20D</button></div><button class="quiet-button radar-group-edit" id="groupEvidenceEdit" type="button" hidden>Edit Group</button><div class="radar-as-of"><span>AS OF</span><strong id="groupEvidenceAsOf">—</strong></div></div>
           </header>
           <section class="activity-summary" id="groupActivitySummary" aria-label="Group activity summary" hidden></section>
-          <div class="radar-toolbar"><div class="radar-toolbar-title"><strong id="groupEvidenceGroupCount">Groups</strong></div><label class="radar-sort">Sort:<select id="groupEvidenceSort"><option value="recent">Most Recent Activity</option><option value="name">Group Name A–Z</option></select></label><div class="radar-toolbar-actions"><button class="primary-button" id="groupEvidenceNew" type="button">+ New Group</button><div class="manage-menu-wrap"><button class="quiet-button" id="groupEvidenceManage" type="button" aria-haspopup="menu" aria-expanded="false">Manage Groups</button><div class="manage-menu" id="groupEvidenceManageMenu" role="menu" hidden><button type="button" role="menuitem" data-manage-action="edit">Edit Selected Group</button><button type="button" role="menuitem" data-manage-action="duplicate">Duplicate Group</button><button type="button" role="menuitem" data-manage-action="delete">Delete Group</button><button type="button" role="menuitem" data-manage-action="all">Manage All Groups</button></div></div><button class="quiet-button" id="groupEvidenceEdit" type="button" hidden>Edit Group</button></div></div>
+          <div class="radar-toolbar"><div class="radar-toolbar-title"><strong id="groupEvidenceGroupCount">Groups</strong></div><label class="radar-sort">Sort:<select id="groupEvidenceSort"><option value="recent">Most Recent Activity</option><option value="name">Group Name A–Z</option></select></label><div class="radar-toolbar-actions"><button class="primary-button" id="groupEvidenceNew" type="button">+ New Group</button><div class="manage-menu-wrap"><button class="quiet-button" id="groupEvidenceManage" type="button" aria-haspopup="menu" aria-expanded="false">Manage Groups</button><div class="manage-menu" id="groupEvidenceManageMenu" role="menu" hidden><button type="button" role="menuitem" data-manage-action="edit">Edit Selected Group</button><button type="button" role="menuitem" data-manage-action="duplicate">Duplicate Group</button><button type="button" role="menuitem" data-manage-action="delete">Delete Group</button><button type="button" role="menuitem" data-manage-action="all">Manage All Groups</button></div></div></div></div>
           <p class="group-evidence-live" id="groupEvidenceLive" role="status" aria-live="polite">Loading Group Radar…</p>
           <section class="group-evidence-meta" id="groupEvidenceMeta" aria-label="Evidence snapshot" hidden></section>
           <div id="groupEvidenceContent"></div>
@@ -80,7 +80,7 @@
               </header>
               <div class="symbol-history-scroll" tabindex="0" role="region" aria-labelledby="symbolNearMissTitle">
                 <table class="symbol-history-table">
-                  <thead><tr><th scope="col">#</th><th scope="col">Event</th><th scope="col">Candidate Range</th><th scope="col">Route</th><th scope="col">% Deviation</th><th scope="col">Deviation from 1.00%</th><th scope="col">Observed at (UTC)</th></tr></thead>
+                  <thead><tr><th scope="col">#</th><th scope="col">Event</th><th scope="col">Candidate Range</th><th scope="col">Route</th><th scope="col">% Deviation</th><th scope="col">Deviation from 1.00%</th><th scope="col">Observed at (UTC−4)</th></tr></thead>
                   <tbody id="symbolNearMissRows"></tbody>
                 </table>
               </div>
@@ -149,6 +149,6 @@
 
     <dialog class="workspace-dialog inbox-dialog" id="notificationInboxDialog" aria-labelledby="notificationInboxTitle"><section><header><div><p>DELIVERY HISTORY</p><h2 id="notificationInboxTitle">Notification Inbox</h2><span id="notificationInboxSummary">No unread notifications</span></div><div class="notification-inbox-header-actions"><button class="opportunity-dock-button dock-icon-button" id="notificationInboxDock" type="button" aria-label="Dock Inbox" title="Dock Inbox"></button><button class="icon-button" id="notificationInboxClose" type="button" aria-label="Close">×</button></div></header><p class="notification-inbox-empty" id="notificationInboxEmpty">No active notifications.</p><ul class="notification-inbox-list" id="notificationInboxList" aria-live="polite"></ul><footer><button class="quiet-button" type="button" id="notificationMarkAllRead" disabled>Mark all read</button><button class="danger-button" type="button" id="notificationClearInbox" disabled>Clear inbox</button></footer></section></dialog>
     <div class="notification-toast-host" id="notificationToastHost" aria-live="polite"></div>
-    <script src="/static/mrz-shell.js?v=structural-review-20261116" defer></script><script src="/static/operator-time.js?v=structural-review-20261116" defer></script><script src="/static/workspace-derivations.js?v=structural-review-20261116" defer></script><script src="/static/docking.js?v=structural-review-20261116" defer></script><script src="/static/opportunity-map.js?v=structural-review-20261116" defer></script><script src="/static/opportunity-comparison.js?v=structural-review-20261116" defer></script><script src="/static/group-evidence.js?v=structural-review-20261116" defer></script><script src="/static/notifications.js?v=structural-review-20261116" defer></script><script src="/static/migration-path.js?v=migration-path-correction-20261115" defer></script><script src="/static/workspace.js?v=structural-review-20261116" defer></script>
+    <script src="/static/mrz-shell.js?v=group-workspace-20261116" defer></script><script src="/static/operator-time.js?v=group-workspace-20261116" defer></script><script src="/static/workspace-derivations.js?v=group-workspace-20261116" defer></script><script src="/static/docking.js?v=group-workspace-20261116" defer></script><script src="/static/opportunity-map.js?v=group-workspace-20261116" defer></script><script src="/static/opportunity-comparison.js?v=group-workspace-20261116" defer></script><script src="/static/group-evidence.js?v=group-workspace-20261116" defer></script><script src="/static/notifications.js?v=group-workspace-20261116" defer></script><script src="/static/migration-path.js?v=group-workspace-20261116" defer></script><script src="/static/workspace.js?v=group-workspace-20261116" defer></script>
   </body>
 </html>

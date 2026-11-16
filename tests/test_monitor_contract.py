@@ -48,7 +48,7 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn('if (activation) activation.checked', WORKSPACE)
         self.assertIn('if (migration) migration.checked', WORKSPACE)
         self.assertIn('if (nearMiss) nearMiss.checked', WORKSPACE)
-        self.assertIn("structural-review-20261116", HTML)
+        self.assertIn("group-workspace-20261116", HTML)
 
     def test_notification_inbox_remains_durable_and_distinct(self) -> None:
         self.assertIn('id="notificationInboxButton"', HTML)
@@ -95,6 +95,8 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIn("a.time - b.time", MIGRATION_PATH)
         self.assertIn("previous.item.chainId !== point.item.chainId", MIGRATION_PATH)
         self.assertIn('id="symbolNearMissRows"', HTML)
+        self.assertIn("Observed at (UTC−4)", HTML)
+        self.assertIn("time.textContent = exactTime(value)", WORKSPACE)
         self.assertNotIn('id="detailLatestEvent"', HTML)
         self.assertNotIn('id="detailPressure"', HTML)
         self.assertNotIn('id="detailPressureEvidence"', HTML)

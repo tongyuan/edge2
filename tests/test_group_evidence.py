@@ -15,6 +15,7 @@ from app.domain import (
     StructuralLocation,
 )
 from app.group_evidence import (
+    _location_flow,
     build_all_groups_evidence,
     build_named_group_evidence,
 )
@@ -220,6 +221,35 @@ def mrz_activity_event(
 
 
 class GroupEvidenceTests(unittest.TestCase):
+    def test_location_flow_hides_unchanged_paths_but_counts_them(self) -> None:
+        activity = {
+            "records": [{
+                "symbol": "A",
+                "previous_location": "deep_discount",
+                "new_location": "shallow_discount",
+                "occurred_at": "2026-11-08T07:00:00Z",
+            }],
+            "coverage": {"members": [
+                {"symbol": "A", "status": "changed"},
+                {
+                    "symbol": "B",
+                    "status": "no_change",
+                    "comparison_location": "deep_discount",
+                    "latest_observed_at": "2026-11-08T06:00:00Z",
+                },
+            ]},
+        }
+        flow = _location_flow(["A", "B"], activity)
+        self.assertEqual(flow["summary"], {
+            "higher": 1,
+            "lower": 0,
+            "unchanged": 1,
+            "unavailable": 0,
+        })
+        self.assertEqual(len(flow["paths"]), 1)
+        self.assertEqual(flow["paths"][0]["symbols"], ["A"])
+        self.assertEqual(flow["paths"][0]["direction"], "higher")
+
     def test_five_bucket_history_and_current_distribution_reconcile(self) -> None:
         members = ["A", "B", "C", "D", "E"]
         prices = (("10", "90"), ("30", "70"), ("50", "50"), ("70", "30"), ("90", "10"))

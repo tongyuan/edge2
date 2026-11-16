@@ -378,11 +378,16 @@ def _location_flow(
             "start_location_label": LOCATION_LABELS[start],
             "current_location": current,
             "current_location_label": LOCATION_LABELS[current],
+            "direction": (
+                "higher"
+                if LOCATION_KEYS.index(current) > LOCATION_KEYS.index(start)
+                else "lower"
+            ),
             "symbol_count": len(symbols),
             "symbols": sorted(symbols),
         }
         for (start, current), symbols in paths.items()
-        if symbols
+        if symbols and start != current
     ]
     path_rows.sort(key=lambda row: (-row["symbol_count"], row["start_location"], row["current_location"]))
     if sum(summary.values()) != len(members):

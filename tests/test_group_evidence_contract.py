@@ -11,6 +11,7 @@ AGGREGATOR = (ROOT / "app/group_evidence.py").read_text(encoding="utf-8")
 HTML = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
 JS = (ROOT / "app/static/group-evidence.js").read_text(encoding="utf-8")
 OPPORTUNITY_JS = (ROOT / "app/static/opportunity-map.js").read_text(encoding="utf-8")
+OPPORTUNITY_CSS = (ROOT / "app/static/opportunity-map.css").read_text(encoding="utf-8")
 CSS = (ROOT / "app/static/workspace.css").read_text(encoding="utf-8")
 SHELL = (ROOT / "app/static/mrz-shell.js").read_text(encoding="utf-8")
 
@@ -31,6 +32,27 @@ class GroupEvidenceContractTests(unittest.TestCase):
         self.assertNotIn('Set STR', OPPORTUNITY_JS)
         self.assertNotIn('/primary-hypothesis', OPPORTUNITY_JS)
         self.assertIn('View Full Evidence', JS)
+
+    def test_group_workspace_is_simplified_and_event_activity_is_canonical(self) -> None:
+        group_renderer = OPPORTUNITY_JS.split("function renderGroup(target", 1)[1].split("async function renderSymbol", 1)[0]
+        self.assertNotIn('"Developing context"', group_renderer)
+        self.assertNotIn('"Structure established"', group_renderer)
+        self.assertIn('Event Activity', OPPORTUNITY_JS)
+        self.assertIn('Location Flow × Structural Transitions × Event Activity', OPPORTUNITY_JS)
+        self.assertIn('item.event_type === "MRZ_ACTIVATED"', OPPORTUNITY_JS)
+        self.assertIn('item.event_type === "MRZ_MIGRATED"', OPPORTUNITY_JS)
+        self.assertIn('near_miss_episode_count', OPPORTUNITY_JS)
+        self.assertIn('No structural transitions in the selected period.', OPPORTUNITY_JS)
+        self.assertIn('if ((transitions.contributors || []).length)', OPPORTUNITY_JS)
+        self.assertIn('No start-to-current location changes in this period.', OPPORTUNITY_JS)
+        self.assertIn('group-flow-inspector', OPPORTUNITY_JS)
+        self.assertIn('.group-event-activity', OPPORTUNITY_CSS)
+        self.assertIn('.group-event-metrics', OPPORTUNITY_CSS)
+        self.assertIn('.group-recent-events', OPPORTUNITY_CSS)
+        self.assertIn('`${state.detail.group.member_count} members · Group Workspace`', JS)
+        self.assertIn('id="groupEvidenceBack"', HTML)
+        self.assertIn('id="groupEvidenceEdit"', HTML)
+        self.assertNotIn('body.group-opportunity-active .workspace-header,', CSS)
 
     def test_only_two_read_endpoints_are_added(self) -> None:
         self.assertIn('@application.get("/api/group-evidence")', API)
@@ -84,8 +106,8 @@ class GroupEvidenceContractTests(unittest.TestCase):
         self.assertNotIn("renderWatchlists", render_all)
 
     def test_stage_a_assets_share_a_fresh_cache_version(self) -> None:
-        version = "structural-review-20261116"
-        self.assertIn('/static/workspace.css?v=migration-path-correction-20261115', HTML)
+        version = "group-workspace-20261116"
+        self.assertIn(f'/static/workspace.css?v={version}', HTML)
         self.assertIn(f'/static/group-evidence.js?v={version}', HTML)
         self.assertNotIn('#radarAlertsButton', JS)
         self.assertIn(f'/static/workspace.js?v={version}', HTML)
@@ -137,7 +159,7 @@ class GroupEvidenceContractTests(unittest.TestCase):
             "symbol-opportunity-intelligence",
         ):
             self.assertIn(required, JS + CSS)
-        self.assertIn("Candidate symbols · Opportunity research", JS)
+        self.assertIn("members · Group Workspace", JS)
         self.assertIn("Time · Price · Structural context", JS)
 
     def test_repository_snapshot_includes_near_miss_and_location_history_inputs(self) -> None:

@@ -517,9 +517,6 @@
     });
     container.append(element("p", "pressure-evidence-legend", "R = Reclaim · X = Rejection · ↑ above envelope · ↓ below envelope"));
   }
-  const symbolHistoryDate = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "UTC", day: "2-digit", month: "short", year: "numeric",
-  });
   let symbolDetailRequest;
 
   function symbolRange(lower, upper) {
@@ -531,7 +528,7 @@
     const date = value ? new Date(value) : null;
     if (date && Number.isFinite(date.getTime())) {
       time.dateTime = value;
-      time.textContent = `${symbolHistoryDate.format(date)} · ${date.toISOString().slice(11, 16)}`;
+      time.textContent = exactTime(value);
     }
     return time;
   }
