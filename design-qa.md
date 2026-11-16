@@ -1,24 +1,22 @@
-# Design QA — Group Workspace and Group Evolution
+# Design QA — MRZ Migration Directional Breakdown
 
 ## Reference
 
-- Source: `/var/folders/dm/ctz4b4_d2yq9jbskg25nx6xw0000gn/T/codex-clipboard-861bf9bb-2757-4aa4-a495-a2f9f673ab8f.png`
+- Source: `/var/folders/dm/ctz4b4_d2yq9jbskg25nx6xw0000gn/T/codex-clipboard-9eececac-1faa-4324-89ff-c0d6ef6f08ff.png`
 - Local preview: `http://127.0.0.1:8794/mrz/watchlists?group=1&window=20D`
 - Reviewed: 2026-11-16
 
 ## What was verified
 
-- Desktop viewport: 1672 × 941
-- Mobile viewport: 390 × 844
-- Group title, member count, time selector, Edit Group, and As Of share the group header.
-- Redundant group summary cards are absent from the Group Workspace.
-- Group Evolution contains IPDA Location Flow and Structural Transitions on the first row.
-- The zero-transition state is compact and does not render a candidate table.
-- Event Activity is full-width and contains canonical Near Miss, MRZ Activation, and MRZ Migration counts plus three recent events.
-- Symbol Opportunity Candidates remain present with their existing fields and actions.
-- Inbox remains available in the shared header.
-- The Near Miss history heading reads `Observed at (UTC−4)` and uses the shared fixed UTC−4 formatter.
-- No browser console errors were observed.
+- Desktop viewport: 1596 × 953; the migration total and Higher, Lower, and Unchanged controls fit within Event Activity without page overflow.
+- Mobile viewport: 390 × 844; the page remains within the viewport and both directional controls and drill-down remain operable.
+- Synthetic canonical QA data reconciles exactly: 2 migrations = 1 Higher + 1 Lower + 0 Unchanged + 0 Unknown.
+- Higher drill-down shows the contributing symbol, migration time, previous and successor ranges, both midpoints, direction, and canonical evidence action.
+- Lower drill-down shows the corresponding canonical ETHUSDT event with correct old and successor ranges.
+- Unique-symbol count is visible in the drill-down summary.
+- Unknown is hidden when zero and is covered by automated tests when evidence is missing or ambiguous.
+- Existing 20D filtering, recent events, and Symbol Opportunity Candidates remain intact.
+- No browser console errors or warnings were observed.
 
 ## Issues
 

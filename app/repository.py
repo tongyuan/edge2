@@ -3410,17 +3410,28 @@ class EdgeRepository:
                 cursor.execute(
                     """
                     SELECT
-                        event_key, sequence, symbol, occurred_at,
-                        trigger_event_id, previous_route_owner, route_owner,
-                        old_core_mrz_lower, old_core_mrz_upper,
-                        new_core_mrz_lower, new_core_mrz_upper,
-                        new_core_mrz_midpoint, structural_location
-                    FROM mrz_events
-                    WHERE event_type = 'MRZ_MIGRATED'
-                      AND symbol = ANY(%s)
-                      AND occurred_at > %s
-                      AND occurred_at <= %s
-                    ORDER BY occurred_at DESC, sequence DESC, event_key ASC
+                        migration.event_key, migration.sequence,
+                        migration.symbol, migration.occurred_at,
+                        migration.trigger_event_id,
+                        migration.previous_route_owner,
+                        migration.route_owner,
+                        migration.old_core_mrz_lower,
+                        migration.old_core_mrz_upper,
+                        migration.new_core_mrz_lower,
+                        migration.new_core_mrz_upper,
+                        migration.new_core_mrz_midpoint,
+                        migration.structural_location,
+                        trigger.observation_price_tick AS instrument_tick
+                    FROM mrz_events AS migration
+                    LEFT JOIN observations AS trigger
+                      ON trigger.event_id = migration.trigger_event_id
+                    WHERE migration.event_type = 'MRZ_MIGRATED'
+                      AND migration.symbol = ANY(%s)
+                      AND migration.occurred_at > %s
+                      AND migration.occurred_at <= %s
+                    ORDER BY migration.occurred_at DESC,
+                             migration.sequence DESC,
+                             migration.event_key ASC
                     """,
                     (symbols, comparison_at, as_of),
                 )

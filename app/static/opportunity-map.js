@@ -704,6 +704,45 @@
     table.append(head, body); wrap.append(table); target.append(wrap);
   }
 
+  function migrationDirectionBreakdown(activityRecords = [], migrationEvidence = {}) {
+    const evidenceByKey = new Map(
+      (migrationEvidence.events || []).map((item) => [String(item.event_key), item]),
+    );
+    const categories = { higher: [], lower: [], unchanged: [], unknown: [] };
+    activityRecords
+      .filter((item) => item.tracker === "mrz" && item.event_type === "MRZ_MIGRATED")
+      .forEach((record) => {
+        const key = String(record.source_event_id || record.id || "");
+        const evidence = evidenceByKey.get(key);
+        const canonicalDirection = evidence?.direction;
+        const direction = canonicalDirection === "higher" || canonicalDirection === "lower"
+          ? canonicalDirection
+          : canonicalDirection === "same_midpoint" ? "unchanged" : "unknown";
+        categories[direction].push({
+          ...record,
+          ...(evidence || {}),
+          direction,
+          canonical_direction: canonicalDirection || "unknown",
+          event_key: evidence?.event_key || record.source_event_id || record.id,
+        });
+      });
+    const counts = Object.fromEntries(
+      Object.entries(categories).map(([direction, events]) => [direction, events.length]),
+    );
+    const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
+    return {
+      total,
+      counts,
+      categories,
+      unique_symbols: new Set(
+        Object.values(categories).flat().map((item) => item.symbol),
+      ).size,
+      reconciled: total === activityRecords.filter(
+        (item) => item.tracker === "mrz" && item.event_type === "MRZ_MIGRATED",
+      ).length,
+    };
+  }
+
   function renderGroupEvolution(target, report, options) {
     const section = node("section", "group-evolution panel");
     const heading = node("header", "group-evolution-heading");
@@ -760,17 +799,59 @@
     const activity = report.activity || {}; const activityRecords = activity.records || [];
     const activationRecords = activityRecords.filter((item) => item.tracker === "mrz" && item.event_type === "MRZ_ACTIVATED");
     const migrationRecords = activityRecords.filter((item) => item.tracker === "mrz" && item.event_type === "MRZ_MIGRATED");
+    const migrationBreakdown = migrationDirectionBreakdown(
+      activityRecords,
+      report.directional?.mrz_migrations || {},
+    );
     const nearMissRecords = activityRecords.filter((item) => item.tracker === "near_miss");
     const eventActivity = node("section", "group-event-activity");
     const activityIntro = node("div", "group-event-intro"); activityIntro.append(node("h3", "", `Event Activity (${report.window?.key || "window"})`), node("p", "", "Key canonical structural events across group members.")); eventActivity.append(activityIntro);
     const activityMetrics = node("div", "group-event-metrics");
-    [["near", "Near Miss", activity.summary?.near_miss_episode_count || 0, "Canonical episodes in period"], ["activation", "MRZ Activation", activationRecords.length, "New canonical MRZ established"], ["migration", "MRZ Migration", migrationRecords.length, "Existing MRZ migrated"]].forEach(([tone, label, count, description]) => { const metric = node("article", tone); metric.append(node("span", "", label), node("strong", "", String(count)), node("small", "", description)); activityMetrics.append(metric); }); eventActivity.append(activityMetrics);
+    [["near", "Near Miss", activity.summary?.near_miss_episode_count || 0, "Canonical episodes in period"], ["activation", "MRZ Activation", activationRecords.length, "New canonical MRZ established"]].forEach(([tone, label, count, description]) => { const metric = node("article", tone); metric.append(node("span", "", label), node("strong", "", String(count)), node("small", "", description)); activityMetrics.append(metric); });
+    const migrationDetail = node("section", "migration-direction-detail"); migrationDetail.hidden = true; migrationDetail.id = `migrationDirectionDetail-${report.group?.id || "group"}`;
+    const migrationButtons = [];
+    const renderMigrationDetail = (direction) => {
+      const labels = { higher: "Higher", lower: "Lower", unchanged: "Unchanged", unknown: "Unknown" };
+      const events = migrationBreakdown.categories[direction] || [];
+      const uniqueSymbols = new Set(events.map((item) => item.symbol)).size;
+      const detailHeading = node("header", "migration-direction-detail-heading");
+      const headingCopy = node("div", ""); headingCopy.append(node("h3", "", `MRZ Migration — ${labels[direction]}`), node("p", "", `${events.length} ${events.length === 1 ? "event" : "events"} · ${uniqueSymbols} unique ${uniqueSymbols === 1 ? "symbol" : "symbols"}`));
+      const close = node("button", "migration-direction-close", "Close"); close.type = "button"; close.addEventListener("click", () => { migrationDetail.hidden = true; migrationButtons.forEach((button) => button.setAttribute("aria-expanded", "false")); });
+      detailHeading.append(headingCopy, close);
+      const wrap = node("div", "migration-direction-table-wrap");
+      const table = node("table", "migration-direction-table");
+      const head = node("thead", ""); head.innerHTML = "<tr><th>Symbol</th><th>Migration time</th><th>Previous MRZ</th><th>Successor MRZ</th><th>Previous midpoint</th><th>Successor midpoint</th><th>Direction</th><th>Evidence</th></tr>";
+      const body = node("tbody", "");
+      events.forEach((item) => {
+        const row = node("tr", "");
+        const evidence = node("a", "migration-evidence-link", "Open →"); evidence.href = `/mrz/events?symbol=${encodeURIComponent(item.symbol)}&event=${encodeURIComponent(item.event_key || item.source_event_id || item.id)}`;
+        row.append(
+          node("td", "migration-symbol", item.symbol),
+          node("td", "", exactTime(item.occurred_at)),
+          node("td", "", item.old_lower != null && item.old_upper != null ? `${price(item.old_lower)}–${price(item.old_upper)}` : "Unavailable"),
+          node("td", "", item.new_lower != null && item.new_upper != null ? `${price(item.new_lower)}–${price(item.new_upper)}` : "Unavailable"),
+          node("td", "", item.old_midpoint != null ? price(item.old_midpoint) : "Unavailable"),
+          node("td", "", item.new_midpoint != null ? price(item.new_midpoint) : "Unavailable"),
+          node("td", `migration-direction ${direction}`, labels[direction]),
+        );
+        const linkCell = node("td", ""); linkCell.append(evidence); row.append(linkCell); body.append(row);
+      });
+      if (!events.length) { const row = node("tr", ""); const empty = node("td", "migration-direction-empty", `No ${labels[direction].toLowerCase()} migrations in this period.`); empty.colSpan = 8; row.append(empty); body.append(row); }
+      table.append(head, body); wrap.append(table); migrationDetail.replaceChildren(detailHeading, wrap); migrationDetail.hidden = false;
+      migrationButtons.forEach((button) => button.setAttribute("aria-expanded", String(button.dataset.direction === direction)));
+    };
+    const migrationMetric = node("article", "migration"); migrationMetric.append(node("span", "", "MRZ Migration"), node("strong", "", String(migrationRecords.length)), node("small", "", "Canonical migration events"));
+    const breakdown = node("div", "migration-direction-breakdown");
+    const directionItems = [["higher", "↑", "Higher"], ["lower", "↓", "Lower"], ["unchanged", "—", "Unchanged"]];
+    if (migrationBreakdown.counts.unknown) directionItems.push(["unknown", "?", "Unknown"]);
+    directionItems.forEach(([direction, icon, label]) => { const button = node("button", direction, ""); button.type = "button"; button.dataset.direction = direction; button.setAttribute("aria-controls", migrationDetail.id); button.setAttribute("aria-expanded", "false"); button.setAttribute("aria-label", `Inspect ${migrationBreakdown.counts[direction]} ${label.toLowerCase()} MRZ migrations`); button.append(node("i", "", icon), node("span", "", label), node("b", "", String(migrationBreakdown.counts[direction]))); button.addEventListener("click", () => renderMigrationDetail(direction)); migrationButtons.push(button); breakdown.append(button); });
+    migrationMetric.append(breakdown); activityMetrics.append(migrationMetric); eventActivity.append(activityMetrics);
     const recentPanel = node("div", "group-recent-events"); const recentHead = node("header", ""); recentHead.append(node("strong", "", "Recent Events")); const allEvents = node("a", "", "View All Events →"); allEvents.href = options.eventsUrl || "/mrz/events"; recentHead.append(allEvents); recentPanel.append(recentHead);
     const recentList = node("ul", "");
     const recentRecords = [...nearMissRecords, ...activationRecords, ...migrationRecords].sort((left, right) => parseTime(right.occurred_at) - parseTime(left.occurred_at)).slice(0, 3);
     const eventLabel = (item) => item.event_type === "MRZ_ACTIVATED" ? "MRZ Activation" : item.event_type === "MRZ_MIGRATED" ? "MRZ Migration" : item.event_type === "NEAR_MISS_EPISODE_ENDED" ? "Near Miss Ended" : "Near Miss";
     recentRecords.forEach((item) => { const row = node("li", ""); const identity = node("span", "group-recent-event-identity"); identity.append(node("b", "", item.symbol), node("em", item.tracker === "near_miss" ? "near" : item.event_type === "MRZ_ACTIVATED" ? "activation" : "migration", eventLabel(item))); const open = node("a", "", "Open →"); open.href = item.tracker === "near_miss" ? `/mrz/symbols?symbol=${encodeURIComponent(item.symbol)}` : `/mrz/events?symbol=${encodeURIComponent(item.symbol)}&event=${encodeURIComponent(item.source_event_id || item.id)}`; row.append(identity, node("time", "", exactTime(item.occurred_at)), open); recentList.append(row); });
-    if (!recentRecords.length) recentList.append(node("li", "group-event-empty", "No Near Miss, activation or migration events in this period.")); recentPanel.append(recentList); eventActivity.append(recentPanel); section.append(eventActivity);
+    if (!recentRecords.length) recentList.append(node("li", "group-event-empty", "No Near Miss, activation or migration events in this period.")); recentPanel.append(recentList); eventActivity.append(recentPanel); section.append(eventActivity, migrationDetail);
 
     if ((transitions.contributors || []).length) {
       const tableWrap = node("div", "group-transition-table-wrap"); tableWrap.append(node("h3", "", "Contributing Symbols — Structural Transition Candidates"));
@@ -844,6 +925,7 @@
     renderCanonicalEvidenceLink,
     renderGroup,
     renderLegend,
+    migrationDirectionBreakdown,
     renderSymbol,
     timelineRows,
     timeBounds,

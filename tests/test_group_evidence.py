@@ -551,6 +551,46 @@ class GroupEvidenceTests(unittest.TestCase):
         self.assertEqual(migrations["summary"]["same_midpoint_events"], 1)
         self.assertEqual(migrations["summary"]["lower_events"], 0)
 
+    def test_migration_direction_breakdown_reconciles_unknown_and_repeat_events(self) -> None:
+        higher = migration("A", 1, "higher")
+        lower = migration("A", 2, "lower")
+        unchanged = migration("B", 3, "higher")
+        unchanged.update({
+            "old_core_mrz_lower": Decimal("99.001"),
+            "old_core_mrz_upper": Decimal("101.001"),
+            "new_core_mrz_lower": Decimal("99.004"),
+            "new_core_mrz_upper": Decimal("101.004"),
+            "new_core_mrz_midpoint": Decimal("100.004"),
+            "instrument_tick": Decimal("0.01"),
+        })
+        unknown = migration("C", 4, "higher")
+        unknown["old_core_mrz_lower"] = None
+        group_row = group(1, "Migration Geometry", ["A", "B", "C"])
+        payload = build_named_group_evidence(
+            inputs("20D", [group_row], migrations=[higher, lower, unchanged, unknown]),
+            group_row,
+        )
+        migrations = payload["directional"]["mrz_migrations"]
+        summary = migrations["summary"]
+        self.assertEqual(summary["event_count"], 4)
+        self.assertEqual(summary["higher_events"], 1)
+        self.assertEqual(summary["lower_events"], 1)
+        self.assertEqual(summary["same_midpoint_events"], 1)
+        self.assertEqual(summary["unknown_events"], 1)
+        self.assertEqual(summary["unique_contributors"], 3)
+        self.assertEqual(summary["repeated_contributors"], 1)
+        self.assertEqual(
+            sum(summary[key] for key in (
+                "higher_events", "lower_events",
+                "same_midpoint_events", "unknown_events",
+            )),
+            summary["event_count"],
+        )
+        events = {item["event_key"]: item for item in migrations["events"]}
+        self.assertEqual(events[unchanged["event_key"]]["direction"], "same_midpoint")
+        self.assertEqual(events[unknown["event_key"]]["direction"], "unknown")
+        self.assertIsNone(events[unknown["event_key"]]["old_midpoint"])
+
     def test_crypto_20d_fixture_reconciles_every_stage_a_dimension(self) -> None:
         fixture = FIXTURE["crypto_20d_repeat_migrations"]
         members = [f"C{index}" for index in range(7)]
@@ -685,10 +725,10 @@ class GroupEvidenceTests(unittest.TestCase):
                 self.assertEqual(item["direction"], canonical["direction"])
                 self.assertEqual(item["evidence"], canonical["evidence"])
 
-    def test_one_dimension_failure_retains_other_facts_without_false_zeroes(self) -> None:
+    def test_ambiguous_migration_geometry_is_unknown_without_losing_other_facts(self) -> None:
         group_row = group(1, "Partial", ["A"])
         broken_migration = migration("A", 1, "higher")
-        broken_migration["new_core_mrz_midpoint"] = "not-a-number"
+        broken_migration["new_core_mrz_lower"] = None
         request = inputs(
             "5D",
             [group_row],
@@ -700,13 +740,13 @@ class GroupEvidenceTests(unittest.TestCase):
             migrations=[broken_migration],
         )
         payload = build_named_group_evidence(request, group_row)
-        self.assertEqual(payload["status"], "partial")
+        self.assertEqual(payload["status"], "available")
         self.assertEqual(payload["structural"]["status"], "available")
         self.assertEqual(payload["directional"]["current_pressure"]["status"], "available")
-        self.assertEqual(payload["directional"]["mrz_migrations"], {
-            "status": "unavailable",
-            "reason": "migration_projection_failed",
-        })
+        migrations = payload["directional"]["mrz_migrations"]
+        self.assertEqual(migrations["status"], "available")
+        self.assertEqual(migrations["summary"]["event_count"], 1)
+        self.assertEqual(migrations["summary"]["unknown_events"], 1)
 
     def test_all_groups_deduplicates_canonical_events_across_contexts(self) -> None:
         fixture = FIXTURE["multi_group_duplicate_attribution"]

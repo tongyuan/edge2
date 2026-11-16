@@ -59,6 +59,25 @@ assert.ok(activationPosition - firstPosition > lastPosition - activationPosition
 assert.equal(map.axisPrice(224.512345, "AAPL", 30), "224.51");
 assert.equal(map.axisPrice(0.004321, "TOKENUSDT", 0.01), "0.004321");
 
+const migrationBreakdown = map.migrationDirectionBreakdown([
+  { id: "mrz:m1", tracker: "mrz", event_type: "MRZ_MIGRATED", source_event_id: "m1", symbol: "BTCUSDT", occurred_at: "2026-11-10T00:00:00Z" },
+  { id: "mrz:m2", tracker: "mrz", event_type: "MRZ_MIGRATED", source_event_id: "m2", symbol: "BTCUSDT", occurred_at: "2026-11-11T00:00:00Z" },
+  { id: "mrz:m3", tracker: "mrz", event_type: "MRZ_MIGRATED", source_event_id: "m3", symbol: "ETHUSDT", occurred_at: "2026-11-12T00:00:00Z" },
+  { id: "mrz:m4", tracker: "mrz", event_type: "MRZ_MIGRATED", source_event_id: "m4", symbol: "SOLUSDT", occurred_at: "2026-11-13T00:00:00Z" },
+], {
+  events: [
+    { event_key: "m1", symbol: "BTCUSDT", direction: "higher", old_lower: "99", old_upper: "101", new_lower: "109", new_upper: "111", old_midpoint: "100", new_midpoint: "110" },
+    { event_key: "m2", symbol: "BTCUSDT", direction: "lower", old_lower: "109", old_upper: "111", new_lower: "89", new_upper: "91", old_midpoint: "110", new_midpoint: "90" },
+    { event_key: "m3", symbol: "ETHUSDT", direction: "same_midpoint", old_lower: "99", old_upper: "101", new_lower: "99", new_upper: "101", old_midpoint: "100", new_midpoint: "100" },
+  ],
+});
+assert.equal(migrationBreakdown.total, 4);
+assert.deepEqual(migrationBreakdown.counts, { higher: 1, lower: 1, unchanged: 1, unknown: 1 });
+assert.equal(migrationBreakdown.unique_symbols, 3);
+assert.equal(migrationBreakdown.categories.higher[0].event_key, "m1");
+assert.equal(migrationBreakdown.categories.unknown[0].event_key, "m4");
+assert.equal(migrationBreakdown.reconciled, true);
+
 const duplicateIdentityDetail = {
   observations: [{
     canonical_event_id: "shared-event", source_tracker: "IPDA_ROUTE", event_type: "BTD_OBSERVATION",

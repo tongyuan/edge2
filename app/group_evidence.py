@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any
 
 from app.domain import ActiveMRZ, Observation
@@ -845,16 +845,45 @@ def _pressure_events(
     }, evidence_times)
 
 
-def _migration_direction(row: Mapping[str, Any]) -> str:
-    old_midpoint = (
-        Decimal(row["old_core_mrz_lower"]) + Decimal(row["old_core_mrz_upper"])
-    ) / Decimal("2")
-    new_midpoint = Decimal(row["new_core_mrz_midpoint"])
+def _migration_geometry(
+    row: Mapping[str, Any],
+) -> tuple[str, Decimal | None, Decimal | None]:
+    required = (
+        "old_core_mrz_lower",
+        "old_core_mrz_upper",
+        "new_core_mrz_lower",
+        "new_core_mrz_upper",
+    )
+    if any(row.get(field) is None for field in required):
+        return "unknown", None, None
+    try:
+        old_lower = Decimal(row["old_core_mrz_lower"])
+        old_upper = Decimal(row["old_core_mrz_upper"])
+        new_lower = Decimal(row["new_core_mrz_lower"])
+        new_upper = Decimal(row["new_core_mrz_upper"])
+        if old_upper < old_lower or new_upper < new_lower:
+            return "unknown", None, None
+        old_midpoint = (old_lower + old_upper) / Decimal("2")
+        new_midpoint = (new_lower + new_upper) / Decimal("2")
+        tick_value = row.get("instrument_tick")
+        if tick_value is not None:
+            tick = Decimal(tick_value)
+            if tick <= 0:
+                return "unknown", old_midpoint, new_midpoint
+            quantum = Decimal(1).scaleb(tick.as_tuple().exponent)
+            old_midpoint = old_midpoint.quantize(quantum, rounding=ROUND_HALF_UP)
+            new_midpoint = new_midpoint.quantize(quantum, rounding=ROUND_HALF_UP)
+    except (InvalidOperation, TypeError, ValueError):
+        return "unknown", None, None
     if new_midpoint > old_midpoint:
-        return "higher"
+        return "higher", old_midpoint, new_midpoint
     if new_midpoint < old_midpoint:
-        return "lower"
-    return "same_midpoint"
+        return "lower", old_midpoint, new_midpoint
+    return "same_midpoint", old_midpoint, new_midpoint
+
+
+def _migration_direction(row: Mapping[str, Any]) -> str:
+    return _migration_geometry(row)[0]
 
 
 def _migrations(
@@ -873,10 +902,7 @@ def _migrations(
     for row in ascending:
         symbol = str(row["symbol"])
         repeat_index[symbol] += 1
-        old_midpoint = (
-            Decimal(row["old_core_mrz_lower"]) + Decimal(row["old_core_mrz_upper"])
-        ) / Decimal("2")
-        direction = _migration_direction(row)
+        direction, old_midpoint, new_midpoint = _migration_geometry(row)
         occurred_at = row["occurred_at"]
         evidence_times.append(occurred_at)
         previous_route = str(row["previous_route_owner"])
@@ -895,7 +921,7 @@ def _migrations(
             "old_midpoint": _decimal_text(old_midpoint),
             "new_lower": _decimal_text(row["new_core_mrz_lower"]),
             "new_upper": _decimal_text(row["new_core_mrz_upper"]),
-            "new_midpoint": _decimal_text(row["new_core_mrz_midpoint"]),
+            "new_midpoint": _decimal_text(new_midpoint),
             "new_structural_location": str(row["structural_location"]),
             "trigger_observation_event_id": str(row["trigger_event_id"]),
             "repeat_index": repeat_index[symbol],
@@ -928,12 +954,19 @@ def _migrations(
         "unique_lower_contributors": sum(
             "lower" in item["directions"] for item in contributors
         ),
+        "unique_same_midpoint_contributors": sum(
+            "same_midpoint" in item["directions"] for item in contributors
+        ),
+        "unique_unknown_contributors": sum(
+            "unknown" in item["directions"] for item in contributors
+        ),
         "event_count": len(events),
         "higher_events": sum(event["direction"] == "higher" for event in events),
         "lower_events": sum(event["direction"] == "lower" for event in events),
         "same_midpoint_events": sum(
             event["direction"] == "same_midpoint" for event in events
         ),
+        "unknown_events": sum(event["direction"] == "unknown" for event in events),
         "repeated_contributors": sum(item["event_count"] > 1 for item in contributors),
         "both_direction_contributors": sum(len(item["directions"]) > 1 for item in contributors),
         "route_change_events": sum(event["route_changed"] for event in events),
@@ -947,6 +980,7 @@ def _migrations(
         or summary["higher_events"]
         + summary["lower_events"]
         + summary["same_midpoint_events"]
+        + summary["unknown_events"]
         != summary["event_count"]
     ):
         raise ValueError("migration evidence does not reconcile")

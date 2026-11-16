@@ -42,6 +42,15 @@ class GroupEvidenceContractTests(unittest.TestCase):
         self.assertIn('item.event_type === "MRZ_ACTIVATED"', OPPORTUNITY_JS)
         self.assertIn('item.event_type === "MRZ_MIGRATED"', OPPORTUNITY_JS)
         self.assertIn('near_miss_episode_count', OPPORTUNITY_JS)
+        self.assertIn('migrationDirectionBreakdown', OPPORTUNITY_JS)
+        self.assertIn('MRZ Migration —', OPPORTUNITY_JS)
+        self.assertIn('Previous midpoint', OPPORTUNITY_JS)
+        self.assertIn('unique_symbols', OPPORTUNITY_JS)
+        self.assertIn('unknown_events', AGGREGATOR)
+        self.assertIn('instrument_tick', REPOSITORY)
+        self.assertIn('migration.event_type = \'MRZ_MIGRATED\'', REPOSITORY)
+        self.assertIn('migration.occurred_at > %s', REPOSITORY)
+        self.assertIn('migration.occurred_at <= %s', REPOSITORY)
         self.assertIn('No structural transitions in the selected period.', OPPORTUNITY_JS)
         self.assertIn('if ((transitions.contributors || []).length)', OPPORTUNITY_JS)
         self.assertIn('No start-to-current location changes in this period.', OPPORTUNITY_JS)
@@ -106,7 +115,7 @@ class GroupEvidenceContractTests(unittest.TestCase):
         self.assertNotIn("renderWatchlists", render_all)
 
     def test_stage_a_assets_share_a_fresh_cache_version(self) -> None:
-        version = "group-workspace-20261116"
+        version = "migration-direction-20261116"
         self.assertIn(f'/static/workspace.css?v={version}', HTML)
         self.assertIn(f'/static/group-evidence.js?v={version}', HTML)
         self.assertNotIn('#radarAlertsButton', JS)
