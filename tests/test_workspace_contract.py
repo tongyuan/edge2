@@ -88,14 +88,25 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertEqual(HTML.count('id="alertPreferencesForm"'), 1)
         self.assertIn("ALERTS ON/OFF", HTML)
         mobile_rules = CSS.split("@media (max-width: 820px)", 1)[1]
-        self.assertIn(".header-alert-status { display: none; }", mobile_rules)
         self.assertNotIn(".workspace-navigation a { display: none; }", mobile_rules)
         self.assertIn('value="TRACKED_GROUPS_ONLY"', HTML)
         self.assertIn('value="ALL_SYMBOLS"', HTML)
-        for control in ("prefActivation", "prefMigration", "prefNearMiss"):
+        for control in (
+            "prefActivation", "prefMigration", "prefNearMiss",
+            "prefStructuralTransition",
+        ):
             self.assertIn(f'id="{control}"', HTML)
+        self.assertIn("Opposite-route MRZ activation requiring operator review.", HTML)
         self.assertNotIn('id="prefPressure"', HTML)
         self.assertIn("/api/notifications/preferences", JS)
+
+    def test_inbox_is_the_only_header_notification_entry_point(self) -> None:
+        self.assertNotIn('id="alertSettingsButton"', HTML)
+        self.assertNotIn('id="alertScopeLabel"', HTML)
+        self.assertNotIn('id="radarAlertsButton"', HTML)
+        self.assertIn('id="notificationInboxButton"', HTML)
+        self.assertIn('id="notificationUnreadBadge"', HTML)
+        self.assertIn('href: "/mrz/alert-settings"', SHELL)
 
     def test_shared_sidebar_is_collapsible_persistent_and_mobile_safe(self) -> None:
         self.assertIn('id="sidebarToggle"', SHELL)

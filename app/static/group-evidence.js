@@ -655,6 +655,37 @@
     return workspace;
   }
 
+  function openTransitionReview(item) {
+    $("#structuralTransitionDialog")?.remove();
+    const dialog = node("dialog", "structural-transition-dialog"); dialog.id = "structuralTransitionDialog";
+    const header = node("header", "transition-review-header");
+    const identity = node("div", ""); identity.append(node("p", "", "STRUCTURAL TRANSITION REVIEW"), node("h2", "", `${item.symbol} · ${item.previous_hypothesis} → ${item.candidate_hypothesis}`));
+    const close = node("button", "quiet-button", "Close"); close.type = "button"; close.addEventListener("click", () => dialog.close()); header.append(identity, close); dialog.append(header);
+    const evidence = node("dl", "transition-review-evidence");
+    [["Status", titleCase(item.status)], ["Triggering activation", item.activation_event_key], ["MRZ bounds", `${item.core_mrz_lower} – ${item.core_mrz_upper}`], ["Event time", exactTime(item.activation_event_time)], ["Known at", exactTime(item.known_at)], ["Structural location", titleCase(item.structural_location)]].forEach(([label, value]) => evidence.append(node("dt", "", label), node("dd", "", value))); dialog.append(evidence);
+    const links = node("div", "transition-review-links");
+    const canonical = node("a", "quiet-button", "Open Canonical Evidence"); canonical.href = item.canonical_evidence_ref; canonical.target = "_blank"; canonical.rel = "noopener";
+    const map = node("button", "quiet-button", "Open Opportunity Map"); map.type = "button"; map.addEventListener("click", () => { dialog.close(); openOpportunitySymbol(item.symbol); }); links.append(canonical, map); dialog.append(links);
+    if (item.status === "PENDING") {
+      const form = node("form", "transition-review-form"); form.addEventListener("submit", (event) => event.preventDefault());
+      const operator = node("input", ""); operator.type = "text"; operator.required = true; operator.maxLength = 120; operator.value = globalObject.localStorage?.getItem("edge2.operatorIdentity") || "operator"; operator.setAttribute("aria-label", "Operator identity");
+      const note = node("textarea", ""); note.maxLength = 1000; note.placeholder = "Review note (optional)"; note.setAttribute("aria-label", "Review note");
+      const error = node("p", "transition-review-error", ""); error.hidden = true;
+      const actions = node("div", "transition-review-actions");
+      const decide = async (action) => {
+        if (!operator.value.trim()) { error.textContent = "Operator identity is required."; error.hidden = false; return; }
+        actions.querySelectorAll("button").forEach((button) => { button.disabled = true; });
+        globalObject.localStorage?.setItem("edge2.operatorIdentity", operator.value.trim());
+        const response = await globalObject.fetch(`/api/structural-transitions/${item.id}/review`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, expected_version: item.version, operator_identity: operator.value.trim(), note: note.value.trim() || null }) });
+        if (!response.ok) { const payload = await response.json().catch(() => ({})); error.textContent = payload.detail === "stale_transition" || payload.detail === "primary_hypothesis_changed" ? "This decision is stale. Refresh and review the latest state." : "Unable to record this review."; error.hidden = false; actions.querySelectorAll("button").forEach((button) => { button.disabled = false; }); return; }
+        dialog.close(); await load();
+      };
+      [["Defer", "DEFER", "quiet-button"], ["Retain Primary", "RETAIN_PRIMARY", "quiet-button"], ["Promote Candidate", "PROMOTE", "primary-button"]].forEach(([label, action, className]) => { const button = node("button", className, label); button.type = "button"; button.addEventListener("click", () => decide(action)); actions.append(button); });
+      form.append(node("label", "", "Operator identity"), operator, node("label", "", "Review note"), note, error, actions); dialog.append(form);
+    }
+    dialog.addEventListener("close", () => dialog.remove()); globalObject.document.body.append(dialog); dialog.showModal();
+  }
+
   function renderSymbolWorkspace(payload, symbol) {
     const workspace = node("section", "selected-symbol-workspace"); workspace.id = "selectedSymbolWorkspace";
     const opportunity = node("section", "opportunity-intelligence symbol-opportunity-intelligence"); opportunity.id = "symbolOpportunityIntelligence"; opportunity.setAttribute("aria-label", `${symbol} Opportunity Intelligence`); opportunity.append(node("div", "opportunity-loading", `Loading ${symbol} opportunity history…`));
@@ -697,7 +728,20 @@
       const groupSummary = (state.opportunity?.groups || []).find((item) => String(item.id) === String(state.detail.group.id));
       if (view === "group") {
         const target = $("#groupOpportunityIntelligence");
-        if (target && groupSummary) globalObject.edgeOpportunityMap.renderGroup(target, { ...state.opportunity, groups: [groupSummary] }, { onSelectSymbol: openOpportunitySymbol, onCompare: openComparison, members: state.detail.group.members });
+        if (target && groupSummary) {
+          const latestEvidence = {};
+          (state.detail.activity?.records || []).forEach((item) => { if (!latestEvidence[item.symbol]) latestEvidence[item.symbol] = item; });
+          globalObject.edgeOpportunityMap.renderGroup(target, { ...state.opportunity, groups: [groupSummary] }, {
+            onSelectSymbol: openOpportunitySymbol,
+            onCompare: openComparison,
+            members: state.detail.group.members,
+            groupEvolution: state.detail,
+            primaryHypotheses: state.detail.structural_transitions?.primary_hypotheses || {},
+            latestEvidence,
+            onOpenTransition: openTransitionReview,
+            onRefresh: load,
+          });
+        }
         else if (target) target.replaceChildren(node("section", "panel opportunity-empty", "No canonical opportunity context is available for this group."));
       } else if (view === "symbol") {
         const target = $("#symbolOpportunityIntelligence");
@@ -818,7 +862,7 @@
     $("#groupEvidenceForm").addEventListener("submit", (event) => saveGroup(event).catch((error) => { $("#groupEvidenceFormError").textContent = error.message; $("#groupEvidenceFormError").hidden = false; })); $("#groupEvidenceDelete").addEventListener("click", () => deleteGroup().catch((error) => setError(error.message))); $("#groupEvidenceSymbolSearch").addEventListener("input", renderSymbolChoices);
     $("#groupEvidenceDialogClose").addEventListener("click", () => $("#groupEvidenceDialog").close()); $("#groupEvidenceCancel").addEventListener("click", () => $("#groupEvidenceDialog").close());
     $("#groupEvidenceManageClose").addEventListener("click", () => $("#groupEvidenceManageDialog").close()); $("#groupEvidenceManageDone").addEventListener("click", () => $("#groupEvidenceManageDialog").close()); $("#groupEvidenceManageNew").addEventListener("click", () => openEditor());
-    $("#recentTrackedEventsToggle").addEventListener("click", () => loadRecentEvents()); $("#radarAlertsButton").addEventListener("click", () => $("#notificationInboxButton")?.click());
+    $("#recentTrackedEventsToggle").addEventListener("click", () => loadRecentEvents());
     globalObject.addEventListener("popstate", () => { state.scope = derive.parseGroupEvidenceState(globalObject.location.search); state.activityDrawerOpen = new URLSearchParams(globalObject.location.search).get("activity") === "open"; state.recentLoaded = false; load(); });
     const badge = $("#notificationUnreadBadge"); if (badge) new MutationObserver(syncAlertBadge).observe(badge, { childList: true, attributes: true, subtree: true }); syncAlertBadge();
   }

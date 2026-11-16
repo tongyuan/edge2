@@ -307,6 +307,175 @@ def _location_activity(
     }
 
 
+def _location_flow(
+    members: Sequence[str],
+    location_activity: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Aggregate endpoint movement by unique symbol; never invent a threshold."""
+    changes: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+    for record in reversed(location_activity.get("records", ())):
+        changes[str(record["symbol"])].append(record)
+    paths: dict[tuple[str, str], list[str]] = defaultdict(list)
+    summary = {"higher": 0, "lower": 0, "unchanged": 0, "unavailable": 0}
+    member_details = []
+    coverage = {
+        str(row["symbol"]): row
+        for row in location_activity.get("coverage", {}).get("members", ())
+    }
+    for symbol in members:
+        records = changes.get(symbol, [])
+        if records:
+            start = str(records[0]["previous_location"])
+            current = str(records[-1]["new_location"])
+            direction = (
+                "higher" if LOCATION_KEYS.index(current) > LOCATION_KEYS.index(start)
+                else "lower" if LOCATION_KEYS.index(current) < LOCATION_KEYS.index(start)
+                else "unchanged"
+            )
+            paths[(start, current)].append(symbol)
+            summary[direction] += 1
+            member_details.append({
+                "symbol": symbol,
+                "start_location": start,
+                "start_location_label": LOCATION_LABELS[start],
+                "current_location": current,
+                "current_location_label": LOCATION_LABELS[current],
+                "direction": direction,
+                "transition_count": len(records),
+                "latest_event_at": records[-1]["occurred_at"],
+            })
+            continue
+        item = coverage.get(symbol, {})
+        if item.get("status") == "no_change":
+            location = str(item["comparison_location"])
+            paths[(location, location)].append(symbol)
+            summary["unchanged"] += 1
+            member_details.append({
+                "symbol": symbol,
+                "start_location": location,
+                "start_location_label": LOCATION_LABELS[location],
+                "current_location": location,
+                "current_location_label": LOCATION_LABELS[location],
+                "direction": "unchanged",
+                "transition_count": 0,
+                "latest_event_at": item.get("latest_observed_at"),
+            })
+        else:
+            summary["unavailable"] += 1
+            member_details.append({
+                "symbol": symbol,
+                "start_location": None,
+                "start_location_label": "Unavailable",
+                "current_location": None,
+                "current_location_label": "Unavailable",
+                "direction": "unavailable",
+                "transition_count": 0,
+                "latest_event_at": None,
+            })
+    path_rows = [
+        {
+            "start_location": start,
+            "start_location_label": LOCATION_LABELS[start],
+            "current_location": current,
+            "current_location_label": LOCATION_LABELS[current],
+            "symbol_count": len(symbols),
+            "symbols": sorted(symbols),
+        }
+        for (start, current), symbols in paths.items()
+        if symbols
+    ]
+    path_rows.sort(key=lambda row: (-row["symbol_count"], row["start_location"], row["current_location"]))
+    if sum(summary.values()) != len(members):
+        raise ValueError("location flow counts do not reconcile")
+    return {
+        "status": "available",
+        "summary": summary,
+        "paths": path_rows,
+        "members": member_details,
+        "membership_semantics": "current_membership_at_snapshot",
+    }
+
+
+def _structural_transition_report(
+    members: Sequence[str],
+    rows: Sequence[Mapping[str, Any]],
+    primary_rows: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    member_set = set(members)
+    primaries = {
+        str(row["symbol"]): {
+            "hypothesis": str(row["hypothesis"]),
+            "version": int(row["version"]),
+            "updated_at": _iso(row["updated_at"]),
+            "source": str(row["source"]),
+        }
+        for row in primary_rows if str(row["symbol"]) in member_set
+    }
+    events = []
+    by_symbol: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    status_counts = {"PENDING": 0, "PROMOTED": 0, "RETAINED_PRIMARY": 0}
+    direction_symbols: dict[str, set[str]] = {"STR_TO_BTD": set(), "BTD_TO_STR": set()}
+    for row in rows:
+        symbol = str(row["symbol"])
+        if symbol not in member_set:
+            continue
+        previous = str(row["previous_hypothesis"])
+        candidate = str(row["candidate_hypothesis"])
+        direction = f"{previous}_TO_{candidate}"
+        status = str(row["status"])
+        event = {
+            "id": int(row["id"]),
+            "activation_event_key": str(row["activation_event_key"]),
+            "trigger_event_id": str(row["trigger_event_id"]),
+            "symbol": symbol,
+            "previous_hypothesis": previous,
+            "candidate_hypothesis": candidate,
+            "primary_hypothesis_version": int(row["primary_hypothesis_version"]),
+            "direction": direction,
+            "activation_event_time": _iso(row["activation_event_time"]),
+            "known_at": _iso(row["known_at"]),
+            "core_mrz_lower": _decimal_text(row["core_mrz_lower"]),
+            "core_mrz_upper": _decimal_text(row["core_mrz_upper"]),
+            "structural_location": str(row["structural_location"]),
+            "status": status,
+            "version": int(row["version"]),
+            "reviewed_at": _iso(row.get("reviewed_at")),
+            "reviewed_by": row.get("reviewed_by"),
+            "review_note": row.get("review_note"),
+            "current_primary_hypothesis": primaries.get(symbol, {}).get("hypothesis"),
+            "canonical_evidence_ref": f"/mrz/events?symbol={symbol}&event={str(row['activation_event_key'])}",
+        }
+        events.append(event)
+        by_symbol[symbol].append(event)
+        status_counts[status] += 1
+        direction_symbols[direction].add(symbol)
+    events.sort(key=lambda item: (item["activation_event_time"], item["known_at"], item["id"]), reverse=True)
+    contributors = []
+    for symbol, symbol_events in sorted(by_symbol.items()):
+        latest = sorted(symbol_events, key=lambda item: (item["activation_event_time"], item["id"]), reverse=True)[0]
+        contributors.append({**latest, "event_count": len(symbol_events)})
+    if sum(status_counts.values()) != len(events):
+        raise ValueError("structural transition statuses do not reconcile")
+    return {
+        "status": "available",
+        "summary": {
+            "event_count": len(events),
+            "unique_symbol_count": len(by_symbol),
+            "str_to_btd_unique_symbols": len(direction_symbols["STR_TO_BTD"]),
+            "btd_to_str_unique_symbols": len(direction_symbols["BTD_TO_STR"]),
+            "pending": status_counts["PENDING"],
+            "promoted": status_counts["PROMOTED"],
+            "retained_primary": status_counts["RETAINED_PRIMARY"],
+            "unassigned_primary": len(member_set - set(primaries)),
+        },
+        "events": events,
+        "contributors": contributors,
+        "primary_hypotheses": primaries,
+        "detection_basis": "opposite_route_mrz_activation_against_persisted_primary_at_knowledge_time",
+        "membership_semantics": "current_membership_at_snapshot",
+    }
+
+
 def _near_misses(
     members: Sequence[str],
     rows: Sequence[Mapping[str, Any]],
@@ -816,11 +985,26 @@ def _activity(
     mrz_records: Sequence[Mapping[str, Any]],
     pressure: Mapping[str, Any],
     near_miss: Mapping[str, Any],
+    structural_transitions: Mapping[str, Any],
     comparison_at: datetime,
     as_of: datetime,
 ) -> dict[str, Any]:
     records = [dict(item) for item in location_activity.get("records", ())]
     records.extend(dict(item) for item in mrz_records)
+    for transition in structural_transitions.get("events", ()):
+        records.append({
+            "id": f"structural-transition:{transition['id']}",
+            "tracker": "structural_transition",
+            "event_type": "STRUCTURAL_TRANSITION",
+            "symbol": transition["symbol"],
+            "occurred_at": transition["activation_event_time"],
+            "recorded_at": transition["known_at"],
+            "previous_hypothesis": transition["previous_hypothesis"],
+            "candidate_hypothesis": transition["candidate_hypothesis"],
+            "review_status": transition["status"],
+            "source_event_id": transition["activation_event_key"],
+            "timestamp_semantics": "canonical_activation_event_and_knowledge_time",
+        })
     episode_keys: set[str] = set()
     for episode in near_miss.get("episodes", ()):
         if episode["started_in_window"]:
@@ -860,7 +1044,7 @@ def _activity(
     )
     by_tracker = {
         tracker: sum(item["tracker"] == tracker for item in records)
-        for tracker in ("ipda", "mrz", "near_miss", "ote")
+        for tracker in ("ipda", "mrz", "near_miss", "structural_transition", "ote")
     }
     location_records = [item for item in records if item["tracker"] == "ipda"]
     tracker_records = [item for item in records if item["tracker"] != "ipda"]
@@ -1053,6 +1237,41 @@ def build_named_group_evidence(
         }
 
     try:
+        location_flow = _location_flow(members, location_activity)
+    except Exception:
+        status = "partial"
+        location_flow = {
+            "status": "unavailable",
+            "summary": {"higher": 0, "lower": 0, "unchanged": 0, "unavailable": len(members)},
+            "paths": [],
+            "members": [],
+        }
+
+    try:
+        structural_transitions = _structural_transition_report(
+            members,
+            inputs.get("structural_transitions", ()),
+            inputs.get("primary_hypotheses", ()),
+        )
+        evidence_times.extend(
+            row["known_at"]
+            for row in inputs.get("structural_transitions", ())
+            if str(row["symbol"]) in member_set
+        )
+    except Exception:
+        status = "partial"
+        structural_transitions = {
+            "status": "unavailable",
+            "summary": {
+                "event_count": 0, "unique_symbol_count": 0,
+                "str_to_btd_unique_symbols": 0, "btd_to_str_unique_symbols": 0,
+                "pending": 0, "promoted": 0, "retained_primary": 0,
+                "unassigned_primary": len(members),
+            },
+            "events": [], "contributors": [], "primary_hypotheses": {},
+        }
+
+    try:
         near_miss = _near_misses(
             members,
             inputs.get("near_miss_episodes", ()),
@@ -1077,6 +1296,7 @@ def build_named_group_evidence(
             mrz_activity_records,
             cumulative,
             near_miss,
+            structural_transitions,
             comparison_at,
             inputs["as_of"],
         )
@@ -1119,6 +1339,7 @@ def build_named_group_evidence(
         item["symbol"]: item
         for item in latest_directional.get("latest_by_member", ())
     }
+    primary_by_symbol = structural_transitions.get("primary_hypotheses", {})
     latest_observation_by_symbol: dict[str, Observation] = {}
     for observation in inputs.get("location_observations", ()):
         if observation.symbol in member_set:
@@ -1140,6 +1361,7 @@ def build_named_group_evidence(
         last_pressure = latest_pressure_by_symbol.get(symbol, {})
         member_rows.append({
             "symbol": symbol,
+            "primary_hypothesis": primary_by_symbol.get(symbol),
             "route": (
                 active.route_owner.value
                 if active
@@ -1210,6 +1432,8 @@ def build_named_group_evidence(
         "coverage": {**structural_coverage, **pressure_coverage},
         "structural": structural,
         "location_history": location_history,
+        "location_flow": location_flow,
+        "structural_transitions": structural_transitions,
         "activity": activity,
         "near_miss": near_miss,
         "ote": dict(OTE_NOT_CONNECTED),

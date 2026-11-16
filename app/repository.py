@@ -120,6 +120,12 @@ class PromotionConflict(RuntimeError):
         self.code = code
 
 
+class StructuralTransitionConflict(RuntimeError):
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
 def location_migration_tendency_payload(
     rows: Sequence[Mapping[str, Any]],
 ) -> dict[str, dict[str, Any]]:
@@ -691,6 +697,15 @@ class EdgeRepository:
                     promoted_activation=promoted_activation,
                 )
                 self._replace_derived_state(cursor, replay)
+                self._record_structural_transitions(
+                    cursor,
+                    tuple(
+                        transition
+                        for transition in replay.transitions
+                        if transition.trigger_event_id == payload.event_id
+                        and transition.event_type.value == "MRZ_ACTIVATED"
+                    ),
+                )
                 self._sync_near_miss_episodes(
                     cursor,
                     symbol=payload.symbol,
@@ -719,6 +734,211 @@ class EdgeRepository:
                     replay=replay,
                     triggered_transitions=triggered,
                 )
+
+    @staticmethod
+    def _record_structural_transitions(
+        cursor: RealDictCursor,
+        transitions: Sequence[MRZTransition],
+    ) -> None:
+        """Persist opposite-route activations without changing canonical MRZ state."""
+        for transition in transitions:
+            cursor.execute(
+                """
+                SELECT hypothesis, version
+                FROM symbol_primary_hypotheses
+                WHERE symbol = %s
+                FOR SHARE
+                """,
+                (transition.symbol,),
+            )
+            primary = cursor.fetchone()
+            if primary is None:
+                continue
+            previous = str(primary["hypothesis"])
+            candidate = transition.route_owner.value
+            if previous == candidate:
+                continue
+            new = transition.new_mrz
+            cursor.execute(
+                """
+                INSERT INTO structural_transitions (
+                    activation_event_key, trigger_event_id, symbol,
+                    previous_hypothesis, candidate_hypothesis,
+                    primary_hypothesis_version,
+                    activation_event_time, core_mrz_lower, core_mrz_upper,
+                    structural_location
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (activation_event_key) DO NOTHING
+                """,
+                (
+                    transition.event_key,
+                    transition.trigger_event_id,
+                    transition.symbol,
+                    previous,
+                    candidate,
+                    int(primary["version"]),
+                    transition.occurred_at,
+                    new.core_mrz_lower,
+                    new.core_mrz_upper,
+                    new.structural_location.value,
+                ),
+            )
+
+    def initialize_primary_hypothesis(
+        self,
+        symbol: str,
+        hypothesis: str,
+        operator_identity: str,
+        note: str | None = None,
+    ) -> dict[str, Any]:
+        normalized = normalize_symbol(symbol)
+        candidate = hypothesis.strip().upper()
+        if candidate not in {"BTD", "STR"}:
+            raise ValueError("hypothesis must be BTD or STR")
+        identity = operator_identity.strip()
+        if not identity:
+            raise ValueError("operator_identity is required")
+        with transaction(self.database_url) as connection:
+            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO symbol_primary_hypotheses (
+                        symbol, hypothesis, updated_by, source
+                    ) VALUES (%s, %s, %s, 'OPERATOR_INITIALIZED')
+                    ON CONFLICT (symbol) DO NOTHING
+                    RETURNING *
+                    """,
+                    (normalized, candidate, identity),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    raise StructuralTransitionConflict(
+                        "primary_hypothesis_exists",
+                        "Primary Hypothesis is already established; use transition review.",
+                    )
+                cursor.execute(
+                    """
+                    INSERT INTO primary_hypothesis_history (
+                        symbol, previous_hypothesis, new_hypothesis, action,
+                        operator_identity, note
+                    ) VALUES (%s, NULL, %s, 'INITIALIZED', %s, %s)
+                    """,
+                    (normalized, candidate, identity, note),
+                )
+                return primary_hypothesis_payload(row)
+
+    def review_structural_transition(
+        self,
+        transition_id: int,
+        *,
+        action: str,
+        expected_version: int,
+        operator_identity: str,
+        note: str | None = None,
+    ) -> dict[str, Any]:
+        decision = action.strip().upper()
+        if decision not in {"DEFER", "PROMOTE", "RETAIN_PRIMARY"}:
+            raise ValueError("Unsupported transition review action")
+        identity = operator_identity.strip()
+        if not identity:
+            raise ValueError("operator_identity is required")
+        with transaction(self.database_url) as connection:
+            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    "SELECT * FROM structural_transitions WHERE id = %s FOR UPDATE",
+                    (transition_id,),
+                )
+                transition = cursor.fetchone()
+                if transition is None:
+                    raise StructuralTransitionConflict(
+                        "transition_not_found", "Structural transition was not found."
+                    )
+                if int(transition["version"]) != expected_version:
+                    raise StructuralTransitionConflict(
+                        "stale_transition", "Transition changed; refresh before reviewing."
+                    )
+                if str(transition["status"]) != "PENDING":
+                    raise StructuralTransitionConflict(
+                        "transition_already_reviewed", "Transition has already been reviewed."
+                    )
+                cursor.execute(
+                    "SELECT * FROM symbol_primary_hypotheses WHERE symbol = %s FOR UPDATE",
+                    (transition["symbol"],),
+                )
+                primary = cursor.fetchone()
+                if (
+                    primary is None
+                    or str(primary["hypothesis"]) != str(transition["previous_hypothesis"])
+                    or int(primary["version"])
+                    != int(transition["primary_hypothesis_version"])
+                ):
+                    raise StructuralTransitionConflict(
+                        "primary_hypothesis_changed",
+                        "Primary Hypothesis changed; this decision is stale.",
+                    )
+                previous = str(primary["hypothesis"])
+                new_hypothesis = previous
+                new_status = "PENDING"
+                reviewed = False
+                if decision == "PROMOTE":
+                    new_hypothesis = str(transition["candidate_hypothesis"])
+                    new_status = "PROMOTED"
+                    reviewed = True
+                    cursor.execute(
+                        """
+                        UPDATE symbol_primary_hypotheses
+                        SET hypothesis = %s, version = version + 1,
+                            updated_at = clock_timestamp(), updated_by = %s,
+                            source = 'TRANSITION_PROMOTED'
+                        WHERE symbol = %s
+                        """,
+                        (new_hypothesis, identity, transition["symbol"]),
+                    )
+                    cursor.execute(
+                        """
+                        INSERT INTO primary_hypothesis_history (
+                            symbol, previous_hypothesis, new_hypothesis, action,
+                            transition_id, operator_identity, note
+                        ) VALUES (%s, %s, %s, 'PROMOTED', %s, %s, %s)
+                        """,
+                        (
+                            transition["symbol"], previous, new_hypothesis,
+                            transition_id, identity, note,
+                        ),
+                    )
+                elif decision == "RETAIN_PRIMARY":
+                    new_status = "RETAINED_PRIMARY"
+                    reviewed = True
+                cursor.execute(
+                    """
+                    INSERT INTO structural_transition_review_history (
+                        transition_id, action, previous_status, new_status,
+                        previous_hypothesis, new_hypothesis,
+                        operator_identity, note
+                    ) VALUES (%s, %s, 'PENDING', %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        transition_id, decision, new_status, previous,
+                        new_hypothesis, identity, note,
+                    ),
+                )
+                cursor.execute(
+                    """
+                    UPDATE structural_transitions
+                    SET status = %s, version = version + 1,
+                        reviewed_at = CASE WHEN %s THEN clock_timestamp() ELSE reviewed_at END,
+                        reviewed_by = CASE WHEN %s THEN %s ELSE reviewed_by END,
+                        review_note = CASE WHEN %s THEN %s ELSE review_note END,
+                        updated_at = clock_timestamp()
+                    WHERE id = %s
+                    RETURNING *
+                    """,
+                    (
+                        new_status, reviewed, reviewed, identity,
+                        reviewed, note, transition_id,
+                    ),
+                )
+                return structural_transition_payload(cursor.fetchone())
 
     def reconcile_current_pressure_states(self) -> dict[str, int]:
         """Compatibility no-op: operational Pressure reconciliation is retired."""
@@ -2908,6 +3128,8 @@ class EdgeRepository:
                         "latest_pressure_events": (),
                         "location_observations": (),
                         "near_miss_episodes": (),
+                        "primary_hypotheses": (),
+                        "structural_transitions": (),
                     }
 
                 cursor.execute(
@@ -3129,6 +3351,31 @@ class EdgeRepository:
                     (symbols, as_of, comparison_at),
                 )
                 near_miss_episodes = tuple(cursor.fetchall())
+                cursor.execute(
+                    """
+                    SELECT symbol, hypothesis, version, established_at,
+                           updated_at, updated_by, source
+                    FROM symbol_primary_hypotheses
+                    WHERE symbol = ANY(%s)
+                      AND established_at <= %s
+                    ORDER BY symbol ASC
+                    """,
+                    (symbols, as_of),
+                )
+                primary_hypotheses = tuple(cursor.fetchall())
+                cursor.execute(
+                    """
+                    SELECT *
+                    FROM structural_transitions
+                    WHERE symbol = ANY(%s)
+                      AND activation_event_time > %s
+                      AND activation_event_time <= %s
+                      AND known_at <= %s
+                    ORDER BY activation_event_time DESC, known_at DESC, id DESC
+                    """,
+                    (symbols, comparison_at, as_of, as_of),
+                )
+                structural_transitions = tuple(cursor.fetchall())
                 return {
                     "window": window,
                     "as_of": as_of,
@@ -3143,6 +3390,8 @@ class EdgeRepository:
                     "latest_pressure_events": latest_pressure_events,
                     "location_observations": location_observations,
                     "near_miss_episodes": near_miss_episodes,
+                    "primary_hypotheses": primary_hypotheses,
+                    "structural_transitions": structural_transitions,
                 }
         finally:
             connection.close()
@@ -3829,6 +4078,44 @@ def saved_group_payload(row: Mapping[str, Any]) -> dict[str, Any]:
         "member_count": len(members),
         "created_at": iso(row["created_at"]),
         "updated_at": iso(row["updated_at"]),
+    }
+
+
+def primary_hypothesis_payload(row: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "symbol": str(row["symbol"]),
+        "hypothesis": str(row["hypothesis"]),
+        "version": int(row["version"]),
+        "established_at": iso(row["established_at"]),
+        "updated_at": iso(row["updated_at"]),
+        "updated_by": str(row["updated_by"]),
+        "source": str(row["source"]),
+    }
+
+
+def structural_transition_payload(row: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "id": int(row["id"]),
+        "activation_event_key": str(row["activation_event_key"]),
+        "trigger_event_id": str(row["trigger_event_id"]),
+        "symbol": str(row["symbol"]),
+        "previous_hypothesis": str(row["previous_hypothesis"]),
+        "candidate_hypothesis": str(row["candidate_hypothesis"]),
+        "primary_hypothesis_version": int(row["primary_hypothesis_version"]),
+        "activation_event_time": iso(row["activation_event_time"]),
+        "known_at": iso(row["known_at"]),
+        "core_mrz_lower": decimal_text(row["core_mrz_lower"]),
+        "core_mrz_upper": decimal_text(row["core_mrz_upper"]),
+        "structural_location": str(row["structural_location"]),
+        "status": str(row["status"]),
+        "version": int(row["version"]),
+        "reviewed_at": iso(row.get("reviewed_at")),
+        "reviewed_by": row.get("reviewed_by"),
+        "review_note": row.get("review_note"),
+        "canonical_evidence_ref": (
+            f"/mrz/events?symbol={str(row['symbol'])}"
+            f"&event={str(row['activation_event_key'])}"
+        ),
     }
 
 

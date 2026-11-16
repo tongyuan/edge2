@@ -39,7 +39,7 @@ def build_push_destination(
     if not PUSH_SYMBOL_PATTERN.fullmatch(symbol):
         return "/"
     encoded_symbol = quote(symbol, safe="")
-    if event_type in {"MRZ_ACTIVATED", "MRZ_MIGRATED"}:
+    if event_type in {"MRZ_ACTIVATED", "MRZ_MIGRATED", "STRUCTURAL_TRANSITION"}:
         return f"/mrz/symbols?symbol={encoded_symbol}"
     if event_type == PRESSURE_EVENT_TYPE:
         return f"/mrz/events?symbol={encoded_symbol}"
@@ -106,6 +106,7 @@ class NotificationPreferencesPayload(BaseModel):
     migration_enabled: bool
     pressure_enabled: bool
     near_miss_enabled: bool
+    structural_transition_enabled: bool = True
 
 
 class NotificationRepository:
@@ -181,7 +182,8 @@ class NotificationRepository:
                 cursor.execute(
                     """
                     SELECT alert_scope, activation_enabled, migration_enabled,
-                           pressure_enabled, near_miss_enabled, updated_at
+                           pressure_enabled, near_miss_enabled,
+                           structural_transition_enabled, updated_at
                     FROM notification_preferences
                     WHERE singleton = TRUE
                     """
@@ -194,6 +196,7 @@ class NotificationRepository:
                         "migration_enabled": True,
                         "pressure_enabled": False,
                         "near_miss_enabled": True,
+                        "structural_transition_enabled": True,
                         "updated_at": None,
                     }
                 return {
@@ -202,6 +205,9 @@ class NotificationRepository:
                     "migration_enabled": bool(row["migration_enabled"]),
                     "pressure_enabled": False,
                     "near_miss_enabled": bool(row["near_miss_enabled"]),
+                    "structural_transition_enabled": bool(
+                        row["structural_transition_enabled"]
+                    ),
                     "updated_at": iso(row["updated_at"]),
                 }
         finally:
@@ -217,14 +223,16 @@ class NotificationRepository:
                     """
                     INSERT INTO notification_preferences (
                         singleton, alert_scope, activation_enabled,
-                        migration_enabled, pressure_enabled, near_miss_enabled
-                    ) VALUES (TRUE, %s, %s, %s, %s, %s)
+                        migration_enabled, pressure_enabled, near_miss_enabled,
+                        structural_transition_enabled
+                    ) VALUES (TRUE, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (singleton) DO UPDATE SET
                         alert_scope = EXCLUDED.alert_scope,
                         activation_enabled = EXCLUDED.activation_enabled,
                         migration_enabled = EXCLUDED.migration_enabled,
                         pressure_enabled = EXCLUDED.pressure_enabled,
                         near_miss_enabled = EXCLUDED.near_miss_enabled,
+                        structural_transition_enabled = EXCLUDED.structural_transition_enabled,
                         updated_at = clock_timestamp()
                     """,
                     (
@@ -233,6 +241,7 @@ class NotificationRepository:
                         preferences.migration_enabled,
                         False,
                         preferences.near_miss_enabled,
+                        preferences.structural_transition_enabled,
                     ),
                 )
         return self.notification_preferences()
@@ -597,11 +606,38 @@ class NotificationRepository:
             " ON CONFLICT (source_event_key) DO NOTHING RETURNING id"
         )
 
+        transition_query = """
+            INSERT INTO web_push_notifications (
+                source_event_key, source_trigger_event_id, event_type,
+                symbol, route_owner, structural_location,
+                core_mrz_lower, core_mrz_upper, activated_at, occurred_at,
+                canonical_activation_event_key, previous_hypothesis,
+                candidate_hypothesis, canonical_evidence_ref, deliverable
+            )
+            SELECT
+                'STRUCTURAL_TRANSITION:' || activation_event_key,
+                trigger_event_id, 'STRUCTURAL_TRANSITION', symbol,
+                candidate_hypothesis, structural_location,
+                core_mrz_lower, core_mrz_upper,
+                activation_event_time, known_at,
+                activation_event_key, previous_hypothesis,
+                candidate_hypothesis,
+                '/mrz/events?symbol=' || symbol || '&event=' || activation_event_key,
+                TRUE
+            FROM structural_transitions
+            WHERE TRUE
+        """
+        if trigger_event_id is not None:
+            transition_query += " AND trigger_event_id = %s"
+        transition_query += " ON CONFLICT (source_event_key) DO NOTHING RETURNING id"
+
         with transaction(self.database_url) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(authority_query, parameters)
                 notification_ids = [int(row[0]) for row in cursor.fetchall()]
                 cursor.execute(near_miss_query, parameters)
+                notification_ids.extend(int(row[0]) for row in cursor.fetchall())
+                cursor.execute(transition_query, parameters)
                 notification_ids.extend(int(row[0]) for row in cursor.fetchall())
                 return notification_ids
 
@@ -615,7 +651,8 @@ class NotificationRepository:
                     FROM web_push_notifications
                     WHERE deliverable = TRUE
                       AND event_type IN (
-                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS'
+                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
+                          'STRUCTURAL_TRANSITION'
                       )
                     """
                 )
@@ -634,13 +671,16 @@ class NotificationRepository:
                     CROSS JOIN notification_preferences p
                     WHERE n.deliverable = TRUE
                       AND n.event_type IN (
-                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS'
+                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
+                          'STRUCTURAL_TRANSITION'
                       )
                       AND n.id > %s
                       AND (
                           (n.event_type = 'MRZ_ACTIVATED' AND p.activation_enabled)
                           OR (n.event_type = 'MRZ_MIGRATED' AND p.migration_enabled)
                           OR (n.event_type = 'MRZ_NEAR_MISS' AND p.near_miss_enabled)
+                          OR (n.event_type = 'STRUCTURAL_TRANSITION'
+                              AND p.structural_transition_enabled)
                       )
                       AND (
                           p.alert_scope = 'ALL_SYMBOLS'
@@ -673,7 +713,8 @@ class NotificationRepository:
                     FROM web_push_notifications
                     WHERE deliverable = TRUE
                       AND event_type IN (
-                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS'
+                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
+                          'STRUCTURAL_TRANSITION'
                       )
                     ORDER BY occurred_at DESC, id DESC
                     LIMIT %s
@@ -777,7 +818,8 @@ class NotificationRepository:
                     WHERE n.deliverable = TRUE
                       AND n.dismissed_at IS NULL
                       AND n.event_type IN (
-                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS'
+                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
+                          'STRUCTURAL_TRANSITION'
                       )
                       AND (
                           p.alert_scope = 'ALL_SYMBOLS'
@@ -803,7 +845,8 @@ class NotificationRepository:
                     WHERE n.deliverable = TRUE
                       AND n.dismissed_at IS NULL
                       AND n.event_type IN (
-                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS'
+                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
+                          'STRUCTURAL_TRANSITION'
                       )
                       AND (
                           p.alert_scope = 'ALL_SYMBOLS'
@@ -841,7 +884,8 @@ class NotificationRepository:
                     WHERE {identity_clause}
                       AND deliverable = TRUE
                       AND event_type IN (
-                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS'
+                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
+                          'STRUCTURAL_TRANSITION'
                       )
                     RETURNING id
                     """,
@@ -859,7 +903,8 @@ class NotificationRepository:
                     WHERE id = %s
                       AND deliverable = TRUE
                       AND event_type IN (
-                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS'
+                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
+                          'STRUCTURAL_TRANSITION'
                       )
                     RETURNING id
                     """,
@@ -879,7 +924,8 @@ class NotificationRepository:
                       AND n.read_at IS NULL
                       AND n.dismissed_at IS NULL
                       AND n.event_type IN (
-                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS'
+                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
+                          'STRUCTURAL_TRANSITION'
                       )
                       AND (
                           p.alert_scope = 'ALL_SYMBOLS'
@@ -904,7 +950,8 @@ class NotificationRepository:
                     WHERE deliverable = TRUE
                       AND dismissed_at IS NULL
                       AND event_type IN (
-                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS'
+                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
+                          'STRUCTURAL_TRANSITION'
                       )
                     RETURNING id
                     """
@@ -955,12 +1002,15 @@ class NotificationRepository:
                     ) attempts ON TRUE
                     WHERE n.deliverable = TRUE
                       AND n.event_type IN (
-                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS'
+                          'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
+                          'STRUCTURAL_TRANSITION'
                       )
                       AND (
                           (n.event_type = 'MRZ_ACTIVATED' AND p.activation_enabled)
                           OR (n.event_type = 'MRZ_MIGRATED' AND p.migration_enabled)
                           OR (n.event_type = 'MRZ_NEAR_MISS' AND p.near_miss_enabled)
+                          OR (n.event_type = 'STRUCTURAL_TRANSITION'
+                              AND p.structural_transition_enabled)
                       )
                       AND (
                           p.alert_scope = 'ALL_SYMBOLS'
@@ -1027,7 +1077,8 @@ class NotificationRepository:
                           FROM web_push_notifications n
                           WHERE n.id = %s
                             AND n.event_type IN (
-                                'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS'
+                                'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
+                                'STRUCTURAL_TRANSITION'
                             )
                       )
                     ON CONFLICT (
@@ -1366,6 +1417,17 @@ def notification_payload(row: Mapping[str, Any]) -> dict[str, Any]:
             f"{Decimal(row['minimum_required_allowance_pct']):.2f}% vs "
             f"{Decimal(row['production_threshold_pct']):.2f}%"
         )
+    elif event_type == "STRUCTURAL_TRANSITION":
+        previous_hypothesis = str(row["previous_hypothesis"])
+        candidate_hypothesis = str(row["candidate_hypothesis"])
+        title = f"{symbol} Structural Transition"
+        event_name = "Structural Transition"
+        body = (
+            f"{previous_hypothesis} → {candidate_hypothesis} · "
+            f"opposite-route MRZ activation requires review · "
+            f"{display_decimal(row['core_mrz_lower'])}–"
+            f"{display_decimal(row['core_mrz_upper'])}"
+        )
     elif event_type == "MRZ_MIGRATED":
         route_label = (
             f"{previous_route_owner} → {route_owner}"
@@ -1464,6 +1526,16 @@ def notification_payload(row: Mapping[str, Any]) -> dict[str, Any]:
                 row["supporting_observation_count"]
             ),
             "candidate_timestamp": iso(row["candidate_timestamp"]),
+        })
+    elif event_type == "STRUCTURAL_TRANSITION":
+        payload.update({
+            "previous_hypothesis": str(row["previous_hypothesis"]),
+            "candidate_hypothesis": str(row["candidate_hypothesis"]),
+            "canonical_activation_event_key": str(
+                row["canonical_activation_event_key"]
+            ),
+            "canonical_evidence_ref": str(row["canonical_evidence_ref"]),
+            "activated_at": iso(row["activated_at"]),
         })
     elif event_type == "MRZ_ACTIVATED":
         payload["activated_at"] = occurred_at

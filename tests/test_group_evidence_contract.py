@@ -10,11 +10,23 @@ REPOSITORY = (ROOT / "app/repository.py").read_text(encoding="utf-8")
 AGGREGATOR = (ROOT / "app/group_evidence.py").read_text(encoding="utf-8")
 HTML = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
 JS = (ROOT / "app/static/group-evidence.js").read_text(encoding="utf-8")
+OPPORTUNITY_JS = (ROOT / "app/static/opportunity-map.js").read_text(encoding="utf-8")
 CSS = (ROOT / "app/static/workspace.css").read_text(encoding="utf-8")
 SHELL = (ROOT / "app/static/mrz-shell.js").read_text(encoding="utf-8")
 
 
 class GroupEvidenceContractTests(unittest.TestCase):
+    def test_group_evolution_exposes_independent_flow_and_reviewable_transitions(self) -> None:
+        self.assertIn('"location_flow": location_flow', AGGREGATOR)
+        self.assertIn('"structural_transitions": structural_transitions', AGGREGATOR)
+        self.assertIn('"Group Evolution"', OPPORTUNITY_JS)
+        self.assertIn('IPDA Location Flow', OPPORTUNITY_JS)
+        self.assertIn('Structural Transitions', OPPORTUNITY_JS)
+        self.assertIn('onOpenTransition', OPPORTUNITY_JS)
+        self.assertIn('/api/structural-transitions/', JS)
+        self.assertIn('Open Canonical Evidence', JS)
+        self.assertIn('Open Opportunity Map', JS)
+
     def test_only_two_read_endpoints_are_added(self) -> None:
         self.assertIn('@application.get("/api/group-evidence")', API)
         self.assertIn('@application.get("/api/group-evidence/{group_id}")', API)

@@ -64,16 +64,13 @@ async function testHeaderOnlyControllerLoadsSharedActionsWithoutPushSetup() {
   controller.clearInboxButton = element("clear");
   controller.inboxDialog = { close() {} };
   let inboxRefreshes = 0;
-  let scopeLoads = 0;
   let configLoads = 0;
   controller.refreshInbox = async () => { inboxRefreshes += 1; };
-  controller.loadAlertScope = async () => { scopeLoads += 1; };
   controller.loadConfig = async () => { configLoads += 1; };
 
   await controller.initialize();
 
   assert.equal(inboxRefreshes, 1);
-  assert.equal(scopeLoads, 1);
   assert.equal(configLoads, 0, "header-only pages must not start Web Push setup");
   for (const binding of ["inbox:click", "close:click", "mark-all:click", "clear:click"]) {
     assert.equal(typeof listeners.get(binding), "function", `${binding} should be bound`);

@@ -143,7 +143,6 @@
     constructor() {
       this.button = document.querySelector("#notificationButton");
       this.status = document.querySelector("#notificationStatus");
-      this.alertScopeLabel = document.querySelector("#alertScopeLabel");
       this.toastHost = document.querySelector("#notificationToastHost");
       this.inboxButton = document.querySelector("#notificationInboxButton");
       this.inboxDock = document.querySelector("#notificationInboxDock");
@@ -212,16 +211,6 @@
       this.cursor = Number(this.config.latest_notification_id) || 0;
     }
 
-    async loadAlertScope() {
-      if (!this.alertScopeLabel) return;
-      const response = await fetch("/api/notifications/preferences", { cache: "no-store" });
-      if (!response.ok) throw new Error("Notification preferences are unavailable.");
-      const preferences = await response.json();
-      this.alertScopeLabel.textContent = preferences.alert_scope === "TRACKED_GROUPS_ONLY"
-        ? "Alerts: Tracked Groups"
-        : "Alerts: All Symbols";
-    }
-
     async initialize() {
       if (this.button) this.button.addEventListener("click", () => this.toggle());
       if (this.inboxDock) {
@@ -260,11 +249,6 @@
         return;
       }
       if (!this.button) {
-        try {
-          await this.loadAlertScope();
-        } catch {
-          // The link remains usable with its neutral "Alerts" label.
-        }
         return;
       }
       try {
@@ -415,7 +399,7 @@
       const items = Array.isArray(payload.items) ? payload.items : [];
       const unreadCount = Number(payload.unread_count) || 0;
       if (this.unreadBadge) {
-        this.unreadBadge.textContent = unreadCount > 99 ? "99+" : String(unreadCount);
+        this.unreadBadge.textContent = unreadCount > 99 ? "(99+)" : `(${unreadCount})`;
         this.unreadBadge.hidden = unreadCount === 0;
       }
       this.inboxButton?.setAttribute(

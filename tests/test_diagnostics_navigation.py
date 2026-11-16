@@ -54,8 +54,6 @@ class DiagnosticsNavigationContractTests(unittest.TestCase):
         activation = PAGES["activation"]
         for element_id in (
             "headerHealth",
-            "alertSettingsButton",
-            "alertScopeLabel",
             "notificationInboxButton",
             "notificationUnreadBadge",
             "notificationInboxDialog",
@@ -66,7 +64,8 @@ class DiagnosticsNavigationContractTests(unittest.TestCase):
         ):
             with self.subTest(element_id=element_id):
                 self.assertIn(f'id="{element_id}"', activation)
-        self.assertIn('href="/mrz/alert-settings"', activation)
+        self.assertNotIn('id="alertSettingsButton"', activation)
+        self.assertNotIn('id="alertScopeLabel"', activation)
         self.assertIn('/static/notifications.js', activation)
 
 

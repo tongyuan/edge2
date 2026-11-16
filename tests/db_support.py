@@ -62,14 +62,16 @@ def clean(database_url: str) -> None:
                 """
                 INSERT INTO notification_preferences (
                     singleton, alert_scope, activation_enabled,
-                    migration_enabled, pressure_enabled, near_miss_enabled
-                ) VALUES (TRUE, 'ALL_SYMBOLS', TRUE, TRUE, TRUE, TRUE)
+                    migration_enabled, pressure_enabled, near_miss_enabled,
+                    structural_transition_enabled
+                ) VALUES (TRUE, 'ALL_SYMBOLS', TRUE, TRUE, TRUE, TRUE, TRUE)
                 ON CONFLICT (singleton) DO UPDATE SET
                     alert_scope = 'ALL_SYMBOLS',
                     activation_enabled = TRUE,
                     migration_enabled = TRUE,
                     pressure_enabled = TRUE,
                     near_miss_enabled = TRUE,
+                    structural_transition_enabled = TRUE,
                     updated_at = clock_timestamp()
                 """
             )

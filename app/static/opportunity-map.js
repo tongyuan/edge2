@@ -684,14 +684,16 @@
       .slice()
       .sort((left, right) => (STAGE_ORDER[right.state] || 0) - (STAGE_ORDER[left.state] || 0) || left.symbol.localeCompare(right.symbol))
       .forEach((candidate) => {
+        const primary = options.primaryHypotheses?.[candidate.symbol]?.hypothesis || (options.primaryHypotheses ? "Unassigned" : candidate.hypothesis);
+        const latestEvidence = options.latestEvidence?.[candidate.symbol];
         const row = node("tr", ""); row.tabIndex = 0;
         const symbol = node("td", "opportunity-candidate-symbol", candidate.symbol);
-        const hypothesis = node("td", ""); hypothesis.append(node("b", `route ${candidate.hypothesis.toLowerCase()}`, candidate.hypothesis));
+        const hypothesis = node("td", ""); hypothesis.append(node("b", `route ${String(primary).toLowerCase()}`, primary));
         const location = node("td", "", candidate.ipda_location || "Unavailable");
         const mrz = node("td", "", candidate.mrz ? `${price(candidate.mrz.lower)}–${price(candidate.mrz.upper)}` : "No active MRZ");
         const observations = node("td", "", String(candidate.observation_count ?? 0));
         const stage = node("td", ""); stage.append(node("span", `opportunity-stage ${stageClass(candidate.state)}`, candidate.state_label));
-        const latest = node("td", "opportunity-candidate-development", `${candidate.latest_event_type} · ${shortTime(candidate.latest_event_at)}`);
+        const latest = node("td", "opportunity-candidate-development", latestEvidence ? `${latestEvidence.event_type.replaceAll("_", " ")} · ${shortTime(latestEvidence.occurred_at)}` : `${candidate.latest_event_type} · ${shortTime(candidate.latest_event_at)}`);
         const open = node("td", "opportunity-candidate-open", "Open →");
         row.append(symbol, hypothesis, location, mrz, observations, stage, latest, open);
         row.addEventListener("click", () => onSelect(candidate.symbol));
@@ -700,6 +702,67 @@
       });
     if (!summary.candidates.length) { const row = node("tr", ""); const cell = node("td", "opportunity-empty", "No canonical opportunity context is available for this group."); cell.colSpan = 8; row.append(cell); body.append(row); }
     table.append(head, body); wrap.append(table); target.append(wrap);
+  }
+
+  function renderGroupEvolution(target, report, options) {
+    const section = node("section", "group-evolution panel");
+    const heading = node("header", "group-evolution-heading");
+    const title = node("div", ""); title.append(node("h2", "", "Group Evolution"), node("p", "", `Location Flow × Structural Transition · ${report.window?.key || "Selected window"}`));
+    heading.append(title, node("span", "group-evolution-basis", "Canonical evidence")); section.append(heading);
+    const grid = node("div", "group-evolution-grid");
+
+    const flow = report.location_flow || {};
+    const flowCard = node("article", "group-evolution-card");
+    flowCard.append(node("h3", "", `⌖ IPDA Location Flow (${report.window?.key || "window"})`), node("p", "group-evolution-help", "Movement across 20-week IPDA location categories."));
+    const pathList = node("div", "group-flow-paths");
+    (flow.paths || []).forEach((path) => {
+      const button = node("button", "group-flow-path", ""); button.type = "button";
+      button.append(node("span", "", `${path.start_location_label} → ${path.current_location_label}`), node("strong", "", `${path.symbol_count} ${path.symbol_count === 1 ? "symbol" : "symbols"}`));
+      button.title = path.symbols.join(", ");
+      button.addEventListener("click", () => path.symbols.length === 1 && options.onSelectSymbol?.(path.symbols[0])); pathList.append(button);
+    });
+    if (!(flow.paths || []).length) pathList.append(node("p", "opportunity-empty", "No comparable location flow is available."));
+    const fs = flow.summary || {};
+    const flowSummary = node("div", "group-evolution-summary");
+    [["↓", fs.lower || 0, "moved lower"], ["↑", fs.higher || 0, "moved higher"], ["—", fs.unchanged || 0, "unchanged"], ["?", fs.unavailable || 0, "unavailable"]].forEach(([icon, count, label]) => flowSummary.append(node("span", "", `${icon} ${count} ${label}`)));
+    flowCard.append(pathList, flowSummary);
+
+    const transitions = report.structural_transitions || {};
+    const ts = transitions.summary || {};
+    const transitionCard = node("article", "group-evolution-card");
+    transitionCard.append(node("h3", "", "⇄ Structural Transitions"), node("p", "group-evolution-help", "Opposite-route MRZ activations requiring operator review."));
+    const directions = node("div", "transition-directions");
+    [["STR → BTD", ts.str_to_btd_unique_symbols || 0, "btd"], ["BTD → STR", ts.btd_to_str_unique_symbols || 0, "str"]].forEach(([label, count, tone]) => {
+      const card = node("div", `transition-direction ${tone}`); card.append(node("strong", "", label), node("span", "", `${count} / ${report.group?.member_count || 0} detected`)); directions.append(card);
+    });
+    const statuses = node("div", "transition-statuses");
+    [["Detected", ts.event_count || 0], ["Pending Review", ts.pending || 0], ["Promoted", ts.promoted || 0], ["Retained Primary", ts.retained_primary || 0]].forEach(([label, count]) => { const item = node("span", ""); item.append(node("b", "", label), node("strong", "", count)); statuses.append(item); });
+    transitionCard.append(directions, statuses, node("small", "transition-caution", "ⓘ Detected transition ≠ confirmed trend reversal. Primary changes only on operator approval."));
+    grid.append(flowCard, transitionCard); section.append(grid);
+
+    const unassigned = Object.entries(transitions.primary_hypotheses || {}).length < (report.group?.member_count || 0);
+    if (unassigned) {
+      const setup = node("details", "primary-hypothesis-setup"); setup.append(node("summary", "", `${ts.unassigned_primary || 0} symbols need a Primary Hypothesis`));
+      const assigned = transitions.primary_hypotheses || {};
+      (report.members || []).filter((item) => !assigned[item.symbol]).forEach((member) => {
+        const row = node("div", "primary-setup-row"); row.append(node("strong", "", member.symbol));
+        ["STR", "BTD"].forEach((hypothesis) => { const button = node("button", "quiet-button", `Set ${hypothesis}`); button.type = "button"; button.addEventListener("click", async () => {
+          const storedIdentity = globalObject.localStorage?.getItem("edge2.operatorIdentity") || "";
+          const operatorIdentity = globalObject.prompt?.(`Operator identity for ${member.symbol}`, storedIdentity)?.trim();
+          if (!operatorIdentity) return;
+          globalObject.localStorage?.setItem("edge2.operatorIdentity", operatorIdentity);
+          button.disabled = true;
+          const response = await fetch(`/api/symbols/${encodeURIComponent(member.symbol)}/primary-hypothesis`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hypothesis, operator_identity: operatorIdentity, note: "Initialized from Group Evolution" }) });
+          if (!response.ok) button.disabled = false; else options.onRefresh?.();
+        }); row.append(button); }); setup.append(row);
+      }); section.append(setup);
+    }
+
+    const tableWrap = node("div", "group-transition-table-wrap"); tableWrap.append(node("h3", "", "Contributing Symbols — Structural Transition Candidates"));
+    const table = node("table", "group-transition-table"); const head = node("thead", ""); head.innerHTML = "<tr><th>Symbol</th><th>Opposite MRZ</th><th>Primary Hypothesis</th><th>Review Status</th><th>Evidence</th></tr>"; const body = node("tbody", "");
+    (transitions.contributors || []).forEach((item) => { const row = node("tr", ""); const evidence = node("button", "group-transition-open", "Open →"); evidence.type = "button"; evidence.addEventListener("click", () => options.onOpenTransition?.(item)); row.append(node("td", "", item.symbol), node("td", "", `${item.previous_hypothesis} → ${item.candidate_hypothesis}`), node("td", "", item.current_primary_hypothesis || "Unassigned"), node("td", "", item.status.replaceAll("_", " ")), (() => { const cell = node("td", ""); cell.append(evidence); return cell; })()); body.append(row); });
+    if (!(transitions.contributors || []).length) { const row = node("tr", ""); const cell = node("td", "opportunity-empty", "No qualifying opposite-route activations in this window."); cell.colSpan = 5; row.append(cell); body.append(row); }
+    table.append(head, body); tableWrap.append(table); section.append(tableWrap); target.append(section);
   }
 
   function renderGroup(target, payload, options = {}) {
@@ -715,6 +778,7 @@
       const card = node("article", `opportunity-overview-card ${tone}`); card.append(node("strong", "", value), node("span", "", label), node("small", "", detail)); overview.append(card);
     });
     target.append(overview);
+    if (options.groupEvolution) renderGroupEvolution(target, options.groupEvolution, options);
     const candidatePanel = node("section", "opportunity-candidates panel");
     renderCandidateTable(candidatePanel, summary, options.onSelectSymbol || (() => {}), options);
     target.append(candidatePanel);

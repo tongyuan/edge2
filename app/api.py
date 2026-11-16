@@ -6,7 +6,7 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Literal, Mapping
 from urllib.parse import urlencode
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
@@ -42,6 +42,7 @@ from app.repository import (
     EdgeRepository,
     LOCATION_HISTORY_WINDOWS,
     PromotionConflict,
+    StructuralTransitionConflict,
     json_diagnostics,
     sanitize_payload,
 )
@@ -57,6 +58,23 @@ class NearMissPromotionRequest(BaseModel):
 
     route: Route
     candidate_identity: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class PrimaryHypothesisRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    hypothesis: Literal["BTD", "STR"]
+    operator_identity: str = Field(min_length=1, max_length=120)
+    note: str | None = Field(default=None, max_length=1000)
+
+
+class StructuralTransitionReviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    action: Literal["DEFER", "PROMOTE", "RETAIN_PRIMARY"]
+    expected_version: int = Field(ge=1)
+    operator_identity: str = Field(min_length=1, max_length=120)
+    note: str | None = Field(default=None, max_length=1000)
 
 
 def supplied_secret(request: Request, payload: Any) -> str | None:
@@ -512,6 +530,51 @@ def create_app(
                 status_code=503,
                 headers={"Cache-Control": "no-store, max-age=0"},
             )
+        return JSONResponse(
+            payload,
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
+    @application.put("/api/symbols/{symbol}/primary-hypothesis", status_code=201)
+    def initialize_primary_hypothesis(
+        symbol: str,
+        request: PrimaryHypothesisRequest,
+    ) -> JSONResponse:
+        try:
+            payload = repository.initialize_primary_hypothesis(
+                symbol,
+                request.hypothesis,
+                request.operator_identity,
+                request.note,
+            )
+        except StructuralTransitionConflict as exc:
+            raise HTTPException(status_code=409, detail=exc.code) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return JSONResponse(
+            payload,
+            status_code=201,
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
+    @application.post("/api/structural-transitions/{transition_id}/review")
+    def review_structural_transition(
+        transition_id: int,
+        request: StructuralTransitionReviewRequest,
+    ) -> JSONResponse:
+        try:
+            payload = repository.review_structural_transition(
+                transition_id,
+                action=request.action,
+                expected_version=request.expected_version,
+                operator_identity=request.operator_identity,
+                note=request.note,
+            )
+        except StructuralTransitionConflict as exc:
+            status_code = 404 if exc.code == "transition_not_found" else 409
+            raise HTTPException(status_code=status_code, detail=exc.code) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         return JSONResponse(
             payload,
             headers={"Cache-Control": "no-store, max-age=0"},

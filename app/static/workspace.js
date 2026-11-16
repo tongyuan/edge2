@@ -977,10 +977,11 @@
     const activation = $("#prefActivation");
     const migration = $("#prefMigration");
     const nearMiss = $("#prefNearMiss");
+    const structuralTransition = $("#prefStructuralTransition");
     if (activation) activation.checked = prefs.activation_enabled;
     if (migration) migration.checked = prefs.migration_enabled;
     if (nearMiss) nearMiss.checked = prefs.near_miss_enabled;
-    $("#alertScopeLabel").textContent = prefs.alert_scope === "TRACKED_GROUPS_ONLY" ? "Alerts: Tracked Groups" : "Alerts: All Symbols";
+    if (structuralTransition) structuralTransition.checked = prefs.structural_transition_enabled;
   }
   async function savePreferences(event) {
     event.preventDefault();
@@ -993,6 +994,7 @@
       migration_enabled: $("#prefMigration")?.checked ?? false,
       pressure_enabled: false,
       near_miss_enabled: $("#prefNearMiss")?.checked ?? false,
+      structural_transition_enabled: $("#prefStructuralTransition")?.checked ?? false,
     };
     const response = await fetch("/api/notifications/preferences", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     if (!response.ok) { $("#alertPreferencesError").textContent = "Unable to save alert preferences."; $("#alertPreferencesError").hidden = false; return; }

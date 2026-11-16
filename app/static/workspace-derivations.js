@@ -7,6 +7,7 @@
     CURRENT_PRESSURE_CHANGED: 3,
     POST_ACTIVATION_PRESSURE_CHANGED: 2,
     MRZ_NEAR_MISS: 1,
+    STRUCTURAL_TRANSITION: 6,
   };
   const SYMBOL_BOARD_SORTS = new Set([
     "attention",
@@ -45,6 +46,7 @@
     "MRZ_ACTIVATED",
     "MRZ_MIGRATED",
     "MRZ_NEAR_MISS",
+    "STRUCTURAL_TRANSITION",
   ]);
   const LOCATION_TRANSITION_BUCKETS = [
     { key: "deep_discount", label: "Deep Discount", shortLabel: "Deep Disc." },
@@ -317,6 +319,7 @@
       return `CUMULATIVE PRESSURE ${direction === "UP" ? "↑" : direction === "DOWN" ? "↓" : "↔"}`;
     }
     if (event.event_type === "MRZ_NEAR_MISS") return "NEAR-MISS";
+    if (event.event_type === "STRUCTURAL_TRANSITION") return "STRUCTURAL TRANSITION";
     return event.event_name || event.event_type || "EVENT";
   }
 

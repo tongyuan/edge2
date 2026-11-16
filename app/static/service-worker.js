@@ -76,6 +76,7 @@ self.addEventListener("push", (event) => {
     "MRZ_ACTIVATED",
     "MRZ_MIGRATED",
     "MRZ_NEAR_MISS",
+    "STRUCTURAL_TRANSITION",
   ].includes(payload.event_type)
     ? payload.event_type
     : null;
