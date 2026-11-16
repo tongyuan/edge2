@@ -24,8 +24,13 @@ class GroupEvidenceContractTests(unittest.TestCase):
         self.assertIn('Structural Transitions', OPPORTUNITY_JS)
         self.assertIn('onOpenTransition', OPPORTUNITY_JS)
         self.assertIn('/api/structural-transitions/', JS)
-        self.assertIn('Open Canonical Evidence', JS)
-        self.assertIn('Open Opportunity Map', JS)
+        self.assertIn('Review Structural Transition', JS)
+        self.assertIn('Confirm Promotion', JS)
+        self.assertIn('Latest IPDA Movement', OPPORTUNITY_JS)
+        self.assertNotIn('symbols need a Primary Hypothesis', OPPORTUNITY_JS)
+        self.assertNotIn('Set STR', OPPORTUNITY_JS)
+        self.assertNotIn('/primary-hypothesis', OPPORTUNITY_JS)
+        self.assertIn('View Full Evidence', JS)
 
     def test_only_two_read_endpoints_are_added(self) -> None:
         self.assertIn('@application.get("/api/group-evidence")', API)
@@ -79,7 +84,7 @@ class GroupEvidenceContractTests(unittest.TestCase):
         self.assertNotIn("renderWatchlists", render_all)
 
     def test_stage_a_assets_share_a_fresh_cache_version(self) -> None:
-        version = "group-evolution-inbox-20261116"
+        version = "structural-review-20261116"
         self.assertIn('/static/workspace.css?v=migration-path-correction-20261115', HTML)
         self.assertIn(f'/static/group-evidence.js?v={version}', HTML)
         self.assertNotIn('#radarAlertsButton', JS)

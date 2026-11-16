@@ -87,6 +87,14 @@ class PushDestinationTests(unittest.TestCase):
             "/mrz/symbols?symbol=BTCUSDT",
         )
         self.assertEqual(
+            build_push_destination(
+                "STRUCTURAL_TRANSITION",
+                "BTCUSDT",
+                {"structural_transition_id": 17},
+            ),
+            "/mrz/watchlists?group=all&window=20D&symbol=BTCUSDT&transition=17",
+        )
+        self.assertEqual(
             build_push_destination(PRESSURE_EVENT_TYPE, "ZECUSDT"),
             "/mrz/events?symbol=ZECUSDT",
         )
@@ -103,6 +111,10 @@ class PushDestinationTests(unittest.TestCase):
     def test_invalid_or_unsupported_context_falls_back_to_root(self) -> None:
         self.assertEqual(build_push_destination("UNKNOWN", "BTCUSDT"), "/")
         self.assertEqual(build_push_destination("MRZ_ACTIVATED", "bad symbol"), "/")
+        self.assertEqual(
+            build_push_destination("STRUCTURAL_TRANSITION", "BTCUSDT", {}),
+            "/",
+        )
         self.assertEqual(
             build_push_destination(
                 "MRZ_NEAR_MISS",

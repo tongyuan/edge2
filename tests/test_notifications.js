@@ -106,7 +106,7 @@ async function testGrantedPermissionPath() {
     navigatorObject: {
       serviceWorker: {
         async register(url, options) {
-          assert.equal(url, "/service-worker.js?v=group-evolution-inbox-20261116");
+          assert.equal(url, "/service-worker.js?v=structural-review-20261116");
           assert.deepEqual(options, { scope: "/" });
           return registration;
         },
@@ -397,6 +397,20 @@ async function main() {
       "https://edge.example.test",
     ),
     "/mrz/symbols?symbol=WLDUSDT",
+  );
+  assert.equal(
+    safeNotificationPath(
+      "/mrz/watchlists?group=all&window=20D&symbol=BTCUSDT&transition=17",
+      "https://edge.example.test",
+    ),
+    "/mrz/watchlists?group=all&window=20D&symbol=BTCUSDT&transition=17",
+  );
+  assert.equal(
+    safeNotificationPath(
+      "/mrz/watchlists?symbol=BTCUSDT&transition=bad",
+      "https://edge.example.test",
+    ),
+    "/",
   );
   assert.equal(
     safeNotificationPath(

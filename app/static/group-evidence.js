@@ -655,35 +655,92 @@
     return workspace;
   }
 
-  function openTransitionReview(item) {
-    $("#structuralTransitionDialog")?.remove();
-    const dialog = node("dialog", "structural-transition-dialog"); dialog.id = "structuralTransitionDialog";
-    const header = node("header", "transition-review-header");
-    const identity = node("div", ""); identity.append(node("p", "", "STRUCTURAL TRANSITION REVIEW"), node("h2", "", `${item.symbol} · ${item.previous_hypothesis} → ${item.candidate_hypothesis}`));
-    const close = node("button", "quiet-button", "Close"); close.type = "button"; close.addEventListener("click", () => dialog.close()); header.append(identity, close); dialog.append(header);
-    const evidence = node("dl", "transition-review-evidence");
-    [["Status", titleCase(item.status)], ["Triggering activation", item.activation_event_key], ["MRZ bounds", `${item.core_mrz_lower} – ${item.core_mrz_upper}`], ["Event time", exactTime(item.activation_event_time)], ["Known at", exactTime(item.known_at)], ["Structural location", titleCase(item.structural_location)]].forEach(([label, value]) => evidence.append(node("dt", "", label), node("dd", "", value))); dialog.append(evidence);
-    const links = node("div", "transition-review-links");
-    const canonical = node("a", "quiet-button", "Open Canonical Evidence"); canonical.href = item.canonical_evidence_ref; canonical.target = "_blank"; canonical.rel = "noopener";
-    const map = node("button", "quiet-button", "Open Opportunity Map"); map.type = "button"; map.addEventListener("click", () => { dialog.close(); openOpportunitySymbol(item.symbol); }); links.append(canonical, map); dialog.append(links);
-    if (item.status === "PENDING") {
-      const form = node("form", "transition-review-form"); form.addEventListener("submit", (event) => event.preventDefault());
-      const operator = node("input", ""); operator.type = "text"; operator.required = true; operator.maxLength = 120; operator.value = globalObject.localStorage?.getItem("edge2.operatorIdentity") || "operator"; operator.setAttribute("aria-label", "Operator identity");
-      const note = node("textarea", ""); note.maxLength = 1000; note.placeholder = "Review note (optional)"; note.setAttribute("aria-label", "Review note");
-      const error = node("p", "transition-review-error", ""); error.hidden = true;
-      const actions = node("div", "transition-review-actions");
-      const decide = async (action) => {
-        if (!operator.value.trim()) { error.textContent = "Operator identity is required."; error.hidden = false; return; }
-        actions.querySelectorAll("button").forEach((button) => { button.disabled = true; });
-        globalObject.localStorage?.setItem("edge2.operatorIdentity", operator.value.trim());
-        const response = await globalObject.fetch(`/api/structural-transitions/${item.id}/review`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, expected_version: item.version, operator_identity: operator.value.trim(), note: note.value.trim() || null }) });
-        if (!response.ok) { const payload = await response.json().catch(() => ({})); error.textContent = payload.detail === "stale_transition" || payload.detail === "primary_hypothesis_changed" ? "This decision is stale. Refresh and review the latest state." : "Unable to record this review."; error.hidden = false; actions.querySelectorAll("button").forEach((button) => { button.disabled = false; }); return; }
-        dialog.close(); await load();
-      };
-      [["Defer", "DEFER", "quiet-button"], ["Retain Primary", "RETAIN_PRIMARY", "quiet-button"], ["Promote Candidate", "PROMOTE", "primary-button"]].forEach(([label, action, className]) => { const button = node("button", className, label); button.type = "button"; button.addEventListener("click", () => decide(action)); actions.append(button); });
-      form.append(node("label", "", "Operator identity"), operator, node("label", "", "Review note"), note, error, actions); dialog.append(form);
+  function showTransitionSuccess(item, action) {
+    const toast = node("aside", "transition-success-toast");
+    const title = action === "PROMOTE" ? "Primary Hypothesis updated" : action === "RETAIN_PRIMARY" ? "Primary Hypothesis retained" : "Review deferred";
+    const message = action === "PROMOTE"
+      ? `${item.symbol} has been promoted to ${item.candidate_hypothesis}.`
+      : action === "RETAIN_PRIMARY"
+        ? `${item.symbol} remains ${item.previous_hypothesis}.`
+        : `${item.symbol} remains Pending Review.`;
+    const close = node("button", "", "×"); close.type = "button"; close.setAttribute("aria-label", "Dismiss confirmation"); close.addEventListener("click", () => toast.remove());
+    toast.append(node("strong", "", `✓ ${title}`), node("p", "", message), close);
+    globalObject.document.body.append(toast);
+    globalObject.setTimeout(() => toast.remove(), 7000);
+  }
+
+  async function openTransitionReview(candidate, { syncUrl = true } = {}) {
+    const transitionId = Number(candidate?.id || candidate);
+    if (!Number.isInteger(transitionId) || transitionId < 1) return;
+    if (syncUrl && new URLSearchParams(globalObject.location.search).get("transition") !== String(transitionId)) {
+      updateUrl({ transition: transitionId });
     }
-    dialog.addEventListener("close", () => dialog.remove()); globalObject.document.body.append(dialog); dialog.showModal();
+    $("#structuralTransitionDialog")?.remove();
+    const loading = node("dialog", "structural-transition-dialog transition-review-loading", "Loading canonical transition evidence…"); loading.id = "structuralTransitionDialog"; globalObject.document.body.append(loading);
+    loading.addEventListener("close", () => { updateUrl({ transition: null }, { replace: true }); loading.remove(); });
+    loading.showModal();
+    let response;
+    try {
+      response = await globalObject.fetch(`/api/structural-transitions/${transitionId}?window=${encodeURIComponent(state.scope.window)}`, { cache: "no-store" });
+    } catch (_error) {
+      response = null;
+    }
+    if (!response?.ok) {
+      loading.replaceChildren(node("p", "transition-review-error", "Structural transition evidence is unavailable."));
+      const dismiss = node("button", "quiet-button", "Close"); dismiss.type = "button"; dismiss.addEventListener("click", () => loading.close()); loading.append(dismiss);
+      return;
+    }
+    const item = await response.json();
+    loading.replaceChildren(); loading.classList.remove("transition-review-loading");
+    const closePanel = () => loading.close();
+    const header = node("header", "transition-review-header");
+    const identity = node("div", ""); identity.append(node("h2", "", "Review Structural Transition"), node("p", "", "Review the opposite-route MRZ activation and decide whether to update the Primary Hypothesis."));
+    const close = node("button", "transition-review-close", "×"); close.type = "button"; close.setAttribute("aria-label", "Close structural transition review"); close.addEventListener("click", closePanel); header.append(identity, close); loading.append(header);
+
+    const summary = node("section", "transition-symbol-summary");
+    const summaryHead = node("div", "transition-symbol-heading"); summaryHead.append(node("strong", "", item.symbol), node("span", `transition-review-status ${item.status.toLowerCase()}`, item.status === "PENDING" ? "Pending Review" : titleCase(item.status)));
+    const comparison = node("div", "transition-hypothesis-comparison");
+    const effectivePrimary = item.effective_primary_hypothesis || item.previous_hypothesis;
+    const current = node("div", ""); current.append(node("span", "", "Current Primary Hypothesis"), node("b", `route ${effectivePrimary.toLowerCase()}`, effectivePrimary));
+    const proposed = node("div", ""); proposed.append(node("span", "", "Proposed Hypothesis"), node("b", `route ${item.candidate_hypothesis.toLowerCase()}`, item.candidate_hypothesis));
+    comparison.append(current, node("strong", "transition-arrow", "→"), proposed); summary.append(summaryHead, comparison); loading.append(summary);
+
+    const evidenceSection = node("section", "transition-canonical-evidence"); evidenceSection.append(node("h3", "", "Canonical Evidence"));
+    const movement = item.ipda_movement || {}; const movementLabel = movement.start?.label && movement.current?.label ? `${movement.start.label} → ${movement.current.label}` : "Unavailable for selected window";
+    const previousStructure = item.previous_structure ? `${item.previous_structure.route} · ${item.previous_structure.lower}–${item.previous_structure.upper}` : "No prior-route MRZ available";
+    const evidence = node("dl", "transition-review-evidence");
+    [["Opposite MRZ Activated", `${item.candidate_hypothesis} · ${item.activation_event_key}`], ["Activation Time", exactTime(item.activation_event_time)], ["Previous Structure", previousStructure], ["New MRZ", `${item.core_mrz_lower}–${item.core_mrz_upper}`], [`IPDA Movement (${item.comparison_window})`, movementLabel], ["Observations", `${item.confirming_observation_count} confirming observations at activation`]].forEach(([label, value]) => evidence.append(node("dt", "", label), node("dd", "", value))); evidenceSection.append(evidence);
+    const eventsHeader = node("div", "transition-events-heading"); eventsHeader.append(node("h4", "", "Recent MRZ Events (Canonical)")); const canonical = node("a", "", "View Full Evidence ↗"); canonical.href = item.canonical_evidence_ref; eventsHeader.append(canonical); evidenceSection.append(eventsHeader);
+    const recent = node("ul", "transition-recent-events");
+    (item.recent_mrz_events || []).forEach((event) => { const row = node("li", ""); row.append(node("span", `route-dot ${event.route.toLowerCase()}`, "●"), node("strong", "", `${event.route} ${titleCase(event.event_type)}`), node("time", "", exactTime(event.occurred_at)), node("em", "", event.relationship === "NEW_OPPOSITE_STRUCTURE" ? "New Opposite Structure" : event.relationship === "PREVIOUS_STRUCTURE" ? "Previous Structure" : "Canonical History")); recent.append(row); });
+    if (!recent.children.length) recent.append(node("li", "opportunity-empty", "No recent MRZ event is available.")); evidenceSection.append(recent); loading.append(evidenceSection);
+
+    if (item.status === "PENDING") {
+      const decisionSection = node("section", "transition-decision-section"); decisionSection.append(node("h3", "", "Operator Decision"));
+      const form = node("form", "transition-review-form"); form.addEventListener("submit", (event) => event.preventDefault());
+      let selectedAction = "PROMOTE";
+      const options = node("div", "transition-decision-options");
+      const decisions = [
+        ["PROMOTE", `Promote to ${item.candidate_hypothesis}`, `Update the Primary Hypothesis from ${item.previous_hypothesis} to ${item.candidate_hypothesis}.`],
+        ["RETAIN_PRIMARY", `Retain ${item.previous_hypothesis}`, "Keep the current Primary Hypothesis unchanged."],
+        ["DEFER", "Defer", "Keep as Pending Review for later."],
+      ];
+      const confirm = node("button", "primary-button", "Confirm Promotion"); confirm.type = "button";
+      decisions.forEach(([value, label, description], index) => { const choice = node("label", "transition-decision-option"); const radio = node("input", ""); radio.type = "radio"; radio.name = "transitionDecision"; radio.value = value; radio.checked = index === 0; radio.addEventListener("change", () => { selectedAction = value; confirm.textContent = value === "PROMOTE" ? "Confirm Promotion" : value === "RETAIN_PRIMARY" ? "Confirm Retention" : "Defer Review"; }); const copy = node("span", ""); copy.append(node("strong", "", label), node("small", "", description)); choice.append(radio, copy); options.append(choice); });
+      const operatorFields = node("details", "transition-review-record"); operatorFields.append(node("summary", "", "Review record"));
+      const operator = node("input", ""); operator.type = "text"; operator.required = true; operator.maxLength = 120; operator.value = globalObject.localStorage?.getItem("edge2.operatorIdentity") || ""; operator.placeholder = "Operator identity"; operator.setAttribute("aria-label", "Operator identity");
+      const note = node("textarea", ""); note.maxLength = 1000; note.placeholder = "Review note (optional)"; note.setAttribute("aria-label", "Review note"); operatorFields.append(operator, note);
+      const error = node("p", "transition-review-error", ""); error.hidden = true;
+      const footer = node("footer", "transition-review-footer"); const cancel = node("button", "quiet-button", "Cancel"); cancel.type = "button"; cancel.addEventListener("click", closePanel); footer.append(cancel, confirm);
+      confirm.addEventListener("click", async () => {
+        if (!operator.value.trim()) { operatorFields.open = true; error.textContent = "Operator identity is required."; error.hidden = false; operator.focus(); return; }
+        footer.querySelectorAll("button").forEach((button) => { button.disabled = true; }); globalObject.localStorage?.setItem("edge2.operatorIdentity", operator.value.trim());
+        const reviewResponse = await globalObject.fetch(`/api/structural-transitions/${item.id}/review`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: selectedAction, expected_version: item.version, operator_identity: operator.value.trim(), note: note.value.trim() || null }) });
+        if (!reviewResponse.ok) { const payload = await reviewResponse.json().catch(() => ({})); error.textContent = payload.detail === "stale_transition" || payload.detail === "primary_hypothesis_changed" ? "This decision is stale. Refresh and review the latest state." : "Unable to record this review."; error.hidden = false; footer.querySelectorAll("button").forEach((button) => { button.disabled = false; }); return; }
+        loading.close(); showTransitionSuccess(item, selectedAction); await load();
+      });
+      form.append(options, operatorFields, error, footer); decisionSection.append(form); loading.append(decisionSection);
+    }
   }
 
   function renderSymbolWorkspace(payload, symbol) {
@@ -795,6 +852,10 @@
       const opportunityResponse = results[2]; if (!opportunityResponse.ok) throw new Error("Opportunity Intelligence unavailable."); state.opportunity = await opportunityResponse.json();
       if (scope.groupId !== "all") { const detailResponse = results[3]; if (detailResponse.status === 404) { updateUrl({ group: "all" }, { replace: true }); state.detail = null; } else if (!detailResponse.ok) throw new Error("Selected group data unavailable."); else state.detail = await detailResponse.json(); } else state.detail = null;
       state.lastSuccessful.set(`${scope.groupId}:${scope.window}`, { overview: state.overview, detail: state.detail, opportunity: state.opportunity }); render();
+      const requestedTransition = Number(new URLSearchParams(globalObject.location.search).get("transition"));
+      if (Number.isInteger(requestedTransition) && requestedTransition > 0 && !$("#structuralTransitionDialog")) {
+        await openTransitionReview(requestedTransition, { syncUrl: false });
+      }
     } catch (error) {
       if (error.name === "AbortError") return; const previous = state.lastSuccessful.get(`${scope.groupId}:${scope.window}`); if (previous) { state.overview = previous.overview; state.detail = previous.detail; state.opportunity = previous.opportunity; render(); $("#groupEvidenceLive").textContent = "Showing the last successfully loaded snapshot."; $("#groupEvidenceLive").classList.add("error"); } else setError(error.message || "Group data service unavailable.");
     }

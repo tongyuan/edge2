@@ -17,7 +17,7 @@ BASE_TIME = datetime(2026, 11, 15, 12, 0, tzinfo=timezone.utc)
 def payload(index: int, price: str, route: str = "BTD") -> ObservationPayload:
     return ObservationPayload.model_validate({
         "schema_version": "4.3",
-        "event_id": f"transition-event-{index}",
+        "event_id": f"transition-{route.lower()}-event-{index}",
         "symbol": "AMD",
         "route": route,
         "observation_type": "reclaim" if route == "BTD" else "rejection",
@@ -40,11 +40,8 @@ class StructuralTransitionIntegrationTests(unittest.TestCase):
         self.notifications = NotificationRepository(self.database_url)
 
     def activate_btd_against_str_primary(self) -> dict:
-        self.repository.ingest(payload(1, "110.0"), Decimal("0.01"))
-        self.repository.initialize_primary_hypothesis(
-            "AMD", "STR", "test-operator", "Explicit research hypothesis"
-        )
-        for index, price in enumerate(("110.2", "110.4", "110.6"), 2):
+        self.repository.ingest(payload(0, "190.0", "STR"), Decimal("0.01"))
+        for index, price in enumerate(("110.0", "110.2", "110.4", "110.6"), 1):
             self.repository.ingest(payload(index, price), Decimal("0.01"))
         connection = connect(self.database_url)
         try:
@@ -71,12 +68,22 @@ class StructuralTransitionIntegrationTests(unittest.TestCase):
         finally:
             connection.close()
 
-    def test_setting_primary_alone_never_creates_transition(self) -> None:
+    def test_initial_hypothesis_is_derived_without_manual_assignment(self) -> None:
         self.repository.ingest(payload(1, "110.0"), Decimal("0.01"))
-        self.repository.initialize_primary_hypothesis("AMD", "BTD", "operator")
         connection = connect(self.database_url)
         try:
             with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT hypothesis, derived_hypothesis,
+                           operator_override_hypothesis, source
+                    FROM symbol_primary_hypotheses WHERE symbol = 'AMD'
+                    """
+                )
+                self.assertEqual(
+                    cursor.fetchone(),
+                    ("BTD", "BTD", None, "EDGE_DERIVED"),
+                )
                 cursor.execute("SELECT count(*) FROM structural_transitions")
                 self.assertEqual(cursor.fetchone()[0], 0)
         finally:
@@ -93,8 +100,17 @@ class StructuralTransitionIntegrationTests(unittest.TestCase):
         connection = connect(self.database_url)
         try:
             with connection.cursor() as cursor:
-                cursor.execute("SELECT hypothesis FROM symbol_primary_hypotheses WHERE symbol = 'AMD'")
-                self.assertEqual(cursor.fetchone()[0], "BTD")
+                cursor.execute(
+                    """
+                    SELECT hypothesis, derived_hypothesis,
+                           operator_override_hypothesis, source
+                    FROM symbol_primary_hypotheses WHERE symbol = 'AMD'
+                    """
+                )
+                self.assertEqual(
+                    cursor.fetchone(),
+                    ("BTD", "STR", "BTD", "TRANSITION_PROMOTED"),
+                )
                 cursor.execute("SELECT action, previous_hypothesis, new_hypothesis FROM structural_transition_review_history")
                 self.assertEqual(cursor.fetchone(), ("PROMOTE", "STR", "BTD"))
                 cursor.execute("SELECT action, transition_id FROM primary_hypothesis_history ORDER BY id DESC LIMIT 1")
@@ -146,6 +162,21 @@ class StructuralTransitionIntegrationTests(unittest.TestCase):
         self.assertTrue(any(
             item["event_type"] == "STRUCTURAL_TRANSITION"
             for item in self.notifications.inbox()["items"]
+        ))
+
+    def test_review_detail_preserves_canonical_evidence_and_effective_primary(self) -> None:
+        transition = self.activate_btd_against_str_primary()
+        detail = self.repository.structural_transition_detail(
+            transition["id"], window="20D"
+        )
+        self.assertIsNotNone(detail)
+        self.assertEqual(detail["effective_primary_hypothesis"], "STR")
+        self.assertEqual(detail["derived_hypothesis"], "STR")
+        self.assertEqual(detail["candidate_hypothesis"], "BTD")
+        self.assertEqual(detail["confirming_observation_count"], 4)
+        self.assertTrue(any(
+            item["relationship"] == "NEW_OPPOSITE_STRUCTURE"
+            for item in detail["recent_mrz_events"]
         ))
 
 

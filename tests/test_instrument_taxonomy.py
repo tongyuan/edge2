@@ -418,6 +418,8 @@ class InstrumentTaxonomyIntegrationTests(unittest.TestCase):
             self.ingest(symbol, index)
         with transaction(self.database_url) as connection:
             with connection.cursor() as cursor:
+                cursor.execute("DELETE FROM primary_hypothesis_history")
+                cursor.execute("DELETE FROM symbol_primary_hypotheses")
                 cursor.execute("DELETE FROM instruments")
                 cursor.execute("SELECT COUNT(*), MIN(event_id), MAX(event_id) FROM observations")
                 before = cursor.fetchone()

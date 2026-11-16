@@ -684,7 +684,7 @@
       .slice()
       .sort((left, right) => (STAGE_ORDER[right.state] || 0) - (STAGE_ORDER[left.state] || 0) || left.symbol.localeCompare(right.symbol))
       .forEach((candidate) => {
-        const primary = options.primaryHypotheses?.[candidate.symbol]?.hypothesis || (options.primaryHypotheses ? "Unassigned" : candidate.hypothesis);
+        const primary = options.primaryHypotheses?.[candidate.symbol]?.hypothesis || candidate.hypothesis;
         const latestEvidence = options.latestEvidence?.[candidate.symbol];
         const row = node("tr", ""); row.tabIndex = 0;
         const symbol = node("td", "opportunity-candidate-symbol", candidate.symbol);
@@ -740,28 +740,21 @@
     transitionCard.append(directions, statuses, node("small", "transition-caution", "ⓘ Detected transition ≠ confirmed trend reversal. Primary changes only on operator approval."));
     grid.append(flowCard, transitionCard); section.append(grid);
 
-    const unassigned = Object.entries(transitions.primary_hypotheses || {}).length < (report.group?.member_count || 0);
-    if (unassigned) {
-      const setup = node("details", "primary-hypothesis-setup"); setup.append(node("summary", "", `${ts.unassigned_primary || 0} symbols need a Primary Hypothesis`));
-      const assigned = transitions.primary_hypotheses || {};
-      (report.members || []).filter((item) => !assigned[item.symbol]).forEach((member) => {
-        const row = node("div", "primary-setup-row"); row.append(node("strong", "", member.symbol));
-        ["STR", "BTD"].forEach((hypothesis) => { const button = node("button", "quiet-button", `Set ${hypothesis}`); button.type = "button"; button.addEventListener("click", async () => {
-          const storedIdentity = globalObject.localStorage?.getItem("edge2.operatorIdentity") || "";
-          const operatorIdentity = globalObject.prompt?.(`Operator identity for ${member.symbol}`, storedIdentity)?.trim();
-          if (!operatorIdentity) return;
-          globalObject.localStorage?.setItem("edge2.operatorIdentity", operatorIdentity);
-          button.disabled = true;
-          const response = await fetch(`/api/symbols/${encodeURIComponent(member.symbol)}/primary-hypothesis`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hypothesis, operator_identity: operatorIdentity, note: "Initialized from Group Evolution" }) });
-          if (!response.ok) button.disabled = false; else options.onRefresh?.();
-        }); row.append(button); }); setup.append(row);
-      }); section.append(setup);
-    }
-
     const tableWrap = node("div", "group-transition-table-wrap"); tableWrap.append(node("h3", "", "Contributing Symbols — Structural Transition Candidates"));
-    const table = node("table", "group-transition-table"); const head = node("thead", ""); head.innerHTML = "<tr><th>Symbol</th><th>Opposite MRZ</th><th>Primary Hypothesis</th><th>Review Status</th><th>Evidence</th></tr>"; const body = node("tbody", "");
-    (transitions.contributors || []).forEach((item) => { const row = node("tr", ""); const evidence = node("button", "group-transition-open", "Open →"); evidence.type = "button"; evidence.addEventListener("click", () => options.onOpenTransition?.(item)); row.append(node("td", "", item.symbol), node("td", "", `${item.previous_hypothesis} → ${item.candidate_hypothesis}`), node("td", "", item.current_primary_hypothesis || "Unassigned"), node("td", "", item.status.replaceAll("_", " ")), (() => { const cell = node("td", ""); cell.append(evidence); return cell; })()); body.append(row); });
-    if (!(transitions.contributors || []).length) { const row = node("tr", ""); const cell = node("td", "opportunity-empty", "No qualifying opposite-route activations in this window."); cell.colSpan = 5; row.append(cell); body.append(row); }
+    const table = node("table", "group-transition-table"); const head = node("thead", ""); head.innerHTML = "<tr><th>Symbol</th><th>Latest IPDA Movement</th><th>Opposite MRZ</th><th>Primary Hypothesis</th><th>Review Status</th><th>Evidence</th></tr>"; const body = node("tbody", "");
+    (transitions.contributors || []).forEach((item) => {
+      const row = node("tr", "");
+      const evidence = node("button", "group-transition-open", "Open →"); evidence.type = "button"; evidence.addEventListener("click", () => options.onOpenTransition?.(item));
+      const movement = item.latest_ipda_movement;
+      const movementLabel = movement?.start_location_label && movement?.current_location_label
+        ? `${movement.start_location_label} → ${movement.current_location_label}`
+        : "Unavailable";
+      const primaryCell = node("td", ""); primaryCell.append(node("b", `route ${String(item.current_primary_hypothesis).toLowerCase()}`, item.current_primary_hypothesis));
+      const statusCell = node("td", ""); statusCell.append(node("span", `transition-review-status ${String(item.status).toLowerCase()}`, item.status === "PENDING" ? "Pending Review" : item.status.replaceAll("_", " ")));
+      const evidenceCell = node("td", ""); evidenceCell.append(evidence);
+      row.append(node("td", "", item.symbol), node("td", "", movementLabel), node("td", "", `${item.previous_hypothesis} → ${item.candidate_hypothesis}`), primaryCell, statusCell, evidenceCell); body.append(row);
+    });
+    if (!(transitions.contributors || []).length) { const row = node("tr", ""); const cell = node("td", "opportunity-empty", "No qualifying opposite-route activations in this window."); cell.colSpan = 6; row.append(cell); body.append(row); }
     table.append(head, body); tableWrap.append(table); section.append(tableWrap); target.append(section);
   }
 

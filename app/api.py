@@ -60,14 +60,6 @@ class NearMissPromotionRequest(BaseModel):
     candidate_identity: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
-class PrimaryHypothesisRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-
-    hypothesis: Literal["BTD", "STR"]
-    operator_identity: str = Field(min_length=1, max_length=120)
-    note: str | None = Field(default=None, max_length=1000)
-
-
 class StructuralTransitionReviewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -535,28 +527,6 @@ def create_app(
             headers={"Cache-Control": "no-store, max-age=0"},
         )
 
-    @application.put("/api/symbols/{symbol}/primary-hypothesis", status_code=201)
-    def initialize_primary_hypothesis(
-        symbol: str,
-        request: PrimaryHypothesisRequest,
-    ) -> JSONResponse:
-        try:
-            payload = repository.initialize_primary_hypothesis(
-                symbol,
-                request.hypothesis,
-                request.operator_identity,
-                request.note,
-            )
-        except StructuralTransitionConflict as exc:
-            raise HTTPException(status_code=409, detail=exc.code) from exc
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return JSONResponse(
-            payload,
-            status_code=201,
-            headers={"Cache-Control": "no-store, max-age=0"},
-        )
-
     @application.post("/api/structural-transitions/{transition_id}/review")
     def review_structural_transition(
         transition_id: int,
@@ -575,6 +545,25 @@ def create_app(
             raise HTTPException(status_code=status_code, detail=exc.code) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return JSONResponse(
+            payload,
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
+    @application.get("/api/structural-transitions/{transition_id}")
+    def structural_transition_detail(
+        transition_id: int,
+        window: Literal["24H", "5D", "20D"] = Query("20D"),
+    ) -> JSONResponse:
+        try:
+            payload = repository.structural_transition_detail(
+                transition_id,
+                window=window,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if payload is None:
+            raise HTTPException(status_code=404, detail="transition_not_found")
         return JSONResponse(
             payload,
             headers={"Cache-Control": "no-store, max-age=0"},

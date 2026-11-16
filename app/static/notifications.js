@@ -40,6 +40,11 @@
       if (parsed.origin !== origin) return "/";
       const symbol = parsed.searchParams.get("symbol");
       if (!symbol || !SYMBOL_PATTERN.test(symbol)) return "/";
+      if (parsed.pathname === "/mrz/watchlists") {
+        const transition = parsed.searchParams.get("transition");
+        if (!transition || !/^[1-9][0-9]*$/.test(transition)) return "/";
+        return `/mrz/watchlists?group=all&window=20D&symbol=${encodeURIComponent(symbol)}&transition=${transition}`;
+      }
       if (parsed.pathname === "/") return `/?symbol=${encodeURIComponent(symbol)}`;
       if (parsed.pathname === "/mrz/symbols") {
         return `/mrz/symbols?symbol=${encodeURIComponent(symbol)}`;
@@ -98,7 +103,7 @@
     vapidPublicKey,
   }) {
     const registration = await navigatorObject.serviceWorker.register(
-      "/service-worker.js?v=group-evolution-inbox-20261116",
+      "/service-worker.js?v=structural-review-20261116",
       { scope: "/" },
     );
     const permission = notificationObject.permission === "granted"
@@ -437,7 +442,10 @@
       heading.append(identity, timestamp);
       const eventName = document.createElement("p");
       eventName.className = "notification-inbox-item-name";
-      eventName.textContent = item.event_name || "EDGE Notification";
+      const reviewStatus = item.event_type === "STRUCTURAL_TRANSITION"
+        ? String(item.transition_review_status || "PENDING").replaceAll("_", " ")
+        : "";
+      eventName.textContent = `${item.event_name || "EDGE Notification"}${reviewStatus ? ` · ${reviewStatus}` : ""}`;
       const body = document.createElement("p");
       body.className = "notification-inbox-item-body";
       body.textContent = item.body || "An EDGE event occurred.";

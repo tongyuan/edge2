@@ -13,6 +13,11 @@ function safeNotificationPath(candidate) {
     if (parsed.origin !== EDGE_ORIGIN) return "/";
     const symbol = parsed.searchParams.get("symbol");
     if (!symbol || !SYMBOL_PATTERN.test(symbol)) return "/";
+    if (parsed.pathname === "/mrz/watchlists") {
+      const transition = parsed.searchParams.get("transition");
+      if (!transition || !/^[1-9][0-9]*$/.test(transition)) return "/";
+      return `/mrz/watchlists?group=all&window=20D&symbol=${encodeURIComponent(symbol)}&transition=${transition}`;
+    }
     if (parsed.pathname === "/") return `/?symbol=${encodeURIComponent(symbol)}`;
     if (parsed.pathname === "/mrz/symbols") {
       return `/mrz/symbols?symbol=${encodeURIComponent(symbol)}`;

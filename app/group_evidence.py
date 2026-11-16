@@ -400,16 +400,23 @@ def _structural_transition_report(
     members: Sequence[str],
     rows: Sequence[Mapping[str, Any]],
     primary_rows: Sequence[Mapping[str, Any]],
+    location_flow: Mapping[str, Any],
 ) -> dict[str, Any]:
     member_set = set(members)
     primaries = {
         str(row["symbol"]): {
             "hypothesis": str(row["hypothesis"]),
+            "derived_hypothesis": str(row["derived_hypothesis"]),
+            "operator_override_hypothesis": row.get("operator_override_hypothesis"),
             "version": int(row["version"]),
             "updated_at": _iso(row["updated_at"]),
             "source": str(row["source"]),
         }
         for row in primary_rows if str(row["symbol"]) in member_set
+    }
+    movement_by_symbol = {
+        str(item["symbol"]): item
+        for item in location_flow.get("members", ())
     }
     events = []
     by_symbol: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -443,6 +450,8 @@ def _structural_transition_report(
             "reviewed_by": row.get("reviewed_by"),
             "review_note": row.get("review_note"),
             "current_primary_hypothesis": primaries.get(symbol, {}).get("hypothesis"),
+            "latest_ipda_movement": movement_by_symbol.get(symbol),
+            "confirming_observation_count": int(row["confirming_observation_count"]),
             "canonical_evidence_ref": f"/mrz/events?symbol={symbol}&event={str(row['activation_event_key'])}",
         }
         events.append(event)
@@ -471,7 +480,7 @@ def _structural_transition_report(
         "events": events,
         "contributors": contributors,
         "primary_hypotheses": primaries,
-        "detection_basis": "opposite_route_mrz_activation_against_persisted_primary_at_knowledge_time",
+        "detection_basis": "opposite_route_mrz_activation_against_effective_primary_at_knowledge_time",
         "membership_semantics": "current_membership_at_snapshot",
     }
 
@@ -1252,6 +1261,7 @@ def build_named_group_evidence(
             members,
             inputs.get("structural_transitions", ()),
             inputs.get("primary_hypotheses", ()),
+            location_flow,
         )
         evidence_times.extend(
             row["known_at"]

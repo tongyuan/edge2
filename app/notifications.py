@@ -39,7 +39,19 @@ def build_push_destination(
     if not PUSH_SYMBOL_PATTERN.fullmatch(symbol):
         return "/"
     encoded_symbol = quote(symbol, safe="")
-    if event_type in {"MRZ_ACTIVATED", "MRZ_MIGRATED", "STRUCTURAL_TRANSITION"}:
+    if event_type == "STRUCTURAL_TRANSITION":
+        transition_id = (event_context or {}).get("structural_transition_id")
+        try:
+            transition_id = int(transition_id)
+        except (TypeError, ValueError):
+            return "/"
+        if transition_id < 1:
+            return "/"
+        return (
+            "/mrz/watchlists?group=all&window=20D"
+            f"&symbol={encoded_symbol}&transition={transition_id}"
+        )
+    if event_type in {"MRZ_ACTIVATED", "MRZ_MIGRATED"}:
         return f"/mrz/symbols?symbol={encoded_symbol}"
     if event_type == PRESSURE_EVENT_TYPE:
         return f"/mrz/events?symbol={encoded_symbol}"
@@ -612,7 +624,8 @@ class NotificationRepository:
                 symbol, route_owner, structural_location,
                 core_mrz_lower, core_mrz_upper, activated_at, occurred_at,
                 canonical_activation_event_key, previous_hypothesis,
-                candidate_hypothesis, canonical_evidence_ref, deliverable
+                candidate_hypothesis, canonical_evidence_ref,
+                structural_transition_id, transition_review_status, deliverable
             )
             SELECT
                 'STRUCTURAL_TRANSITION:' || activation_event_key,
@@ -623,6 +636,7 @@ class NotificationRepository:
                 activation_event_key, previous_hypothesis,
                 candidate_hypothesis,
                 '/mrz/events?symbol=' || symbol || '&event=' || activation_event_key,
+                id, status,
                 TRUE
             FROM structural_transitions
             WHERE TRUE
@@ -1428,6 +1442,9 @@ def notification_payload(row: Mapping[str, Any]) -> dict[str, Any]:
             f"{display_decimal(row['core_mrz_lower'])}–"
             f"{display_decimal(row['core_mrz_upper'])}"
         )
+        review_status = row.get("transition_review_status")
+        if review_status and str(review_status) != "PENDING":
+            body += f" · Review: {str(review_status).replace('_', ' ').title()}"
     elif event_type == "MRZ_MIGRATED":
         route_label = (
             f"{previous_route_owner} → {route_owner}"
@@ -1529,6 +1546,10 @@ def notification_payload(row: Mapping[str, Any]) -> dict[str, Any]:
         })
     elif event_type == "STRUCTURAL_TRANSITION":
         payload.update({
+            "structural_transition_id": int(row["structural_transition_id"]),
+            "transition_review_status": str(
+                row.get("transition_review_status") or "PENDING"
+            ),
             "previous_hypothesis": str(row["previous_hypothesis"]),
             "candidate_hypothesis": str(row["candidate_hypothesis"]),
             "canonical_activation_event_key": str(

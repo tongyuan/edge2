@@ -675,6 +675,37 @@ class EdgeRepository:
                     """,
                     (payload.symbol,),
                 )
+                cursor.execute(
+                    """
+                    INSERT INTO symbol_primary_hypotheses (
+                        symbol, hypothesis, derived_hypothesis,
+                        operator_override_hypothesis,
+                        established_at, updated_at, updated_by, source
+                    ) VALUES (%s, %s, %s, NULL, %s, %s, 'EDGE_AUTOMATIC', 'EDGE_DERIVED')
+                    ON CONFLICT (symbol) DO NOTHING
+                    RETURNING symbol
+                    """,
+                    (
+                        payload.symbol,
+                        payload.route.value,
+                        payload.route.value,
+                        inserted["received_at"],
+                        inserted["received_at"],
+                    ),
+                )
+                if cursor.fetchone() is not None:
+                    cursor.execute(
+                        """
+                        INSERT INTO primary_hypothesis_history (
+                            symbol, previous_hypothesis, new_hypothesis, action,
+                            operator_identity, note, acted_at
+                        ) VALUES (%s, NULL, %s, 'EDGE_DERIVED_INITIALIZED',
+                                  'EDGE_AUTOMATIC',
+                                  'Initial hypothesis derived from first canonical route observation.',
+                                  %s)
+                        """,
+                        (payload.symbol, payload.route.value, inserted["received_at"]),
+                    )
 
                 cursor.execute(
                     """
@@ -703,7 +734,9 @@ class EdgeRepository:
                         transition
                         for transition in replay.transitions
                         if transition.trigger_event_id == payload.event_id
-                        and transition.event_type.value == "MRZ_ACTIVATED"
+                        and transition.event_type.value in {
+                            "MRZ_ACTIVATED", "MRZ_MIGRATED"
+                        }
                     ),
                 )
                 self._sync_near_miss_episodes(
@@ -766,8 +799,8 @@ class EdgeRepository:
                     previous_hypothesis, candidate_hypothesis,
                     primary_hypothesis_version,
                     activation_event_time, core_mrz_lower, core_mrz_upper,
-                    structural_location
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    structural_location, confirming_observation_count
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (activation_event_key) DO NOTHING
                 """,
                 (
@@ -781,51 +814,9 @@ class EdgeRepository:
                     new.core_mrz_lower,
                     new.core_mrz_upper,
                     new.structural_location.value,
+                    new.confirming_observation_count,
                 ),
             )
-
-    def initialize_primary_hypothesis(
-        self,
-        symbol: str,
-        hypothesis: str,
-        operator_identity: str,
-        note: str | None = None,
-    ) -> dict[str, Any]:
-        normalized = normalize_symbol(symbol)
-        candidate = hypothesis.strip().upper()
-        if candidate not in {"BTD", "STR"}:
-            raise ValueError("hypothesis must be BTD or STR")
-        identity = operator_identity.strip()
-        if not identity:
-            raise ValueError("operator_identity is required")
-        with transaction(self.database_url) as connection:
-            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute(
-                    """
-                    INSERT INTO symbol_primary_hypotheses (
-                        symbol, hypothesis, updated_by, source
-                    ) VALUES (%s, %s, %s, 'OPERATOR_INITIALIZED')
-                    ON CONFLICT (symbol) DO NOTHING
-                    RETURNING *
-                    """,
-                    (normalized, candidate, identity),
-                )
-                row = cursor.fetchone()
-                if row is None:
-                    raise StructuralTransitionConflict(
-                        "primary_hypothesis_exists",
-                        "Primary Hypothesis is already established; use transition review.",
-                    )
-                cursor.execute(
-                    """
-                    INSERT INTO primary_hypothesis_history (
-                        symbol, previous_hypothesis, new_hypothesis, action,
-                        operator_identity, note
-                    ) VALUES (%s, NULL, %s, 'INITIALIZED', %s, %s)
-                    """,
-                    (normalized, candidate, identity, note),
-                )
-                return primary_hypothesis_payload(row)
 
     def review_structural_transition(
         self,
@@ -888,11 +879,15 @@ class EdgeRepository:
                         """
                         UPDATE symbol_primary_hypotheses
                         SET hypothesis = %s, version = version + 1,
+                            operator_override_hypothesis = %s,
                             updated_at = clock_timestamp(), updated_by = %s,
                             source = 'TRANSITION_PROMOTED'
                         WHERE symbol = %s
                         """,
-                        (new_hypothesis, identity, transition["symbol"]),
+                        (
+                            new_hypothesis, new_hypothesis,
+                            identity, transition["symbol"],
+                        ),
                     )
                     cursor.execute(
                         """
@@ -938,7 +933,164 @@ class EdgeRepository:
                         reviewed, note, transition_id,
                     ),
                 )
-                return structural_transition_payload(cursor.fetchone())
+                reviewed_transition = cursor.fetchone()
+                cursor.execute(
+                    """
+                    UPDATE web_push_notifications
+                    SET transition_review_status = %s
+                    WHERE structural_transition_id = %s
+                    """,
+                    (new_status, transition_id),
+                )
+                return structural_transition_payload(reviewed_transition)
+
+    def structural_transition_detail(
+        self,
+        transition_id: int,
+        *,
+        window: str = "20D",
+    ) -> dict[str, Any] | None:
+        """Return one canonical transition review projection without mutation."""
+        duration = LOCATION_HISTORY_WINDOWS.get(window)
+        if duration is None:
+            raise ValueError("Unsupported transition review window")
+        connection = connect(self.database_url)
+        try:
+            connection.set_session(readonly=True, isolation_level="REPEATABLE READ")
+            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute("SELECT transaction_timestamp() AS as_of")
+                as_of = cursor.fetchone()["as_of"]
+                cursor.execute(
+                    """
+                    SELECT transition.*, primary_state.hypothesis AS effective_hypothesis,
+                           primary_state.derived_hypothesis,
+                           primary_state.operator_override_hypothesis,
+                           primary_state.version AS effective_hypothesis_version,
+                           primary_state.source AS hypothesis_source
+                    FROM structural_transitions AS transition
+                    INNER JOIN symbol_primary_hypotheses AS primary_state
+                        ON primary_state.symbol = transition.symbol
+                    WHERE transition.id = %s
+                    """,
+                    (transition_id,),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    return None
+                symbol = str(row["symbol"])
+                cursor.execute(
+                    """
+                    SELECT *
+                    FROM observations
+                    WHERE symbol = %s AND received_at <= %s
+                    ORDER BY observed_at ASC, received_at ASC, id ASC
+                    """,
+                    (symbol, as_of),
+                )
+                observations = tuple(
+                    observation_from_row(item) for item in cursor.fetchall()
+                )
+                comparison_at = as_of - duration
+                current_observation = observations[-1] if observations else None
+                start_observation = next(
+                    (
+                        item for item in reversed(observations)
+                        if item.observed_at <= comparison_at
+                    ),
+                    None,
+                )
+
+                def location_payload(observation: Observation | None) -> dict[str, Any] | None:
+                    if observation is None:
+                        return None
+                    location = classify_ipda_location(
+                        observation.observation_price,
+                        observation.ipda_20w_high,
+                        observation.ipda_20w_low,
+                    )
+                    if location is None:
+                        return None
+                    value = location.value
+                    return {
+                        "location": value,
+                        "label": GROUP_LOCATION_LABELS.get(
+                            value,
+                            value.replace("_", " ").title(),
+                        ),
+                        "observed_at": iso(observation.observed_at),
+                        "event_id": observation.event_id,
+                    }
+
+                cursor.execute(
+                    """
+                    SELECT event.event_key, event.event_type, event.route_owner,
+                           event.previous_route_owner, event.occurred_at,
+                           trigger.received_at AS known_at,
+                           event.trigger_event_id,
+                           event.new_core_mrz_lower, event.new_core_mrz_upper
+                    FROM mrz_events AS event
+                    INNER JOIN observations AS trigger
+                        ON trigger.event_id = event.trigger_event_id
+                    WHERE event.symbol = %s
+                      AND trigger.received_at <= %s
+                    ORDER BY event.occurred_at DESC, event.sequence DESC,
+                             event.event_key DESC
+                    LIMIT 8
+                    """,
+                    (symbol, as_of),
+                )
+                recent_events = []
+                previous_structure = None
+                for event in cursor.fetchall():
+                    relationship = "CANONICAL_HISTORY"
+                    if str(event["event_key"]) == str(row["activation_event_key"]):
+                        relationship = "NEW_OPPOSITE_STRUCTURE"
+                    elif (
+                        str(event["route_owner"]) == str(row["previous_hypothesis"])
+                        and event["occurred_at"] < row["activation_event_time"]
+                        and previous_structure is None
+                    ):
+                        relationship = "PREVIOUS_STRUCTURE"
+                    item = {
+                        "event_key": str(event["event_key"]),
+                        "event_type": str(event["event_type"]),
+                        "route": str(event["route_owner"]),
+                        "previous_route": (
+                            str(event["previous_route_owner"])
+                            if event.get("previous_route_owner") else None
+                        ),
+                        "occurred_at": iso(event["occurred_at"]),
+                        "known_at": iso(event["known_at"]),
+                        "trigger_event_id": str(event["trigger_event_id"]),
+                        "lower": decimal_text(event["new_core_mrz_lower"]),
+                        "upper": decimal_text(event["new_core_mrz_upper"]),
+                        "relationship": relationship,
+                    }
+                    recent_events.append(item)
+                    if relationship == "PREVIOUS_STRUCTURE":
+                        previous_structure = item
+                payload = structural_transition_payload(row)
+                payload.update({
+                    "effective_primary_hypothesis": str(row["effective_hypothesis"]),
+                    "derived_hypothesis": str(row["derived_hypothesis"]),
+                    "operator_override_hypothesis": row.get("operator_override_hypothesis"),
+                    "effective_hypothesis_version": int(row["effective_hypothesis_version"]),
+                    "hypothesis_source": str(row["hypothesis_source"]),
+                    "comparison_window": window,
+                    "ipda_movement": {
+                        "start": location_payload(start_observation),
+                        "current": location_payload(current_observation),
+                    },
+                    "previous_structure": previous_structure,
+                    "recent_mrz_events": recent_events,
+                    "canonical_evidence_ref": (
+                        f"/mrz/events?symbol={symbol}"
+                        f"&event={str(row['activation_event_key'])}"
+                    ),
+                })
+                return payload
+        finally:
+            connection.close()
 
     def reconcile_current_pressure_states(self) -> dict[str, int]:
         """Compatibility no-op: operational Pressure reconciliation is retired."""
@@ -3353,7 +3505,8 @@ class EdgeRepository:
                 near_miss_episodes = tuple(cursor.fetchall())
                 cursor.execute(
                     """
-                    SELECT symbol, hypothesis, version, established_at,
+                    SELECT symbol, hypothesis, derived_hypothesis,
+                           operator_override_hypothesis, version, established_at,
                            updated_at, updated_by, source
                     FROM symbol_primary_hypotheses
                     WHERE symbol = ANY(%s)
@@ -4085,6 +4238,8 @@ def primary_hypothesis_payload(row: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "symbol": str(row["symbol"]),
         "hypothesis": str(row["hypothesis"]),
+        "derived_hypothesis": str(row["derived_hypothesis"]),
+        "operator_override_hypothesis": row.get("operator_override_hypothesis"),
         "version": int(row["version"]),
         "established_at": iso(row["established_at"]),
         "updated_at": iso(row["updated_at"]),
@@ -4107,6 +4262,7 @@ def structural_transition_payload(row: Mapping[str, Any]) -> dict[str, Any]:
         "core_mrz_lower": decimal_text(row["core_mrz_lower"]),
         "core_mrz_upper": decimal_text(row["core_mrz_upper"]),
         "structural_location": str(row["structural_location"]),
+        "confirming_observation_count": int(row["confirming_observation_count"]),
         "status": str(row["status"]),
         "version": int(row["version"]),
         "reviewed_at": iso(row.get("reviewed_at")),
