@@ -17,6 +17,7 @@
     recentLoaded: false,
     sort: "recent",
     activityDrawerOpen: new URLSearchParams(globalObject.location?.search || "").get("activity") === "open",
+    structuralEvidenceDrawer: null,
     mounted: false,
   };
   const $ = (selector) => globalObject.document.querySelector(selector);
@@ -91,6 +92,28 @@
     return `/mrz/symbols?${params}`;
   }
 
+  function eventEvidenceUrl(groupId, symbol, eventId) {
+    const params = new URLSearchParams({
+      symbol,
+      group: String(groupId),
+      window: state.scope.window,
+      return: `${globalObject.location.pathname}${globalObject.location.search}`,
+    });
+    if (eventId) params.set("event", eventId);
+    return `/mrz/events?${params}`;
+  }
+
+  function groupSymbolUrl(groupId, symbol) {
+    const params = new URLSearchParams({
+      symbol,
+      from: "watchlists",
+      group: String(groupId),
+      window: state.scope.window,
+      return: `${globalObject.location.pathname}${globalObject.location.search}`,
+    });
+    return `/mrz/symbols?${params}`;
+  }
+
   function detailLink(label, href, className = "quiet-button") {
     const link = node("a", className, label);
     link.href = href;
@@ -140,6 +163,7 @@
 
   function openGroup(groupId) {
     state.activityDrawerOpen = false;
+    state.structuralEvidenceDrawer = null;
     updateUrl({ group: groupId, symbol: null, dimension: null, bucket: null, evidence: null });
     state.recentLoaded = false;
     load().then(() => $("#selectedGroupWorkspace")?.scrollIntoView({ block: "start", behavior: "smooth" }));
@@ -202,11 +226,11 @@
   function directionMetric(higher, lower, empty = "—") {
     if (higher === undefined || lower === undefined) return node("span", "radar-unavailable", "Unavailable");
     const wrap = node("span", "direction-metric");
-    if (!higher && !lower) wrap.textContent = empty;
-    else {
-      if (higher) wrap.append(node("span", "higher", `Higher ${higher}`));
-      if (lower) wrap.append(node("span", "lower", `Lower ${lower}`));
-    }
+    wrap.append(
+      node("span", "lower", `↓ ${Number(lower) || 0}`),
+      node("span", "higher", `↑ ${Number(higher) || 0}`),
+    );
+    if (!higher && !lower) wrap.setAttribute("aria-label", empty === "—" ? "No higher or lower movement" : empty);
     return wrap;
   }
 
@@ -235,7 +259,7 @@
       {
         label: "New tracker events",
         value: summary.new_tracker_events,
-        detail: `MRZ ${summary.tracker_event_breakdown.mrz} · Near Miss ${summary.tracker_event_breakdown.near_miss}`,
+        detail: `MRZ ${summary.tracker_event_breakdown.mrz} · Near Miss ${summary.tracker_event_breakdown.near_miss} · Activation ${summary.tracker_event_breakdown.activation || 0}`,
         tone: "events",
       },
     ];
@@ -245,31 +269,6 @@
       target.append(card);
     });
     target.hidden = false;
-  }
-
-  function renderOpportunityUniverseOverview() {
-    const payload = state.opportunity;
-    const section = node("section", "opportunity-overview opportunity-universe-overview");
-    const selectedSummary = state.detail?.scope === "named_group"
-      ? (payload?.groups || []).find((item) => String(item.id) === String(state.detail.group.id))
-      : null;
-    const counts = selectedSummary
-      ? {
-          context_or_developing: selectedSummary.context_or_developing_count,
-          near_miss: selectedSummary.near_miss_count,
-          structure_established: selectedSummary.structure_established_count,
-        }
-      : (payload?.counts || {});
-    [
-      ["Developing context", counts.context_or_developing || 0, "Observable context · no invented threshold", "context"],
-      ["Near Miss", counts.near_miss || 0, "Canonical structural candidates", "near"],
-      ["Structure established", counts.structure_established || 0, "Authoritative MRZ", "structure"],
-    ].forEach(([label, value, supporting, tone]) => {
-      const card = node("article", `opportunity-overview-card ${tone}`);
-      card.append(node("strong", "", value), node("span", "", label), node("small", "", supporting));
-      section.append(card);
-    });
-    return section;
   }
 
   function sortedOverviewGroups(groups) {
@@ -314,12 +313,46 @@
     return button;
   }
 
+  function structuralEventCounts(group) {
+    const summary = group.activity?.summary || {};
+    const byType = summary.by_event_type || {};
+    return {
+      near_miss: Number(summary.near_miss_episode_count || 0),
+      activation: Number(byType.MRZ_ACTIVATED || 0),
+      migration: Number(byType.MRZ_MIGRATED || 0),
+    };
+  }
+
+  function structuralEventBadge(group, kind, label, count) {
+    const eventName = kind === "near_miss" ? "Near Miss" : kind === "activation" ? "MRZ Activation" : "MRZ Migration";
+    const button = node("button", `structural-event-badge ${kind}${count ? "" : " empty"}`);
+    button.type = "button";
+    button.disabled = count === 0;
+    button.append(node("span", "", label), node("strong", "", String(count)));
+    button.setAttribute(
+      "aria-label",
+      count
+        ? `${group.name}, ${eventName}, ${count} event${count === 1 ? "" : "s"} in ${state.scope.window}. Click to inspect.`
+        : `${group.name}, no qualifying ${eventName} events in ${state.scope.window}.`,
+    );
+    button.title = count
+      ? `${label} — ${count} event${count === 1 ? "" : "s"}\n${count} ${eventName.toLowerCase()} event${count === 1 ? "" : "s"} in the selected ${state.scope.window} period. Click to inspect.`
+      : `${label} — no qualifying events in ${state.scope.window}`;
+    if (count) {
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        openStructuralEvidence(group, kind).catch((error) => setError(error.message));
+      });
+    }
+    return button;
+  }
+
   function renderOverviewTable() {
     const section = node("section", "radar-overview");
     const tableWrap = node("div", "radar-table-wrap");
     const table = node("table", "radar-table");
     const head = node("thead", "");
-    head.innerHTML = `<tr><th>Group</th><th>Members</th><th>Opportunity research</th><th>IPDA Breadth (P / E / D)</th><th>Migration</th><th class="activity-heading">Activity (${state.scope.window})</th><th>Near Miss</th><th aria-label="Open"></th></tr>`;
+    head.innerHTML = `<tr><th>Group</th><th>Members</th><th>IPDA Breadth (P / E / D)</th><th>Location Flow (${state.scope.window})</th><th>Structural Events (${state.scope.window})</th><th aria-label="Open"></th></tr>`;
     const body = node("tbody", "");
     const groups = sortedOverviewGroups([...(state.overview?.groups || [])]);
     groups.forEach((group) => {
@@ -330,21 +363,18 @@
       const nameCell = node("td", "group-name-cell");
       nameCell.append(node("span", "group-initial", group.name.slice(0, 2).toUpperCase()), node("strong", "", group.name));
       const memberCell = node("td", "", group.membership_total);
-      const opportunityGroup = (state.opportunity?.groups || []).find((item) => String(item.id) === String(group.id));
-      const opportunityCell = node("td", "opportunity-group-cell");
-      if (opportunityGroup?.latest_material_event) {
-        const latest = opportunityGroup.latest_material_event;
-        opportunityCell.append(
-          node("strong", `opportunity-stage ${String(latest.state).toLowerCase().replaceAll("_", "-")}`, latest.state_label),
-          node("small", "", `${opportunityGroup.candidate_symbol_count} symbol${opportunityGroup.candidate_symbol_count === 1 ? "" : "s"} · ${latest.symbol}`),
-        );
-      } else opportunityCell.append(node("span", "radar-unavailable", "No context"));
       const breadthCell = node("td", ""); breadthCell.append(renderBreadth(group));
-      const migrationCell = node("td", ""); migrationCell.append(directionMetric(group.migrations?.unique_higher_contributors, group.migrations?.unique_lower_contributors));
-      const activity = node("td", "activity-table-cell"); activity.append(activityCell(group));
-      const nearCell = node("td", "near-miss-count", group.near_miss?.status === "available" ? group.near_miss.active_episode_count : "Unavailable");
+      const flow = group.activity?.summary || {};
+      const flowCell = node("td", "location-flow-cell"); flowCell.append(directionMetric(flow.moved_higher_symbols, flow.moved_lower_symbols));
+      const eventCell = node("td", "structural-events-cell");
+      const counts = structuralEventCounts(group);
+      eventCell.append(
+        structuralEventBadge(group, "near_miss", "NM", counts.near_miss),
+        structuralEventBadge(group, "activation", "ACT", counts.activation),
+        structuralEventBadge(group, "migration", "MRZ", counts.migration),
+      );
       const open = node("td", "radar-open-cell"); open.append(node("span", "", "Open"));
-      row.append(nameCell, memberCell, opportunityCell, breadthCell, migrationCell, activity, nearCell, open);
+      row.append(nameCell, memberCell, breadthCell, flowCell, eventCell, open);
       row.addEventListener("click", () => openGroup(group.id));
       row.addEventListener("keydown", (event) => { if (event.target === row && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); openGroup(group.id); } });
       body.append(row);
@@ -352,7 +382,7 @@
     if (!groups.length) {
       const row = node("tr", "");
       const cell = node("td", "radar-empty", state.overview?.groups?.length ? "No groups match this search." : "No saved groups. Create a group to begin.");
-      cell.colSpan = 8; row.append(cell); body.append(row);
+      cell.colSpan = 6; row.append(cell); body.append(row);
     }
     table.append(head, body); tableWrap.append(table); section.append(tableWrap);
     return section;
@@ -643,6 +673,170 @@
     return drawer;
   }
 
+  function closeStructuralEvidence() {
+    state.structuralEvidenceDrawer = null;
+    render();
+  }
+
+  async function openStructuralEvidence(group, kind) {
+    const token = `${group.id}:${kind}:${state.scope.window}:${Date.now()}`;
+    state.structuralEvidenceDrawer = { token, group, kind, status: "loading", direction: "all" };
+    render();
+    try {
+      const response = await globalObject.fetch(
+        `/api/group-evidence/${encodeURIComponent(group.id)}?window=${encodeURIComponent(state.scope.window)}`,
+        { cache: "no-store" },
+      );
+      if (!response.ok) throw new Error("Canonical structural evidence is unavailable.");
+      if (state.structuralEvidenceDrawer?.token !== token) return;
+      state.structuralEvidenceDrawer = {
+        ...state.structuralEvidenceDrawer,
+        status: "ready",
+        detail: await response.json(),
+      };
+    } catch (error) {
+      if (state.structuralEvidenceDrawer?.token !== token) return;
+      state.structuralEvidenceDrawer = {
+        ...state.structuralEvidenceDrawer,
+        status: "error",
+        message: error.message || "Canonical structural evidence is unavailable.",
+      };
+    }
+    render();
+    $("#structuralEvidenceDrawer")?.focus();
+  }
+
+  function drawerEvidenceLink(groupId, symbol, eventId, nearMiss = false) {
+    const link = node("a", "structural-evidence-link", "Open →");
+    link.href = nearMiss ? groupSymbolUrl(groupId, symbol) : eventEvidenceUrl(groupId, symbol, eventId);
+    return link;
+  }
+
+  function evidenceDrawerTable(headers) {
+    const wrap = node("div", "structural-evidence-table-wrap");
+    const table = node("table", "structural-evidence-table");
+    const head = node("thead", "");
+    const row = node("tr", "");
+    headers.forEach((header) => row.append(node("th", "", header)));
+    head.append(row);
+    const body = node("tbody", "");
+    table.append(head, body);
+    wrap.append(table);
+    return { wrap, body };
+  }
+
+  function nearMissEvents(detail) {
+    const comparison = new Date(detail.window.comparison_at).getTime();
+    const asOf = new Date(detail.window.as_of).getTime();
+    return (detail.near_miss?.episodes || []).filter((episode) => {
+      const started = new Date(episode.started_at).getTime();
+      const ended = episode.ended_at ? new Date(episode.ended_at).getTime() : Number.NaN;
+      return (started > comparison && started <= asOf)
+        || (Number.isFinite(ended) && ended > comparison && ended <= asOf);
+    }).sort((left, right) => new Date(right.candidate_timestamp || right.started_at) - new Date(left.candidate_timestamp || left.started_at));
+  }
+
+  function renderMigrationDrawerBody(drawer, detail, drawerState) {
+    const summary = detail.directional.mrz_migrations.summary;
+    const directionMap = { all: null, higher: "higher", lower: "lower", unchanged: "same_midpoint", unknown: "unknown" };
+    const metrics = node("div", "structural-evidence-metrics migration-metrics");
+    [
+      ["all", "Total", summary.event_count],
+      ["higher", "Higher", summary.higher_events],
+      ["lower", "Lower", summary.lower_events],
+      ["unchanged", "Unchanged", summary.same_midpoint_events],
+      ["unknown", "Unknown", summary.unknown_events],
+    ].forEach(([direction, label, value]) => {
+      if (direction === "unknown" && !value) return;
+      const button = node("button", `${direction}${drawerState.direction === direction ? " selected" : ""}`);
+      button.type = "button";
+      button.setAttribute("aria-pressed", String(drawerState.direction === direction));
+      button.append(node("span", "", label), node("strong", "", String(value)));
+      button.addEventListener("click", () => { state.structuralEvidenceDrawer.direction = direction; render(); });
+      metrics.append(button);
+    });
+    drawer.append(metrics);
+    const selectedDirection = directionMap[drawerState.direction];
+    const events = (detail.directional.mrz_migrations.events || []).filter((event) => !selectedDirection || event.direction === selectedDirection);
+    const unique = new Set(events.map((event) => event.symbol)).size;
+    drawer.append(node("p", "structural-evidence-summary", `${events.length} event${events.length === 1 ? "" : "s"} · ${unique} unique symbol${unique === 1 ? "" : "s"}`));
+    const { wrap, body } = evidenceDrawerTable(["Symbol", "Time (UTC−4)", "Previous MRZ", "Next MRZ", "Direction", "Evidence"]);
+    events.forEach((event) => {
+      const row = node("tr", "");
+      const direction = event.direction === "same_midpoint" ? "Unchanged" : titleCase(event.direction);
+      const evidence = node("td", ""); evidence.append(drawerEvidenceLink(detail.group.id, event.symbol, event.event_key));
+      row.append(
+        node("td", "symbol", event.symbol),
+        node("td", "", exactTime(event.occurred_at)),
+        node("td", "", `${text(event.old_lower)}–${text(event.old_upper)}`),
+        node("td", "", `${text(event.new_lower)}–${text(event.new_upper)}`),
+        node("td", `direction ${event.direction}`, direction),
+        evidence,
+      );
+      body.append(row);
+    });
+    drawer.append(wrap);
+  }
+
+  function renderActivationDrawerBody(drawer, detail) {
+    const events = (detail.activity.records || []).filter((event) => event.event_type === "MRZ_ACTIVATED");
+    const unique = new Set(events.map((event) => event.symbol)).size;
+    const metrics = node("div", "structural-evidence-metrics");
+    [["Total", events.length], ["Unique symbols", unique]].forEach(([label, value]) => { const item = node("div", ""); item.append(node("span", "", label), node("strong", "", String(value))); metrics.append(item); });
+    drawer.append(metrics);
+    const { wrap, body } = evidenceDrawerTable(["Symbol", "Route", "Activated MRZ", "Activation time", "Evidence"]);
+    events.forEach((event) => {
+      const row = node("tr", ""); const evidence = node("td", ""); evidence.append(drawerEvidenceLink(detail.group.id, event.symbol, event.source_event_id));
+      row.append(node("td", "symbol", event.symbol), node("td", "", event.route_owner), node("td", "", `${text(event.next_lower)}–${text(event.next_upper)}`), node("td", "", exactTime(event.occurred_at)), evidence); body.append(row);
+    });
+    drawer.append(wrap);
+  }
+
+  function renderNearMissDrawerBody(drawer, detail) {
+    const events = nearMissEvents(detail);
+    const unique = new Set(events.map((event) => event.symbol)).size;
+    const metrics = node("div", "structural-evidence-metrics");
+    [["Total", events.length], ["Unique symbols", unique]].forEach(([label, value]) => { const item = node("div", ""); item.append(node("span", "", label), node("strong", "", String(value))); metrics.append(item); });
+    drawer.append(metrics);
+    const { wrap, body } = evidenceDrawerTable(["Symbol", "Route", "Candidate range", "% Deviation", "Observed", "Evidence"]);
+    events.forEach((event) => {
+      const row = node("tr", ""); const evidence = node("td", ""); evidence.append(drawerEvidenceLink(detail.group.id, event.symbol, event.candidate_event_id, true));
+      row.append(
+        node("td", "symbol", event.symbol),
+        node("td", "", event.route_owner),
+        node("td", "", `${text(event.candidate_lower)}–${text(event.candidate_upper)}`),
+        node("td", "", event.minimum_required_allowance_pct == null ? "Unknown" : `${event.minimum_required_allowance_pct}%`),
+        node("td", "", exactTime(event.candidate_timestamp || event.started_at)),
+        evidence,
+      ); body.append(row);
+    });
+    drawer.append(wrap);
+  }
+
+  function renderStructuralEvidenceDrawer(drawerState) {
+    const overlay = node("div", "structural-evidence-overlay");
+    const drawer = node("aside", "structural-evidence-drawer");
+    drawer.id = "structuralEvidenceDrawer";
+    drawer.tabIndex = -1;
+    const label = drawerState.kind === "near_miss" ? "Near Miss" : drawerState.kind === "activation" ? "MRZ Activation" : "MRZ Migration";
+    const header = node("header", "structural-evidence-header");
+    header.append(node("h2", "", `${drawerState.group.name} · ${label} (${state.scope.window})`));
+    const close = node("button", "icon-button", "×"); close.type = "button"; close.setAttribute("aria-label", "Close structural evidence"); close.addEventListener("click", closeStructuralEvidence); header.append(close); drawer.append(header);
+    if (drawerState.status === "loading") drawer.append(node("p", "structural-evidence-loading", "Loading canonical evidence…"));
+    else if (drawerState.status === "error") drawer.append(node("p", "structural-evidence-loading", drawerState.message));
+    else if (drawerState.detail) {
+      if (drawerState.kind === "migration") renderMigrationDrawerBody(drawer, drawerState.detail, drawerState);
+      else if (drawerState.kind === "activation") renderActivationDrawerBody(drawer, drawerState.detail);
+      else renderNearMissDrawerBody(drawer, drawerState.detail);
+      const footer = node("footer", "structural-evidence-footer");
+      const open = node("button", "primary-button", "View in Group Evolution →"); open.type = "button"; open.addEventListener("click", () => { state.structuralEvidenceDrawer = null; openGroup(drawerState.group.id); }); footer.append(open); drawer.append(footer);
+    }
+    overlay.addEventListener("click", (event) => { if (event.target === overlay) closeStructuralEvidence(); });
+    drawer.addEventListener("keydown", (event) => { if (event.key === "Escape") closeStructuralEvidence(); });
+    overlay.append(drawer);
+    return overlay;
+  }
+
   function renderNamedGroup(payload) {
     const workspace = node("section", "selected-group-workspace"); workspace.id = "selectedGroupWorkspace";
     const opportunity = node("section", "opportunity-intelligence"); opportunity.id = "groupOpportunityIntelligence"; opportunity.setAttribute("aria-label", `${payload.group.name} Opportunity Intelligence`); opportunity.append(node("div", "opportunity-loading", "Loading opportunity candidates…")); workspace.append(opportunity);
@@ -766,7 +960,7 @@
     const comparison = namedGroup ? comparisonSelection() : { active: false };
     const view = comparison.active ? "comparison" : selectedSymbol ? "symbol" : namedGroup ? "group" : "overview";
     main.classList.add(`${view}-workspace-mode`);
-    if (view === "overview") main.append(renderOpportunityUniverseOverview(), renderOverviewTable());
+    if (view === "overview") main.append(renderOverviewTable());
     else if (view === "group") main.append(renderNamedGroup(state.detail));
     else if (view === "symbol") main.append(renderSymbolWorkspace(state.detail, selectedSymbol));
     else main.append(renderComparisonWorkspace(state.detail));
@@ -774,6 +968,9 @@
     if (state.activityDrawerOpen && namedGroup && view === "group") {
       wrapper.classList.add("activity-open");
       wrapper.append(renderActivityDrawer(state.detail));
+    }
+    if (state.structuralEvidenceDrawer && view === "overview") {
+      wrapper.append(renderStructuralEvidenceDrawer(state.structuralEvidenceDrawer));
     }
     $("#groupEvidenceContent").replaceChildren(wrapper);
     if (namedGroup && globalObject.edgeOpportunityMap) {
@@ -909,7 +1106,7 @@
   }
 
   function bindEvents() {
-    globalObject.document.querySelectorAll("[data-group-window]").forEach((button) => button.addEventListener("click", () => { updateUrl({ window: button.dataset.groupWindow }); state.recentLoaded = false; load(); }));
+    globalObject.document.querySelectorAll("[data-group-window]").forEach((button) => button.addEventListener("click", () => { updateUrl({ window: button.dataset.groupWindow }); state.structuralEvidenceDrawer = null; state.recentLoaded = false; load(); }));
     $("#groupEvidenceSort").addEventListener("change", (event) => { state.sort = event.target.value; render(); });
     $("#groupEvidenceNew").addEventListener("click", () => openEditor()); $("#groupEvidenceEdit").addEventListener("click", () => openEditor(selectedGroup())); $("#groupEvidenceBack").addEventListener("click", () => { updateUrl({ group: "all", symbol: null }); state.detail = null; render(); globalObject.scrollTo({ top: 0, behavior: "smooth" }); });
     $("#groupEvidenceManage").addEventListener("click", () => { const menu = $("#groupEvidenceManageMenu"); menu.hidden = !menu.hidden; $("#groupEvidenceManage").setAttribute("aria-expanded", String(!menu.hidden)); });
@@ -919,7 +1116,7 @@
     $("#groupEvidenceDialogClose").addEventListener("click", () => $("#groupEvidenceDialog").close()); $("#groupEvidenceCancel").addEventListener("click", () => $("#groupEvidenceDialog").close());
     $("#groupEvidenceManageClose").addEventListener("click", () => $("#groupEvidenceManageDialog").close()); $("#groupEvidenceManageDone").addEventListener("click", () => $("#groupEvidenceManageDialog").close()); $("#groupEvidenceManageNew").addEventListener("click", () => openEditor());
     $("#recentTrackedEventsToggle").addEventListener("click", () => loadRecentEvents());
-    globalObject.addEventListener("popstate", () => { state.scope = derive.parseGroupEvidenceState(globalObject.location.search); state.activityDrawerOpen = new URLSearchParams(globalObject.location.search).get("activity") === "open"; state.recentLoaded = false; load(); });
+    globalObject.addEventListener("popstate", () => { state.scope = derive.parseGroupEvidenceState(globalObject.location.search); state.activityDrawerOpen = new URLSearchParams(globalObject.location.search).get("activity") === "open"; state.structuralEvidenceDrawer = null; state.recentLoaded = false; load(); });
     const badge = $("#notificationUnreadBadge"); if (badge) new MutationObserver(syncAlertBadge).observe(badge, { childList: true, attributes: true, subtree: true }); syncAlertBadge();
   }
 

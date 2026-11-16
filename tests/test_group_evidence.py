@@ -914,10 +914,14 @@ class GroupEvidenceTests(unittest.TestCase):
         self.assertEqual(summary["groups_with_activity"], 2)
         self.assertEqual(summary["new_tracker_events"], 2)
         self.assertEqual(summary["tracker_event_breakdown"], {
-            "mrz": 2,
+            "mrz": 1,
             "near_miss": 0,
+            "activation": 1,
             "ote": 0,
         })
+        group_summary = payload["groups"][1]["activity"]["summary"]
+        self.assertEqual(group_summary["by_event_type"]["MRZ_ACTIVATED"], 1)
+        self.assertEqual(group_summary["by_event_type"]["MRZ_MIGRATED"], 1)
 
     def test_near_miss_start_and_end_share_one_episode_identity(self) -> None:
         group_row = group(1, "Near Miss", ["A"])
@@ -930,6 +934,9 @@ class GroupEvidenceTests(unittest.TestCase):
             "ended_at": AS_OF - timedelta(hours=2),
             "ended_reason": "NO_LONGER_CURRENT",
             "canonical_candidate_event_id": "a-candidate",
+            "canonical_candidate_lower": Decimal("48.9"),
+            "canonical_candidate_upper": Decimal("49.4"),
+            "canonical_minimum_required_allowance_pct": Decimal("1.25"),
             "canonical_structural_location": "shallow_discount_core_mrz",
             "canonical_shortfall_percentage_points": Decimal("0.2"),
             "canonical_supporting_observation_count": 4,
@@ -943,6 +950,10 @@ class GroupEvidenceTests(unittest.TestCase):
         )
         self.assertEqual(payload["activity"]["summary"]["by_tracker"]["near_miss"], 2)
         self.assertEqual(payload["activity"]["summary"]["near_miss_episode_count"], 1)
+        projected = payload["near_miss"]["episodes"][0]
+        self.assertEqual(projected["candidate_lower"], "48.9")
+        self.assertEqual(projected["candidate_upper"], "49.4")
+        self.assertEqual(projected["minimum_required_allowance_pct"], "1.25")
         self.assertEqual(
             {record["lifecycle"] for record in payload["activity"]["records"]},
             {"started", "ended"},

@@ -516,6 +516,11 @@ def _near_misses(
             "active": active,
             "started_in_window": started_at > comparison_at,
             "candidate_event_id": row.get("canonical_candidate_event_id"),
+            "candidate_lower": _decimal_text(row.get("canonical_candidate_lower")),
+            "candidate_upper": _decimal_text(row.get("canonical_candidate_upper")),
+            "minimum_required_allowance_pct": _decimal_text(
+                row.get("canonical_minimum_required_allowance_pct")
+            ),
             "candidate_location": row.get("canonical_structural_location"),
             "shortfall_percentage_points": _decimal_text(
                 row.get("canonical_shortfall_percentage_points")
@@ -1021,6 +1026,10 @@ def _mrz_activity_records(
             ),
             "source_event_id": str(row["event_key"]),
             "trigger_observation_event_id": str(row["trigger_event_id"]),
+            "previous_lower": _decimal_text(row.get("old_core_mrz_lower")),
+            "previous_upper": _decimal_text(row.get("old_core_mrz_upper")),
+            "next_lower": _decimal_text(row.get("new_core_mrz_lower")),
+            "next_upper": _decimal_text(row.get("new_core_mrz_upper")),
             "timestamp_semantics": "canonical_mrz_event_timestamp",
         })
     records.sort(key=lambda item: (item["occurred_at"], item["id"]), reverse=True)
@@ -1094,6 +1103,15 @@ def _activity(
         tracker: sum(item["tracker"] == tracker for item in records)
         for tracker in ("ipda", "mrz", "near_miss", "structural_transition", "ote")
     }
+    by_event_type = {
+        event_type: sum(item.get("event_type") == event_type for item in records)
+        for event_type in (
+            "MRZ_ACTIVATED",
+            "MRZ_MIGRATED",
+            "NEAR_MISS_EPISODE_STARTED",
+            "NEAR_MISS_EPISODE_ENDED",
+        )
+    }
     location_records = [item for item in records if item["tracker"] == "ipda"]
     tracker_records = [item for item in records if item["tracker"] != "ipda"]
     coverage = location_activity.get("coverage", {})
@@ -1120,6 +1138,7 @@ def _activity(
             "tracker_event_count": len(tracker_records),
             "near_miss_episode_count": len(episode_keys),
             "by_tracker": by_tracker,
+            "by_event_type": by_event_type,
             "moved_higher_symbols": len({
                 item["symbol"] for item in location_records
                 if item.get("direction") == "higher"
@@ -1565,10 +1584,19 @@ def build_all_groups_evidence(inputs: Mapping[str, Any]) -> dict[str, Any]:
     location_records = [
         record for record in activity_records.values() if record["tracker"] == "ipda"
     ]
-    tracker_records = [
+    activation_records = [
         record for record in activity_records.values()
-        if record["tracker"] not in {"ipda", "pressure"}
+        if record.get("event_type") == "MRZ_ACTIVATED"
     ]
+    migration_records = [
+        record for record in activity_records.values()
+        if record.get("event_type") == "MRZ_MIGRATED"
+    ]
+    near_miss_episode_keys = {
+        record.get("source_event_id")
+        for record in activity_records.values()
+        if record.get("tracker") == "near_miss" and record.get("source_event_id")
+    }
     status = "partial" if any(detail.get("status") == "partial" for detail in details) else "available"
     return {
         "contract_version": CONTRACT_VERSION,
@@ -1606,10 +1634,16 @@ def build_all_groups_evidence(inputs: Mapping[str, Any]) -> dict[str, Any]:
                 record["symbol"] for record in location_records
                 if record.get("direction") == "lower"
             }),
-            "new_tracker_events": len(tracker_records),
+            "new_tracker_events": (
+                len(activation_records)
+                + len(migration_records)
+                + len(near_miss_episode_keys)
+            ),
             "tracker_event_breakdown": {
-                tracker: sum(record["tracker"] == tracker for record in tracker_records)
-                for tracker in ("mrz", "near_miss", "ote")
+                "mrz": len(migration_records),
+                "near_miss": len(near_miss_episode_keys),
+                "activation": len(activation_records),
+                "ote": 0,
             },
             "changed_groups": sum(
                 detail.get("activity", {}).get("status") == "changed"

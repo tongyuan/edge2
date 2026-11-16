@@ -129,7 +129,7 @@
   function timeBounds(detail, rangeDays) {
     const times = [];
     (detail.observations || []).forEach((item) => times.push(parseTime(item.effective_at)));
-    (detail.near_miss_events || []).forEach((item) => times.push(parseTime(item.known_at)));
+    (detail.near_miss_events || []).forEach((item) => times.push(parseTime(item.effective_at || item.known_at)));
     (detail.mrz_lifecycles || []).forEach((item) => times.push(parseTime(item.known_at)));
     const finite = times.filter(Number.isFinite);
     const latest = finite.length ? Math.max(...finite, parseTime(detail.as_known_at)) : Date.now();
@@ -142,7 +142,7 @@
     const all = (details || []).flatMap((detail) => {
       const values = [];
       (detail.observations || []).forEach((item) => values.push(parseTime(item.effective_at)));
-      (detail.near_miss_events || []).forEach((item) => values.push(parseTime(item.known_at), parseTime(item.ended_at)));
+      (detail.near_miss_events || []).forEach((item) => values.push(parseTime(item.effective_at || item.known_at)));
       (detail.mrz_lifecycles || []).forEach((item) => values.push(parseTime(item.known_at), parseTime(item.ended_known_at)));
       values.push(parseTime(detail.as_known_at || detail.as_of));
       return values.filter(Number.isFinite);
@@ -161,11 +161,7 @@
     };
     return {
       observations: (detail.observations || []).filter((item) => within(item.effective_at)),
-      near: (detail.near_miss_events || []).filter((item) => {
-        const start = parseTime(item.known_at);
-        const end = parseTime(item.ended_at || detail.as_known_at);
-        return start <= bounds.maximum && end >= bounds.minimum;
-      }),
+      near: (detail.near_miss_events || []).filter((item) => within(item.effective_at || item.known_at)),
       mrz: (detail.mrz_lifecycles || []).filter((item) => {
         const start = parseTime(item.known_at);
         const end = parseTime(item.ended_known_at || detail.as_known_at);
@@ -205,6 +201,13 @@
     context.strokeStyle = stroke;
     context.lineWidth = strokeWidth;
     context.stroke();
+  }
+
+  function nearMissDisplayGeometry(anchorX, plotLeft, plotRight, canvasScale = 1, extensionCssPixels = 48) {
+    const start = Math.max(plotLeft, Math.min(plotRight, Number(anchorX)));
+    const cssPixels = Math.max(40, Math.min(60, Number(extensionCssPixels) || 48));
+    const end = Math.min(plotRight, start + cssPixels * Math.max(Number(canvasScale) || 1, 0.01));
+    return { start, end, width: Math.max(0, end - start), cssPixels };
   }
 
   function drawChart(canvas, detail, rangeDays, selectedEventId, onSelect, options = {}) {
@@ -265,18 +268,29 @@
     }
 
     const zoneHits = [];
+    const selectedNearZones = [];
+    const canvasScale = width / Math.max(1, canvas.getBoundingClientRect().width || width);
     items.near.forEach((item) => {
-      const start = Math.max(margin.left, x(item.known_at));
-      const end = Math.min(width - margin.right, x(item.ended_at || detail.as_known_at));
+      const geometry = nearMissDisplayGeometry(
+        x(item.effective_at || item.known_at),
+        margin.left,
+        width - margin.right,
+        canvasScale,
+      );
+      const start = geometry.start;
+      const end = geometry.end;
       const top = y(item.upper_bound);
       const bottom = y(item.lower_bound);
+      const selected = eventIdentity(item) === selectedEventId;
       context.save();
-      context.strokeStyle = eventIdentity(item) === selectedEventId ? "#f0dcff" : COLORS.near;
-      context.lineWidth = eventIdentity(item) === selectedEventId ? 3 : 1;
+      context.strokeStyle = selected ? "rgba(192,132,252,.72)" : COLORS.near;
+      context.lineWidth = selected ? 2 : 1.5;
       context.setLineDash([6, 4]);
-      context.strokeRect(start, top, Math.max(2, end - start), Math.max(2, bottom - top));
+      context.strokeRect(start, top, Math.max(2, geometry.width), Math.max(2, bottom - top));
       context.restore();
-      zoneHits.push({ left: start, right: Math.max(start + 8, end), top: Math.min(top, bottom), bottom: Math.max(top + 8, bottom), item });
+      const hit = { left: start, right: Math.max(start + 14 * canvasScale, end), top: Math.min(top, bottom) - 5 * canvasScale, bottom: Math.max(top + 10 * canvasScale, bottom + 5 * canvasScale), item, kind: "near" };
+      zoneHits.push(hit);
+      if (selected) selectedNearZones.push({ start, end, top, bottom, item });
     });
     items.mrz.forEach((item) => {
       const start = Math.max(margin.left, x(item.known_at));
@@ -295,7 +309,7 @@
         context.beginPath(); context.moveTo(start, y(boundary)); context.lineTo(end, y(boundary)); context.stroke();
       });
       context.restore();
-      zoneHits.push({ left: start, right: Math.max(start + 8, end), top: Math.min(top, bottom), bottom: Math.max(top + 8, bottom), item });
+      zoneHits.push({ left: start, right: Math.max(start + 8, end), top: Math.min(top, bottom), bottom: Math.max(top + 8, bottom), item, kind: "mrz" });
     });
 
     const pointHits = [];
@@ -316,6 +330,14 @@
       }
       pointHits.push({ x: xPosition, y: yPosition, radius: 12, item });
     });
+    selectedNearZones.forEach(({ start, end, top, bottom }) => {
+      context.save();
+      context.setLineDash([7, 3]);
+      context.strokeStyle = "#f3e6ff";
+      context.lineWidth = 3;
+      context.strokeRect(start, top, Math.max(2, end - start), Math.max(2, bottom - top));
+      context.restore();
+    });
     canvas._opportunityHits = [...pointHits, ...zoneHits];
     canvas.onclick = (event) => {
       const box = canvas.getBoundingClientRect();
@@ -326,10 +348,16 @@
         .filter((candidate) => candidate.distance <= candidate.hit.radius)
         .sort((left, right) => left.distance - right.distance)[0];
       if (selectedPoint) { onSelect(selectedPoint.hit.item); return; }
-      const selectedZone = zoneHits.slice().reverse().find((hit) => (
+      const matchingZones = zoneHits.filter((hit) => (
         clickX >= hit.left && clickX <= hit.right && clickY >= hit.top && clickY <= hit.bottom
       ));
-      if (selectedZone) onSelect(selectedZone.item);
+      if (matchingZones.length) {
+        const nearZones = matchingZones.filter((hit) => hit.kind === "near");
+        const candidates = nearZones.length ? nearZones : matchingZones;
+        const selectedIndex = candidates.findIndex((hit) => eventIdentity(hit.item) === selectedEventId);
+        const nextIndex = candidates.length > 1 ? (selectedIndex + 1 + candidates.length) % candidates.length : 0;
+        onSelect(candidates[nextIndex].item);
+      }
     };
   }
 
@@ -926,6 +954,7 @@
     renderGroup,
     renderLegend,
     migrationDirectionBreakdown,
+    nearMissDisplayGeometry,
     renderSymbol,
     timelineRows,
     timeBounds,

@@ -63,6 +63,32 @@ class GroupEvidenceContractTests(unittest.TestCase):
         self.assertIn('id="groupEvidenceEdit"', HTML)
         self.assertNotIn('body.group-opportunity-active .workspace-header,', CSS)
 
+    def test_group_radar_uses_six_columns_and_filtered_structural_evidence_drawer(self) -> None:
+        overview_renderer = JS.split("function renderOverviewTable()", 1)[1].split("function evidenceCard", 1)[0]
+        self.assertIn('IPDA Breadth (P / E / D)', JS)
+        self.assertIn('Location Flow (${state.scope.window})', JS)
+        self.assertIn('Structural Events (${state.scope.window})', JS)
+        self.assertIn('structuralEventBadge(group, "near_miss", "NM"', JS)
+        self.assertIn('structuralEventBadge(group, "activation", "ACT"', JS)
+        self.assertIn('structuralEventBadge(group, "migration", "MRZ"', JS)
+        self.assertIn('renderStructuralEvidenceDrawer', JS)
+        self.assertIn('MRZ_ACTIVATED', JS)
+        self.assertIn('MRZ_MIGRATED', JS)
+        self.assertIn('% Deviation', JS)
+        self.assertNotIn('<th>Opportunity research</th>', overview_renderer)
+        self.assertNotIn('<th>Migration</th>', overview_renderer)
+        self.assertNotIn('<th>Near Miss</th>', overview_renderer)
+        self.assertIn('.structural-evidence-overlay', CSS)
+        self.assertIn('.structural-event-badge', CSS)
+
+    def test_near_miss_map_uses_short_display_only_extension(self) -> None:
+        self.assertIn('nearMissDisplayGeometry', OPPORTUNITY_JS)
+        self.assertIn('extensionCssPixels = 48', OPPORTUNITY_JS)
+        self.assertIn('item.effective_at || item.known_at', OPPORTUNITY_JS)
+        self.assertIn('selectedNearZones', OPPORTUNITY_JS)
+        self.assertIn('matchingZones', OPPORTUNITY_JS)
+        self.assertNotIn('x(item.ended_at || detail.as_known_at)', OPPORTUNITY_JS)
+
     def test_only_two_read_endpoints_are_added(self) -> None:
         self.assertIn('@application.get("/api/group-evidence")', API)
         self.assertIn('@application.get("/api/group-evidence/{group_id}")', API)
@@ -115,7 +141,7 @@ class GroupEvidenceContractTests(unittest.TestCase):
         self.assertNotIn("renderWatchlists", render_all)
 
     def test_stage_a_assets_share_a_fresh_cache_version(self) -> None:
-        version = "migration-direction-20261116"
+        version = "group-radar-near-miss-20261117"
         self.assertIn(f'/static/workspace.css?v={version}', HTML)
         self.assertIn(f'/static/group-evidence.js?v={version}', HTML)
         self.assertNotIn('#radarAlertsButton', JS)

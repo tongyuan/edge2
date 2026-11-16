@@ -59,6 +59,12 @@ assert.ok(activationPosition - firstPosition > lastPosition - activationPosition
 assert.equal(map.axisPrice(224.512345, "AAPL", 30), "224.51");
 assert.equal(map.axisPrice(0.004321, "TOKENUSDT", 0.01), "0.004321");
 
+const nearMissGeometry = map.nearMissDisplayGeometry(120, 68, 500, 1, 48);
+assert.deepEqual(nearMissGeometry, { start: 120, end: 168, width: 48, cssPixels: 48 });
+const clippedNearMissGeometry = map.nearMissDisplayGeometry(480, 68, 500, 1, 48);
+assert.equal(clippedNearMissGeometry.end, 500, "Near Miss extension clips at the plot boundary");
+assert.equal(clippedNearMissGeometry.width, 20, "clipping never expands the time axis");
+
 const migrationBreakdown = map.migrationDirectionBreakdown([
   { id: "mrz:m1", tracker: "mrz", event_type: "MRZ_MIGRATED", source_event_id: "m1", symbol: "BTCUSDT", occurred_at: "2026-11-10T00:00:00Z" },
   { id: "mrz:m2", tracker: "mrz", event_type: "MRZ_MIGRATED", source_event_id: "m2", symbol: "BTCUSDT", occurred_at: "2026-11-11T00:00:00Z" },
