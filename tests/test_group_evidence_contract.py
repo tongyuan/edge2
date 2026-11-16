@@ -79,9 +79,10 @@ class GroupEvidenceContractTests(unittest.TestCase):
         self.assertNotIn("renderWatchlists", render_all)
 
     def test_stage_a_assets_share_a_fresh_cache_version(self) -> None:
-        version = "opportunity-dock-scope-20261115"
+        version = "group-evolution-inbox-20261116"
         self.assertIn('/static/workspace.css?v=migration-path-correction-20261115', HTML)
         self.assertIn(f'/static/group-evidence.js?v={version}', HTML)
+        self.assertNotIn('#radarAlertsButton', JS)
         self.assertIn(f'/static/workspace.js?v={version}', HTML)
 
     def test_url_state_stale_response_and_accessibility_contracts_exist(self) -> None:

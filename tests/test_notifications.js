@@ -106,7 +106,7 @@ async function testGrantedPermissionPath() {
     navigatorObject: {
       serviceWorker: {
         async register(url, options) {
-          assert.equal(url, "/service-worker.js?v=mobile-navigation-20261114");
+          assert.equal(url, "/service-worker.js?v=group-evolution-inbox-20261116");
           assert.deepEqual(options, { scope: "/" });
           return registration;
         },
