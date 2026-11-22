@@ -39,6 +39,10 @@ from app.structure import (
     classify_structural_location,
     ipda_directional_context,
 )
+from app.structural_intelligence import (
+    classify_structural_history,
+    meaningful_development,
+)
 from app.taxonomy import (
     InstrumentTaxonomy,
     instrument_taxonomy_from_row,
@@ -728,16 +732,10 @@ class EdgeRepository:
                     promoted_activation=promoted_activation,
                 )
                 self._replace_derived_state(cursor, replay)
-                self._record_structural_transitions(
+                self._record_structural_development(
                     cursor,
-                    tuple(
-                        transition
-                        for transition in replay.transitions
-                        if transition.trigger_event_id == payload.event_id
-                        and transition.event_type.value in {
-                            "MRZ_ACTIVATED", "MRZ_MIGRATED"
-                        }
-                    ),
+                    symbol=payload.symbol,
+                    source_trigger_event_id=payload.event_id,
                 )
                 self._sync_near_miss_episodes(
                     cursor,
@@ -817,6 +815,73 @@ class EdgeRepository:
                     new.confirming_observation_count,
                 ),
             )
+
+    @staticmethod
+    def _record_structural_development(
+        cursor: RealDictCursor,
+        *,
+        symbol: str,
+        source_trigger_event_id: str,
+    ) -> None:
+        """Record derived evidence in shadow mode; never alert during validation."""
+        cursor.execute(
+            """
+            SELECT
+                event.event_key, event.sequence, event.event_type,
+                event.symbol, event.route_owner, event.occurred_at,
+                event.created_at AS first_known_at,
+                event.new_core_mrz_lower, event.new_core_mrz_upper,
+                event.new_core_mrz_midpoint,
+                trigger.observation_price_tick AS instrument_tick
+            FROM mrz_events AS event
+            LEFT JOIN observations AS trigger
+              ON trigger.event_id = event.trigger_event_id
+            WHERE event.symbol = %s
+              AND event.event_type IN ('MRZ_ACTIVATED', 'MRZ_MIGRATED')
+            ORDER BY event.occurred_at ASC, event.created_at ASC,
+                     event.sequence ASC
+            """,
+            (symbol,),
+        )
+        rows = tuple(cursor.fetchall())
+        if not rows:
+            return
+        current = classify_structural_history(rows)
+        previous = classify_structural_history(rows[:-1]) if len(rows) > 1 else None
+        development = meaningful_development(previous, current)
+        if development is None:
+            return
+        cursor.execute(
+            """
+            INSERT INTO structural_developments (
+                development_key, symbol, source_trigger_event_id,
+                development_type, maturity, migration_structure,
+                route_hypothesis, migration_sequence, pivot_event_key,
+                supporting_event_keys, event_time, first_known_time,
+                confirmation_time, detector_version, live_eligible
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, FALSE
+            )
+            ON CONFLICT (development_key) DO NOTHING
+            """,
+            (
+                development["development_id"],
+                symbol,
+                source_trigger_event_id,
+                development["type"],
+                development["maturity"],
+                current["migration_structure"],
+                current["route_hypothesis"],
+                development["migration_sequence"],
+                development["pivot_event_key"],
+                Json(development["supporting_event_ids"]),
+                development["event_time"],
+                development["first_known_time"],
+                development["confirmation_time"],
+                current["detector_version"],
+            ),
+        )
 
     def review_structural_transition(
         self,
@@ -2757,6 +2822,7 @@ class EdgeRepository:
                            migration.old_core_mrz_lower, migration.old_core_mrz_upper,
                            migration.new_core_mrz_lower, migration.new_core_mrz_upper,
                            migration.new_core_mrz_midpoint, migration.occurred_at,
+                           migration.created_at, migration.trigger_event_id,
                            activation.event_key AS activation_event_key,
                            activation.sequence AS activation_sequence
                     FROM mrz_events AS migration
@@ -2789,6 +2855,49 @@ class EdgeRepository:
                         "to_upper": decimal_text(row["new_core_mrz_upper"]),
                         "direction": migration_direction(row),
                         "observed_at": iso(row["occurred_at"]),
+                        "first_known_at": iso(row["created_at"]),
+                        "canonical_evidence_ref": row["trigger_event_id"],
+                    }
+                    for row in cursor.fetchall()
+                ]
+                cursor.execute(
+                    """
+                    SELECT event.event_key, event.sequence, event.event_type,
+                           event.route_owner, event.new_core_mrz_lower,
+                           event.new_core_mrz_upper, event.new_core_mrz_midpoint,
+                           event.occurred_at, event.created_at,
+                           event.trigger_event_id,
+                           activation.event_key AS activation_event_key
+                    FROM mrz_events AS event
+                    LEFT JOIN LATERAL (
+                        SELECT activation_event.event_key
+                        FROM mrz_events AS activation_event
+                        WHERE activation_event.symbol = event.symbol
+                          AND activation_event.event_type = 'MRZ_ACTIVATED'
+                          AND activation_event.sequence <= event.sequence
+                        ORDER BY activation_event.sequence DESC
+                        LIMIT 1
+                    ) AS activation ON TRUE
+                    WHERE event.symbol = %s
+                      AND event.event_type IN ('MRZ_ACTIVATED', 'MRZ_MIGRATED')
+                    ORDER BY event.occurred_at ASC, event.created_at ASC,
+                             event.sequence ASC
+                    """,
+                    (normalized,),
+                )
+                states = [
+                    {
+                        "event_key": row["event_key"],
+                        "sequence": row["sequence"],
+                        "event_type": row["event_type"],
+                        "route": row["route_owner"],
+                        "activation_event_key": row["activation_event_key"],
+                        "lower": decimal_text(row["new_core_mrz_lower"]),
+                        "upper": decimal_text(row["new_core_mrz_upper"]),
+                        "midpoint": decimal_text(row["new_core_mrz_midpoint"]),
+                        "observed_at": iso(row["occurred_at"]),
+                        "first_known_at": iso(row["created_at"]),
+                        "canonical_evidence_ref": row["trigger_event_id"],
                     }
                     for row in cursor.fetchall()
                 ]
@@ -2814,7 +2923,11 @@ class EdgeRepository:
                     }
                     for row in cursor.fetchall()
                 ]
-                return {"migrations": migrations, "near_misses": near_misses}
+                return {
+                    "migrations": migrations,
+                    "states": states,
+                    "near_misses": near_misses,
+                }
         finally:
             connection.close()
 
@@ -3282,6 +3395,7 @@ class EdgeRepository:
                         "near_miss_episodes": (),
                         "primary_hypotheses": (),
                         "structural_transitions": (),
+                        "structural_history_events": (),
                     }
 
                 cursor.execute(
@@ -3543,6 +3657,29 @@ class EdgeRepository:
                     (symbols, comparison_at, as_of, as_of),
                 )
                 structural_transitions = tuple(cursor.fetchall())
+                cursor.execute(
+                    """
+                    SELECT
+                        event.event_key, event.sequence, event.event_type,
+                        event.symbol, event.route_owner, event.occurred_at,
+                        event.created_at AS first_known_at,
+                        event.trigger_event_id,
+                        event.new_core_mrz_lower, event.new_core_mrz_upper,
+                        event.new_core_mrz_midpoint,
+                        trigger.observation_price_tick AS instrument_tick
+                    FROM mrz_events AS event
+                    LEFT JOIN observations AS trigger
+                      ON trigger.event_id = event.trigger_event_id
+                    WHERE event.symbol = ANY(%s)
+                      AND event.event_type IN ('MRZ_ACTIVATED', 'MRZ_MIGRATED')
+                      AND event.occurred_at <= %s
+                      AND event.created_at <= %s
+                    ORDER BY event.symbol ASC, event.occurred_at ASC,
+                             event.created_at ASC, event.sequence ASC
+                    """,
+                    (symbols, as_of, as_of),
+                )
+                structural_history_events = tuple(cursor.fetchall())
                 return {
                     "window": window,
                     "as_of": as_of,
@@ -3559,7 +3696,53 @@ class EdgeRepository:
                     "near_miss_episodes": near_miss_episodes,
                     "primary_hypotheses": primary_hypotheses,
                     "structural_transitions": structural_transitions,
+                    "structural_history_events": structural_history_events,
                 }
+        finally:
+            connection.close()
+
+    def structural_intelligence(
+        self,
+        symbol: str,
+        *,
+        as_known_at: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Return the authoritative structural result at a knowledge cutoff."""
+        normalized = normalize_symbol(symbol)
+        cutoff = as_known_at or datetime.now(timezone.utc)
+        connection = connect(self.database_url)
+        try:
+            connection.set_session(readonly=True, isolation_level="REPEATABLE READ")
+            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        event.event_key, event.sequence, event.event_type,
+                        event.symbol, event.route_owner, event.occurred_at,
+                        event.created_at AS first_known_at,
+                        event.trigger_event_id,
+                        event.new_core_mrz_lower, event.new_core_mrz_upper,
+                        event.new_core_mrz_midpoint,
+                        trigger.observation_price_tick AS instrument_tick
+                    FROM mrz_events AS event
+                    LEFT JOIN observations AS trigger
+                      ON trigger.event_id = event.trigger_event_id
+                    WHERE event.symbol = %s
+                      AND event.event_type IN ('MRZ_ACTIVATED', 'MRZ_MIGRATED')
+                      AND event.occurred_at <= %s
+                      AND event.created_at <= %s
+                    ORDER BY event.occurred_at ASC, event.created_at ASC,
+                             event.sequence ASC
+                    """,
+                    (normalized, cutoff, cutoff),
+                )
+                result = classify_structural_history(
+                    tuple(cursor.fetchall()),
+                    as_known_at=cutoff,
+                )
+                if not result["symbol"]:
+                    result["symbol"] = normalized
+                return result
         finally:
             connection.close()
 

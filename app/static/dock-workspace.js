@@ -16,7 +16,12 @@
     const symbol = decodeURIComponent(match[1]).toUpperCase();
     const params = new URLSearchParams(globalObject.location.search);
     const requestedRange = Number(params.get("range"));
-    const rangeDays = [0, 30, 90].includes(requestedRange) ? requestedRange : 0;
+    const rangeDays = [0, 30, 90].includes(requestedRange) ? requestedRange : 90;
+    const requestedViewStart = Number(params.get("view_start"));
+    const requestedViewEnd = Number(params.get("view_end"));
+    const initialViewport = Number.isFinite(requestedViewStart) && Number.isFinite(requestedViewEnd) && requestedViewEnd > requestedViewStart
+      ? { minimum: requestedViewStart, maximum: requestedViewEnd }
+      : null;
     const returnUrl = params.get("return")?.startsWith("/") ? params.get("return") : "/mrz/watchlists";
     document.body.dataset.dockFeature = "opportunity-map";
     const target = document.querySelector("#dockOpportunityMap");
@@ -25,6 +30,8 @@
     globalObject.edgeOpportunityMap.renderSymbol(target, symbol, {
       docked: true,
       initialRangeDays: rangeDays,
+      initialViewport,
+      initialSelectedEventId: params.get("event") || null,
       detailsCollapsed: storedCollapsed(symbol),
       returnUrl,
       onRangeChange: (days) => {

@@ -1023,11 +1023,27 @@
     if (view === "overview") renderActivitySummary(); else $("#groupActivitySummary").hidden = true;
     const toolbar = $(".radar-toolbar"); if (toolbar) toolbar.hidden = view !== "overview";
     const details = $("#groupEvidenceDetails"); if (details) details.hidden = view !== "overview";
-    $("#groupEvidenceTitle").textContent = view === "comparison" ? "Opportunity Comparison" : view === "symbol" ? "Opportunity Intelligence" : view === "group" ? state.detail.group.name : "Group Radar";
-    $("#groupEvidenceScope").textContent = view === "comparison" ? "Shared chronology · Independent price scales" : view === "symbol" ? "Time · Price · Structural context" : view === "group" ? `${state.detail.group.member_count} members · Group Workspace` : "Opportunity discovery · Event evolution";
-    $("#groupEvidenceGroupCount").textContent = `Groups (${state.overview?.scope_totals?.group_count || 0})`; $("#groupEvidenceAsOf").textContent = exactTime((state.detail || state.overview)?.window?.as_of); $("#groupEvidenceEdit").hidden = view !== "group"; $("#groupEvidenceBack").hidden = view !== "group";
+    $("#groupEvidenceTitle").textContent = view === "comparison" ? "Opportunity Comparison" : view === "symbol" ? "Opportunity Intelligence" : view === "group" ? "Group Evolution" : "Group Radar";
+    $("#groupEvidenceScope").textContent = view === "comparison" ? "Shared chronology · Independent price scales" : view === "symbol" ? "Time – Price · Structural Context · Migration Evidence" : view === "group" ? "Location Flow · Migration Structure · Structural Developments" : "Opportunity discovery · Event evolution";
+    $("#groupEvidenceGroupCount").textContent = `Groups (${state.overview?.scope_totals?.group_count || 0})`; $("#groupEvidenceAsOf").textContent = exactTime((state.detail || state.overview)?.window?.as_of); $("#groupEvidenceEdit").hidden = true; $("#groupEvidenceBack").hidden = true;
+    globalObject.document.querySelectorAll(".group-evolution-header-control").forEach((item) => item.remove());
+    if (view === "group") {
+      const picker = node("label", "group-evolution-header-control group-evolution-picker", "Group");
+      const select = node("select", "");
+      (state.groups || []).forEach((group) => {
+        const option = node("option", "", `${group.name} (${group.members?.length || group.member_count || 0})`);
+        option.value = String(group.id); option.selected = String(group.id) === String(state.detail.group.id); select.append(option);
+      });
+      select.addEventListener("change", () => { updateUrl({ group: select.value, symbol: null }); state.detail = null; load(); });
+      picker.append(select);
+      const evidence = node("a", "group-evolution-header-control group-evolution-canonical-link", "Canonical Evidence");
+      evidence.href = `/mrz/events?group=${encodeURIComponent(state.detail.group.id)}`;
+      const actions = $(".radar-header-actions"); actions?.prepend(picker); actions?.append(evidence);
+    }
     globalObject.document.querySelectorAll("[data-group-window]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.groupWindow === state.scope.window)));
-    const live = $("#groupEvidenceLive"); live.className = "group-evidence-live"; live.hidden = false; live.textContent = state.detail?.status === "partial" || state.overview?.status === "partial" ? "Group data loaded with one or more unavailable dimensions." : "Group data loaded."; if (view === "overview") renderDetails(); updateManageMenuState();
+    const live = $("#groupEvidenceLive"); live.className = "group-evidence-live"; live.hidden = view !== "overview"; live.textContent = state.detail?.status === "partial" || state.overview?.status === "partial" ? "Group data loaded with one or more unavailable dimensions." : "Group data loaded.";
+    $(".radar-as-of").hidden = view === "group";
+    if (view === "overview") renderDetails(); updateManageMenuState();
   }
 
   async function loadGroups() {

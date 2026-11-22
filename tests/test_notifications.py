@@ -95,6 +95,14 @@ class PushDestinationTests(unittest.TestCase):
             "/mrz/watchlists?group=all&window=20D&symbol=BTCUSDT&transition=17",
         )
         self.assertEqual(
+            build_push_destination(
+                "STRUCTURAL_DEVELOPMENT",
+                "BTCUSDT",
+                {"structural_development_id": 21},
+            ),
+            "/mrz/symbols?symbol=BTCUSDT&focus=structural-development&development=21",
+        )
+        self.assertEqual(
             build_push_destination(PRESSURE_EVENT_TYPE, "ZECUSDT"),
             "/mrz/events?symbol=ZECUSDT",
         )
@@ -113,6 +121,10 @@ class PushDestinationTests(unittest.TestCase):
         self.assertEqual(build_push_destination("MRZ_ACTIVATED", "bad symbol"), "/")
         self.assertEqual(
             build_push_destination("STRUCTURAL_TRANSITION", "BTCUSDT", {}),
+            "/",
+        )
+        self.assertEqual(
+            build_push_destination("STRUCTURAL_DEVELOPMENT", "BTCUSDT", {}),
             "/",
         )
         self.assertEqual(

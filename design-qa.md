@@ -1,30 +1,46 @@
-# Design QA — Group Radar and Opportunity Map Near Miss
+# EDGE 2.0 MRZ Migration Path — visual QA
 
-## Reference
+Date: 2026-11-22
 
-- Approved source: `/var/folders/dm/ctz4b4_d2yq9jbskg25nx6xw0000gn/T/codex-clipboard-aa4cc9c4-7d7f-47d1-8ccc-f7fe2b33b674.png`
-- Source dimensions: 1754 × 897
-- Local preview: `http://127.0.0.1:8794/mrz/watchlists?group=all&window=5D`
-- Opportunity Map QA: `http://127.0.0.1:8794/mrz/watchlists?group=1&window=5D&symbol=BMNR`
-- Reviewed: 2026-11-17
+## Reference and implementation
 
-## What was verified
+- Approved reference: `/Users/tonywong/Downloads/symbol.png`
+- Local implementation: `http://127.0.0.1:8792/mrz/symbols?symbol=BTCUSDT`
+- Same-width browser capture: `artifacts/mrz-limited-btcusdt.jpg`
+- Active-state capture: `artifacts/mrz-active-badge-ethusdt.jpg`
+- Dense interaction fixture: `artifacts/mrz-fixture-mature-initial.jpg`
 
-- Desktop viewport: 1754 × 897 for the approved Group Radar composition and 1280 × 800 for the interactive drawer and Opportunity Map checks.
-- Group Radar retains the three top summary cards and uses the approved six-column table: Group, Members, IPDA Breadth, Location Flow, Structural Events, and Open.
-- Structural event badges expose NM, ACT, and MRZ counts; zero badges remain visible and disabled.
-- The Crypto MRZ badge opens a right-side drawer with Total, Higher, Lower, and Unchanged reconciliation, contributing symbols, previous/next ranges, timestamps, direction, and evidence links.
-- Mobile viewport: 390 × 844. The page has no document-level horizontal overflow; the six-column table scrolls inside its own region.
-- The mobile evidence drawer occupies the full viewport. Its table scrolls internally and its Group Evolution action remains reachable.
-- The BMNR Near Miss candidate begins at its actual event time and extends approximately 48 CSS pixels to the right without changing the chart time axis.
-- Selecting the Near Miss redraws the dashed outline above the observation markers and exposes compact canonical evidence details.
-- The All / 90D / 30D controls, canonical evidence action, replay controls, Group Evolution, and existing Inbox remain present.
-- Browser console review reported no errors or warnings.
+## Comparison history
 
-## Issues
+1. P1 — The path omitted the initial activation state. Fixed by returning and rendering activation plus migration states while keeping migration-event counts separate.
+2. P1 — Selected evidence was populated into an element that CSS permanently hid. Fixed with an explicit selected-state overlay containing state identity, bounds, midpoint, route, event time, first-known time, structural pivot and canonical reference.
+3. P1 — Maximize visually stretched a 300px backing canvas. Fixed by redrawing at the actual expanded or docked dimensions.
+4. P1 — Docking did not preserve the current state selection or viewport. Fixed by carrying window start, window size and canonical event identity through Dock and Undock.
+5. P2 — Zero-history symbols showed a generic empty message without explaining eligibility. Fixed with a canonical-data explanation and no misleading generation action.
+6. P2 — The symbol heading displayed `MRZ ACTIVE` as unstyled text with a white dot. Fixed to match the approved compact green outlined pill.
+7. Final same-viewport comparison — the page hierarchy, three-column proportions, compact summary strip, chart panel, structural context, tabs, recent events and active-state treatment match the approved design intent. Data values differ because the local database does not contain the illustrative NBIS history.
 
-- P0: none
-- P1: none
-- P2: none
+## Visual and interaction verification
+
+- Desktop 1754 × 896: verified against the approved reference.
+- iPad 820 × 1180: document width remained 820px; chart and toolbar stayed inside the viewport.
+- iPhone 390 × 844: document width remained 390px; summary cards and migration launcher stacked without horizontal overflow.
+- Dense isolated fixture: zoom, Earlier/Newer, selection evidence, maximize, restore and reset rendered without changing canonical coordinates.
+- Docked layout: chart redrew from 1710 × 744 to 716 × 408 when resized and retained state selection and viewport parameters.
+- Active MRZ badge: computed color `rgb(56, 226, 169)`, border `rgb(22, 183, 127)`, translucent green background and 999px radius.
+- Keyboard selection exposes canonical evidence. Mouse/trackpad wheel and touch pinch handlers are implemented, but direct gesture synthesis was not available in the browser-control surface.
+
+## Data limitations observed
+
+- No local symbol has four or more migration events.
+- BTCUSDT, AAPL, SMH and 9988.HK each have one migration and two distinct canonical states.
+- ETHUSDT and 0700.HK each have one activation state and no migration event.
+- Dense screenshots use a clearly labelled, in-memory/disposable fixture outside PostgreSQL; they do not establish production-data readiness.
+
+## Automated verification
+
+- JavaScript migration-path and docking tests passed.
+- Full local non-Pine suite: 541 passed, 8 skipped, 0 failed.
+- Production, production data and the remote repository were not changed.
 
 final result: passed

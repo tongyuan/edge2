@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>EDGE · Isolated MRZ Migration Fixture</title>
+    <link rel="stylesheet" href="http://127.0.0.1:8792/static/workspace.css" />
+    <style>
+      body { min-height: 100vh; padding: 20px; background: #071018; color: #eef4f8; }
+      .fixture-shell { width: min(1320px, 100%); margin: auto; }
+      .fixture-banner { display: flex; justify-content: space-between; gap: 20px; margin-bottom: 14px; padding: 12px 16px; border: 1px solid #b78d1f; border-radius: 10px; background: #2a220b; color: #f5d66e; font: 700 13px system-ui; }
+      .fixture-banner span:last-child { color: #d8cda8; font-weight: 500; }
+      .migration-path-panel { display: block; }
+      @media (max-width: 700px) { body { padding: 8px; } .fixture-banner { display: grid; } }
+    </style>
+  </head>
+  <body>
+    <main class="fixture-shell">
+      <header class="fixture-banner"><span>ISOLATED DISPOSABLE TEST FIXTURE — NOT CANONICAL DATA</span><span>Shared production UI component + SI-1.0.0 detector output; local database untouched.</span></header>
+      <section class="panel migration-path-panel" id="migrationPathPanel" aria-labelledby="migrationPathHeading">
+        <header class="migration-path-heading"><div><h2 id="migrationPathHeading">MRZ Migration Path</h2><span id="migrationPathSummary"></span></div><div class="chart-workspace-controls" role="toolbar" aria-label="Migration chart controls"><button class="quiet-button" id="migrationZoomOut" type="button" title="Zoom out" aria-label="Zoom out">−</button><button class="quiet-button" id="migrationZoomIn" type="button" title="Zoom in" aria-label="Zoom in">+</button><button class="quiet-button" id="migrationResetView" type="button" title="Reset chart view" aria-label="Reset chart view">↺</button><button id="migrationDock" type="button" hidden></button><button class="quiet-button" id="migrationMaximize" type="button" title="Maximize chart" aria-label="Maximize chart">⛶</button><button class="quiet-button" id="migrationHideButton" type="button" title="Hide path" aria-label="Hide path">⌃</button></div></header>
+        <div class="migration-path-layout"><div class="migration-chart-column"><nav class="migration-window-controls" aria-label="MRZ migration history"><button class="quiet-button" id="migrationOlderButton" type="button">← Earlier</button><span id="migrationWindowSummary" aria-live="polite"></span><button class="quiet-button" id="migrationNewerButton" type="button">Newer →</button></nav><div class="migration-chart-scroll" id="migrationChartScroll" tabindex="0" role="region" aria-label="Chronological MRZ migration chart"><canvas id="migrationPathCanvas" tabindex="0" aria-label="MRZ migration path by actual event time and linear instrument price"></canvas></div></div><aside class="migration-record-detail" id="migrationRecordDetail" aria-live="polite" hidden></aside></div>
+        <div class="migration-chart-legend"><span><i class="range"></i>MRZ range (structural bound)</span><span><i class="midpoint"></i>MRZ midpoint (migration path)</span><span><i class="path"></i>Midpoint path (structural progression)</span></div>
+        <p class="migration-limited-note" id="migrationLimitedNote" hidden></p>
+      </section>
+      <section class="panel symbol-migration-launcher" id="symbolMigrationHistory" hidden><span id="migrationCountBadge"></span><p id="migrationEmptyState"></p><button id="migrationGenerateButton"></button></section>
+    </main>
+    <script src="http://127.0.0.1:8792/static/chart-viewport.js"></script>
+    <script src="http://127.0.0.1:8792/static/migration-path.js"></script>
+    <script>
+      const mids = [100,110,105,115,108,118,104,111,102,108,99,105];
+      const origin = Date.parse("2026-09-01T00:00:00Z");
+      const states = mids.map((midpoint, index) => {
+        const sequence = index + 1;
+        const event_type = sequence === 1 ? "MRZ_ACTIVATED" : "MRZ_MIGRATED";
+        const observed_at = new Date(origin + index * 5 * 86400000).toISOString();
+        return { event_key: `FIXTURE:${sequence}:${event_type}`, sequence, event_type, route: sequence >= 8 ? "BTD" : "STR", activation_event_key: "FIXTURE:1:MRZ_ACTIVATED", lower: String(midpoint - 1), upper: String(midpoint + 1), midpoint: String(midpoint), observed_at, first_known_at: new Date(Date.parse(observed_at) + 180000).toISOString(), canonical_evidence_ref: `fixture-observation-${sequence}` };
+      });
+      const migrations = states.slice(1);
+      const pivot = (sequence,type,maturity="confirmed") => ({ pivot_event_key: states[sequence-1].event_key, migration_sequence: sequence, type, maturity });
+      const intelligence = { detector_version:"SI-1.0.0", migration_structure:"transitional", migration_structure_label:"Transitional", route_hypothesis:"UNRESOLVED", route_hypothesis_label:"Unresolved", evidence_state:"developing", pivots:[pivot(2,"HIGH"),pivot(3,"LOW"),pivot(4,"HH"),pivot(5,"HL"),pivot(6,"HH"),pivot(7,"LL"),pivot(8,"LH"),pivot(9,"LL"),pivot(10,"LH"),pivot(11,"LL")], latest_development:pivot(12,"LH","developing") };
+      const exactTime = (value) => new Intl.DateTimeFormat("en-GB", { day:"2-digit", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit", timeZone:"UTC" }).format(new Date(value)) + " UTC";
+      edgeMigrationPath.setData({ symbol:"FIXTURE-MATURE", migrations, states, formatPrice:(value)=>Number(value).toFixed(2), exactTime });
+      edgeMigrationPath.setStructuralIntelligence(intelligence);
+      document.getElementById("migrationGenerateButton").click();
+    </script>
+  </body>
+</html>

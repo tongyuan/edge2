@@ -9,6 +9,7 @@ from typing import Any
 from app.domain import ActiveMRZ, Observation
 from app.peer_pressure import build_peer_pressure_report
 from app.structure import classify_ipda_location
+from app.structural_intelligence import classify_structural_history
 
 
 CONTRACT_VERSION = "group-activity-1"
@@ -486,6 +487,78 @@ def _structural_transition_report(
         "contributors": contributors,
         "primary_hypotheses": primaries,
         "detection_basis": "opposite_route_mrz_activation_against_effective_primary_at_knowledge_time",
+        "membership_semantics": "current_membership_at_snapshot",
+    }
+
+
+def _structural_intelligence_report(
+    members: Sequence[str],
+    rows: Sequence[Mapping[str, Any]],
+    comparison_at: datetime,
+    as_of: datetime,
+) -> dict[str, Any]:
+    """Build one authoritative group view from complete per-symbol MRZ history."""
+    by_symbol: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+    for row in rows:
+        symbol = str(row.get("symbol", ""))
+        if symbol in members:
+            by_symbol[symbol].append(row)
+    classifications = {
+        symbol: classify_structural_history(by_symbol.get(symbol, ()), as_known_at=as_of)
+        for symbol in members
+    }
+    counts = {key: 0 for key in ("ascending", "descending", "transitional", "undetermined")}
+    developments = []
+    for symbol, result in classifications.items():
+        counts[result["migration_structure"]] += 1
+        development = result.get("latest_development")
+        if not development or not development.get("first_known_time"):
+            continue
+        known_at = datetime.fromisoformat(str(development["first_known_time"]).replace("Z", "+00:00"))
+        if comparison_at < known_at <= as_of:
+            developments.append({
+                "symbol": symbol,
+                **development,
+                "migration_structure": result["migration_structure"],
+                "migration_structure_label": result["migration_structure_label"],
+                "route_hypothesis": result["route_hypothesis"],
+                "route_hypothesis_label": result["route_hypothesis_label"],
+                "evidence_state": result["evidence_state"],
+                "canonical_evidence_ref": (
+                    f"/mrz/symbols?symbol={symbol}&focus=structural-development"
+                    f"&development={development['development_id']}"
+                ),
+            })
+    developments.sort(
+        key=lambda item: (item["first_known_time"], item["migration_sequence"]),
+        reverse=True,
+    )
+    eligible = len(members) - counts["undetermined"]
+    percentages = {
+        key: (value / len(members) * 100 if members else 0.0)
+        for key, value in counts.items()
+    }
+    dominant = "undetermined"
+    if eligible:
+        directional = max(("ascending", "descending", "transitional"), key=lambda key: counts[key])
+        if counts[directional] > eligible / 2:
+            dominant = directional
+        elif counts["transitional"]:
+            dominant = "transitional"
+    return {
+        "status": "available",
+        "detector_version": next(iter(classifications.values()), {}).get("detector_version"),
+        "summary": {
+            **counts,
+            "percentages": percentages,
+            "member_count": len(members),
+            "eligible_count": eligible,
+            "coverage_percent": (eligible / len(members) * 100 if members else 0.0),
+            "dominant_structure": dominant,
+        },
+        "symbols": classifications,
+        "developments": developments,
+        "classification_basis": "complete_canonical_mrz_history_as_known_at",
         "membership_semantics": "current_membership_at_snapshot",
     }
 
@@ -1340,6 +1413,34 @@ def build_named_group_evidence(
         }
 
     try:
+        structural_intelligence = _structural_intelligence_report(
+            members,
+            inputs.get("structural_history_events", ()),
+            comparison_at,
+            inputs["as_of"],
+        )
+        evidence_times.extend(
+            datetime.fromisoformat(item["first_known_time"].replace("Z", "+00:00"))
+            for item in structural_intelligence.get("developments", ())
+        )
+    except Exception:
+        status = "partial"
+        structural_intelligence = {
+            "status": "unavailable",
+            "summary": {
+                "ascending": 0,
+                "descending": 0,
+                "transitional": 0,
+                "undetermined": len(members),
+                "eligible_count": 0,
+                "member_count": len(members),
+                "dominant_structure": "undetermined",
+            },
+            "symbols": {},
+            "developments": [],
+        }
+
+    try:
         near_miss = _near_misses(
             members,
             inputs.get("near_miss_episodes", ()),
@@ -1408,6 +1509,7 @@ def build_named_group_evidence(
         for item in latest_directional.get("latest_by_member", ())
     }
     primary_by_symbol = structural_transitions.get("primary_hypotheses", {})
+    intelligence_by_symbol = structural_intelligence.get("symbols", {})
     latest_observation_by_symbol: dict[str, Observation] = {}
     for observation in inputs.get("location_observations", ()):
         if observation.symbol in member_set:
@@ -1427,9 +1529,15 @@ def build_named_group_evidence(
         )
         latest_observation = latest_observation_by_symbol.get(symbol)
         last_pressure = latest_pressure_by_symbol.get(symbol, {})
+        symbol_intelligence = intelligence_by_symbol.get(symbol, {})
         member_rows.append({
             "symbol": symbol,
             "primary_hypothesis": primary_by_symbol.get(symbol),
+            "structural_intelligence": symbol_intelligence,
+            "migration_structure": symbol_intelligence.get("migration_structure", "undetermined"),
+            "route_hypothesis": symbol_intelligence.get("route_hypothesis", "UNRESOLVED"),
+            "route_hypothesis_label": symbol_intelligence.get("route_hypothesis_label", "Unresolved"),
+            "latest_structural_development": symbol_intelligence.get("latest_development"),
             "route": (
                 active.route_owner.value
                 if active
@@ -1502,6 +1610,7 @@ def build_named_group_evidence(
         "location_history": location_history,
         "location_flow": location_flow,
         "structural_transitions": structural_transitions,
+        "structural_intelligence": structural_intelligence,
         "activity": activity,
         "near_miss": near_miss,
         "ote": dict(OTE_NOT_CONNECTED),

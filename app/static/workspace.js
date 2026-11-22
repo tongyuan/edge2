@@ -96,6 +96,20 @@
     link.setAttribute("aria-label", navigation.label.replace("← ", ""));
     link.title = navigation.label.replace("← ", "");
   }
+  function configureEventsReturnNavigation() {
+    const link = $("#eventsContextBackLink");
+    if (!link || routeName() !== "events") return;
+    const requestedReturn = new URLSearchParams(globalObject.location.search).get("return");
+    if (!requestedReturn) return;
+    try {
+      const target = new URL(requestedReturn, globalObject.location.origin);
+      if (target.origin !== globalObject.location.origin || !target.pathname.startsWith("/mrz/")) return;
+      link.href = `${target.pathname}${target.search}${target.hash}`;
+      link.hidden = false;
+    } catch (_error) {
+      link.hidden = true;
+    }
+  }
   function activateRoute() {
     const route = routeName();
     document.querySelectorAll("[data-route-panel]").forEach((panel) => {
@@ -556,10 +570,12 @@
 
   function renderSymbolHistory(history) {
     const migrations = history?.migrations || [];
+    const states = history?.states || [];
     const nearMisses = history?.near_misses || [];
     globalObject.edgeMigrationPath?.setData({
       symbol: $("#detailSymbol")?.textContent || "",
       migrations,
+      states,
       formatPrice,
       exactTime,
     });
@@ -568,12 +584,83 @@
       String(nearMisses.length - index),
       element("span", "symbol-history-pill history-event", "Near Miss"),
       symbolRange(item.candidate_lower, item.candidate_upper),
+      formatPrice((Number(item.candidate_lower) + Number(item.candidate_upper)) / 2),
       element("span", `symbol-history-pill history-route ${item.route === "STR" ? "str" : "btd"}`, item.route),
       element("strong", "history-deviation", `${Number(item.deviation_pct).toFixed(2)}%`),
       element("span", "symbol-history-pill history-shortfall", `+${Number(item.shortfall_pp).toFixed(2)} pp`),
       historyTimestamp(item.observed_at),
     ]), history ? "No recorded near misses for this symbol." : "Near Miss History is unavailable.");
 
+    const recentTarget = $("#symbolRecentEventRows"); recentTarget.replaceChildren();
+    const recent = [
+      ...migrations.map((item) => ({ label: "MRZ Migration", at: item.observed_at, tone: "migration" })),
+      ...nearMisses.map((item) => ({ label: `Near Miss (${Number(item.deviation_pct).toFixed(2)}%)`, at: item.observed_at, tone: "near" })),
+    ].sort((left, right) => new Date(right.at) - new Date(left.at)).slice(0, 4);
+    recent.forEach((item) => {
+      const row = element("li", item.tone);
+      row.append(
+        element("i", "", item.tone === "migration" ? "»" : "○"),
+        element("strong", "", item.label),
+        historyTimestamp(item.at),
+      );
+      recentTarget.append(row);
+    });
+    if (!recent.length) recentTarget.append(element("li", "empty", "No recent MRZ or Near Miss events."));
+
+  }
+
+  function humanStructuralDevelopment(development) {
+    if (!development) return "No qualifying development";
+    const names = { HH: "Higher high", HL: "Higher low", LH: "Lower high", LL: "Lower low" };
+    const maturity = development.maturity === "developing" ? "developing" : "confirmed";
+    return `${names[development.type] || development.type} · ${maturity}`;
+  }
+
+  function renderSymbolStructuralIntelligence(detail, intelligence) {
+    const location = locationLabels[detail.structural_location] || "Unavailable";
+    const active = detail.mrz_status === "active";
+    $("#symbolSummaryLocation").textContent = location;
+    $("#symbolSummaryMrz").textContent = active
+      ? `${symbolRange(detail.core_mrz_lower, detail.core_mrz_upper)} (${detail.route_owner || "—"})`
+      : "No active MRZ";
+    $("#symbolSummaryStructure").textContent = intelligence.migration_structure_label || "Undetermined";
+    $("#symbolSummaryHypothesis").textContent = intelligence.route_hypothesis_label || "Insufficient history";
+    $("#symbolSummaryDevelopment").textContent = humanStructuralDevelopment(intelligence.latest_development);
+    $("#symbolBreadcrumb").textContent = `Symbols  ›  ${detail.symbol || $("#detailSymbol")?.textContent || ""}`;
+    $("#symbolHeaderName").textContent = detail.symbol || $("#detailSymbol")?.textContent || "Symbol";
+    $("#symbolHeaderStatus").hidden = false;
+    $("#symbolHeaderStatus").textContent = active ? "● MRZ ACTIVE" : "NO ACTIVE MRZ";
+    $("#symbolHeaderStatus").classList.toggle("is-active", active);
+    $("#symbolHeaderSubtitle").hidden = true;
+    $(".symbol-picker").hidden = true;
+    const overviewRows = $("#symbolOverviewRows"); overviewRows.replaceChildren();
+    const evidenceLabel = intelligence.evidence_state === "developing" ? "Developing (early)" : intelligence.evidence_state === "established" ? "Established" : intelligence.evidence_state === "mixed" ? "Mixed evidence" : "Insufficient history";
+    [
+      ["IPDA Location", location],
+      ["Active MRZ (Route)", active ? `${symbolRange(detail.core_mrz_lower, detail.core_mrz_upper)} (${detail.route_owner || "—"})` : "No active MRZ"],
+      ["Migration Structure", intelligence.migration_structure_label || "Undetermined"],
+      ["Route Hypothesis", intelligence.route_hypothesis_label || "Insufficient history"],
+      ["Latest Development", humanStructuralDevelopment(intelligence.latest_development)],
+      ["Opportunity Evidence", evidenceLabel],
+    ].forEach(([label, value]) => overviewRows.append(element("dt", "", label), element("dd", "", value)));
+    $("#symbolDetectorVersion").textContent = intelligence.detector_version || "—";
+    const rows = $("#symbolStructuralContextRows");
+    rows.replaceChildren();
+    const evidenceLabels = {
+      developing: "Developing evidence",
+      established: "Established structural evidence",
+      mixed: "Mixed structural evidence",
+      insufficient: "Insufficient history",
+    };
+    [
+      ["Migration Structure", intelligence.migration_structure_label || "Undetermined"],
+      ["Recent Structural Sequence", (intelligence.recent_sequence || []).join(" → ") || "No qualified pivots"],
+      ["Dominant Route Hypothesis", intelligence.route_hypothesis_label || "Insufficient history"],
+      ["Latest Structural Development", humanStructuralDevelopment(intelligence.latest_development)],
+      ["Evidence Status", evidenceLabels[intelligence.evidence_state] || intelligence.evidence_state || "Unavailable"],
+    ].forEach(([label, value]) => {
+      rows.append(element("dt", "", label), element("dd", "", value));
+    });
   }
 
   async function loadSymbolDetail(symbol) {
@@ -595,9 +682,10 @@
       return response.json();
     };
     try {
-      const [detail, history] = await Promise.all([
+      const [detail, history, intelligence] = await Promise.all([
         fetchJson(path),
         fetchJson(`${path}/history`).catch(() => null),
+        fetchJson(`${path}/structural-intelligence`),
       ]);
       if (request.signal.aborted) return;
 
@@ -617,7 +705,9 @@
           element("span", "", `Location · ${locationLabels[detail.structural_location] || "—"}`),
         );
       }
+      renderSymbolStructuralIntelligence(detail, intelligence);
       renderSymbolHistory(history);
+      globalObject.edgeMigrationPath?.setStructuralIntelligence?.(intelligence);
       status.hidden = true;
       panel.hidden = false;
     } catch {
@@ -974,11 +1064,11 @@
     const activation = $("#prefActivation");
     const migration = $("#prefMigration");
     const nearMiss = $("#prefNearMiss");
-    const structuralTransition = $("#prefStructuralTransition");
+    const structuralDevelopment = $("#prefStructuralDevelopment");
     if (activation) activation.checked = prefs.activation_enabled;
     if (migration) migration.checked = prefs.migration_enabled;
     if (nearMiss) nearMiss.checked = prefs.near_miss_enabled;
-    if (structuralTransition) structuralTransition.checked = prefs.structural_transition_enabled;
+    if (structuralDevelopment) structuralDevelopment.checked = prefs.structural_development_enabled;
   }
   async function savePreferences(event) {
     event.preventDefault();
@@ -991,7 +1081,8 @@
       migration_enabled: $("#prefMigration")?.checked ?? false,
       pressure_enabled: false,
       near_miss_enabled: $("#prefNearMiss")?.checked ?? false,
-      structural_transition_enabled: $("#prefStructuralTransition")?.checked ?? false,
+      structural_transition_enabled: state.preferences?.structural_transition_enabled ?? false,
+      structural_development_enabled: $("#prefStructuralDevelopment")?.checked ?? false,
     };
     const response = await fetch("/api/notifications/preferences", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     if (!response.ok) { $("#alertPreferencesError").textContent = "Unable to save alert preferences."; $("#alertPreferencesError").hidden = false; return; }
@@ -1003,8 +1094,11 @@
     renderOverview(attention); renderAttention(attention); renderSymbolOptions(); renderLocationDistribution(); renderEvents(); renderPreferences();
   }
   async function initialize() {
+    const startupParams = new URLSearchParams(globalObject.location.search);
+    if (startupParams.get("chart_only") === "1") document.body.dataset.chartOnly = "migration-path";
     activateRoute();
     configureSymbolReturnNavigation();
+    configureEventsReturnNavigation();
     if (routeName() === "events") {
       const eventSearch = new URLSearchParams(globalObject.location.search);
       const requestedSymbol = eventSearch.get("symbol");

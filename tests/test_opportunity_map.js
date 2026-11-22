@@ -3,6 +3,7 @@
 const assert = require("node:assert/strict");
 
 global.window = global;
+require("../app/static/chart-viewport.js");
 require("../app/static/opportunity-map.js");
 
 const map = global.edgeOpportunityMap;

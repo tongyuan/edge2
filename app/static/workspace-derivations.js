@@ -8,6 +8,7 @@
     POST_ACTIVATION_PRESSURE_CHANGED: 2,
     MRZ_NEAR_MISS: 1,
     STRUCTURAL_TRANSITION: 6,
+    STRUCTURAL_DEVELOPMENT: 7,
   };
   const SYMBOL_BOARD_SORTS = new Set([
     "attention",
@@ -47,6 +48,7 @@
     "MRZ_MIGRATED",
     "MRZ_NEAR_MISS",
     "STRUCTURAL_TRANSITION",
+    "STRUCTURAL_DEVELOPMENT",
   ]);
   const LOCATION_TRANSITION_BUCKETS = [
     { key: "deep_discount", label: "Deep Discount", shortLabel: "Deep Disc." },
@@ -320,6 +322,7 @@
     }
     if (event.event_type === "MRZ_NEAR_MISS") return "NEAR-MISS";
     if (event.event_type === "STRUCTURAL_TRANSITION") return "STRUCTURAL TRANSITION";
+    if (event.event_type === "STRUCTURAL_DEVELOPMENT") return "STRUCTURAL DEVELOPMENT";
     return event.event_name || event.event_type || "EVENT";
   }
 

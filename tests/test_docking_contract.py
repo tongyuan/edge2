@@ -31,7 +31,9 @@ class DockingContractTests(unittest.TestCase):
         self.assertIn('aria-label="Dock Inbox"', INDEX)
         self.assertIn('title="Dock Inbox"', INDEX)
         self.assertNotIn('>Dock</button>', INDEX)
-        self.assertNotIn('"Maximize"', MAP)
+        self.assertIn('"Maximize"', MAP)
+        self.assertIn('id="migrationDock"', INDEX)
+        self.assertIn('openMigrationPath', DOCKING)
 
     def test_detached_windows_reuse_existing_canonical_clients(self) -> None:
         for expected in (
@@ -53,6 +55,7 @@ class DockingContractTests(unittest.TestCase):
             'id="notificationMarkAllRead"',
             'id="notificationClearInbox"',
             '/static/opportunity-map.js',
+            '/static/chart-viewport.js',
             '/static/notifications.js',
         ):
             self.assertIn(expected, DOCK)
@@ -68,7 +71,7 @@ class DockingContractTests(unittest.TestCase):
 
     def test_docked_map_is_a_component_scope_not_a_hidden_parent_page(self) -> None:
         dock_branch = MAP.index('if (options.docked) {\n      renderMapComponent')
-        parent_header = MAP.index('const selectedEpisode = detail.episodes.find')
+        parent_header = MAP.index('const breadcrumb = node("nav", "opportunity-breadcrumb")')
         self.assertLess(dock_branch, parent_header)
         self.assertNotIn('opportunity-breadcrumb', DOCK)
         self.assertNotIn('opportunity-replay', DOCK)

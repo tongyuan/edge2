@@ -17,28 +17,31 @@ SHELL = (ROOT / "app/static/mrz-shell.js").read_text(encoding="utf-8")
 
 
 class GroupEvidenceContractTests(unittest.TestCase):
-    def test_group_evolution_exposes_independent_flow_and_reviewable_transitions(self) -> None:
+    def test_group_evolution_exposes_flow_and_authoritative_structural_intelligence(self) -> None:
         self.assertIn('"location_flow": location_flow', AGGREGATOR)
-        self.assertIn('"structural_transitions": structural_transitions', AGGREGATOR)
+        self.assertIn('"structural_intelligence": structural_intelligence', AGGREGATOR)
         self.assertIn('"Group Evolution"', OPPORTUNITY_JS)
         self.assertIn('IPDA Location Flow', OPPORTUNITY_JS)
-        self.assertIn('Structural Transitions', OPPORTUNITY_JS)
-        self.assertIn('onOpenTransition', OPPORTUNITY_JS)
-        self.assertIn('/api/structural-transitions/', JS)
-        self.assertIn('Review Structural Transition', JS)
-        self.assertIn('Confirm Promotion', JS)
-        self.assertIn('Latest IPDA Movement', OPPORTUNITY_JS)
+        self.assertIn('Migration Structure (Group)', OPPORTUNITY_JS)
+        self.assertIn('Structural Developments', OPPORTUNITY_JS)
+        self.assertIn('Group Members — Structural Overview', OPPORTUNITY_JS)
+        self.assertNotIn('onOpenTransition', OPPORTUNITY_JS)
         self.assertNotIn('symbols need a Primary Hypothesis', OPPORTUNITY_JS)
         self.assertNotIn('Set STR', OPPORTUNITY_JS)
         self.assertNotIn('/primary-hypothesis', OPPORTUNITY_JS)
-        self.assertIn('View Full Evidence', JS)
+        self.assertIn('/structural-intelligence', API)
+
+    def test_view_all_events_preserves_group_evolution_return_context(self) -> None:
+        self.assertIn('eventsTarget.searchParams.set("return"', OPPORTUNITY_JS)
+        self.assertIn('`${globalObject.location.pathname}${globalObject.location.search}`', OPPORTUNITY_JS)
+        self.assertIn('allEvents.href = `${eventsTarget.pathname}${eventsTarget.search}`', OPPORTUNITY_JS)
 
     def test_group_workspace_is_simplified_and_event_activity_is_canonical(self) -> None:
         group_renderer = OPPORTUNITY_JS.split("function renderGroup(target", 1)[1].split("async function renderSymbol", 1)[0]
         self.assertNotIn('"Developing context"', group_renderer)
         self.assertNotIn('"Structure established"', group_renderer)
         self.assertIn('Event Activity', OPPORTUNITY_JS)
-        self.assertIn('Location Flow × Structural Transitions × Event Activity', OPPORTUNITY_JS)
+        self.assertIn('Location Flow · Migration Structure · Structural Developments', OPPORTUNITY_JS)
         self.assertIn('item.event_type === "MRZ_ACTIVATED"', OPPORTUNITY_JS)
         self.assertIn('item.event_type === "MRZ_MIGRATED"', OPPORTUNITY_JS)
         self.assertIn('near_miss_episode_count', OPPORTUNITY_JS)
@@ -51,14 +54,18 @@ class GroupEvidenceContractTests(unittest.TestCase):
         self.assertIn('migration.event_type = \'MRZ_MIGRATED\'', REPOSITORY)
         self.assertIn('migration.occurred_at > %s', REPOSITORY)
         self.assertIn('migration.occurred_at <= %s', REPOSITORY)
-        self.assertIn('No structural transitions in the selected period.', OPPORTUNITY_JS)
-        self.assertIn('if ((transitions.contributors || []).length)', OPPORTUNITY_JS)
+        self.assertIn('No new meaningful structural developments in this selected period.', OPPORTUNITY_JS)
         self.assertIn('No start-to-current location changes in this period.', OPPORTUNITY_JS)
         self.assertIn('group-flow-inspector', OPPORTUNITY_JS)
-        self.assertIn('.group-event-activity', OPPORTUNITY_CSS)
-        self.assertIn('.group-event-metrics', OPPORTUNITY_CSS)
-        self.assertIn('.group-recent-events', OPPORTUNITY_CSS)
-        self.assertIn('`${state.detail.group.member_count} members · Group Workspace`', JS)
+        self.assertIn('.group-structural-middle-row', OPPORTUNITY_CSS)
+        self.assertIn('.group-structural-event-activity', OPPORTUNITY_CSS)
+        self.assertIn('.group-structural-developments', OPPORTUNITY_CSS)
+        self.assertNotIn('.group-event-activity {', OPPORTUNITY_CSS)
+        self.assertNotIn('node("section", "group-event-activity")', OPPORTUNITY_JS)
+        self.assertIn('Structural Event Activity', OPPORTUNITY_JS)
+        self.assertIn('Structure (Now)', OPPORTUNITY_JS)
+        self.assertIn('isAccumulationCandidate', OPPORTUNITY_JS)
+        self.assertIn('Location Flow · Migration Structure · Structural Developments', JS)
         self.assertIn('id="groupEvidenceBack"', HTML)
         self.assertIn('id="groupEvidenceEdit"', HTML)
         self.assertNotIn('body.group-opportunity-active .workspace-header,', CSS)
@@ -141,11 +148,25 @@ class GroupEvidenceContractTests(unittest.TestCase):
         self.assertNotIn("renderWatchlists", render_all)
 
     def test_stage_a_assets_share_a_fresh_cache_version(self) -> None:
-        version = "group-radar-near-miss-20261117"
+        version = "structural-intelligence-20261122i"
         self.assertIn(f'/static/workspace.css?v={version}', HTML)
         self.assertIn(f'/static/group-evidence.js?v={version}', HTML)
+        self.assertIn(f'/static/chart-viewport.js?v={version}', HTML)
         self.assertNotIn('#radarAlertsButton', JS)
         self.assertIn(f'/static/workspace.js?v={version}', HTML)
+
+    def test_opportunity_map_viewport_and_current_readout_are_component_scoped(self) -> None:
+        renderer = OPPORTUNITY_JS.split("function renderMapComponent", 1)[1].split("function evidenceLabel", 1)[0]
+        for interaction in ("onwheel", "onpointerdown", "onpointermove", "onkeydown"):
+            self.assertIn(interaction, renderer)
+        self.assertNotIn("renderOpportunityWorkspace(", renderer)
+        self.assertIn("renderCurrentReadout(detail)", OPPORTUNITY_JS)
+        for label in (
+            "IPDA Location", "Active MRZ", "Latest Near Miss", "Migration Structure",
+            "Derived Route Hypothesis", "Opportunity Evidence State",
+        ):
+            self.assertIn(label, OPPORTUNITY_JS)
+        self.assertIn(".opportunity-current-readout", OPPORTUNITY_CSS)
 
     def test_url_state_stale_response_and_accessibility_contracts_exist(self) -> None:
         for key in ("group", "window", "dimension", "bucket", "evidence"):
@@ -194,8 +215,8 @@ class GroupEvidenceContractTests(unittest.TestCase):
             "symbol-opportunity-intelligence",
         ):
             self.assertIn(required, JS + CSS)
-        self.assertIn("members · Group Workspace", JS)
-        self.assertIn("Time · Price · Structural context", JS)
+        self.assertIn("Group Evolution", JS)
+        self.assertIn("Time – Price · Structural Context · Migration Evidence", JS)
 
     def test_repository_snapshot_includes_near_miss_and_location_history_inputs(self) -> None:
         method = REPOSITORY.split("def group_evidence_inputs", 1)[1].split("def saved_groups", 1)[0]

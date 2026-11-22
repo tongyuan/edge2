@@ -64,6 +64,20 @@ class WorkspaceContractTests(unittest.TestCase):
         mobile_rules = CSS.split("@media (max-width: 820px)", 1)[1]
         self.assertIn(".symbol-context-back-link { min-height: 44px;", mobile_rules)
 
+    def test_event_history_has_contextual_group_evolution_return_navigation(self) -> None:
+        self.assertIn('id="eventsContextBackLink"', HTML)
+        self.assertIn("function configureEventsReturnNavigation()", JS)
+        self.assertIn('new URLSearchParams(globalObject.location.search).get("return")', JS)
+        self.assertIn('target.origin !== globalObject.location.origin', JS)
+        self.assertIn('!target.pathname.startsWith("/mrz/")', JS)
+        self.assertIn("configureEventsReturnNavigation();", JS)
+        self.assertIn(".events-context-back-link", CSS)
+
+    def test_docked_migration_path_excludes_parent_workspace_content(self) -> None:
+        chart_only_rules = CSS.split('body[data-chart-only="migration-path"] .workspace-sidebar', 1)[1]
+        self.assertIn('body[data-chart-only="migration-path"] #symbolRecentEvents', chart_only_rules)
+        self.assertIn('body[data-chart-only="migration-path"] #symbolAuthority', chart_only_rules)
+
     def test_group_overview_exposes_selection_sorting_and_responsive_table(self) -> None:
         self.assertNotIn('id="groupEvidenceSearch"', HTML)
         self.assertNotIn("state.search", GROUP_JS)
@@ -93,10 +107,11 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertIn('value="ALL_SYMBOLS"', HTML)
         for control in (
             "prefActivation", "prefMigration", "prefNearMiss",
-            "prefStructuralTransition",
+            "prefStructuralDevelopment",
         ):
             self.assertIn(f'id="{control}"', HTML)
-        self.assertIn("Opposite-route MRZ activation requiring operator review.", HTML)
+        self.assertIn("Meaningful changes in MRZ migration structure.", HTML)
+        self.assertIn('id="prefStructuralDevelopment" type="checkbox" disabled', HTML)
         self.assertNotIn('id="prefPressure"', HTML)
         self.assertIn("/api/notifications/preferences", JS)
 

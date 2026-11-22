@@ -1,6 +1,7 @@
 (function initializeEdgeDocking(globalObject) {
   const FEATURES = {
     "opportunity-map": { name: "edge-opportunity-map-dock", width: 1120, height: 760 },
+    "migration-path": { name: "edge-migration-path-dock", width: 1080, height: 620 },
     inbox: { name: "edge-inbox-dock", width: 430, height: 720 },
   };
   const STORAGE_PREFIX = "edgeDockWindow:";
@@ -65,12 +66,27 @@
 
   function dockUrl(feature, context = {}) {
     if (feature === "inbox") return "/dock/inbox";
+    if (feature === "migration-path") {
+      const params = new URLSearchParams({ symbol: String(context.symbol || "").toUpperCase(), focus: "migration-path", chart_only: "1" });
+      if (context.returnUrl) params.set("return", context.returnUrl);
+      if (Number.isFinite(Number(context.windowStart))) params.set("migration_start", String(Math.max(0, Math.round(Number(context.windowStart)))));
+      if (Number.isFinite(Number(context.windowSize)) && Number(context.windowSize) > 0) params.set("migration_size", String(Math.round(Number(context.windowSize))));
+      if (context.selectedEventId) params.set("migration_event", String(context.selectedEventId));
+      return `/mrz/symbols?${params}`;
+    }
     if (feature !== "opportunity-map") throw new Error(`Unknown dock feature: ${feature}`);
     const symbol = String(context.symbol || "").trim().toUpperCase();
     if (!symbol) throw new Error("A symbol is required to dock the Opportunity Map.");
     const query = new URLSearchParams();
     const rangeDays = Number(context.rangeDays);
     if ([0, 30, 90].includes(rangeDays)) query.set("range", String(rangeDays));
+    const viewStart = Number(context.viewStart);
+    const viewEnd = Number(context.viewEnd);
+    if (Number.isFinite(viewStart) && Number.isFinite(viewEnd) && viewEnd > viewStart) {
+      query.set("view_start", String(Math.round(viewStart)));
+      query.set("view_end", String(Math.round(viewEnd)));
+    }
+    if (context.selectedEventId) query.set("event", String(context.selectedEventId));
     if (context.returnUrl && String(context.returnUrl).startsWith("/")) query.set("return", context.returnUrl);
     return `/dock/opportunity-map/${encodeURIComponent(symbol)}${query.size ? `?${query}` : ""}`;
   }
@@ -122,6 +138,7 @@
     dockUrl,
     openDock,
     openInbox: () => openDock("inbox"),
+    openMigrationPath: (symbol, context = {}) => openDock("migration-path", { ...context, symbol }),
     openOpportunityMap: (symbol, context = {}) => openDock("opportunity-map", { ...context, symbol }),
     openInMain,
     readSize,

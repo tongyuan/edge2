@@ -2,6 +2,7 @@
 
 const assert = require("node:assert/strict");
 global.window = global;
+require("../app/static/chart-viewport.js");
 const path = require("../app/static/migration-path.js");
 
 assert.equal(path.countLabel(0), "0 migrations");
@@ -17,6 +18,13 @@ assert.deepEqual(records.map((item) => item.sequence), [2, 3, 5], "actual event 
 assert.equal(records[0].midpoint, 112);
 assert.equal(records[0].segmentId, records[1].segmentId, "route changes inside one activation chain remain connected");
 assert.notEqual(records[1].segmentId, records[2].segmentId, "activation boundaries break the progression line");
+
+const canonicalStates = path.prepareMigrationRecords([
+  { event_key: "a1", event_type: "MRZ_ACTIVATED", sequence: 1, route: "STR", activation_event_key: "a1", lower: "130.0", upper: "132.0", midpoint: "131.0", observed_at: "2026-09-01T00:00:00Z", first_known_at: "2026-09-01T00:01:00Z" },
+  { event_key: "m2", event_type: "MRZ_MIGRATED", sequence: 2, route: "STR", activation_event_key: "a1", lower: "125.0", upper: "127.0", midpoint: "126.0", observed_at: "2026-09-02T00:00:00Z", first_known_at: "2026-09-02T00:01:00Z" },
+]);
+assert.deepEqual(canonicalStates.map((item) => item.event_type), ["MRZ_ACTIVATED", "MRZ_MIGRATED"], "the initial canonical activation is retained with migration successors");
+assert.equal(canonicalStates[0].midpoint, 131);
 
 const chronological = path.prepareMigrationRecords([
   { event_key: "late-sequence", sequence: 20, activation_event_key: "a1", to_lower: "3.10", to_upper: "3.30", observed_at: "2026-09-01T00:00:00Z" },
@@ -35,11 +43,22 @@ const priceRecords = path.prepareMigrationRecords([
   { event_key: "p2", sequence: 2, activation_event_key: "p", to_lower: "2241.03", to_upper: "2252.96", observed_at: "2026-11-01T00:00:00Z" },
 ]);
 const scale = path.linearPriceScale(priceRecords);
+const zoomedScale = path.linearPriceScale(priceRecords, 5, .02);
+const expandedScale = path.linearPriceScale(priceRecords, 5, .32);
 assert.equal(path.migrationPricePrecision(priceRecords), 2, "canonical bound precision controls chart labels");
 assert.ok(scale.minimum > 0, "the linear price domain is not forced to zero");
 assert.ok(scale.minimum < 2051.83 && scale.maximum > 2252.96, "the price domain pads actual displayed bounds");
 assert.ok(scale.ticks.every((value, index) => index === 0 || value > scale.ticks[index - 1]), "price ticks are strictly monotonic");
+assert.ok((zoomedScale.maximum - zoomedScale.minimum) < (scale.maximum - scale.minimum), "short histories visibly zoom into the price domain");
+assert.ok((expandedScale.maximum - expandedScale.minimum) > (scale.maximum - scale.minimum), "short histories visibly zoom out from the price domain");
 
 assert.deepEqual(path.collisionAwareIndices([0, 12, 100, 112], 30, [3]), [1, 3], "dense optional labels are suppressed while the latest label remains visible");
+
+assert.equal(path.canHidePath(false), true, "the embedded symbol workspace can hide its generated path");
+assert.equal(path.canHidePath(true), false, "the docked chart never reveals unrelated symbol-workspace content");
+const detail = { hidden: false };
+global.document = { querySelector: (selector) => selector === "#migrationRecordDetail" ? detail : null };
+path.dismissDetail();
+assert.equal(detail.hidden, true, "tapping blank chart space can dismiss the selected-state evidence dialog");
 
 console.log("Migration path tests passed");

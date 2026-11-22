@@ -527,6 +527,34 @@ def create_app(
             headers={"Cache-Control": "no-store, max-age=0"},
         )
 
+    @application.get("/api/symbols/{symbol}/structural-intelligence")
+    def symbol_structural_intelligence(
+        symbol: str,
+        as_known_at: datetime | None = Query(default=None),
+    ) -> JSONResponse:
+        """One replay-safe structural result shared by every workspace."""
+        try:
+            payload = repository.structural_intelligence(
+                symbol,
+                as_known_at=as_known_at,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception:
+            LOGGER.exception(
+                "Structural intelligence unavailable",
+                extra={"symbol": symbol},
+            )
+            return JSONResponse(
+                {"detail": "structural_intelligence_unavailable"},
+                status_code=503,
+                headers={"Cache-Control": "no-store, max-age=0"},
+            )
+        return JSONResponse(
+            payload,
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
     @application.post("/api/structural-transitions/{transition_id}/review")
     def review_structural_transition(
         transition_id: int,
