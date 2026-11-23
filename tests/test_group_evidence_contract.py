@@ -152,12 +152,24 @@ class GroupEvidenceContractTests(unittest.TestCase):
         self.assertNotIn("renderWatchlists", render_all)
 
     def test_stage_a_assets_share_a_fresh_cache_version(self) -> None:
-        version = "structural-intelligence-20261122i"
+        version = "structural-intelligence-20261123j"
         self.assertIn(f'/static/workspace.css?v={version}', HTML)
         self.assertIn(f'/static/group-evidence.js?v={version}', HTML)
         self.assertIn(f'/static/chart-viewport.js?v={version}', HTML)
         self.assertNotIn('#radarAlertsButton', JS)
         self.assertIn(f'/static/workspace.js?v={version}', HTML)
+
+    def test_tracker_event_rows_are_clickable_and_open_symbol_workspaces(self) -> None:
+        renderer = OPPORTUNITY_JS.split("function renderGroupEvolution", 1)[1]
+        self.assertIn('[["near", "Near Miss", nearMissEvents.length], ["activation", "MRZ Activation", activationRecords.length]]', renderer)
+        self.assertIn("metric.dataset.kind = tone", renderer)
+        self.assertIn('migrationMetric.dataset.kind = "migration"', renderer)
+        self.assertIn('metric.addEventListener("click", () => renderTrackerDetail(tone))', renderer)
+        self.assertIn('migrationMetric.addEventListener("click", () => renderTrackerDetail("migration"))', renderer)
+        self.assertIn('return `/mrz/symbols?${params}`', renderer)
+        self.assertIn('open.href = symbolWorkspaceHref(symbol)', renderer)
+        self.assertIn('link.href = groupSymbolUrl(groupId, symbol)', JS)
+        self.assertIn('return `/mrz/symbols?${params}`', JS)
 
     def test_opportunity_map_viewport_and_current_readout_are_component_scoped(self) -> None:
         renderer = OPPORTUNITY_JS.split("function renderMapComponent", 1)[1].split("function evidenceLabel", 1)[0]
