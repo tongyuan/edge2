@@ -525,7 +525,7 @@ def _structural_intelligence_report(
                 "route_hypothesis_label": result["route_hypothesis_label"],
                 "evidence_state": result["evidence_state"],
                 "canonical_evidence_ref": (
-                    f"/mrz/symbols?symbol={symbol}&focus=structural-development"
+                    f"/mrz/symbols?symbol={symbol}&focus=migration-path"
                     f"&development={development['development_id']}"
                 ),
             })

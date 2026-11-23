@@ -216,7 +216,12 @@ input { padding: 0 11px; }
 .symbol-intelligence-strip > span { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 36px; padding: 0 13px; border: 1px solid #294353; border-radius: 999px; background: #0b1821; }
 .symbol-intelligence-strip b { color: var(--muted); font-size: .62rem; letter-spacing: .06em; text-transform: uppercase; }
 .symbol-intelligence-strip strong { overflow: hidden; color: #eef4fa; font-size: .76rem; text-overflow: ellipsis; }
-.symbol-intelligence-strip > span:first-child::before { display: grid; flex: 0 0 26px; width: 26px; height: 26px; place-items: center; border-radius: 50%; background: #e83f46; color: white; font-size: .65rem; font-weight: 900; content: "D"; }.symbol-intelligence-strip > span:first-child b { display: none; }
+.symbol-intelligence-strip > span:first-child::before { display: grid; flex: 0 0 26px; width: 26px; height: 26px; place-items: center; border-radius: 50%; color: white; font-size: .65rem; font-weight: 900; content: "?"; }
+.symbol-intelligence-strip > span:first-child b { display: none; }
+.symbol-intelligence-strip > span:first-child.discount::before { background: #e83f46; content: "D"; }
+.symbol-intelligence-strip > span:first-child.equilibrium::before { background: #d6a91f; color: #101820; content: "E"; }
+.symbol-intelligence-strip > span:first-child.premium::before { background: #17b981; content: "P"; }
+.symbol-intelligence-strip > span:first-child.unavailable::before { border: 1px solid #496071; background: #243440; color: #aebbc5; content: "?"; }
 .symbol-detail-grid .panel + .panel { margin: 0; }
 .current-authority-panel { min-width: 0; padding: 20px 24px; }
 .current-authority-panel .panel-heading { min-height: 0; padding: 0; border: 0; }

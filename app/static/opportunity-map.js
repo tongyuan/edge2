@@ -547,21 +547,31 @@
       ranges.append(button);
     });
     mapTools.append(ranges);
-    const zoomOut = node("button", "quiet-button chart-tool", "Zoom −"); zoomOut.type = "button"; zoomOut.title = "Zoom out";
-    const zoomIn = node("button", "quiet-button chart-tool", "Zoom +"); zoomIn.type = "button"; zoomIn.title = "Zoom in";
-    const reset = node("button", "quiet-button chart-tool", "Reset"); reset.type = "button"; reset.title = "Reset chart view";
-    const maximize = node("button", "quiet-button chart-tool", "Maximize"); maximize.type = "button"; maximize.title = "Maximize chart"; maximize.setAttribute("aria-pressed", "false");
+    const chartControls = node("div", "chart-workspace-controls opportunity-chart-controls");
+    chartControls.setAttribute("role", "toolbar");
+    chartControls.setAttribute("aria-label", "Opportunity chart controls");
+    const chartButton = (label, icon) => {
+      const button = node("button", "quiet-button chart-tool", icon);
+      button.type = "button";
+      button.title = label;
+      button.setAttribute("aria-label", label);
+      return button;
+    };
+    const zoomOut = chartButton("Zoom out", "−");
+    const zoomIn = chartButton("Zoom in", "+");
+    const reset = chartButton("Reset chart view", "↺");
+    const maximize = chartButton("Maximize chart", "⛶"); maximize.setAttribute("aria-pressed", "false");
     zoomOut.addEventListener("click", () => { componentState.viewport = chartViewport.zoomTimeViewport(componentState.viewport, 1 / 1.35); redraw(); });
     zoomIn.addEventListener("click", () => { componentState.viewport = chartViewport.zoomTimeViewport(componentState.viewport, 1.35); redraw(); });
     reset.addEventListener("click", () => { componentState.viewport = createOpportunityViewport(detail, componentState.rangeDays); redraw(); });
-    maximize.textContent = componentState.maximized ? "Restore" : "Maximize"; maximize.setAttribute("aria-pressed", String(Boolean(componentState.maximized)));
+    maximize.textContent = componentState.maximized ? "↙" : "⛶"; maximize.title = componentState.maximized ? "Restore chart" : "Maximize chart"; maximize.setAttribute("aria-label", maximize.title); maximize.setAttribute("aria-pressed", String(Boolean(componentState.maximized)));
     maximize.addEventListener("click", () => {
       componentState.maximized = !componentState.maximized;
       const active = componentState.maximized; mapPanel.classList.toggle("maximized", active); document.body.classList.toggle("opportunity-map-maximized", active);
-      maximize.textContent = active ? "Restore" : "Maximize"; maximize.title = active ? "Restore chart" : "Maximize chart"; maximize.setAttribute("aria-pressed", String(active));
+      maximize.textContent = active ? "↙" : "⛶"; maximize.title = active ? "Restore chart" : "Maximize chart"; maximize.setAttribute("aria-label", maximize.title); maximize.setAttribute("aria-pressed", String(active));
       globalObject.requestAnimationFrame(redraw);
     });
-    mapTools.append(zoomOut, zoomIn, reset, maximize);
+    chartControls.append(zoomOut, zoomIn, reset);
     if (options.docked) {
       const evidence = renderCanonicalEvidenceLink(detail, { ...options, label: "Open Canonical Evidence" });
       evidence.addEventListener("click", (event) => {
@@ -576,7 +586,7 @@
           globalObject.edgeDocking.openInMain(options.returnUrl || "/mrz/watchlists");
           globalObject.close?.();
         });
-        mapTools.append(undock);
+        chartControls.append(undock);
       }
     } else if (globalObject.edgeDocking?.canDock()) {
       const dock = globalObject.edgeDocking.createDockButton("Dock Opportunity Map");
@@ -590,8 +600,10 @@
         });
         if (!opened) globalObject.alert?.("The dock window was blocked. Allow pop-ups for EDGE and try again.");
       });
-      mapTools.append(dock);
+      chartControls.append(dock);
     }
+    chartControls.append(maximize);
+    mapTools.append(chartControls);
     mapHeader.append(title, mapTools); mapPanel.append(mapHeader);
     const scroll = node("div", "opportunity-chart-scroll");
     const canvas = node("canvas", "opportunity-map-canvas"); canvas.width = 1120; canvas.height = 280; canvas.setAttribute("aria-label", `Time-price opportunity map for ${detail.symbol}`); canvas.tabIndex = 0;
@@ -752,7 +764,7 @@
       ["Active MRZ", activeMrz ? `${rangeText(activeMrz)} · Mid ${price(activeMidpoint)} · ${activeMrz.route || activeMrz.mrz_route || "Route unavailable"}` : "Unavailable", "mrz"],
       ["Latest Near Miss", latestNear ? `${rangeText(latestNear)} · Mid ${price(nearMidpoint)}${nearDeviation !== null && nearDeviation !== undefined ? ` · ${Number(nearDeviation).toFixed(2)}%` : " · deviation unavailable"}` : "Unavailable", "near"],
       ["Migration Structure", intelligence.migration_structure_label || "Undetermined", `structure-${intelligence.migration_structure || "undetermined"}`],
-      ["Derived Route Hypothesis", intelligence.route_hypothesis_label || "Insufficient history", "route"],
+      ["Route Hypothesis", intelligence.route_hypothesis_label || "Unresolved", "route"],
       ["Opportunity Evidence State", evidenceLabel(intelligence.evidence_state, "Insufficient evidence"), `evidence-${intelligence.evidence_state || "insufficient"}`],
     ];
     fields.forEach(([label, value, tone]) => {
@@ -786,6 +798,7 @@
     headerActions.append(renderCanonicalEvidenceLink(detail, options));
     identity.append(headerActions, node("p", "", "OPPORTUNITY INTELLIGENCE"), node("h3", "", `${detail.symbol} — Opportunity Map`));
     header.append(identity); target.append(header);
+    target.append(renderCurrentReadout(detail));
 
     const replay = node("section", "opportunity-replay panel");
     const replayHeading = node("header", "opportunity-panel-heading");
@@ -885,7 +898,6 @@
       timeline.append(expansion);
     }
     visualGrid.append(timeline);
-    target.append(renderCurrentReadout(detail));
   }
 
   function renderCandidateTable(target, summary, onSelect, options = {}) {
@@ -1047,100 +1059,129 @@
       report.directional?.mrz_migrations || {},
     );
     const nearMissRecords = activityRecords.filter((item) => item.tracker === "near_miss");
-    const migrationDetail = node("section", "migration-direction-detail"); migrationDetail.hidden = true; migrationDetail.id = `migrationDirectionDetail-${report.group?.id || "group"}`;
-    const migrationButtons = [];
-    const renderMigrationDetail = (direction) => {
-      const labels = { all: "All", higher: "Higher", lower: "Lower", unchanged: "Unchanged", unknown: "Unknown" };
-      const events = direction === "all"
+    const nearMissEpisodeKeys = new Set(nearMissRecords.map((item) => String(item.source_event_id || "")));
+    const nearMissEvents = (report.near_miss?.episodes || [])
+      .filter((item) => nearMissEpisodeKeys.has(String(item.episode_key)))
+      .sort((left, right) => parseTime(right.candidate_timestamp || right.started_at) - parseTime(left.candidate_timestamp || left.started_at));
+    const developments = intelligence.developments || [];
+    const trackerDetail = node("section", "migration-direction-detail tracker-event-detail"); trackerDetail.hidden = true; trackerDetail.id = `trackerEventDetail-${report.group?.id || "group"}`;
+    const trackerButtons = [];
+    const symbolWorkspaceHref = (symbol) => {
+      const params = new URLSearchParams({ symbol, from: "watchlists", group: String(report.group?.id || "all"), window: report.window?.key || "24H", return: `${globalObject.location.pathname}${globalObject.location.search}` });
+      return `/mrz/symbols?${params}`;
+    };
+    const openCell = (symbol) => {
+      const cell = node("td", ""); const open = node("a", "migration-evidence-link", "Open →"); open.href = symbolWorkspaceHref(symbol); cell.append(open); return cell;
+    };
+    const renderTrackerDetail = (kind, direction = "all") => {
+      const directionLabels = { all: "All", higher: "Higher", lower: "Lower", unchanged: "Unchanged", unknown: "Unknown" };
+      const categoryLabels = { near: "Near Miss", activation: "MRZ Activation", migration: "MRZ Migration", development: "Structural Development" };
+      let events = [];
+      if (kind === "near") events = nearMissEvents;
+      else if (kind === "activation") events = activationRecords;
+      else if (kind === "development") events = developments;
+      else events = direction === "all"
         ? Object.values(migrationBreakdown.categories).flat().sort((left, right) => parseTime(right.occurred_at) - parseTime(left.occurred_at))
         : migrationBreakdown.categories[direction] || [];
       const uniqueSymbols = new Set(events.map((item) => item.symbol)).size;
       const detailHeading = node("header", "migration-direction-detail-heading");
-      const headingCopy = node("div", ""); headingCopy.append(node("h3", "", `MRZ Migration — ${labels[direction]}`), node("p", "", `${events.length} ${events.length === 1 ? "event" : "events"} · ${uniqueSymbols} unique ${uniqueSymbols === 1 ? "symbol" : "symbols"}`));
-      const close = node("button", "migration-direction-close", "Close"); close.type = "button"; close.addEventListener("click", () => { migrationDetail.hidden = true; migrationButtons.forEach((button) => button.setAttribute("aria-expanded", "false")); });
+      const headingCopy = node("div", "");
+      headingCopy.append(node("h3", "", `${categoryLabels[kind]} — ${kind === "migration" ? directionLabels[direction] : "All"}`), node("p", "", `${events.length} ${events.length === 1 ? "event" : "events"} · ${uniqueSymbols} unique ${uniqueSymbols === 1 ? "symbol" : "symbols"} · ${report.group?.name || "Selected group"} · ${report.window?.key || "Selected period"}`));
+      const close = node("button", "migration-direction-close", "Close"); close.type = "button"; close.addEventListener("click", () => { trackerDetail.hidden = true; trackerButtons.forEach((button) => button.setAttribute("aria-expanded", "false")); });
       detailHeading.append(headingCopy, close);
-      const wrap = node("div", "migration-direction-table-wrap");
-      const table = node("table", "migration-direction-table");
-      const head = node("thead", ""); head.innerHTML = "<tr><th>Symbol</th><th>Migration time</th><th>Previous MRZ</th><th>Successor MRZ</th><th>Previous midpoint</th><th>Successor midpoint</th><th>Direction</th><th>Evidence</th></tr>";
-      const body = node("tbody", "");
-      events.forEach((item) => {
-        const row = node("tr", "");
-        const evidence = node("a", "migration-evidence-link", "Open →"); evidence.href = `/mrz/events?symbol=${encodeURIComponent(item.symbol)}&event=${encodeURIComponent(item.event_key || item.source_event_id || item.id)}`;
-        row.append(
-          node("td", "migration-symbol", item.symbol),
-          node("td", "", exactTime(item.occurred_at)),
-          node("td", "", item.old_lower != null && item.old_upper != null ? `${price(item.old_lower)}–${price(item.old_upper)}` : "Unavailable"),
-          node("td", "", item.new_lower != null && item.new_upper != null ? `${price(item.new_lower)}–${price(item.new_upper)}` : "Unavailable"),
-          node("td", "", item.old_midpoint != null ? price(item.old_midpoint) : "Unavailable"),
-          node("td", "", item.new_midpoint != null ? price(item.new_midpoint) : "Unavailable"),
-          node("td", `migration-direction ${item.direction || direction}`, labels[item.direction] || labels[direction]),
-        );
-        const linkCell = node("td", ""); linkCell.append(evidence); row.append(linkCell); body.append(row);
-      });
-      if (!events.length) { const row = node("tr", ""); const empty = node("td", "migration-direction-empty", `No ${direction === "all" ? "canonical" : labels[direction].toLowerCase()} migrations in this period.`); empty.colSpan = 8; row.append(empty); body.append(row); }
-      table.append(head, body); wrap.append(table); migrationDetail.replaceChildren(detailHeading, wrap); migrationDetail.hidden = false;
-      migrationButtons.forEach((button) => button.setAttribute("aria-expanded", String(button.dataset.direction === direction)));
+      const wrap = node("div", "migration-direction-table-wrap"); const table = node("table", "migration-direction-table"); const head = node("thead", ""); const body = node("tbody", "");
+      if (kind === "near") {
+        head.innerHTML = "<tr><th>Symbol</th><th>Route</th><th>Observation time</th><th>Candidate range</th><th>Midpoint</th><th>% Deviation</th><th>Open</th></tr>";
+        events.forEach((item) => {
+          const lower = Number(item.candidate_lower); const upper = Number(item.candidate_upper); const midpoint = Number.isFinite(lower) && Number.isFinite(upper) ? price((lower + upper) / 2) : "Unavailable";
+          const row = node("tr", ""); row.append(node("td", "migration-symbol", item.symbol), node("td", "", item.route_owner || "Unavailable"), node("td", "", exactTime(item.candidate_timestamp || item.started_at)), node("td", "", item.candidate_lower != null && item.candidate_upper != null ? `${price(item.candidate_lower)}–${price(item.candidate_upper)}` : "Unavailable"), node("td", "", midpoint), node("td", "", item.minimum_required_allowance_pct == null ? "Unavailable" : `${Number(item.minimum_required_allowance_pct).toFixed(2)}%`), openCell(item.symbol)); body.append(row);
+        });
+      } else if (kind === "activation") {
+        head.innerHTML = "<tr><th>Symbol</th><th>Activation time</th><th>Route</th><th>MRZ range</th><th>Midpoint</th><th>Open</th></tr>";
+        events.forEach((item) => {
+          const lower = Number(item.next_lower); const upper = Number(item.next_upper); const midpoint = Number.isFinite(lower) && Number.isFinite(upper) ? price((lower + upper) / 2) : "Unavailable";
+          const row = node("tr", ""); row.append(node("td", "migration-symbol", item.symbol), node("td", "", exactTime(item.occurred_at)), node("td", "", item.route_owner || "Unavailable"), node("td", "", item.next_lower != null && item.next_upper != null ? `${price(item.next_lower)}–${price(item.next_upper)}` : "Unavailable"), node("td", "", midpoint), openCell(item.symbol)); body.append(row);
+        });
+      } else if (kind === "development") {
+        head.innerHTML = "<tr><th>Symbol</th><th>Development time</th><th>First known</th><th>Development</th><th>Maturity</th><th>Migration structure</th><th>Route hypothesis</th><th>Open</th></tr>";
+        events.forEach((item) => { const row = node("tr", ""); row.append(node("td", "migration-symbol", item.symbol), node("td", "", exactTime(item.event_time)), node("td", "", exactTime(item.first_known_time)), node("td", "", item.type || "Unavailable"), node("td", "", evidenceLabel(item.maturity)), node("td", "", item.migration_structure_label || "Undetermined"), node("td", "", item.route_hypothesis_label || "Unresolved"), openCell(item.symbol)); body.append(row); });
+      } else {
+        head.innerHTML = "<tr><th>Symbol</th><th>Migration time</th><th>Previous MRZ</th><th>Successor MRZ</th><th>Previous midpoint</th><th>Successor midpoint</th><th>Direction</th><th>Open</th></tr>";
+        events.forEach((item) => { const row = node("tr", ""); row.append(node("td", "migration-symbol", item.symbol), node("td", "", exactTime(item.occurred_at)), node("td", "", item.old_lower != null && item.old_upper != null ? `${price(item.old_lower)}–${price(item.old_upper)}` : "Unavailable"), node("td", "", item.new_lower != null && item.new_upper != null ? `${price(item.new_lower)}–${price(item.new_upper)}` : "Unavailable"), node("td", "", item.old_midpoint != null ? price(item.old_midpoint) : "Unavailable"), node("td", "", item.new_midpoint != null ? price(item.new_midpoint) : "Unavailable"), node("td", `migration-direction ${item.direction || direction}`, directionLabels[item.direction] || directionLabels[direction]), openCell(item.symbol)); body.append(row); });
+      }
+      if (!events.length) { const row = node("tr", ""); const empty = node("td", "migration-direction-empty", "No qualifying events in the selected period."); empty.colSpan = head.querySelectorAll("th").length; row.append(empty); body.append(row); }
+      table.append(head, body); wrap.append(table); trackerDetail.replaceChildren(detailHeading);
+      if (kind === "migration") {
+        const filters = node("nav", "tracker-detail-filters"); filters.setAttribute("aria-label", "MRZ migration direction");
+        [["all", migrationBreakdown.total], ["higher", migrationBreakdown.counts.higher], ["lower", migrationBreakdown.counts.lower], ["unchanged", migrationBreakdown.counts.unchanged], ["unknown", migrationBreakdown.counts.unknown]].forEach(([value, count]) => { if (value === "unknown" && !count) return; const button = node("button", "quiet-button", `${directionLabels[value]} ${count}`); button.type = "button"; button.setAttribute("aria-pressed", String(value === direction)); button.addEventListener("click", () => renderTrackerDetail("migration", value)); filters.append(button); });
+        trackerDetail.append(filters);
+      }
+      trackerDetail.append(wrap); trackerDetail.hidden = false; trackerButtons.forEach((button) => button.setAttribute("aria-expanded", String(button.dataset.kind === kind)));
     };
     const middleRow = node("div", "group-structural-middle-row");
     const eventActivity = node("section", "group-structural-event-activity");
     const activityIntro = node("header", "group-structural-panel-heading");
     activityIntro.append(
-      node("h3", "", `Structural Event Activity (${report.window?.key || "window"})`),
-      node("p", "", "Canonical structural events across group members."),
+      node("h3", "", `Tracker Event Activity (${report.window?.key || "window"})`),
+      node("p", "", "Canonical tracker events across group members."),
     );
     const activityMetrics = node("div", "group-structural-event-list");
-    [["near", "Near Miss", activity.summary?.near_miss_episode_count || 0], ["activation", "MRZ Activation", activationRecords.length]].forEach(([tone, label, count]) => {
-      const metric = node("article", `group-structural-event ${tone}`);
+    [["near", "Near Miss", nearMissEvents.length], ["activation", "MRZ Activation", activationRecords.length]].forEach(([tone, label, count]) => {
+      const metric = node("button", `group-structural-event ${tone}`); metric.type = "button"; metric.dataset.kind = tone; metric.setAttribute("aria-controls", trackerDetail.id); metric.setAttribute("aria-expanded", "false"); metric.setAttribute("aria-label", `Inspect ${count} ${label} events`);
       metric.append(node("i", "event-marker", ""), node("span", "", label), node("strong", "", String(count)));
-      activityMetrics.append(metric);
+      metric.addEventListener("click", () => renderTrackerDetail(tone)); trackerButtons.push(metric); activityMetrics.append(metric);
     });
     const migrationMetric = node("button", "group-structural-event migration", "");
     migrationMetric.type = "button";
-    migrationMetric.dataset.direction = "all";
-    migrationMetric.setAttribute("aria-controls", migrationDetail.id);
+    migrationMetric.dataset.kind = "migration";
+    migrationMetric.setAttribute("aria-controls", trackerDetail.id);
     migrationMetric.setAttribute("aria-expanded", "false");
     migrationMetric.setAttribute("aria-label", `Inspect ${migrationRecords.length} canonical MRZ migration events`);
     migrationMetric.append(node("i", "event-marker", ""), node("span", "", "MRZ Migration"), node("strong", "", String(migrationRecords.length)));
-    migrationMetric.addEventListener("click", () => renderMigrationDetail("all"));
-    migrationButtons.push(migrationMetric);
+    migrationMetric.addEventListener("click", () => renderTrackerDetail("migration"));
+    trackerButtons.push(migrationMetric);
     activityMetrics.append(migrationMetric);
+    const developmentMetric = node("button", "group-structural-event development", "");
+    developmentMetric.type = "button"; developmentMetric.dataset.kind = "development"; developmentMetric.setAttribute("aria-controls", trackerDetail.id); developmentMetric.setAttribute("aria-expanded", "false"); developmentMetric.setAttribute("aria-label", `Inspect ${developments.length} Structural Development events`);
+    developmentMetric.append(node("i", "event-marker", ""), node("span", "", "Structural Development"), node("strong", "", String(developments.length)));
+    developmentMetric.addEventListener("click", () => renderTrackerDetail("development")); trackerButtons.push(developmentMetric); activityMetrics.append(developmentMetric);
     eventActivity.append(activityIntro, activityMetrics);
 
-    const developments = intelligence.developments || [];
     const isAccumulationCandidate = (item) => item.migration_structure === "transitional"
-      && item.route_hypothesis === "STR_DOMINANT_EMERGING_BTD"
+      && String(item.route_hypothesis || "").startsWith("BTD_SUPPORTIVE")
       && ["HL", "HH"].includes(item.type);
-    const accumulationCount = developments.filter(isAccumulationCandidate).length;
+    const accumulationCount = developments.filter((item) => ["HH", "HL"].includes(item.type)).length;
+    const distributionCount = developments.filter((item) => ["LH", "LL"].includes(item.type)).length;
+    const focus = accumulationCount && distributionCount
+      ? { label: "Mixed Developments", tone: "mixed", summary: `${accumulationCount} accumulation and ${distributionCount} distribution developments require attention.` }
+      : accumulationCount
+        ? { label: "Accumulation Focus", tone: "accumulation", summary: `${accumulationCount} qualifying new accumulation ${accumulationCount === 1 ? "development" : "developments"}.` }
+        : distributionCount
+          ? { label: "Distribution Focus", tone: "distribution", summary: `${distributionCount} qualifying new distribution ${distributionCount === 1 ? "development" : "developments"}.` }
+          : { label: "No New Structural Developments", tone: "none", summary: "No qualifying development became known in the selected period." };
     const developmentWrap = node("section", "group-structural-developments");
     const developmentTitle = node("header", "structural-development-heading");
     const developmentCopy = node("div", ""); developmentCopy.append(node("h3", "", `Structural Developments (${report.window?.key || "window"})`), node("p", "", "New or meaningful changes in migration structure."));
     const developmentMeta = node("div", "structural-development-meta");
     developmentMeta.append(
-      node("span", "structural-focus", "Accumulation Focus"),
-      node("span", "structural-focus-summary", accumulationCount
-        ? `${accumulationCount} ${accumulationCount === 1 ? "symbol" : "symbols"} showing early accumulation evidence.`
-        : "No symbols showing early accumulation evidence."),
+      node("span", `structural-focus ${focus.tone}`, focus.label),
+      node("span", "structural-focus-summary", focus.summary),
     );
-    const allEvents = node("a", "structural-view-all", "View All Events →");
-    const eventsTarget = new URL(options.eventsUrl || "/mrz/events", globalObject.location.origin);
-    eventsTarget.searchParams.set("return", `${globalObject.location.pathname}${globalObject.location.search}`);
-    allEvents.href = `${eventsTarget.pathname}${eventsTarget.search}`;
-    developmentTitle.append(developmentCopy, developmentMeta, allEvents);
+    developmentTitle.append(developmentCopy, developmentMeta);
     developmentWrap.append(developmentTitle);
     const developmentTable = node("table", "group-transition-table structural-development-table");
     const developmentHead = node("thead", ""); developmentHead.innerHTML = "<tr><th>Symbol</th><th>Development</th><th>Structure (Now)</th><th>Route Hypothesis</th><th>Opportunity</th><th>Evidence</th></tr>";
     const developmentBody = node("tbody", "");
     developments.forEach((item) => {
       const accumulationCandidate = isAccumulationCandidate(item);
-      const distributionCandidate = item.migration_structure === "transitional" && item.route_hypothesis === "BTD_DOMINANT_EMERGING_STR" && ["LH", "LL"].includes(item.type);
-      const distributionActive = item.migration_structure === "descending" && item.route_hypothesis === "STR_DOMINANT";
+      const distributionCandidate = item.migration_structure === "transitional" && String(item.route_hypothesis || "").startsWith("STR_SUPPORTIVE") && ["LH", "LL"].includes(item.type);
+      const distributionActive = item.migration_structure === "descending" && item.route_hypothesis === "STR_SUPPORTIVE";
       const opportunity = accumulationCandidate ? "Accumulation Candidate" : distributionCandidate ? "Distribution Candidate" : distributionActive ? "Distribution (active)" : item.migration_structure === "ascending" ? "Accumulation" : "Monitor";
       const developmentNames = { HH: "Higher high", HL: "Higher low", LH: "Lower high", LL: "Lower low", HIGH: "High", LOW: "Low", EH: "Equal high", EL: "Equal low" };
       const maturity = item.maturity === "developing" ? "developing" : "confirmed";
       const row = node("tr", accumulationCandidate ? "accumulation-candidate" : "");
       const open = node("a", "group-transition-open", "Open →");
-      const returnContext = encodeURIComponent(`${globalObject.location.pathname}${globalObject.location.search}`);
-      open.href = `/mrz/symbols?symbol=${encodeURIComponent(item.symbol)}&focus=migration-path&development=${encodeURIComponent(item.development_id || "")}&return=${returnContext}`;
+      open.href = symbolWorkspaceHref(item.symbol);
       const evidenceCell = node("td", ""); evidenceCell.append(open);
       const opportunityCell = node("td", ""); opportunityCell.append(node("span", `opportunity-label ${opportunity.toLowerCase().replaceAll(" ", "-").replace(/[()]/g, "")}`, opportunity));
       row.append(node("td", "symbol", item.symbol), node("td", "development", `${developmentNames[item.type] || item.type} (${item.type}) — ${maturity}`), node("td", `structure ${item.migration_structure}`, item.migration_structure_label), node("td", "hypothesis", item.route_hypothesis_label), opportunityCell, evidenceCell);
@@ -1151,7 +1192,7 @@
     }
     developmentTable.append(developmentHead, developmentBody); developmentWrap.append(developmentTable);
     middleRow.append(eventActivity, developmentWrap);
-    section.append(middleRow, migrationDetail);
+    section.append(middleRow, trackerDetail);
 
     const memberWrap = node("div", "group-transition-table-wrap group-structural-overview");
     memberWrap.append(node("h3", "", "Group Members — Structural Overview"));
@@ -1166,9 +1207,13 @@
       (sequence.length ? sequence.slice(-4) : ["—", "—", "—"]).forEach((pivot) => sparkline.append(node("i", "", pivot)));
       recent.append(sparkline);
       const hypothesis = String(item.route_hypothesis || item.structural_intelligence?.route_hypothesis || "");
-      const opportunityLabel = hypothesis.includes("EMERGING") ? (hypothesis.startsWith("STR") ? "Accumulation Candidate" : "Distribution Candidate") : item.migration_structure === "ascending" ? "Accumulation" : item.migration_structure === "descending" ? "Distribution" : "Monitor";
+      const opportunityLabel = hypothesis.startsWith("BTD_SUPPORTIVE")
+        ? item.migration_structure === "ascending" ? "Accumulation" : item.migration_structure === "transitional" ? "Accumulation Candidate" : "Monitor"
+        : hypothesis.startsWith("STR_SUPPORTIVE")
+          ? item.migration_structure === "descending" ? "Distribution" : item.migration_structure === "transitional" ? "Distribution Candidate" : "Monitor"
+          : "Monitor";
       const opportunity = node("td", ""); opportunity.append(node("span", `opportunity-label ${opportunityLabel.toLowerCase().replaceAll(" ", "-")}`, opportunityLabel));
-      row.append(node("td", "", item.symbol), node("td", "", item.location_label || "Unavailable"), node("td", "", activeMrz), node("td", `structure ${item.migration_structure}`, item.structural_intelligence?.migration_structure_label || "Undetermined"), node("td", "", item.route_hypothesis_label || "Insufficient history"), node("td", "", development), recent, opportunity, viewCell);
+      row.append(node("td", "", item.symbol), node("td", "", item.location_label || "Unavailable"), node("td", "", activeMrz), node("td", `structure ${item.migration_structure}`, item.structural_intelligence?.migration_structure_label || "Undetermined"), node("td", "", item.route_hypothesis_label || "Unresolved"), node("td", "", development), recent, opportunity, viewCell);
       memberBody.append(row);
     });
     memberTable.append(memberHead, memberBody); memberWrap.append(memberTable); section.append(memberWrap);

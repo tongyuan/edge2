@@ -61,7 +61,7 @@ def build_push_destination(
             return "/"
         return (
             f"/mrz/symbols?symbol={encoded_symbol}"
-            f"&focus=structural-development&development={development_id}"
+            f"&focus=migration-path&development={development_id}"
         )
     if event_type in {"MRZ_ACTIVATED", "MRZ_MIGRATED"}:
         return f"/mrz/symbols?symbol={encoded_symbol}"
@@ -206,12 +206,25 @@ class NotificationRepository:
             with connection.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute(
                     """
-                    SELECT alert_scope, activation_enabled, migration_enabled,
-                           pressure_enabled, near_miss_enabled,
-                           structural_transition_enabled,
-                           structural_development_enabled, updated_at
-                    FROM notification_preferences
-                    WHERE singleton = TRUE
+                    SELECT preferences.alert_scope,
+                           preferences.activation_enabled,
+                           preferences.migration_enabled,
+                           preferences.pressure_enabled,
+                           preferences.near_miss_enabled,
+                           preferences.structural_transition_enabled,
+                           preferences.structural_development_enabled,
+                           preferences.structural_development_enabled_at,
+                           preferences.updated_at,
+                           COALESCE(release.available, FALSE)
+                               AS structural_development_available,
+                           release.detector_version
+                               AS structural_development_detector_version,
+                           release.live_after
+                               AS structural_development_live_after
+                    FROM notification_preferences AS preferences
+                    LEFT JOIN structural_development_alert_release AS release
+                      ON release.singleton = TRUE
+                    WHERE preferences.singleton = TRUE
                     """
                 )
                 row = cursor.fetchone()
@@ -224,6 +237,10 @@ class NotificationRepository:
                         "near_miss_enabled": True,
                         "structural_transition_enabled": True,
                         "structural_development_enabled": False,
+                        "structural_development_enabled_at": None,
+                        "structural_development_available": False,
+                        "structural_development_detector_version": None,
+                        "structural_development_live_after": None,
                         "updated_at": None,
                     }
                 return {
@@ -238,6 +255,22 @@ class NotificationRepository:
                     "structural_development_enabled": bool(
                         row["structural_development_enabled"]
                     ),
+                    "structural_development_enabled_at": (
+                        iso(row["structural_development_enabled_at"])
+                        if row["structural_development_enabled_at"] is not None
+                        else None
+                    ),
+                    "structural_development_available": bool(
+                        row["structural_development_available"]
+                    ),
+                    "structural_development_detector_version": row[
+                        "structural_development_detector_version"
+                    ],
+                    "structural_development_live_after": (
+                        iso(row["structural_development_live_after"])
+                        if row["structural_development_live_after"] is not None
+                        else None
+                    ),
                     "updated_at": iso(row["updated_at"]),
                 }
         finally:
@@ -248,15 +281,34 @@ class NotificationRepository:
         preferences: NotificationPreferencesPayload,
     ) -> dict[str, Any]:
         with transaction(self.database_url) as connection:
-            with connection.cursor() as cursor:
+            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    """
+                    SELECT available
+                    FROM structural_development_alert_release
+                    WHERE singleton = TRUE
+                    FOR SHARE
+                    """
+                )
+                release = cursor.fetchone()
+                if preferences.structural_development_enabled and not (
+                    release and release["available"]
+                ):
+                    raise ValueError(
+                        "Structural Development alerts are pending detector validation."
+                    )
                 cursor.execute(
                     """
                     INSERT INTO notification_preferences (
                         singleton, alert_scope, activation_enabled,
                         migration_enabled, pressure_enabled, near_miss_enabled,
                         structural_transition_enabled,
-                        structural_development_enabled
-                    ) VALUES (TRUE, %s, %s, %s, %s, %s, %s, %s)
+                        structural_development_enabled,
+                        structural_development_enabled_at
+                    ) VALUES (
+                        TRUE, %s, %s, %s, %s, %s, %s, %s,
+                        CASE WHEN %s THEN clock_timestamp() ELSE NULL END
+                    )
                     ON CONFLICT (singleton) DO UPDATE SET
                         alert_scope = EXCLUDED.alert_scope,
                         activation_enabled = EXCLUDED.activation_enabled,
@@ -265,6 +317,12 @@ class NotificationRepository:
                         near_miss_enabled = EXCLUDED.near_miss_enabled,
                         structural_transition_enabled = EXCLUDED.structural_transition_enabled,
                         structural_development_enabled = EXCLUDED.structural_development_enabled,
+                        structural_development_enabled_at = CASE
+                            WHEN EXCLUDED.structural_development_enabled = FALSE THEN NULL
+                            WHEN notification_preferences.structural_development_enabled = FALSE
+                                THEN clock_timestamp()
+                            ELSE notification_preferences.structural_development_enabled_at
+                        END,
                         updated_at = clock_timestamp()
                     """,
                     (
@@ -274,6 +332,7 @@ class NotificationRepository:
                         False,
                         preferences.near_miss_enabled,
                         preferences.structural_transition_enabled,
+                        preferences.structural_development_enabled,
                         preferences.structural_development_enabled,
                     ),
                 )
@@ -656,7 +715,7 @@ class NotificationRepository:
                 pivot.new_core_mrz_lower, pivot.new_core_mrz_upper,
                 development.event_time, development.first_known_time,
                 '/mrz/symbols?symbol=' || development.symbol
-                    || '&focus=structural-development&development=' || development.id,
+                    || '&focus=migration-path&development=' || development.id,
                 development.id, development.development_type,
                 development.maturity, development.migration_structure,
                 development.route_hypothesis,
@@ -720,6 +779,13 @@ class NotificationRepository:
                           OR (n.event_type = 'MRZ_NEAR_MISS' AND p.near_miss_enabled)
                           OR (n.event_type = 'STRUCTURAL_DEVELOPMENT'
                               AND p.structural_development_enabled)
+                      )
+                      AND (
+                          n.event_type <> 'STRUCTURAL_DEVELOPMENT'
+                          OR (
+                              p.structural_development_enabled_at IS NOT NULL
+                              AND n.created_at >= p.structural_development_enabled_at
+                          )
                       )
                       AND (
                           p.alert_scope = 'ALL_SYMBOLS'
@@ -858,7 +924,15 @@ class NotificationRepository:
                       AND n.dismissed_at IS NULL
                       AND n.event_type IN (
                           'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
-                          'STRUCTURAL_DEVELOPMENT', 'STRUCTURAL_TRANSITION'
+                          'STRUCTURAL_DEVELOPMENT'
+                      )
+                      AND (
+                          n.event_type <> 'STRUCTURAL_DEVELOPMENT'
+                          OR (
+                              p.structural_development_enabled
+                              AND p.structural_development_enabled_at IS NOT NULL
+                              AND n.created_at >= p.structural_development_enabled_at
+                          )
                       )
                       AND (
                           p.alert_scope = 'ALL_SYMBOLS'
@@ -885,7 +959,15 @@ class NotificationRepository:
                       AND n.dismissed_at IS NULL
                       AND n.event_type IN (
                           'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
-                          'STRUCTURAL_DEVELOPMENT', 'STRUCTURAL_TRANSITION'
+                          'STRUCTURAL_DEVELOPMENT'
+                      )
+                      AND (
+                          n.event_type <> 'STRUCTURAL_DEVELOPMENT'
+                          OR (
+                              p.structural_development_enabled
+                              AND p.structural_development_enabled_at IS NOT NULL
+                              AND n.created_at >= p.structural_development_enabled_at
+                          )
                       )
                       AND (
                           p.alert_scope = 'ALL_SYMBOLS'
@@ -924,7 +1006,7 @@ class NotificationRepository:
                       AND deliverable = TRUE
                       AND event_type IN (
                           'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
-                          'STRUCTURAL_DEVELOPMENT', 'STRUCTURAL_TRANSITION'
+                          'STRUCTURAL_DEVELOPMENT'
                       )
                     RETURNING id
                     """,
@@ -943,7 +1025,7 @@ class NotificationRepository:
                       AND deliverable = TRUE
                       AND event_type IN (
                           'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
-                          'STRUCTURAL_DEVELOPMENT', 'STRUCTURAL_TRANSITION'
+                          'STRUCTURAL_DEVELOPMENT'
                       )
                     RETURNING id
                     """,
@@ -964,7 +1046,15 @@ class NotificationRepository:
                       AND n.dismissed_at IS NULL
                       AND n.event_type IN (
                           'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
-                          'STRUCTURAL_DEVELOPMENT', 'STRUCTURAL_TRANSITION'
+                          'STRUCTURAL_DEVELOPMENT'
+                      )
+                      AND (
+                          n.event_type <> 'STRUCTURAL_DEVELOPMENT'
+                          OR (
+                              p.structural_development_enabled
+                              AND p.structural_development_enabled_at IS NOT NULL
+                              AND n.created_at >= p.structural_development_enabled_at
+                          )
                       )
                       AND (
                           p.alert_scope = 'ALL_SYMBOLS'
@@ -990,7 +1080,7 @@ class NotificationRepository:
                       AND dismissed_at IS NULL
                       AND event_type IN (
                           'MRZ_ACTIVATED', 'MRZ_MIGRATED', 'MRZ_NEAR_MISS',
-                          'STRUCTURAL_DEVELOPMENT', 'STRUCTURAL_TRANSITION'
+                          'STRUCTURAL_DEVELOPMENT'
                       )
                     RETURNING id
                     """
@@ -1050,6 +1140,13 @@ class NotificationRepository:
                           OR (n.event_type = 'MRZ_NEAR_MISS' AND p.near_miss_enabled)
                           OR (n.event_type = 'STRUCTURAL_DEVELOPMENT'
                               AND p.structural_development_enabled)
+                      )
+                      AND (
+                          n.event_type <> 'STRUCTURAL_DEVELOPMENT'
+                          OR (
+                              p.structural_development_enabled_at IS NOT NULL
+                              AND n.created_at >= p.structural_development_enabled_at
+                          )
                       )
                       AND (
                           p.alert_scope = 'ALL_SYMBOLS'
@@ -1465,7 +1562,15 @@ def notification_payload(row: Mapping[str, Any]) -> dict[str, Any]:
             "HH": "Higher High",
             "LL": "Lower Low",
         }
-        title = f"{symbol} Structural Development"
+        title_labels = {
+            ("HL", "developing"): "Emerging Accumulation",
+            ("HL", "confirmed"): "Higher Low Confirmed",
+            ("LH", "developing"): "Emerging Distribution",
+            ("LH", "confirmed"): "Lower High Confirmed",
+            ("HH", "confirmed"): "Higher High Confirmed",
+            ("LL", "confirmed"): "Lower Low Confirmed",
+        }
+        title = f"{symbol} — {title_labels.get((development_type, maturity), 'Structural Development')}"
         event_name = "Structural Development"
         body = (
             f"{development_labels.get(development_type, development_type)} · "

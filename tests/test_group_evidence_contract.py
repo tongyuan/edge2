@@ -31,10 +31,9 @@ class GroupEvidenceContractTests(unittest.TestCase):
         self.assertNotIn('/primary-hypothesis', OPPORTUNITY_JS)
         self.assertIn('/structural-intelligence', API)
 
-    def test_view_all_events_preserves_group_evolution_return_context(self) -> None:
-        self.assertIn('eventsTarget.searchParams.set("return"', OPPORTUNITY_JS)
-        self.assertIn('`${globalObject.location.pathname}${globalObject.location.search}`', OPPORTUNITY_JS)
-        self.assertIn('allEvents.href = `${eventsTarget.pathname}${eventsTarget.search}`', OPPORTUNITY_JS)
+    def test_structural_development_panel_removes_redundant_view_all(self) -> None:
+        self.assertNotIn('"View All Events →"', OPPORTUNITY_JS)
+        self.assertIn('open.href = symbolWorkspaceHref(item.symbol)', OPPORTUNITY_JS)
 
     def test_group_workspace_is_simplified_and_event_activity_is_canonical(self) -> None:
         group_renderer = OPPORTUNITY_JS.split("function renderGroup(target", 1)[1].split("async function renderSymbol", 1)[0]
@@ -44,9 +43,9 @@ class GroupEvidenceContractTests(unittest.TestCase):
         self.assertIn('Location Flow · Migration Structure · Structural Developments', OPPORTUNITY_JS)
         self.assertIn('item.event_type === "MRZ_ACTIVATED"', OPPORTUNITY_JS)
         self.assertIn('item.event_type === "MRZ_MIGRATED"', OPPORTUNITY_JS)
-        self.assertIn('near_miss_episode_count', OPPORTUNITY_JS)
+        self.assertIn('nearMissEvents.length', OPPORTUNITY_JS)
         self.assertIn('migrationDirectionBreakdown', OPPORTUNITY_JS)
-        self.assertIn('MRZ Migration —', OPPORTUNITY_JS)
+        self.assertIn('migration: "MRZ Migration"', OPPORTUNITY_JS)
         self.assertIn('Previous midpoint', OPPORTUNITY_JS)
         self.assertIn('unique_symbols', OPPORTUNITY_JS)
         self.assertIn('unknown_events', AGGREGATOR)
@@ -62,7 +61,12 @@ class GroupEvidenceContractTests(unittest.TestCase):
         self.assertIn('.group-structural-developments', OPPORTUNITY_CSS)
         self.assertNotIn('.group-event-activity {', OPPORTUNITY_CSS)
         self.assertNotIn('node("section", "group-event-activity")', OPPORTUNITY_JS)
-        self.assertIn('Structural Event Activity', OPPORTUNITY_JS)
+        self.assertIn('Tracker Event Activity', OPPORTUNITY_JS)
+        self.assertIn('Structural Development', OPPORTUNITY_JS)
+        self.assertIn('No qualifying events in the selected period.', OPPORTUNITY_JS)
+        self.assertIn('Distribution Focus', OPPORTUNITY_JS)
+        self.assertIn('Mixed Developments', OPPORTUNITY_JS)
+        self.assertIn('No New Structural Developments', OPPORTUNITY_JS)
         self.assertIn('Structure (Now)', OPPORTUNITY_JS)
         self.assertIn('isAccumulationCandidate', OPPORTUNITY_JS)
         self.assertIn('Location Flow · Migration Structure · Structural Developments', JS)
@@ -163,7 +167,7 @@ class GroupEvidenceContractTests(unittest.TestCase):
         self.assertIn("renderCurrentReadout(detail)", OPPORTUNITY_JS)
         for label in (
             "IPDA Location", "Active MRZ", "Latest Near Miss", "Migration Structure",
-            "Derived Route Hypothesis", "Opportunity Evidence State",
+            "Route Hypothesis", "Opportunity Evidence State",
         ):
             self.assertIn(label, OPPORTUNITY_JS)
         self.assertIn(".opportunity-current-readout", OPPORTUNITY_CSS)

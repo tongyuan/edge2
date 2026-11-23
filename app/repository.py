@@ -42,6 +42,7 @@ from app.structure import (
 from app.structural_intelligence import (
     classify_structural_history,
     meaningful_development,
+    persisted_route_hypothesis,
 )
 from app.taxonomy import (
     InstrumentTaxonomy,
@@ -823,7 +824,7 @@ class EdgeRepository:
         symbol: str,
         source_trigger_event_id: str,
     ) -> None:
-        """Record derived evidence in shadow mode; never alert during validation."""
+        """Record derived evidence with a versioned, first-known release gate."""
         cursor.execute(
             """
             SELECT
@@ -853,6 +854,23 @@ class EdgeRepository:
             return
         cursor.execute(
             """
+            SELECT available, detector_version, live_after
+            FROM structural_development_alert_release
+            WHERE singleton = TRUE
+            """
+        )
+        release = cursor.fetchone()
+        first_known = datetime.fromisoformat(
+            str(development["first_known_time"]).replace("Z", "+00:00")
+        )
+        live_eligible = bool(
+            release
+            and release["available"]
+            and str(release["detector_version"]) == str(current["detector_version"])
+            and first_known >= release["live_after"]
+        )
+        cursor.execute(
+            """
             INSERT INTO structural_developments (
                 development_key, symbol, source_trigger_event_id,
                 development_type, maturity, migration_structure,
@@ -861,7 +879,7 @@ class EdgeRepository:
                 confirmation_time, detector_version, live_eligible
             ) VALUES (
                 %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, FALSE
+                %s, %s, %s, %s, %s
             )
             ON CONFLICT (development_key) DO NOTHING
             """,
@@ -872,7 +890,7 @@ class EdgeRepository:
                 development["type"],
                 development["maturity"],
                 current["migration_structure"],
-                current["route_hypothesis"],
+                persisted_route_hypothesis(current["route_hypothesis"]),
                 development["migration_sequence"],
                 development["pivot_event_key"],
                 Json(development["supporting_event_ids"]),
@@ -880,6 +898,7 @@ class EdgeRepository:
                 development["first_known_time"],
                 development["confirmation_time"],
                 current["detector_version"],
+                live_eligible,
             ),
         )
 
@@ -892,6 +911,10 @@ class EdgeRepository:
         operator_identity: str,
         note: str | None = None,
     ) -> dict[str, Any]:
+        raise StructuralTransitionConflict(
+            "transition_review_retired",
+            "Legacy Structural Transition review is retained for audit only.",
+        )
         decision = action.strip().upper()
         if decision not in {"DEFER", "PROMOTE", "RETAIN_PRIMARY"}:
             raise ValueError("Unsupported transition review action")
@@ -2923,10 +2946,43 @@ class EdgeRepository:
                     }
                     for row in cursor.fetchall()
                 ]
+                cursor.execute(
+                    """
+                    SELECT id, development_key, development_type, maturity,
+                           migration_structure, route_hypothesis,
+                           migration_sequence, pivot_event_key,
+                           supporting_event_keys, event_time, first_known_time,
+                           confirmation_time, detector_version, live_eligible
+                    FROM structural_developments
+                    WHERE symbol = %s
+                    ORDER BY first_known_time ASC, id ASC
+                    """,
+                    (normalized,),
+                )
+                developments = [
+                    {
+                        "id": int(row["id"]),
+                        "development_key": row["development_key"],
+                        "type": row["development_type"],
+                        "maturity": row["maturity"],
+                        "migration_structure": row["migration_structure"],
+                        "route_hypothesis": row["route_hypothesis"],
+                        "migration_sequence": int(row["migration_sequence"]),
+                        "pivot_event_key": row["pivot_event_key"],
+                        "supporting_event_keys": list(row["supporting_event_keys"]),
+                        "event_time": iso(row["event_time"]),
+                        "first_known_time": iso(row["first_known_time"]),
+                        "confirmation_time": iso(row["confirmation_time"]),
+                        "detector_version": row["detector_version"],
+                        "live_eligible": bool(row["live_eligible"]),
+                    }
+                    for row in cursor.fetchall()
+                ]
                 return {
                     "migrations": migrations,
                     "states": states,
                     "near_misses": near_misses,
+                    "structural_developments": developments,
                 }
         finally:
             connection.close()

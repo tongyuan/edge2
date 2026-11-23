@@ -779,8 +779,9 @@ class GroupEvidenceTests(unittest.TestCase):
         one_day = inputs("24H", [group(1, "A", members)], pressure_events=[])
         self.assertEqual(build_named_group_evidence(five_day, five_day["groups"][0])["directional"]["cumulative_lifecycle_pressure_events"]["summary"]["latest_event"]["higher"], 1)
         one_day_payload = build_named_group_evidence(one_day, one_day["groups"][0])
-        self.assertEqual(one_day_payload["directional"]["cumulative_lifecycle_pressure_events"]["summary"]["latest_event"], {"higher": 0, "lower": 0, "none": 1})
-        self.assertNotIn("resolved", json.dumps(one_day_payload).lower())
+        pressure_history = one_day_payload["directional"]["cumulative_lifecycle_pressure_events"]
+        self.assertEqual(pressure_history["summary"]["latest_event"], {"higher": 0, "lower": 0, "none": 1})
+        self.assertNotIn("resolved", json.dumps(pressure_history).lower())
 
     def test_activity_records_each_supported_ipda_transition_at_observation_time(self) -> None:
         group_row = group(1, "Transitions", ["A"])

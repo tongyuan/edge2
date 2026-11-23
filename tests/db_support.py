@@ -63,8 +63,8 @@ def clean(database_url: str) -> None:
                 INSERT INTO notification_preferences (
                     singleton, alert_scope, activation_enabled,
                     migration_enabled, pressure_enabled, near_miss_enabled,
-                    structural_transition_enabled
-                ) VALUES (TRUE, 'ALL_SYMBOLS', TRUE, TRUE, TRUE, TRUE, TRUE)
+                    structural_transition_enabled, structural_development_enabled
+                ) VALUES (TRUE, 'ALL_SYMBOLS', TRUE, TRUE, TRUE, TRUE, TRUE, FALSE)
                 ON CONFLICT (singleton) DO UPDATE SET
                     alert_scope = 'ALL_SYMBOLS',
                     activation_enabled = TRUE,
@@ -72,6 +72,19 @@ def clean(database_url: str) -> None:
                     pressure_enabled = TRUE,
                     near_miss_enabled = TRUE,
                     structural_transition_enabled = TRUE,
+                    structural_development_enabled = FALSE,
+                    structural_development_enabled_at = NULL,
                     updated_at = clock_timestamp()
+                """
+            )
+            cursor.execute(
+                """
+                UPDATE structural_development_alert_release
+                SET available = TRUE,
+                    detector_version = 'SI-1.0.0',
+                    live_after = clock_timestamp(),
+                    validated_at = clock_timestamp(),
+                    updated_at = clock_timestamp()
+                WHERE singleton = TRUE
                 """
             )

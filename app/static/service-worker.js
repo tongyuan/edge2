@@ -22,7 +22,7 @@ function safeNotificationPath(candidate) {
     if (parsed.pathname === "/mrz/symbols") {
       const development = parsed.searchParams.get("development");
       if (development && /^[1-9][0-9]*$/.test(development)) {
-        return `/mrz/symbols?symbol=${encodeURIComponent(symbol)}&focus=structural-development&development=${development}`;
+        return `/mrz/symbols?symbol=${encodeURIComponent(symbol)}&focus=migration-path&development=${development}`;
       }
       return `/mrz/symbols?symbol=${encodeURIComponent(symbol)}`;
     }
@@ -85,11 +85,11 @@ self.addEventListener("push", (event) => {
     "MRZ_ACTIVATED",
     "MRZ_MIGRATED",
     "MRZ_NEAR_MISS",
-    "STRUCTURAL_TRANSITION",
     "STRUCTURAL_DEVELOPMENT",
   ].includes(payload.event_type)
     ? payload.event_type
     : null;
+  if (!eventType) return;
   const destination = safeNotificationPath(payload.destination);
   event.waitUntil(self.registration.showNotification(payload.title || "EDGE MRZ", {
     body: payload.body || "An authoritative MRZ changed.",

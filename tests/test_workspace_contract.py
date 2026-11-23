@@ -16,6 +16,13 @@ PEER_PRESSURE = (ROOT / "app/peer_pressure.py").read_text(encoding="utf-8")
 
 
 class WorkspaceContractTests(unittest.TestCase):
+    def test_symbol_workspace_uses_authoritative_observation_location(self) -> None:
+        self.assertIn('detail.current_price_location || "unavailable"', JS)
+        self.assertIn('id="symbolSummaryLocationItem"', HTML)
+        self.assertIn('span:first-child.unavailable::before', CSS)
+        recent_panel = HTML.split('id="symbolRecentEvents"', 1)[1].split("</section>", 1)[0]
+        self.assertNotIn("View All", recent_panel)
+
     def test_persistent_navigation_and_routes(self) -> None:
         for route, label in (
             ("/mrz/watchlists", "Group Radar"),
@@ -111,7 +118,9 @@ class WorkspaceContractTests(unittest.TestCase):
         ):
             self.assertIn(f'id="{control}"', HTML)
         self.assertIn("Meaningful changes in MRZ migration structure.", HTML)
-        self.assertIn('id="prefStructuralDevelopment" type="checkbox" disabled', HTML)
+        self.assertIn('id="prefStructuralDevelopment" type="checkbox"', HTML)
+        self.assertNotIn('id="prefStructuralDevelopment" type="checkbox" disabled', HTML)
+        self.assertIn("structural_development_available", JS)
         self.assertNotIn('id="prefPressure"', HTML)
         self.assertIn("/api/notifications/preferences", JS)
 

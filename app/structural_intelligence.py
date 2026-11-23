@@ -15,7 +15,15 @@ from typing import Any, Mapping, Sequence
 
 
 DETECTOR_VERSION = "SI-1.0.0"
-SCHEMA_VERSION = "structural-intelligence.v1"
+SCHEMA_VERSION = "structural-intelligence.v2"
+
+ROUTE_HYPOTHESIS_LABELS = {
+    "BTD_SUPPORTIVE": "BTD-supportive",
+    "BTD_SUPPORTIVE_PROVISIONAL": "BTD-supportive (Provisional)",
+    "STR_SUPPORTIVE": "STR-supportive",
+    "STR_SUPPORTIVE_PROVISIONAL": "STR-supportive (Provisional)",
+    "UNRESOLVED": "Unresolved",
+}
 
 
 @dataclass(frozen=True)
@@ -130,6 +138,7 @@ def _pivot_payload(
     supporting: Sequence[MRZState],
     confirmation: MRZState | None,
 ) -> dict[str, Any]:
+    first_known = confirmation.first_known_at if confirmation else state.first_known_at
     return {
         "development_id": _development_id(state.symbol, kind, maturity, state.event_key),
         "type": kind,
@@ -141,7 +150,10 @@ def _pivot_payload(
         "upper": format(state.upper, "f"),
         "midpoint": format(state.midpoint, "f"),
         "event_time": _iso(state.occurred_at),
-        "first_known_time": _iso(state.first_known_at),
+        # A confirmed pivot is not knowable until the confirming canonical
+        # state arrives.  Using the pivot state's earlier timestamp here would
+        # allow historical evidence to cross a live-alert activation boundary.
+        "first_known_time": _iso(first_known),
         "confirmation_time": _iso(confirmation.first_known_at) if confirmation else None,
         "supporting_event_ids": [item.event_key for item in supporting],
         "detector_version": DETECTOR_VERSION,
@@ -230,6 +242,50 @@ def _directional_structure(states: Sequence[MRZState], pivots: Sequence[Mapping[
     return "undetermined"
 
 
+def _route_hypothesis(
+    states: Sequence[MRZState],
+    migration_structure: str,
+) -> tuple[str, str | None, str]:
+    """Combine canonical route identity with independently derived structure.
+
+    The newest canonical MRZ state's route owner is the eligible route. It was
+    established by the existing IPDA-qualified BTD/STR lifecycle and is never
+    inferred or reversed from midpoint movement. Migration structure only
+    determines whether that route is reinforced or remains provisional.
+    """
+    route = states[-1].route.strip().upper() if states else ""
+    if route not in {"BTD", "STR"}:
+        return "UNRESOLVED", None, "unresolved_route"
+    if route == "BTD":
+        if migration_structure == "ascending":
+            return "BTD_SUPPORTIVE", route, "reinforced"
+        alignment = (
+            "counter_directional"
+            if migration_structure == "descending"
+            else "immature_or_mixed"
+        )
+        return "BTD_SUPPORTIVE_PROVISIONAL", route, alignment
+    if migration_structure == "descending":
+        return "STR_SUPPORTIVE", route, "reinforced"
+    alignment = (
+        "counter_directional"
+        if migration_structure == "ascending"
+        else "immature_or_mixed"
+    )
+    return "STR_SUPPORTIVE_PROVISIONAL", route, alignment
+
+
+def persisted_route_hypothesis(route_hypothesis: str) -> str:
+    """Map v2 status to the existing v1 derived-audit table constraint."""
+    return {
+        "BTD_SUPPORTIVE": "BTD_DOMINANT",
+        "BTD_SUPPORTIVE_PROVISIONAL": "BTD_DOMINANT",
+        "STR_SUPPORTIVE": "STR_DOMINANT",
+        "STR_SUPPORTIVE_PROVISIONAL": "STR_DOMINANT",
+        "UNRESOLVED": "UNRESOLVED",
+    }.get(route_hypothesis, "UNRESOLVED")
+
+
 def classify_structural_history(
     rows: Sequence[Mapping[str, Any]],
     *,
@@ -245,32 +301,7 @@ def classify_structural_history(
     if developing and structure in {"ascending", "descending"}:
         structure = "transitional"
 
-    last_established = _directional_structure(states[:-1], _confirmed_pivots(states[:-1])) if len(states) > 4 else "undetermined"
-    if structure == "ascending":
-        hypothesis = "BTD_DOMINANT"
-    elif structure == "descending":
-        hypothesis = "STR_DOMINANT"
-    elif structure == "transitional" and (developing or latest_development):
-        kind = str((developing or latest_development or {}).get("type", ""))
-        if last_established == "descending" and kind in {"HL", "HH"}:
-            hypothesis = "STR_DOMINANT_EMERGING_BTD"
-        elif last_established == "ascending" and kind in {"LH", "LL"}:
-            hypothesis = "BTD_DOMINANT_EMERGING_STR"
-        else:
-            hypothesis = "UNRESOLVED"
-    elif not states:
-        hypothesis = "INSUFFICIENT_HISTORY"
-    else:
-        hypothesis = "UNRESOLVED"
-
-    hypothesis_labels = {
-        "STR_DOMINANT": "STR dominant",
-        "STR_DOMINANT_EMERGING_BTD": "STR dominant with emerging BTD evidence",
-        "BTD_DOMINANT": "BTD dominant",
-        "BTD_DOMINANT_EMERGING_STR": "BTD dominant with emerging STR evidence",
-        "UNRESOLVED": "Unresolved",
-        "INSUFFICIENT_HISTORY": "Insufficient history",
-    }
+    hypothesis, eligible_route, alignment = _route_hypothesis(states, structure)
     evidence_state = (
         "developing" if latest_development and latest_development["maturity"] == "developing"
         else "established" if structure in {"ascending", "descending"}
@@ -286,7 +317,9 @@ def classify_structural_history(
         "migration_structure": structure,
         "migration_structure_label": structure.title(),
         "route_hypothesis": hypothesis,
-        "route_hypothesis_label": hypothesis_labels[hypothesis],
+        "route_hypothesis_label": ROUTE_HYPOTHESIS_LABELS[hypothesis],
+        "eligible_route": eligible_route,
+        "migration_alignment": alignment,
         "evidence_state": evidence_state,
         "latest_development": latest_development,
         "pivots": pivots,
@@ -304,7 +337,7 @@ def classify_structural_history(
             }
             for state in states
         ],
-        "classification_basis": "canonical_mrz_history_as_known_at_instrument_precision",
+        "classification_basis": "latest_canonical_mrz_route_owner_plus_independent_migration_structure",
     }
 
 

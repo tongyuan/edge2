@@ -103,7 +103,7 @@
     vapidPublicKey,
   }) {
     const registration = await navigatorObject.serviceWorker.register(
-      "/service-worker.js?v=structural-review-20261116",
+      "/service-worker.js?v=structural-development-20261123",
       { scope: "/" },
     );
     const permission = notificationObject.permission === "granted"

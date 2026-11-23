@@ -43,4 +43,37 @@ Date: 2026-11-22
 - Full local non-Pine suite: 541 passed, 8 skipped, 0 failed.
 - Production, production data and the remote repository were not changed.
 
+## Opportunity Map toolbar icon alignment — 2026-11-23
+
+- Source visual truth: `/var/folders/dm/ctz4b4_d2yq9jbskg25nx6xw0000gn/T/codex-clipboard-4f1c98b6-89eb-4489-b421-85d49917b94a.png` (MRZ Migration Path toolbar).
+- Supporting before-state: `/var/folders/dm/ctz4b4_d2yq9jbskg25nx6xw0000gn/T/codex-clipboard-11ce134a-1c74-4246-889d-bd13c172d2e4.png`.
+- Implementation: `http://127.0.0.1:8792/mrz/watchlists?group=5&window=20D&symbol=BTCUSDT`.
+- Implementation screenshot evidence: in-app Browser capture emitted during this QA run; the browser surface does not provide a filesystem-backed screenshot path.
+- Desktop viewport: 1440 × 900 CSS px, density 1. The focused toolbar comparison used the rendered Opportunity Map header at the same native CSS scale as the source control row.
+- Mobile viewport: 390 × 844 CSS px, density 1. Document width and viewport both measured 390px.
+- State: BTCUSDT Opportunity Map, 90D selected, non-maximized.
+
+### Focused comparison
+
+- Control order now matches Migration Path: zoom out, zoom in, reset, dock, maximize.
+- Visible controls use the same icon set: `−`, `+`, `↺`, the existing detach-window icon, and `⛶`; maximize changes to `↙` while active.
+- Buttons use the same 32px width, 30px minimum height, 5px gap, border, dark fill, hover/focus system and tooltip/accessibility labels as Migration Path.
+- The Opportunity Map range controls remain distinct and unchanged.
+
+### Required fidelity surfaces
+
+- Fonts and typography: unchanged from the existing EDGE control system; no new text labels remain in the icon toolbar.
+- Spacing and layout rhythm: matches the Migration Path compact toolbar sizing and order; mobile toolbar remains within the 390px viewport.
+- Colors and visual tokens: reuses existing `quiet-button`, `chart-workspace-controls` and dock icon tokens.
+- Image/icon fidelity: reuses the existing application icon treatment; no replacement raster or custom SVG asset was introduced.
+- Copy/content: tooltip and accessible labels remain explicit for Zoom out, Zoom in, Reset chart view, Dock Opportunity Map and Maximize/Restore chart.
+
+### Interaction verification
+
+- Zoom in changed the visible domain from 25 Aug–23 Nov to 6 Sept–11 Nov.
+- Reset restored 25 Aug–23 Nov.
+- Maximize applied the expanded state and changed the icon/label to Restore; Restore returned to the normal state.
+- Mobile document width reconciled exactly with the viewport; no horizontal overflow was introduced.
+- No P0, P1 or P2 visual mismatch remains for this focused control update.
+
 final result: passed

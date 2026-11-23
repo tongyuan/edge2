@@ -572,10 +572,12 @@
     const migrations = history?.migrations || [];
     const states = history?.states || [];
     const nearMisses = history?.near_misses || [];
+    const structuralDevelopments = history?.structural_developments || [];
     globalObject.edgeMigrationPath?.setData({
       symbol: $("#detailSymbol")?.textContent || "",
       migrations,
       states,
+      developments: structuralDevelopments,
       formatPrice,
       exactTime,
     });
@@ -617,14 +619,22 @@
   }
 
   function renderSymbolStructuralIntelligence(detail, intelligence) {
-    const location = locationLabels[detail.structural_location] || "Unavailable";
+    const locationKey = detail.current_price_location || "unavailable";
+    const location = locationLabels[locationKey] || "Unavailable";
     const active = detail.mrz_status === "active";
+    const locationItem = $("#symbolSummaryLocationItem");
+    locationItem.classList.remove("discount", "equilibrium", "premium", "unavailable");
+    locationItem.classList.add(
+      locationKey.includes("discount") ? "discount"
+        : locationKey.includes("premium") ? "premium"
+          : locationKey === "at_eqm" ? "equilibrium" : "unavailable",
+    );
     $("#symbolSummaryLocation").textContent = location;
     $("#symbolSummaryMrz").textContent = active
       ? `${symbolRange(detail.core_mrz_lower, detail.core_mrz_upper)} (${detail.route_owner || "—"})`
       : "No active MRZ";
     $("#symbolSummaryStructure").textContent = intelligence.migration_structure_label || "Undetermined";
-    $("#symbolSummaryHypothesis").textContent = intelligence.route_hypothesis_label || "Insufficient history";
+    $("#symbolSummaryHypothesis").textContent = intelligence.route_hypothesis_label || "Unresolved";
     $("#symbolSummaryDevelopment").textContent = humanStructuralDevelopment(intelligence.latest_development);
     $("#symbolBreadcrumb").textContent = `Symbols  ›  ${detail.symbol || $("#detailSymbol")?.textContent || ""}`;
     $("#symbolHeaderName").textContent = detail.symbol || $("#detailSymbol")?.textContent || "Symbol";
@@ -639,7 +649,7 @@
       ["IPDA Location", location],
       ["Active MRZ (Route)", active ? `${symbolRange(detail.core_mrz_lower, detail.core_mrz_upper)} (${detail.route_owner || "—"})` : "No active MRZ"],
       ["Migration Structure", intelligence.migration_structure_label || "Undetermined"],
-      ["Route Hypothesis", intelligence.route_hypothesis_label || "Insufficient history"],
+      ["Route Hypothesis", intelligence.route_hypothesis_label || "Unresolved"],
       ["Latest Development", humanStructuralDevelopment(intelligence.latest_development)],
       ["Opportunity Evidence", evidenceLabel],
     ].forEach(([label, value]) => overviewRows.append(element("dt", "", label), element("dd", "", value)));
@@ -655,7 +665,7 @@
     [
       ["Migration Structure", intelligence.migration_structure_label || "Undetermined"],
       ["Recent Structural Sequence", (intelligence.recent_sequence || []).join(" → ") || "No qualified pivots"],
-      ["Dominant Route Hypothesis", intelligence.route_hypothesis_label || "Insufficient history"],
+      ["Route Hypothesis", intelligence.route_hypothesis_label || "Unresolved"],
       ["Latest Structural Development", humanStructuralDevelopment(intelligence.latest_development)],
       ["Evidence Status", evidenceLabels[intelligence.evidence_state] || intelligence.evidence_state || "Unavailable"],
     ].forEach(([label, value]) => {
@@ -702,7 +712,7 @@
         $("#detailMeta").append(
           element("span", "", `Route · ${detail.route_owner || "—"}`),
           element("span", "", `Activated · ${exactTime(detail.activated_at)}`),
-          element("span", "", `Location · ${locationLabels[detail.structural_location] || "—"}`),
+          element("span", "", `MRZ Location · ${locationLabels[detail.structural_location] || "—"}`),
         );
       }
       renderSymbolStructuralIntelligence(detail, intelligence);
@@ -1068,7 +1078,14 @@
     if (activation) activation.checked = prefs.activation_enabled;
     if (migration) migration.checked = prefs.migration_enabled;
     if (nearMiss) nearMiss.checked = prefs.near_miss_enabled;
-    if (structuralDevelopment) structuralDevelopment.checked = prefs.structural_development_enabled;
+    if (structuralDevelopment) {
+      structuralDevelopment.checked = prefs.structural_development_enabled;
+      structuralDevelopment.disabled = !prefs.structural_development_available;
+    }
+    const structuralHelp = $("#prefStructuralDevelopmentHelp");
+    if (structuralHelp) structuralHelp.textContent = prefs.structural_development_available
+      ? "Meaningful changes in MRZ migration structure. Opt in to new live developments only."
+      : "Meaningful changes in MRZ migration structure. Pending structural detector validation.";
   }
   async function savePreferences(event) {
     event.preventDefault();
@@ -1082,7 +1099,8 @@
       pressure_enabled: false,
       near_miss_enabled: $("#prefNearMiss")?.checked ?? false,
       structural_transition_enabled: state.preferences?.structural_transition_enabled ?? false,
-      structural_development_enabled: $("#prefStructuralDevelopment")?.checked ?? false,
+      structural_development_enabled: !$("#prefStructuralDevelopment")?.disabled
+        && ($("#prefStructuralDevelopment")?.checked ?? false),
     };
     const response = await fetch("/api/notifications/preferences", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     if (!response.ok) { $("#alertPreferencesError").textContent = "Unable to save alert preferences."; $("#alertPreferencesError").hidden = false; return; }

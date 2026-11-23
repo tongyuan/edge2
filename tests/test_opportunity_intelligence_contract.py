@@ -68,6 +68,11 @@ class OpportunityIntelligenceContractTests(unittest.TestCase):
         self.assertIn("as_known_at: detail.as_known_at", MAP_JS)
         self.assertNotIn("OTE unavailable", MAP_JS)
         self.assertIn("proportionalPosition", MAP_JS)
+        self.assertLess(
+            MAP_JS.index("target.append(renderCurrentReadout(detail))"),
+            MAP_JS.index('node("section", "opportunity-replay panel")'),
+        )
+        self.assertEqual(MAP_JS.count("target.append(renderCurrentReadout(detail))"), 1)
         self.assertIn('btd: "#3B82F6"', MAP_JS)
         self.assertIn('str: "#A78BFA"', MAP_JS)
         self.assertNotIn('higher: "#22C55E"', MAP_JS)
@@ -95,6 +100,22 @@ class OpportunityIntelligenceContractTests(unittest.TestCase):
         self.assertIn('timelineWrap.classList.toggle("expanded"', MAP_JS)
         self.assertIn(".opportunity-timeline-wrap.expanded", MAP_CSS)
         self.assertEqual(MAP_JS.count('node("table", "opportunity-timeline-table")'), 1)
+
+    def test_opportunity_toolbar_matches_migration_icon_controls(self) -> None:
+        for required in (
+            'chartButton("Zoom out", "−")',
+            'chartButton("Zoom in", "+")',
+            'chartButton("Reset chart view", "↺")',
+            'chartButton("Maximize chart", "⛶")',
+            'createDockButton("Dock Opportunity Map")',
+            'setAttribute("aria-label", label)',
+            'node("div", "chart-workspace-controls opportunity-chart-controls")',
+        ):
+            self.assertIn(required, MAP_JS)
+        self.assertNotIn('"Zoom −"', MAP_JS)
+        self.assertNotIn('"Zoom +"', MAP_JS)
+        self.assertNotIn('"Reset"; reset', MAP_JS)
+        self.assertIn(".opportunity-chart-controls .chart-tool", MAP_CSS)
 
     def test_group_comparison_is_shared_time_read_only_and_responsive(self) -> None:
         self.assertIn("opportunity-comparison.js", HTML)

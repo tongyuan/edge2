@@ -100,7 +100,7 @@ class PushDestinationTests(unittest.TestCase):
                 "BTCUSDT",
                 {"structural_development_id": 21},
             ),
-            "/mrz/symbols?symbol=BTCUSDT&focus=structural-development&development=21",
+            "/mrz/symbols?symbol=BTCUSDT&focus=migration-path&development=21",
         )
         self.assertEqual(
             build_push_destination(PRESSURE_EVENT_TYPE, "ZECUSDT"),

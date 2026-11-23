@@ -2,7 +2,7 @@
   "use strict";
   const DEFAULT_WINDOW_SIZE = 6;
   const chartViewport = globalObject.edgeChartViewport;
-  let model = { symbol: "", records: [], migrationCount: 0, generated: false, selected: null, hits: [], windowStart: 0, windowSize: DEFAULT_WINDOW_SIZE, intelligence: null, pointers: new Map(), pinchDistance: 0, suppressClick: false, chartOnly: false, priceZoom: 0 };
+  let model = { symbol: "", records: [], developments: [], selectedDevelopment: null, migrationCount: 0, generated: false, selected: null, hits: [], windowStart: 0, windowSize: DEFAULT_WINDOW_SIZE, intelligence: null, pointers: new Map(), pinchDistance: 0, suppressClick: false, chartOnly: false, priceZoom: 0 };
   let resizeObserver = null;
 
   function prepareMigrationRecords(rows = []) {
@@ -85,6 +85,10 @@
     const pivot = structuralPivot(record);
     const rows = [["State", record.event_type === "MRZ_ACTIVATED" ? "Activation" : "Migration"], ["MRZ Range", range], ["Midpoint", formatMigrationPrice(record.midpoint)], ["Route", record.route || "—"], ["Observed At", model.exactTime(record.observed_at)], ["First Known", record.first_known_at ? model.exactTime(record.first_known_at) : "Unavailable"], ["Canonical Reference", record.canonical_evidence_ref || record.event_key || "Unavailable"]];
     if (pivot) rows.splice(2, 0, ["Structural Pivot", `${pivot.type} · ${pivot.maturity}`]);
+    if (model.selectedDevelopment?.pivot_event_key === record.event_key) {
+      const evidence = model.selectedDevelopment.supporting_event_keys || [];
+      rows.splice(3, 0, ["Supporting Migrations", evidence.join(", ") || "Unavailable"]);
+    }
     if (hasPrevious) rows.splice(2, 0, ["Previous MRZ", previous]);
     const list = document.createElement("dl"); rows.forEach(([label, value]) => { const dt = document.createElement("dt"); dt.textContent = label; const dd = document.createElement("dd"); dd.textContent = value; list.append(dt, dd); }); target.append(heading, list);
   }
@@ -92,6 +96,7 @@
   function structuralPivot(record) {
     const candidates = [...(model.intelligence?.pivots || [])];
     if (model.intelligence?.latest_development) candidates.push(model.intelligence.latest_development);
+    if (model.selectedDevelopment) candidates.push(model.selectedDevelopment);
     return candidates.find((item) => item.pivot_event_key === record.event_key || Number(item.migration_sequence) === Number(record.sequence)) || null;
   }
 
@@ -191,14 +196,19 @@
   function show({ preserveViewport = false } = {}) { if (!model.migrationCount || !model.records.length) return; model.generated = true; if (!preserveViewport) model.windowStart = latestWindowStart(model.records.length, model.windowSize); model.selected ||= model.records.at(-1); byId("#migrationPathPanel").hidden = false; byId("#migrationGenerateButton").hidden = true; renderDetail(model.selected); const detail = byId("#migrationRecordDetail"); if (detail) detail.hidden = true; renderWindowControls(); draw(); byId("#migrationPathPanel").scrollIntoView?.({ behavior: "smooth", block: "nearest" }); }
   function hide() { if (!canHidePath(model.chartOnly)) return; model.generated = false; byId("#migrationPathPanel").hidden = true; if (model.records.length) byId("#migrationGenerateButton").hidden = false; }
 
-  function setData({ symbol, migrations = [], states = [], formatPrice, exactTime }) {
+  function setData({ symbol, migrations = [], states = [], developments = [], formatPrice, exactTime }) {
     const source = states.length ? states : migrations; const records = prepareMigrationRecords(source); const precision = migrationPricePrecision(records); const migrationCount = migrations.length;
     const params = new URLSearchParams(globalObject.location.search); const requestedSize = Number(params.get("migration_size")); const requestedStart = Number(params.get("migration_start"));
     const chartOnly = params.get("chart_only") === "1";
     const windowSize = Number.isFinite(requestedSize) && requestedSize > 0 ? Math.min(records.length || 1, Math.max(1, requestedSize)) : Math.min(DEFAULT_WINDOW_SIZE, Math.max(1, records.length));
-    const windowStart = Number.isFinite(requestedStart) ? clampWindowStart(records.length, requestedStart, windowSize) : (Number.isFinite(requestedSize) && requestedSize > 0 ? latestWindowStart(records.length, windowSize) : latestWindowStart(records.length));
-    const requestedEvent = params.get("migration_event"); const selected = records.find((record) => record.event_key === requestedEvent) || records.at(-1) || null;
-    model = { ...model, symbol, records, migrationCount, generated: false, selected, hits: [], windowStart, windowSize, formatPrice, exactTime, priceFormatter: new Intl.NumberFormat("en-US", { minimumFractionDigits: precision, maximumFractionDigits: precision }), pointers: new Map(), pinchDistance: 0, suppressClick: false, chartOnly, priceZoom: 0 };
+    let windowStart = Number.isFinite(requestedStart) ? clampWindowStart(records.length, requestedStart, windowSize) : (Number.isFinite(requestedSize) && requestedSize > 0 ? latestWindowStart(records.length, windowSize) : latestWindowStart(records.length));
+    const requestedDevelopmentId = params.get("development");
+    const selectedDevelopment = developments.find((item) => String(item.id) === requestedDevelopmentId) || null;
+    const requestedEvent = params.get("migration_event") || selectedDevelopment?.pivot_event_key;
+    const selected = records.find((record) => record.event_key === requestedEvent) || records.at(-1) || null;
+    const selectedIndex = records.findIndex((record) => record === selected);
+    if (!Number.isFinite(requestedStart) && selectedIndex >= 0) windowStart = clampWindowStart(records.length, selectedIndex - Math.floor(windowSize / 2), windowSize);
+    model = { ...model, symbol, records, developments, selectedDevelopment, migrationCount, generated: false, selected, hits: [], windowStart, windowSize, formatPrice, exactTime, priceFormatter: new Intl.NumberFormat("en-US", { minimumFractionDigits: precision, maximumFractionDigits: precision }), pointers: new Map(), pinchDistance: 0, suppressClick: false, chartOnly, priceZoom: 0 };
     const count = migrationCount; byId("#migrationCountBadge").textContent = countLabel(count); byId("#migrationEmptyState").hidden = count > 0; byId("#migrationGenerateButton").hidden = count === 0; byId("#migrationPathPanel").hidden = true; byId("#migrationLimitedNote").hidden = count === 0 || count > 3;
     const detail = byId("#migrationRecordDetail"); if (detail) detail.hidden = true;
     if (count) byId("#migrationPathSummary").textContent = `${countLabel(count)} · ${records.length} canonical states · ${dateLabel(records[0].observed_at)} – ${dateLabel(records.at(-1).observed_at)}`;

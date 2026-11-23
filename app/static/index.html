@@ -55,7 +55,7 @@
           <section class="symbol-empty panel" id="symbolEmpty" role="status">Select a symbol from this page, a watchlist, or Attention.</section>
           <div class="symbol-detail-grid" id="symbolDetail" hidden>
             <section class="symbol-intelligence-strip" id="symbolIntelligenceStrip" aria-label="Authoritative structural summary">
-              <span><b>IPDA</b><strong id="symbolSummaryLocation">—</strong></span>
+              <span class="unavailable" id="symbolSummaryLocationItem"><b>IPDA</b><strong id="symbolSummaryLocation">—</strong></span>
               <span><b>Active MRZ</b><strong id="symbolSummaryMrz">—</strong></span>
               <span><b>Migration Structure</b><strong id="symbolSummaryStructure">—</strong></span>
               <span><b>Route Hypothesis</b><strong id="symbolSummaryHypothesis">—</strong></span>
@@ -98,7 +98,7 @@
                 </table>
               </div>
             </section>
-            <section class="panel symbol-recent-events" id="symbolRecentEvents" aria-labelledby="symbolRecentEventsTitle"><header><h2 id="symbolRecentEventsTitle">Event History (Recent)</h2><a href="/mrz/events">View All →</a></header><ul id="symbolRecentEventRows"></ul></section>
+            <section class="panel symbol-recent-events" id="symbolRecentEvents" aria-labelledby="symbolRecentEventsTitle"><header><h2 id="symbolRecentEventsTitle">Event History (Recent)</h2></header><ul id="symbolRecentEventRows"></ul></section>
           </div>
         </section>
 
@@ -107,7 +107,7 @@
           <form class="panel alert-preferences-form" id="alertPreferencesForm">
             <fieldset><legend>ALERTS ON/OFF</legend><section class="device-alert-control"><div><strong>THIS DEVICE</strong><span id="notificationStatus" role="status">Checking browser support…</span></div><button class="quiet-button" type="button" id="notificationButton" disabled>Checking notifications…</button></section></fieldset>
             <fieldset><legend>ALERT SCOPE</legend><label class="choice"><input type="radio" name="alertScope" value="TRACKED_GROUPS_ONLY" /><span><strong>Tracked Groups Only</strong><small>Only symbols in a trading watchlist may interrupt you.</small></span></label><label class="choice"><input type="radio" name="alertScope" value="ALL_SYMBOLS" /><span><strong>All Symbols</strong><small>Preserves the previous global alert behavior.</small></span></label></fieldset>
-            <fieldset><legend>EVENT TYPES</legend><label class="choice"><input id="prefActivation" type="checkbox" /><span><strong>MRZ Activation</strong></span></label><label class="choice"><input id="prefMigration" type="checkbox" /><span><strong>MRZ Migration</strong></span></label><label class="choice"><input id="prefNearMiss" type="checkbox" /><span><strong>Near-Miss</strong></span></label><label class="choice"><input id="prefStructuralDevelopment" type="checkbox" disabled /><span><strong>Structural Development</strong><small>Meaningful changes in MRZ migration structure. Pending detector validation; disabled for live delivery.</small></span></label></fieldset>
+            <fieldset><legend>EVENT TYPES</legend><label class="choice"><input id="prefActivation" type="checkbox" /><span><strong>MRZ Activation</strong></span></label><label class="choice"><input id="prefMigration" type="checkbox" /><span><strong>MRZ Migration</strong></span></label><label class="choice"><input id="prefNearMiss" type="checkbox" /><span><strong>Near-Miss</strong></span></label><label class="choice"><input id="prefStructuralDevelopment" type="checkbox" /><span><strong>Structural Development</strong><small id="prefStructuralDevelopmentHelp">Meaningful changes in MRZ migration structure. Available after detector validation.</small></span></label></fieldset>
             <p class="form-error" id="alertPreferencesError" hidden></p><footer><span class="form-success" id="alertPreferencesSaved" role="status"></span><button class="primary-button" id="saveAlertPreferences" type="submit">Save preferences</button></footer>
           </form>
         </section>

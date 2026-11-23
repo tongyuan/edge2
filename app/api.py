@@ -870,10 +870,11 @@ def create_app(
     def update_notification_preferences(
         preferences: NotificationPreferencesPayload,
     ) -> JSONResponse:
-        return JSONResponse(
-            notification_repository.update_notification_preferences(preferences),
-            headers={"Cache-Control": "no-store, max-age=0"},
-        )
+        try:
+            payload = notification_repository.update_notification_preferences(preferences)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return JSONResponse(payload, headers={"Cache-Control": "no-store, max-age=0"})
 
     @application.get("/api/mrz/events")
     def mrz_event_history(

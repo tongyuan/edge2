@@ -106,7 +106,7 @@ async function testGrantedPermissionPath() {
     navigatorObject: {
       serviceWorker: {
         async register(url, options) {
-          assert.equal(url, "/service-worker.js?v=structural-review-20261116");
+          assert.equal(url, "/service-worker.js?v=structural-development-20261123");
           assert.deepEqual(options, { scope: "/" });
           return registration;
         },

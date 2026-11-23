@@ -31,7 +31,7 @@ class DockingContractTests(unittest.TestCase):
         self.assertIn('aria-label="Dock Inbox"', INDEX)
         self.assertIn('title="Dock Inbox"', INDEX)
         self.assertNotIn('>Dock</button>', INDEX)
-        self.assertIn('"Maximize"', MAP)
+        self.assertIn('chartButton("Maximize chart", "⛶")', MAP)
         self.assertIn('id="migrationDock"', INDEX)
         self.assertIn('openMigrationPath', DOCKING)
 

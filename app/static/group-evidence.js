@@ -92,17 +92,6 @@
     return `/mrz/symbols?${params}`;
   }
 
-  function eventEvidenceUrl(groupId, symbol, eventId) {
-    const params = new URLSearchParams({
-      symbol,
-      group: String(groupId),
-      window: state.scope.window,
-      return: `${globalObject.location.pathname}${globalObject.location.search}`,
-    });
-    if (eventId) params.set("event", eventId);
-    return `/mrz/events?${params}`;
-  }
-
   function groupSymbolUrl(groupId, symbol) {
     const params = new URLSearchParams({
       symbol,
@@ -706,9 +695,9 @@
     $("#structuralEvidenceDrawer")?.focus();
   }
 
-  function drawerEvidenceLink(groupId, symbol, eventId, nearMiss = false) {
+  function drawerEvidenceLink(groupId, symbol, _eventId, _nearMiss = false) {
     const link = node("a", "structural-evidence-link", "Open →");
-    link.href = nearMiss ? groupSymbolUrl(groupId, symbol) : eventEvidenceUrl(groupId, symbol, eventId);
+    link.href = groupSymbolUrl(groupId, symbol);
     return link;
   }
 
